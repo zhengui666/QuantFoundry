@@ -53,6 +53,8 @@ frontend/e2e/storage-state.json
 .qf-runtime/
 artifacts/
 data/
+!frontend/src/features/data/
+!frontend/src/features/data/DataCapabilitiesPage.tsx
 logs/
 *.log
 

@@ -281,7 +281,7 @@ def test_connection_scope_kind_and_expiry_are_enforced(monkeypatch) -> None:
     absent_scope = client.post(
         "/api/v1/setup/complete",
         headers=OTHER_OWNER | _key("absent-scope"),
-        json=_setup_payload(f"CONN-{uuid.uuid4()}"),
+        json=_setup_payload(str(uuid.uuid4())),
     )
     assert (cross_scope.status_code, cross_scope.json()["code"]) == (
         404,

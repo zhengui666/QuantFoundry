@@ -11,7 +11,10 @@ describe('canonical generated REST operation boundary', () => {
       'utf8',
     );
     const operationIds = Object.keys(operationMap).sort();
-    const generatedIds = Array.from(contract.matchAll(/^\s+operationId:\s*(\S+)$/gm), (match) => match[1])
+    const generatedIds = Array.from(
+      contract.matchAll(/^\s+operationId:\s*(\S+)$/gm),
+      (match) => match[1],
+    )
       .filter((operationId): operationId is string => operationId !== undefined)
       .sort();
     expect(operationIds).toEqual(generatedIds);

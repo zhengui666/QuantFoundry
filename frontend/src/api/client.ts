@@ -151,7 +151,9 @@ function pathFor(operationId: CanonicalOperationId, pathParams: OperationPathPar
   for (const parameter of operation.query) {
     const value = parameter.value ?? pathParams[parameter.name];
     if (value === undefined && parameter.required)
-      throw new ContractError(`Missing canonical query parameter ${parameter.name} for ${operationId}.`);
+      throw new ContractError(
+        `Missing canonical query parameter ${parameter.name} for ${operationId}.`,
+      );
     if (value !== undefined) query.set(parameter.name, String(value));
   }
   return `/api/v1${path}${query.size === 0 ? '' : `?${query.toString()}`}`;
@@ -422,7 +424,11 @@ export const api = {
   researchDetail: async (id: string, signal?: AbortSignal) => {
     const researchId = parsePublicId('research', id);
     return validateResult<Schema<'ResearchDetail'>>(
-      await request<unknown>('getResearch', { signal: signal ?? null }, { research_id: researchId }),
+      await request<unknown>(
+        'getResearch',
+        { signal: signal ?? null },
+        { research_id: researchId },
+      ),
       ResearchDetailSchema,
       'ResearchDetail',
     );
@@ -452,7 +458,10 @@ export const api = {
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>(
         'startResearch',
-        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() }, body: JSON.stringify(canonicalBody) },
+        {
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          body: JSON.stringify(canonicalBody),
+        },
         { research_id: researchId },
       ),
       JobAcceptedSchema,
@@ -462,7 +471,11 @@ export const api = {
   experiment: async (id: string, signal?: AbortSignal) => {
     const experimentId = parsePublicId('experiment', id);
     return validateResult<Schema<'ExperimentDetail'>>(
-      await request<unknown>('getExperiment', { signal: signal ?? null }, { experiment_id: experimentId }),
+      await request<unknown>(
+        'getExperiment',
+        { signal: signal ?? null },
+        { experiment_id: experimentId },
+      ),
       ExperimentDetailSchema,
       'ExperimentDetail',
     );
@@ -631,7 +644,11 @@ export const api = {
   validation: async (id: string, signal?: AbortSignal) => {
     const validationId = parsePublicId('validation', id);
     return validateResult<Schema<'ValidationDetail'>>(
-      await request<unknown>('getValidation', { signal: signal ?? null }, { validation_id: validationId }),
+      await request<unknown>(
+        'getValidation',
+        { signal: signal ?? null },
+        { validation_id: validationId },
+      ),
       ValidationDetailSchema,
       'ValidationDetail',
     );
@@ -639,7 +656,11 @@ export const api = {
   holdoutGate: async (id: string, signal?: AbortSignal) => {
     const validationId = parsePublicId('validation', id);
     return validateResult<Schema<'HoldoutGate'>>(
-      await request<unknown>('getHoldoutGate', { signal: signal ?? null }, { validation_id: validationId }),
+      await request<unknown>(
+        'getHoldoutGate',
+        { signal: signal ?? null },
+        { validation_id: validationId },
+      ),
       HoldoutGateSchema,
       'HoldoutGate',
     );
@@ -647,7 +668,11 @@ export const api = {
   holdoutResult: async (id: string, signal?: AbortSignal) => {
     const validationId = parsePublicId('validation', id);
     return validateResult<Schema<'HoldoutResult'>>(
-      await request<unknown>('getHoldoutResult', { signal: signal ?? null }, { validation_id: validationId }),
+      await request<unknown>(
+        'getHoldoutResult',
+        { signal: signal ?? null },
+        { validation_id: validationId },
+      ),
       HoldoutResultSchema,
       'HoldoutResult',
     );
@@ -686,7 +711,10 @@ export const api = {
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>(
         'runHoldout',
-        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() }, body: JSON.stringify(canonicalBody) },
+        {
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          body: JSON.stringify(canonicalBody),
+        },
         { validation_id: validationId },
       ),
       JobAcceptedSchema,
@@ -702,7 +730,11 @@ export const api = {
   approval: async (id: string, signal?: AbortSignal) => {
     const approvalId = parsePublicId('approval', id);
     return validateResult<Schema<'ApprovalDetail'>>(
-      await request<unknown>('getApproval', { signal: signal ?? null }, { approval_id: approvalId }),
+      await request<unknown>(
+        'getApproval',
+        { signal: signal ?? null },
+        { approval_id: approvalId },
+      ),
       ApprovalDetailSchema,
       'ApprovalDetail',
     );
@@ -717,7 +749,10 @@ export const api = {
     return validateResult<Schema<'ApprovalDecisionResult'>>(
       await request<unknown>(
         'approveApproval',
-        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() }, body: JSON.stringify(canonicalBody) },
+        {
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          body: JSON.stringify(canonicalBody),
+        },
         { approval_id: approvalId },
       ),
       ApprovalDecisionResultSchema,
@@ -734,7 +769,10 @@ export const api = {
     return validateResult<Schema<'ApprovalDecisionResult'>>(
       await request<unknown>(
         'rejectApproval',
-        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() }, body: JSON.stringify(canonicalBody) },
+        {
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          body: JSON.stringify(canonicalBody),
+        },
         { approval_id: approvalId },
       ),
       ApprovalDecisionResultSchema,
