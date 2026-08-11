@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "tag": null,
+  "commit": null,
+  "build": {
+    "github_run_id": null,
+    "github_run_attempt": null
+  },
+  "inputs": {
+    "lockfiles": [],
+    "canonical_openapi": {},
+    "tool_contract": {},
+    "p0_registry": {},
+    "alembic": {}
+  },
+  "reports": [],
+  "evidence_files": [],
+  "images": [],
+  "compose_images": [],
+  "supply_chain": [],
+  "checksums": "SHA256SUMS"
+}

@@ -1,0 +1,12 @@
+:root {
+  --qf-duration-fast: 120ms;
+  --qf-duration-standard: 180ms;
+  --qf-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --qf-duration-fast: 0ms;
+    --qf-duration-standard: 0ms;
+  }
+}

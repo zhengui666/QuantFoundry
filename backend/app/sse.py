@@ -1,0 +1,198 @@
+"""Durable SSE replay and live tail; database rows are the only truth."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import time
+import uuid
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+
+def _wire(
+    event: Any,
+    envelope: Callable[[dict[str, Any]], dict[str, Any]],
+) -> str:
+    occurred_at = event.occurred_at
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=UTC)
+    value = envelope(
+        {
+            "schema_version": 1,
+            "event_id": event.event_id,
+            "sequence": event.sequence,
+            "event_type": event.event_type,
+            "occurred_at": occurred_at.astimezone(UTC)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "object_type": event.object_type,
+            "object_id": event.object_id,
+            "object_version": event.object_version,
+            "object_revision": event.object_revision,
+            "request_id": event.request_id,
+            "job_id": event.job_id,
+            "agent_run_id": event.agent_run_id,
+            "tool_call_id": event.tool_call_id,
+            "payload": json.loads(event.payload),
+        }
+    )
+    return (
+        f"id: {event.sequence}\n"
+        f"event: {event.event_type}\n"
+        f"data: {json.dumps(value, separators=(',', ':'))}\n\n"
+    )
+
+
+def _resync_wire(
+    envelope: Callable[[dict[str, Any]], dict[str, Any]],
+    sequence: int,
+    now: Callable[[], str],
+    *,
+    request_id: str | None = None,
+) -> str:
+    sequence = max(1, sequence)
+    event_id = f"EVT-{uuid.uuid4()}"
+    value = envelope(
+        {
+            "schema_version": 1,
+            "event_id": event_id,
+            "sequence": sequence,
+            "event_type": "system.resync_required",
+            "occurred_at": now(),
+            "object_type": "event_stream",
+            "object_id": event_id,
+            "object_version": None,
+            "object_revision": 1,
+            "request_id": request_id or f"REQ-{uuid.uuid4()}",
+            "job_id": None,
+            "agent_run_id": None,
+            "tool_call_id": None,
+            "payload": {
+                "state": "RESYNC_REQUIRED",
+                "status": None,
+                "resync_from_sequence": sequence,
+            },
+        }
+    )
+    return (
+        f"id: {sequence}\n"
+        "event: system.resync_required\n"
+        f"data: {json.dumps(value, separators=(',', ':'))}\n\n"
+    )
+
+
+async def durable_event_stream(
+    session_factory: Callable[[], Session],
+    event_model: Any,
+    last_event_id: int | None,
+    envelope: Callable[[dict[str, Any]], dict[str, Any]],
+    now: Callable[[], str],
+    *,
+    workspace_id: str,
+    watermark_model: Any | None = None,
+    poll_seconds: float = 0.25,
+    heartbeat_seconds: float = 15.0,
+    batch_size: int = 100,
+) -> AsyncIterator[str]:
+    cursor = last_event_id or 0
+    heartbeat_at = time.monotonic() + heartbeat_seconds
+    first_poll = True
+    while True:
+        session = session_factory()
+        try:
+            earliest = session.execute(
+                select(event_model)
+                .where(event_model.workspace_id == workspace_id)
+                .order_by(event_model.sequence.asc())
+                .limit(1)
+            ).scalar_one_or_none()
+            stream_state = (
+                session.get(watermark_model, workspace_id)
+                if watermark_model is not None
+                else None
+            )
+            watermark = (
+                stream_state.last_sequence
+                if stream_state is not None
+                else session.scalar(
+                    select(func.max(event_model.sequence)).where(
+                        event_model.workspace_id == workspace_id
+                    )
+                )
+            )
+            expired_through = (
+                stream_state.expired_through_sequence
+                if stream_state is not None
+                else None
+            )
+            if (
+                first_poll
+                and last_event_id is not None
+                and (
+                    (
+                        expired_through is not None
+                        and expired_through > 0
+                        and last_event_id <= expired_through
+                    )
+                    or (
+                        watermark_model is None
+                        and earliest is None
+                        and watermark is not None
+                        and last_event_id <= watermark
+                    )
+                )
+            ):
+                resume_sequence = (
+                    earliest.sequence
+                    if earliest is not None and earliest.sequence > last_event_id
+                    else int(watermark or 0) + 1
+                )
+                yield _resync_wire(envelope, resume_sequence, now)
+                return
+            events = (
+                session.execute(
+                    select(event_model)
+                    .where(
+                        event_model.sequence > cursor,
+                        event_model.workspace_id == workspace_id,
+                    )
+                    .order_by(event_model.sequence.asc())
+                    .limit(batch_size)
+                )
+                .scalars()
+                .all()
+            )
+        finally:
+            session.close()
+        first_poll = False
+        if events:
+            for event in events:
+                try:
+                    wire = _wire(event, envelope)
+                except json.JSONDecodeError, TypeError, ValueError:
+                    yield _resync_wire(
+                        envelope,
+                        event.sequence,
+                        now,
+                        request_id=event.request_id,
+                    )
+                    return
+                cursor = event.sequence
+                yield wire
+                await asyncio.sleep(0)
+            heartbeat_at = time.monotonic() + heartbeat_seconds
+            continue
+        if os.getenv("QF_SSE_TEST_CLOSE") == "1":
+            yield ": heartbeat\n\n"
+            return
+        current = time.monotonic()
+        if current >= heartbeat_at:
+            yield ": heartbeat\n\n"
+            heartbeat_at = current + heartbeat_seconds
+        await asyncio.sleep(poll_seconds)
