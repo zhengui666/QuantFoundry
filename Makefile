@@ -1,10 +1,10 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap local-bootstrap owner-bootstrap up down logs ps migrate format lint typecheck test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses verify-compose
+.PHONY: help bootstrap local-bootstrap owner-bootstrap up down logs ps migrate format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses verify-compose
 
 help:
-	@echo "Targets: bootstrap local-bootstrap owner-bootstrap up down logs ps migrate format lint typecheck test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses verify-compose"
+	@echo "Targets: bootstrap local-bootstrap owner-bootstrap up down logs ps migrate format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses verify-compose"
 
 bootstrap:
 	@./scripts/bootstrap.sh
@@ -30,7 +30,7 @@ ps:
 migrate:
 	@docker compose run --rm migrate
 
-format lint typecheck test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses:
+format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses:
 	@./scripts/ci.sh $@
 
 verify-compose:

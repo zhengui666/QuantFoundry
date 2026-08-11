@@ -91,6 +91,15 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.commit }}
           fetch-depth: 0
+      - name: Create commit-bound draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --verify-tag --target "$COMMIT" --title "$TAG" --generate-notes --draft
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: 3.14.0
@@ -220,14 +229,16 @@ jobs:
           scripts/release-evidence.sh compose-bind evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
           scripts/release-evidence.sh manifest "$TAG" "$COMMIT" evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
           scripts/release-evidence.sh package-assets evidence
-      - name: Create release only after evidence is complete
+      - name: Upload and remotely verify draft release evidence
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.preflight.outputs.tag }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
         run: |
           set -euo pipefail
           test -s evidence/release-assets/release-manifest.json
           test -s evidence/release-assets/SHA256SUMS
-          gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
           find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG"
+          scripts/release-evidence.sh verify-remote-assets "$TAG" "$COMMIT" evidence
+          gh release edit "$TAG" --draft=false

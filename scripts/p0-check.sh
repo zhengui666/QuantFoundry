@@ -369,7 +369,11 @@ except (OSError, yaml.YAMLError) as error:
     print(json.dumps({"registry": str(registry_path), "result": "invalid", "error": str(error)}, ensure_ascii=False))
     raise SystemExit(2)
 
-if not isinstance(registry, dict) or not isinstance(registry.get("blockers"), list):
+if (
+    not isinstance(registry, dict)
+    or registry.get("version") != "1.0.0"
+    or not isinstance(registry.get("blockers"), list)
+):
     print(json.dumps({"registry": str(registry_path), "result": "invalid", "error": "blockers list is required"}, ensure_ascii=False))
     raise SystemExit(2)
 
@@ -395,7 +399,7 @@ for item in registry["blockers"]:
         invalid.append(str(blocker_id or "unknown"))
         continue
     if release_blocking:
-        if status == "closed":
+        if mode == "--require-closed" and status == "closed":
             if remote_error:
                 invalid.append(f"{blocker_id}: remote closure verification unavailable: {remote_error}")
             invalid.extend(validate_closed_evidence(blocker_id, item, remote))
@@ -406,7 +410,15 @@ summary = {
     "registry": str(registry_path),
     "mode": mode,
     "commit": expected_commit,
-    "result": "pass" if not invalid and not unclosed else "blocked",
+    "result": (
+        "invalid"
+        if invalid
+        else "report"
+        if mode == "--offline-report"
+        else "pass"
+        if not unclosed
+        else "blocked"
+    ),
     "release_eligible": mode == "--require-closed" and not invalid and not unclosed,
     "remote_verification": "performed" if remote else ("not-required" if not closed_items else "unavailable"),
     "release_blocking_total": len(blocking),

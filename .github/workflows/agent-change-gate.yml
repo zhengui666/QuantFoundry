@@ -31,7 +31,6 @@ jobs:
       QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
       QF_SKIP_AUTO_CREATE: '1'
       GITHUB_TOKEN: ${{ github.token }}
-      QF_INDEPENDENT_REVIEW_REPORT: ${{ github.workspace }}/docs/治理/independent-review-report.json
       QF_ARTIFACT_ROOT: /tmp/quantfoundry/artifacts
       QF_ARTIFACT_DIR: /tmp/quantfoundry/artifacts
       QF_DATA_ROOT: /tmp/quantfoundry/data

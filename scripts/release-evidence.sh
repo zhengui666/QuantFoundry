@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | collect-inputs OUTPUT_DIR | collect-oci-sbom IMAGE DIGEST OUTPUT_FILE | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | package-assets OUTPUT_DIR' >&2
+  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | collect-inputs OUTPUT_DIR | collect-oci-sbom IMAGE DIGEST OUTPUT_FILE | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | package-assets OUTPUT_DIR | verify-remote-assets TAG COMMIT OUTPUT_DIR' >&2
   exit 2
 }
 
@@ -261,6 +261,7 @@ source_files = {
     for path in output.rglob("*")
     if path.is_file() and "release-assets" not in path.relative_to(output).parts and path.name != "SHA256SUMS"
 }
+
 declared_source_files = set(sources) - {"SHA256SUMS"}
 missing = declared_source_files - source_files
 orphan = source_files - declared_source_files
@@ -305,6 +306,98 @@ for name, digest in checksums.items():
 PY
 }
 
+verify_remote_assets() {
+  local tag="$1" commit="$2" output_dir="$3"
+  require_tag_commit "$tag" "$commit"
+  [[ -n "${GH_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || {
+    printf '%s\n' 'GH_TOKEN and GITHUB_REPOSITORY are required for remote release verification.' >&2
+    exit 1
+  }
+  command -v gh >/dev/null || { printf '%s\n' 'gh is required for remote release verification.' >&2; exit 1; }
+  python3 - "$tag" "$commit" "$output_dir" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+from urllib.parse import quote
+
+tag, commit, output_name = sys.argv[1:]
+repository = os.environ["GITHUB_REPOSITORY"]
+staging = pathlib.Path(output_name) / "release-assets"
+local_manifest = staging / "release-manifest.json"
+local_checksums = staging / "SHA256SUMS"
+if not local_manifest.is_file() or not local_checksums.is_file():
+    raise SystemExit("local packaged manifest and SHA256SUMS are required before remote verification")
+env = os.environ.copy()
+
+def gh_json(endpoint):
+    completed = subprocess.run(["gh", "api", endpoint], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if completed.returncode:
+        raise SystemExit(f"gh api failed for {endpoint}: {completed.stderr.strip() or completed.returncode}")
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
+
+release = gh_json(f"/repos/{repository}/releases/tags/{quote(tag, safe='')}")
+if release.get("draft") is not True or release.get("target_commitish") != commit:
+    raise SystemExit("remote release is not a draft bound to the tagged commit")
+assets = release.get("assets")
+if not isinstance(assets, list):
+    raise SystemExit("remote release assets inventory is invalid")
+by_name = {}
+for asset in assets:
+    if not isinstance(asset, dict) or not isinstance(asset.get("name"), str) or not isinstance(asset.get("id"), int) or asset["name"] in by_name:
+        raise SystemExit("remote release asset metadata is invalid")
+    by_name[asset["name"]] = asset
+
+def download(name):
+    if name not in by_name:
+        raise SystemExit(f"remote release is missing required asset: {name}")
+    with tempfile.TemporaryDirectory(prefix="qf-release-asset-") as directory:
+        destination = pathlib.Path(directory) / "asset"
+        completed = subprocess.run(
+            ["gh", "api", f"/repos/{repository}/releases/assets/{by_name[name]['id']}", "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(destination)],
+            env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if completed.returncode:
+            raise SystemExit(f"cannot download remote release asset {name}: {completed.stderr.strip() or completed.returncode}")
+        return destination.read_bytes()
+
+remote_manifest = download("release-manifest.json")
+remote_checksums = download("SHA256SUMS")
+if remote_manifest != local_manifest.read_bytes() or remote_checksums != local_checksums.read_bytes():
+    raise SystemExit("remote manifest or SHA256SUMS does not exactly match the packaged release evidence")
+try:
+    manifest = json.loads(remote_manifest)
+except json.JSONDecodeError as error:
+    raise SystemExit(f"remote release manifest is invalid JSON: {error}") from error
+if manifest.get("tag") != tag or manifest.get("commit") != commit:
+    raise SystemExit("remote release manifest is not bound to the tag and commit")
+inventory = manifest.get("release_assets")
+if not isinstance(inventory, list) or not inventory:
+    raise SystemExit("remote release manifest has no asset inventory")
+names = [item.get("name") for item in inventory if isinstance(item, dict) and set(item) == {"name", "source"}]
+if len(names) != len(inventory) or any(not isinstance(name, str) for name in names) or len(set(names)) != len(names) or set(names) != set(by_name):
+    raise SystemExit("remote release assets do not exactly match the manifest inventory")
+checksums = {}
+for line in remote_checksums.decode("utf-8").splitlines():
+    digest, separator, name = line.partition("  ")
+    if not separator or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest) or not name or name in checksums:
+        raise SystemExit("remote SHA256SUMS is invalid")
+    checksums[name] = digest
+if set(checksums) != set(names) - {"SHA256SUMS"}:
+    raise SystemExit("remote SHA256SUMS does not cover exactly the non-self asset inventory")
+for name, digest in checksums.items():
+    if hashlib.sha256(download(name)).hexdigest() != digest:
+        raise SystemExit(f"remote asset SHA-256 mismatch: {name}")
+print(json.dumps({"tag": tag, "commit": commit, "assets": len(names), "result": "pass"}, sort_keys=True))
+PY
+}
+
 compose_bind() {
   local output_dir="$1" backend_image="$2" backend_digest="$3" frontend_image="$4" frontend_digest="$5"
   [[ "$backend_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -337,5 +430,6 @@ case "${1:-}" in
   manifest) [[ "$#" == 8 ]] || usage; manifest "$2" "$3" "$4" "$5" "$6" "$7" "$8" ;;
   compose-bind) [[ "$#" == 6 ]] || usage; compose_bind "$2" "$3" "$4" "$5" "$6" ;;
   package-assets) [[ "$#" == 2 ]] || usage; package_assets "$2" ;;
+  verify-remote-assets) [[ "$#" == 4 ]] || usage; verify_remote_assets "$2" "$3" "$4" ;;
   *) usage ;;
 esac

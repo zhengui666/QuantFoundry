@@ -79,11 +79,15 @@ frontend_format() {
   run_frontend format:check
 }
 
-backend_static() {
+backend_lint() {
   require_file backend/pyproject.toml
   run_backend ruff check app workers scheduler tests alembic
   run_backend ruff check "$repo_root/scripts"
-  run_backend mypy app workers scheduler
+}
+
+backend_typecheck() {
+  require_file backend/pyproject.toml
+  run_backend mypy --explicit-package-bases app workers scheduler
 }
 
 frontend_static() {
@@ -223,8 +227,10 @@ build_all() {
 
 case "$target" in
   format) backend_format; frontend_format ;;
-  lint) backend_static; frontend_static ;;
-  typecheck) backend_static; frontend_static ;;
+  lint) backend_lint; run_frontend lint ;;
+  typecheck) backend_typecheck; run_frontend typecheck ;;
+  backend-lint) backend_lint ;;
+  backend-typecheck|backend-mypy) backend_typecheck ;;
   migration) migration_check ;;
   test) backend_test; frontend_test ;;
   build) build_all ;;
@@ -247,7 +253,8 @@ case "$target" in
   backend-ci)
     migration_check
     backend_format
-    backend_static
+    backend_lint
+    backend_typecheck
     schema_manifest_check
     openapi_check
     tool_check
@@ -262,7 +269,8 @@ case "$target" in
     hygiene_check
     migration_check
     backend_format
-    backend_static
+    backend_lint
+    backend_typecheck
     schema_manifest_check
     openapi_check
     tool_check

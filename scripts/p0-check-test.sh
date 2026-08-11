@@ -193,6 +193,21 @@ run_fixture positive >/dev/null
 write_fixture release-asset-positive
 run_fixture release-asset-positive >/dev/null
 
+# Offline reporting validates only local registry schema and must not require
+# remote credentials or closure evidence, including when a blocker is unclosed.
+write_fixture positive
+env PATH="$mock_dir:$PATH" QF_RELEASE_COMMIT="$commit_sha" \
+  "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --offline-report >/dev/null
+write_fixture empty-evidence
+env PATH="$mock_dir:$PATH" QF_RELEASE_COMMIT="$commit_sha" \
+  "$repo_root/scripts/p0-check.sh" "$fixture_dir/empty-evidence.yaml" --offline-report >/dev/null
+write_fixture status-bypass
+if env PATH="$mock_dir:$PATH" QF_RELEASE_COMMIT="$commit_sha" \
+  "$repo_root/scripts/p0-check.sh" "$fixture_dir/status-bypass.yaml" --offline-report >/dev/null 2>&1; then
+  printf '%s\n' 'Expected schema-invalid offline fixture to fail.' >&2
+  exit 1
+fi
+
 for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact status-bypass hash-mismatch report-identity run-collision; do
   write_fixture "$case_name"
   if run_fixture "$case_name" >/dev/null 2>&1; then
