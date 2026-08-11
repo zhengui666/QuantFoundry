@@ -13,9 +13,11 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Computed,
     Date,
     DateTime,
     ForeignKeyConstraint,
+    Identity,
     Index,
     Integer,
     LargeBinary,
@@ -28,6 +30,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    literal_column,
     text,
 )
 from sqlalchemy.dialects.postgresql import DATERANGE, JSONB
@@ -110,10 +113,33 @@ def load_physical_metadata(
                 and column["type"]["name"] == "bigint"
             ):
                 column_type = BigInteger().with_variant(Integer(), "sqlite")
+            generation = column.get("generation")
+            identity = column.get("identity")
+            if generation is not None and identity is not None:
+                raise ValueError(
+                    f"{table_spec['name']}.{column['name']} cannot be both generated and identity"
+                )
+            schema_items: list[Any] = []
+            if generation is not None:
+                schema_items.append(
+                    Computed(
+                        generation["sqltext"], persisted=generation.get("persisted")
+                    )
+                )
+            if identity is not None:
+                identity_options = {
+                    key: value
+                    for key, value in identity.items()
+                    if key != "always" and value is not None
+                }
+                schema_items.append(
+                    Identity(always=bool(identity.get("always")), **identity_options)
+                )
             columns.append(
                 Column(
                     column["name"],
                     column_type,
+                    *schema_items,
                     nullable=column["nullable"],
                     primary_key=(
                         column["primary_key"]
@@ -123,7 +149,8 @@ def load_physical_metadata(
                     autoincrement=column["autoincrement"],
                     server_default=(
                         text(column["server_default"])
-                        if include_server_defaults
+                        if not schema_items
+                        and include_server_defaults
                         and column["server_default"] is not None
                         else None
                     ),
@@ -139,15 +166,19 @@ def load_physical_metadata(
             )
     for table_name, table_spec in specs.items():
         table = metadata.tables[table_name]
-        for offset, constraint in enumerate(table_spec["unique_constraints"]):
-            name = constraint["name"] or f"uq_{table_name}_frozen_{offset}"
+        for constraint in table_spec["unique_constraints"]:
+            name = constraint["name"]
             table.append_constraint(
-                UniqueConstraint(*constraint["columns"], name=name[:63])
+                UniqueConstraint(
+                    *constraint["columns"], name=name[:63] if name is not None else None
+                )
             )
         if include_checks:
-            for offset, constraint in enumerate(table_spec["checks"]):
-                name = constraint["name"] or f"ck_{table_name}_frozen_{offset}"
+            for constraint in table_spec["checks"]:
+                name = constraint["name"]
                 if name in _SQLITE_CLOSED_CHECKS:
+                    if not isinstance(name, str):
+                        raise ValueError("closed CHECK must have a canonical name")
                     table.append_constraint(
                         ContractCheckConstraint(
                             constraint["sql"],
@@ -157,15 +188,18 @@ def load_physical_metadata(
                     )
                 else:
                     table.append_constraint(
-                        CheckConstraint(constraint["sql"], name=name[:63])
+                        CheckConstraint(
+                            constraint["sql"],
+                            name=name[:63] if name is not None else None,
+                        )
                     )
-        for offset, constraint in enumerate(table_spec["foreign_keys"]):
-            name = constraint["name"] or f"fk_{table_name}_frozen_{offset}"
+        for constraint in table_spec["foreign_keys"]:
+            name = constraint["name"]
             table.append_constraint(
                 ForeignKeyConstraint(
                     constraint["columns"],
                     constraint["targets"],
-                    name=name[:63],
+                    name=name[:63] if name is not None else None,
                     ondelete=constraint["ondelete"],
                     use_alter=True,
                 )
@@ -176,9 +210,28 @@ def load_physical_metadata(
                 for item in index["keys"]:
                     column_name = item.get("column")
                     if isinstance(column_name, str) and column_name in table.c:
-                        expressions.append(table.c[column_name])
+                        expression: ColumnElement[Any] = table.c[column_name]
                     else:
-                        expressions.append(text(str(item["expression"])))
+                        expression = literal_column(str(item["expression"]))
+                    direction = str(item.get("direction") or "ASC").upper()
+                    nulls = item.get("nulls")
+                    if direction == "DESC":
+                        expression = expression.desc()
+                    elif direction == "ASC":
+                        expression = expression.asc()
+                    else:
+                        raise ValueError(
+                            f"unsupported index direction {direction!r} on {index['name']}"
+                        )
+                    if nulls == "FIRST":
+                        expression = expression.nulls_first()
+                    elif nulls == "LAST":
+                        expression = expression.nulls_last()
+                    elif nulls is not None:
+                        raise ValueError(
+                            f"unsupported index NULLS direction {nulls!r} on {index['name']}"
+                        )
+                    expressions.append(expression)
             else:
                 expressions = [table.c[name] for name in index["columns"]]
             Index(

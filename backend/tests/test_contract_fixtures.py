@@ -107,7 +107,7 @@ def test_request_models_enforce_required_enum_pattern_and_additional_properties(
         ),
         (
             "/api/v1/data/datasets/DSSET-valid/validate",
-            auth | {"test-api-key-unavailable},
+            auth | {"Idempotency-Key": "test-api-key-unavailable"},
             {"check_profile": "NOT_CANONICAL"},
         ),
         (

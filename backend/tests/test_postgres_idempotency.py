@@ -109,7 +109,7 @@ def test_real_postgres_idempotency_concurrency_and_lease_takeover() -> None:
             Idempotency(
                 actor_id="actor-a",
                 workspace_id="workspace-a",
-                test-api-key-unavailable,
+                key="test-api-key-unavailable",
                 method="POST",
                 path="/lease",
                 request_hash=__import__("hashlib").sha256(b'{"x":"lease"}').hexdigest(),

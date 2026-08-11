@@ -9,7 +9,7 @@ type CanonicalEngineFixtures = {
 };
 
 export const canonicalEngineFixtures = {
-  fastBacktest: { test-api-key-unavailable, engine_version: '1.0.0' },
+  fastBacktest: { engine_key: 'test-api-key-unavailable', engine_version: '1.0.0' },
   strictValidation: {
     strict_engine_key: 'qf-validation-v1',
     strict_engine_version: '1.0.0',

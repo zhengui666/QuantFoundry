@@ -623,7 +623,7 @@ def test_validation_failure_blocks_approval_without_direct_state_mutation() -> N
         json={
             "snapshot_id": snapshot_id,
             "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-            "test-api-key-unavailable,
+            "engine_key": "test-api-key-unavailable",
             "engine_version": "1.0.0",
             "parameters": [],
         },

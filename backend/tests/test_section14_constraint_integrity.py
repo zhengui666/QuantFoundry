@@ -463,9 +463,9 @@ def test_physical_snapshot_normalization_matches_pg_catalog_renderings() -> None
     }
     actual = json.loads(json.dumps(expected))
     actual_table = actual["tables"][0]
-    actual_table["unique_constraints"][0]["name"] = "uq_sample_frozen_0"
+    actual_table["unique_constraints"][0]["name"] = "sample_public_id_key"
     actual_table["unique_constraints"].reverse()
-    actual_table["foreign_keys"][0]["name"] = "fk_sample_frozen_0"
+    actual_table["foreign_keys"][0]["name"] = "sample_workspace_id_fkey"
     actual_table["checks"][0]["sql"] = "catalog check rendering"
     actual_table["indexes"][0]["where"] = "catalog index rendering"
     canonical_check = "postgres parsed check"
@@ -499,6 +499,93 @@ def test_check_normalization_preserves_string_literal_case() -> None:
     assert schema_manifest_check._normalized_check("state = 'ACTIVE'") != (
         schema_manifest_check._normalized_check("state = 'active'")
     )
+    assert schema_manifest_check._normalized_check("value = 'A  B::text'") != (
+        schema_manifest_check._normalized_check("value = 'A B'")
+    )
+
+
+def test_anonymous_constraint_name_policy_is_structural_and_fail_closed() -> None:
+    from scripts import schema_manifest_check
+
+    assert (
+        schema_manifest_check._postgres_generated_constraint_name(
+            "uq", "sample", ("workspace_id", "public_id")
+        )
+        == "sample_workspace_id_public_id_key"
+    )
+
+    expected = {
+        "tables": [
+            {
+                "name": "sample",
+                "columns": [],
+                "unique_constraints": [{"name": None, "columns": ["public_id"]}],
+                "foreign_keys": [],
+                "checks": [],
+                "indexes": [],
+            }
+        ]
+    }
+    generated = json.loads(json.dumps(expected))
+    generated["tables"][0]["unique_constraints"][0]["name"] = "sample_public_id_key"
+    wrong = json.loads(json.dumps(generated))
+    wrong["tables"][0]["unique_constraints"][0]["name"] = "wrong_name"
+
+    normalized_expected = schema_manifest_check._normalized_physical_snapshot(
+        expected, parsed_checks={}, parsed_indexes={}
+    )
+    normalized_generated = schema_manifest_check._normalized_physical_snapshot(
+        generated, parsed_checks={}, parsed_indexes={}
+    )
+    normalized_wrong = schema_manifest_check._normalized_physical_snapshot(
+        wrong, parsed_checks={}, parsed_indexes={}
+    )
+    assert normalized_expected == normalized_generated
+    assert schema_manifest_check._exact_tree_diff(
+        normalized_expected, normalized_wrong
+    ) == [
+        "$.tables[0].unique_constraints[0].name:"
+        'expected="sample_public_id_key":actual="wrong_name"'
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "mutation"),
+    [
+        ("direction", "DESC"),
+        ("nulls", "FIRST"),
+        ("include", ["revision"]),
+        ("where", "state = 'DISABLED'"),
+        ("unique", True),
+        ("method", "hash"),
+    ],
+)
+def test_structured_index_signature_rejects_each_semantic_drift(
+    field: str, mutation: object
+) -> None:
+    from scripts import schema_manifest_check
+
+    index = {
+        "name": "ix_sample_state",
+        "method": "btree",
+        "keys": [
+            {
+                "column": "state",
+                "expression": "state",
+                "direction": "ASC",
+                "nulls": "LAST",
+            }
+        ],
+        "include": [],
+        "where": "state = 'ACTIVE'",
+        "unique": False,
+    }
+    mutated = json.loads(json.dumps(index))
+    if field in {"direction", "nulls"}:
+        mutated["keys"][0][field] = mutation
+    else:
+        mutated[field] = mutation
+    assert schema_manifest_check._exact_tree_diff(index, mutated)
 
 
 def test_physical_snapshot_exact_diff_detects_index_method_drift() -> None:
@@ -554,17 +641,23 @@ def test_physical_snapshot_exact_diff_detects_autoincrement_drift() -> None:
         {"tables": [{"columns": [{"autoincrement": True}]}]},
         {"tables": [{"columns": [{"autoincrement": False}]}]},
     )
-    assert errors == [
-        "$.tables[0].columns[0].autoincrement:expected=true:actual=false"
-    ]
+    assert errors == ["$.tables[0].columns[0].autoincrement:expected=true:actual=false"]
 
 
 def test_physical_snapshot_exact_diff_detects_generation_drift() -> None:
     from scripts import schema_manifest_check
 
     errors = schema_manifest_check._exact_tree_diff(
-        {"tables": [{"columns": [{"generation": {"sqltext": "a + b", "persisted": True}}]}]},
-        {"tables": [{"columns": [{"generation": {"sqltext": "a - b", "persisted": True}}]}]},
+        {
+            "tables": [
+                {"columns": [{"generation": {"sqltext": "a + b", "persisted": True}}]}
+            ]
+        },
+        {
+            "tables": [
+                {"columns": [{"generation": {"sqltext": "a - b", "persisted": True}}]}
+            ]
+        },
     )
     assert errors == [
         '$.tables[0].columns[0].generation.sqltext:expected="a + b":actual="a - b"'

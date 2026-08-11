@@ -29,6 +29,7 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.schema import Column as SchemaColumn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -115,12 +116,18 @@ def _type_spec(type_: Any) -> dict[str, Any]:
 
 
 def _server_default_spec(column: Any) -> str | None:
+    if getattr(column, "computed", None) is not None:
+        return None
+    if getattr(column, "identity", None) is not None:
+        return None
     server_default = column.server_default
     server_default_arg = (
         getattr(server_default, "arg", None) if server_default is not None else None
     )
     if server_default is not None and server_default_arg is None:
-        raise ValueError(f"unsupported server default for {column.table.name}.{column.name}")
+        raise ValueError(
+            f"unsupported server default for {column.table.name}.{column.name}"
+        )
     return str(server_default_arg) if server_default_arg is not None else None
 
 
@@ -149,6 +156,19 @@ def _identity_spec(column: Any) -> dict[str, Any] | None:
     }
 
 
+def _autoincrement_spec(column: Any) -> bool:
+    table = column.table
+    return bool(
+        column.autoincrement is True
+        or (
+            column.autoincrement == "auto"
+            and column.primary_key
+            and len(table.primary_key.columns) == 1
+            and _type_spec(column.type)["name"] in {"integer", "bigint", "smallint"}
+        )
+    )
+
+
 def _index_key_spec(expression: Any) -> dict[str, Any]:
     compiled = str(
         expression.compile(
@@ -158,12 +178,22 @@ def _index_key_spec(expression: Any) -> dict[str, Any]:
     match = _INDEX_SUFFIX.fullmatch(compiled)
     if match is None:
         raise ValueError(f"unsupported index expression rendering: {compiled}")
-    name = getattr(expression, "name", None)
+    element = getattr(expression, "element", expression)
+    name = element.name if isinstance(element, SchemaColumn) else None
+    base = match.group("base").strip()
+    if isinstance(name, str):
+        table_name = getattr(getattr(element, "table", None), "name", None)
+        if base in {name, f"{table_name}.{name}"}:
+            base = name
+    direction = (match.group("direction") or "ASC").upper()
+    nulls = match.group("nulls")
     return {
         "column": name if isinstance(name, str) and name else None,
-        "expression": match.group("base").strip(),
-        "direction": (match.group("direction") or "ASC").upper(),
-        "nulls": match.group("nulls").upper() if match.group("nulls") else None,
+        "expression": base,
+        "direction": direction,
+        "nulls": nulls.upper()
+        if nulls
+        else ("LAST" if direction == "ASC" else "FIRST"),
     }
 
 
@@ -186,16 +216,7 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                     "type": _type_spec(column.type),
                     "nullable": column.nullable,
                     "primary_key": column.primary_key,
-                    "autoincrement": bool(
-                        column.autoincrement is True
-                        or (
-                            column.autoincrement == "auto"
-                            and column.primary_key
-                            and len(table.primary_key.columns) == 1
-                            and _type_spec(column.type)["name"]
-                            in {"integer", "bigint", "smallint"}
-                        )
-                    ),
+                    "autoincrement": _autoincrement_spec(column),
                     "server_default": _server_default_spec(column),
                     "generation": _generation_spec(column),
                     "identity": _identity_spec(column),
@@ -244,7 +265,9 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                     "name": index.name,
                     "unique": index.unique,
                     "method": method,
-                    "keys": [_index_key_spec(expression) for expression in index.expressions],
+                    "keys": [
+                        _index_key_spec(expression) for expression in index.expressions
+                    ],
                     "include": list(include),
                     "where": str(where) if where is not None else None,
                 }

@@ -11,7 +11,7 @@ import sys
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
@@ -30,7 +30,13 @@ from app.locator_contract import (
     locator_truth_table,
 )
 from app.section14_schema import MANIFEST_PATH, load_manifest
-from scripts.generate_physical_schema_snapshot import snapshot as physical_snapshot
+from scripts.generate_physical_schema_snapshot import (
+    _autoincrement_spec,
+    _index_key_spec,
+)
+from scripts.generate_physical_schema_snapshot import (
+    snapshot as physical_snapshot,
+)
 from scripts.generate_schema_manifest import DEFAULT_DOCUMENT, extract_manifest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -88,7 +94,7 @@ _DOCUMENTED_CLOSED_CHECK_SQL = {
 def _manifest_named_checks(manifest: dict[str, Any]) -> set[tuple[str, str]]:
     result: set[tuple[str, str]] = set()
     for table in manifest["tables"]:
-        for column in table["columns"]:
+        for column in table.get("columns", []):
             result.update(
                 (table["name"], name)
                 for name in re.findall(
@@ -302,7 +308,7 @@ def _constraint_shapes(
         tuple[
             str | None,
             str,
-            tuple[tuple[str | None, str, str, str | None], ...],
+            tuple[tuple[str | None, str, str, str], ...],
             tuple[str, ...],
             bool,
             str | None,
@@ -310,29 +316,46 @@ def _constraint_shapes(
     ],
     dict[str, str],
 ]:
-    unique = {
+    unique: set[tuple[str | None, tuple[str, ...]]] = {
         (
-            constraint.name,
-            tuple(column.name for column in constraint.columns),
+            cast(str | None, constraint.name),
+            tuple(str(column.name) for column in constraint.columns),
         )
         for constraint in table.constraints
         if constraint.__class__.__name__ == "UniqueConstraint"
     }
-    foreign_keys = {
+    foreign_keys: set[
+        tuple[str | None, tuple[str, ...], tuple[str, ...], str | None]
+    ] = {
         (
-            constraint.name,
-            tuple(element.parent.name for element in constraint.elements),
-            tuple(element.target_fullname for element in constraint.elements),
-            constraint.ondelete,
+            cast(str | None, constraint.name),
+            tuple(str(element.parent.name) for element in constraint.elements),
+            tuple(str(element.target_fullname) for element in constraint.elements),
+            cast(str | None, constraint.ondelete),
         )
         for constraint in table.foreign_key_constraints
     }
-    indexes = {
+    indexes: set[
+        tuple[
+            str | None,
+            str,
+            tuple[tuple[str | None, str, str, str], ...],
+            tuple[str, ...],
+            bool,
+            str | None,
+        ]
+    ] = {
         (
-            index.name,
-            index.dialect_options["postgresql"].get("using") or "btree",
-            tuple(_index_key_signature(expression) for expression in index.expressions),
-            tuple(index.dialect_options["postgresql"].get("include") or ()),
+            cast(str | None, index.name),
+            str(index.dialect_options["postgresql"].get("using") or "btree"),
+            tuple(
+                _index_key_tuple(_index_key_spec(expression))
+                for expression in index.expressions
+            ),
+            tuple(
+                str(item)
+                for item in index.dialect_options["postgresql"].get("include") or ()
+            ),
             bool(index.unique),
             (
                 str(index.dialect_options["postgresql"].get("where"))
@@ -384,31 +407,81 @@ def _column_identity_signature(column: Any) -> dict[str, Any] | None:
 
 
 def _column_autoincrement_signature(column: Any) -> bool:
-    value = getattr(column, "autoincrement", False)
-    return bool(value is True or value == "auto")
+    return _autoincrement_spec(column)
 
 
-def _index_key_signature(expression: Any) -> tuple[str | None, str, str, str | None]:
-    rendered = str(
-        expression.compile(
-            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
-        )
-    ).strip()
+def _index_key_tuple(
+    item: Mapping[str, Any],
+) -> tuple[str | None, str, str, str]:
+    direction = str(item.get("direction") or "ASC").upper()
+    nulls = item.get("nulls") or ("LAST" if direction == "ASC" else "FIRST")
+    return (
+        str(item["column"]) if item.get("column") is not None else None,
+        str(item["expression"]),
+        direction,
+        str(nulls).upper(),
+    )
+
+
+def _legacy_index_key(value: str) -> dict[str, str]:
     match = re.fullmatch(
         r"(?P<base>.*?)(?:\s+(?P<direction>ASC|DESC))?"
         r"(?:\s+NULLS\s+(?P<nulls>FIRST|LAST))?$",
-        rendered,
+        value.strip(),
         re.IGNORECASE,
     )
     if match is None:
-        return (None, rendered, "ASC", None)
-    name = getattr(expression, "name", None)
-    return (
-        name if isinstance(name, str) and name else None,
-        match.group("base").strip(),
-        (match.group("direction") or "ASC").upper(),
-        match.group("nulls").upper() if match.group("nulls") else None,
-    )
+        raise RuntimeError(f"unclassified legacy index key {value!r}")
+    expression = match.group("base").strip()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", expression):
+        raise RuntimeError(
+            f"legacy index expression lacks structured signature: {value!r}"
+        )
+    direction = (match.group("direction") or "ASC").upper()
+    return {
+        "column": expression,
+        "expression": expression,
+        "direction": direction,
+        "nulls": (
+            match.group("nulls") or ("LAST" if direction == "ASC" else "FIRST")
+        ).upper(),
+    }
+
+
+def _index_keys(index: Mapping[str, Any]) -> list[dict[str, Any]]:
+    if "keys" in index:
+        return [dict(item) for item in index["keys"]]
+    if "columns" in index:
+        return [_legacy_index_key(str(item)) for item in index["columns"]]
+    raise RuntimeError(f"index {index.get('name')!r} has no keys or columns")
+
+
+def _postgres_generated_constraint_name(
+    kind: str, table_name: str, columns: tuple[str, ...]
+) -> str:
+    if not columns:
+        raise RuntimeError(f"anonymous {kind} on {table_name} has no columns")
+    suffix = {"uq": "key", "fk": "fkey"}.get(kind)
+    if suffix is None:
+        raise RuntimeError(f"anonymous {kind} on {table_name} has no name policy")
+    name = f"{table_name}_{'_'.join(columns)}_{suffix}"
+    if len(name.encode()) > 63:
+        raise RuntimeError(
+            f"anonymous {kind} name requires PostgreSQL truncation policy: {name}"
+        )
+    return name
+
+
+def _expected_constraint_name(
+    kind: str,
+    table_name: str,
+    columns: tuple[str, ...],
+    name: str | None,
+    label: str,
+) -> str | None:
+    if name is not None or label != "database":
+        return name
+    return _postgres_generated_constraint_name(kind, table_name, columns)
 
 
 def _physical_contract(
@@ -599,11 +672,84 @@ def _check_postgres_helpers(
     return errors
 
 
+def _normalized_sql_layout(value: str) -> str:
+    output: list[str] = []
+    index = 0
+    pending_space = False
+    while index < len(value):
+        char = value[index]
+        if char.isspace():
+            pending_space = True
+            index += 1
+            continue
+        cast = re.match(r"::\s*text\b", value[index:], re.IGNORECASE)
+        if cast is not None:
+            index += cast.end()
+            continue
+        dollar = re.match(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$", value[index:])
+        if char in {"'", '"'} or dollar is not None:
+            if pending_space and output:
+                output.append(" ")
+            pending_space = False
+            delimiter = dollar.group(0) if dollar is not None else char
+            end = index + len(delimiter)
+            while end < len(value):
+                if value.startswith(delimiter, end):
+                    if delimiter in {"'", '"'} and value.startswith(delimiter * 2, end):
+                        end += 2
+                        continue
+                    end += len(delimiter)
+                    break
+                end += 1
+            if end > len(value) or not value.startswith(
+                delimiter, end - len(delimiter)
+            ):
+                raise RuntimeError("unterminated quoted SQL token")
+            output.append(value[index:end])
+            index = end
+            continue
+        if pending_space and output:
+            output.append(" ")
+        pending_space = False
+        output.append(char)
+        index += 1
+    return "".join(output).strip()
+
+
+def _has_single_wrapping_parentheses(value: str) -> bool:
+    if not (value.startswith("(") and value.endswith(")")):
+        return False
+    depth = 0
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char in {"'", '"'}:
+            delimiter = char
+            index += 1
+            while index < len(value):
+                if value[index] == delimiter:
+                    if index + 1 < len(value) and value[index + 1] == delimiter:
+                        index += 2
+                        continue
+                    break
+                index += 1
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0 and index != len(value) - 1:
+                return False
+            if depth < 0:
+                return False
+        index += 1
+    return depth == 0
+
+
 def _normalized_check(value: str) -> str:
-    result = re.sub(r"\s+", " ", value).strip()
-    while result.startswith("(") and result.endswith(")"):
+    result = _normalized_sql_layout(value)
+    while _has_single_wrapping_parentheses(result):
         result = result[1:-1].strip()
-    return result.replace("::text", "")
+    return result
 
 
 def _check_metadata(
@@ -650,9 +796,7 @@ def _check_metadata(
                     f"expected={column_spec['nullable']}:actual={column.nullable}"
                 )
         physical_table = physical_contract[table_name]
-        physical_columns = {
-            item["name"]: item for item in physical_table["columns"]
-        }
+        physical_columns = {item["name"]: item for item in physical_table["columns"]}
         for name, physical_column in physical_columns.items():
             column = table.c[name]
             actual_default = _column_default_signature(column)
@@ -688,45 +832,37 @@ def _check_metadata(
             )
         expected_unique = {
             (
-                (
-                    constraint["name"]
-                    or (
-                        f"uq_{table_name}_frozen_{offset}"[:63]
-                        if label == "database"
-                        else None
-                    )
+                _expected_constraint_name(
+                    "uq",
+                    table_name,
+                    tuple(constraint["columns"]),
+                    constraint["name"],
+                    label,
                 ),
                 tuple(constraint["columns"]),
             )
-            for offset, constraint in enumerate(physical_table["unique_constraints"])
+            for constraint in physical_table["unique_constraints"]
         }
         expected_foreign_keys = {
             (
-                constraint["name"]
-                or (
-                    f"fk_{table_name}_frozen_{offset}"[:63]
-                    if label == "database"
-                    else None
+                _expected_constraint_name(
+                    "fk",
+                    table_name,
+                    tuple(constraint["columns"]),
+                    constraint["name"],
+                    label,
                 ),
                 tuple(constraint["columns"]),
                 tuple(constraint["targets"]),
                 constraint["ondelete"],
             )
-            for offset, constraint in enumerate(physical_table["foreign_keys"])
+            for constraint in physical_table["foreign_keys"]
         }
         expected_indexes = {
             (
                 index["name"],
-                index.get("method") or "btree",
-                tuple(
-                    (
-                        item.get("column"),
-                        item["expression"],
-                        item.get("direction") or "ASC",
-                        item.get("nulls"),
-                    )
-                    for item in index.get("keys", ())
-                ),
+                str(index.get("method") or "btree").lower(),
+                tuple(_index_key_tuple(item) for item in _index_keys(index)),
                 tuple(index.get("include") or ()),
                 bool(index["unique"]),
                 (parsed_expected_indexes or {}).get(
@@ -968,14 +1104,6 @@ def _postgres_actual_indexes(database_url: str) -> dict[tuple[str, str], str]:
         engine.dispose()
 
 
-def _frozen_constraint_name(
-    kind: str, table_name: str, offset: int, name: str | None
-) -> str:
-    if name is not None:
-        return name
-    return f"{kind}_{table_name}_frozen_{offset}"[:63]
-
-
 def _normalized_physical_snapshot(
     value: dict[str, Any],
     *,
@@ -987,20 +1115,36 @@ def _normalized_physical_snapshot(
     normalized = deepcopy(value)
     for table in normalized["tables"]:
         table_name = str(table["name"])
-        for kind, prefix in (
-            ("unique_constraints", "uq"),
-            ("foreign_keys", "fk"),
-        ):
-            for offset, constraint in enumerate(table[kind]):
-                constraint["name"] = _frozen_constraint_name(
-                    prefix, table_name, offset, constraint["name"]
+        for column in table.get("columns", []):
+            column.setdefault("generation", None)
+            column.setdefault("identity", None)
+        for kind, prefix in (("unique_constraints", "uq"), ("foreign_keys", "fk")):
+            for constraint in table[kind]:
+                if constraint["name"] is None:
+                    constraint["name"] = _postgres_generated_constraint_name(
+                        prefix, table_name, tuple(constraint["columns"])
+                    )
+        for constraint in table["checks"]:
+            name = constraint["name"]
+            if name is None:
+                raise RuntimeError(
+                    f"anonymous CHECK on {table_name} lacks canonical name policy"
                 )
-        for offset, constraint in enumerate(table["checks"]):
-            name = _frozen_constraint_name("ck", table_name, offset, constraint["name"])
-            constraint["name"] = name
             constraint["sql"] = parsed_checks.get((table_name, name), constraint["sql"])
         for index in table["indexes"]:
             name = str(index["name"])
+            index["method"] = str(index.get("method") or "btree").lower()
+            index["include"] = list(index.get("include") or ())
+            index["keys"] = [
+                {
+                    "column": key[0],
+                    "expression": key[1],
+                    "direction": key[2],
+                    "nulls": key[3],
+                }
+                for key in (_index_key_tuple(item) for item in _index_keys(index))
+            ]
+            index.pop("columns", None)
             index["where"] = parsed_indexes.get((table_name, name), index["where"])
         for kind in ("unique_constraints", "foreign_keys", "checks", "indexes"):
             table[kind].sort(

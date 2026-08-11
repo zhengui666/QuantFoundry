@@ -452,7 +452,7 @@ def execute_tool(
             "strategy_version_id": version.id,
             "strategy_spec_sha256": version.spec_sha256,
             "cost_model_id": json.loads(cast(str, version.detail))["cost_model_id"],
-            "test-api-key-unavailable,
+            "engine_key": "test-api-key-unavailable",
             "engine_version": "1.0.0",
             "parameters": [],
         }
