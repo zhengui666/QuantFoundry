@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="${QF_RELEASE_GOVERNANCE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 uv --directory "$repo_root/backend" run --frozen python - "$repo_root" <<'PY'
 import ast
@@ -64,6 +64,10 @@ except SyntaxError as error:
 rc = read(".github/workflows/rc-release.yml")
 if not re.search(r"(?m)^permissions:\n  contents: read$", rc):
     errors.append("rc-release top-level permissions must default to contents: read")
+for job in ("preflight", "rc"):
+    match = re.search(rf"(?ms)^  {job}:\n(.*?)(?=^  [A-Za-z][A-Za-z0-9_-]*:|\Z)", rc)
+    if not match or not re.search(r"(?m)^    permissions:\n      contents: read\n      actions: read$", match.group(1)):
+        errors.append(f"rc-release {job} job must request only contents: read and actions: read for online P0 artifact verification")
 publish = rc.split("  publish:", 1)[-1]
 for required in ("contents: write", "packages: write", "attestations: write", "id-token: write"):
     if required not in publish:
@@ -125,3 +129,6 @@ PY
 "$repo_root/scripts/p0-check-test.sh"
 "$repo_root/scripts/ci/release-evidence-assets-test.sh"
 "$repo_root/scripts/ci/verify-independent-review-report-test.sh"
+if [[ "${QF_RELEASE_GOVERNANCE_SKIP_FIXTURES:-0}" != 1 ]]; then
+  "$repo_root/scripts/ci/release-governance-static-gate-test.sh"
+fi

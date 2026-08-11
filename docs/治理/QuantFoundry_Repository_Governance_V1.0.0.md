@@ -77,17 +77,17 @@ P0 口径至少覆盖产品、contract/schema、安全、CI 可复现性、供�
 
 仓库 CI 的唯一工作流事实源位于 `.github/workflows/`。工作流必须按职责拆分为以下五类；名称、触发和 fail-closed 语义均为发布治理的一部分：
 
-| 工作流 | 触发 | 最低门禁 | 证据生命周期 |
-| --- | --- | --- | --- |
-| `pr-fast-gate` | `pull_request` | trusted ancestor visual baseline、静态/契约/schema/单元与必要快速测试 | 短期调试 artifact |
-| `main-full-gate` | `push` 至 `main` | 全量后端/前端/契约/schema/migration/scheduler/security hygiene、P0 registry snapshot | 短期调试 artifact |
-| `nightly` | 定时及手工触发 | fresh clone、Compose、PG18 roundtrip、backup/restore、E2E/a11y/visual/bundle budget | 短期调试 artifact；缺宿主依赖必须结构化失败 |
-| `agent-change-gate` | Agent/编排/治理路径变更 | Tool registry exact 13-entry gate、Agent contract/policy/graph 与独立 review report | 短期调试 artifact |
-| `rc-release` | 仅 `v*` tag | `p0-check --require-closed`、完整 RC gate、Compose 实际镜像 GHCR publication、digest/SBOM/provenance/attestation/signature/checksum | GitHub Release assets（长期唯一证据） |
+| 工作流 | 触发 | 最低门禁 | 最小权限 | 证据生命周期 |
+| --- | --- | --- | --- | --- |
+| `pr-fast-gate` | `pull_request` | trusted ancestor visual baseline、静态/契约/schema/单元与必要快速测试 | `contents: read` | 短期调试 artifact |
+| `main-full-gate` | `push` 至 `main` | 全量后端/前端/契约/schema/migration/scheduler/security hygiene、P0 registry snapshot | `contents: read` | 短期调试 artifact |
+| `nightly` | 定时及手工触发 | fresh clone、Compose、PG18 roundtrip、backup/restore、E2E/a11y/visual/bundle budget | `contents: read` | 短期调试 artifact；缺宿主依赖必须结构化失败 |
+| `agent-change-gate` | Agent/编排/治理路径变更 | Tool registry exact 13-entry gate、Agent contract/policy/graph 与独立 review report | `contents: read`、`actions: read` | 短期调试 artifact |
+| `rc-release` | 仅 `v*` tag | `p0-check --require-closed`、完整 RC gate、Compose 实际镜像 GHCR publication、digest/SBOM/provenance/attestation/signature/checksum | `preflight`/`rc`: `contents: read`、`actions: read`；`publish`: `contents/packages/attestations/id-token: write` | GitHub Release assets（长期唯一证据） |
 
 PR visual comparison 的 baseline 必须是当前 revision 的可信 Git ancestor；不得由被测 revision 自行生成或批准。首次提交、浅历史或没有可信 ancestor 时，PR fast gate 只能运行一次 `visual-baseline-bootstrap` 候选流程并明确标为未批准候选，不能将其作为成功 visual baseline 或伪造比较通过。
 
-所有 workflow shell step 必须使用 `bash` 严格模式（至少 `set -euo pipefail`），固定路径必须被引用，所有外部下载必须校验固定版本或 digest。权限与 token 必须最小化：非发布 workflow 仅 `contents: read`，但 `agent-change-gate` 的 artifact consumer 额外申请 `actions: read`，仅用于列举、下载和验证 independent review artifact；GHCR 登录只使用 `GITHUB_TOKEN`；仅 `rc-release` 在创建 Release、推送 package 或上传 attestation 时提升对应的 `contents/packages/attestations/id-token` 权限。工作流不得读取或要求长期 PAT、SSH key 或非必要 secret。
+所有 workflow shell step 必须使用 `bash` 严格模式（至少 `set -euo pipefail`），固定路径必须被引用，所有外部下载必须校验固定版本或 digest。权限与 token 必须最小化：非发布 workflow 仅 `contents: read`，但 `agent-change-gate` 的 artifact consumer 额外申请 `actions: read`，仅用于列举、下载和验证 independent review artifact；`rc-release` 的 `preflight`（online `p0-check --require-closed`）与 `rc`（RC gate 内的 online P0 verification）也必须各自仅额外申请 `actions: read`，用于读取 GitHub Actions closure-evidence artifact。GHCR 登录只使用 `GITHUB_TOKEN`；仅 `rc-release` 在创建 Release、推送 package 或上传 attestation 时提升对应的 `contents/packages/attestations/id-token` 权限。工作流不得读取或要求长期 PAT、SSH key 或非必要 secret。
 
 本地可复现入口为 `scripts/ci/run-gate.sh <pr-fast|main-full|nightly|agent-change|rc>`。入口必须输出一份结构化 gate result；缺失 Docker、Compose、PG18、Node/Python/pnpm、浏览器或其他宿主依赖时记录 `environment_limitations` 后以非零退出，严禁吞错、quarantine 或重试至绿。入口和工作流执行的命令、退出码、commit/ref、P0 registry snapshot 与测试摘要必须进入对应报告。
 
@@ -95,7 +95,7 @@ PR visual comparison 的 baseline 必须是当前 revision 的可信 Git ancesto
 
 `agent-change-gate` 的路径覆盖必须包括 `AGENTS.md`、`PROJECT_BACKGROUND.md`、`docs/治理/**`、`.github/workflows/**`、`scripts/ci/**` 及 `scripts/release*`，不得使用会排除这些路径的 `paths-ignore`。它必须消费可验证的、与当前 commit 绑定的独立 review report；本地 locator 只能是消费 job 从 GitHub Actions API 取得的临时文件，绝不可来自仓库。verifier 必须下载、校验 archive SHA-256、解包并读取 artifact 内实际 review report，确认其 schema/content type、commit、run id、Independent Review Agent 角色、approved 结果、criteria、commands 与 review-scope digest 均匹配当前运行。缺失、格式无效、commit 不一致、artifact 内容缺失或无法独立验证时均失败。工作流不得生成“review required”等占位文本作为 review evidence。
 
-工作流顶层默认仅申请 `contents: read`。`agent-change-gate` 的 artifact consumer 额外申请 `actions: read`。仅 `rc-release` 的 publish job 可按实际发布动作提升 `packages: write`、`attestations: write`、`id-token: write` 和 `contents: write`；其余 job 不得继承发布权限。ShellCheck 必须使用固定、校验过的发行版本或可信固定 action，不能依赖 runner 当日 apt 包。
+工作流顶层默认仅申请 `contents: read`。`agent-change-gate` 的 artifact consumer，以及 `rc-release` 中执行 online P0 verification 的 `preflight` 与 `rc` job，分别额外申请最小 `actions: read`；不得以 job 或 workflow 级发布写权限替代。仅 `rc-release` 的 publish job 可按实际发布动作提升 `packages: write`、`attestations: write`、`id-token: write` 和 `contents: write`；其余 job 不得继承发布权限。ShellCheck 必须使用固定、校验过的发行版本或可信固定 action，不能依赖 runner 当日 apt 包。
 
 ## 8. 本地 gate 入口与运行时版本
 
