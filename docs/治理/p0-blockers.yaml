@@ -109,6 +109,7 @@ blockers:
       - Required P0 PR, main, and release-candidate gates run from committed lockfiles and fixtures.
       - Results reproduce for the same commit and declared environment.
       - No P0 suite is silently quarantined, retried to green, or excluded.
+      - Named pr-fast, main-full, nightly, agent-change, and RC workflows emit structured command/exit-code/P0 evidence; missing host dependencies fail closed with recorded limitations.
     verification:
       - Independent Review Agent checks CI configuration, reports, and reproducibility records.
     status: blocked
@@ -124,6 +125,7 @@ blockers:
       - Public GitHub release v0.1.0-alpha is reproducible from a tagged commit.
       - GHCR image digest, build provenance, SBOM or equivalent supply-chain record, and verification reports are archived.
       - Every other release-blocking P0 registry entry is closed with evidence.
+      - The immutable release manifest binds tag/ref/commit, Compose-rendered GHCR digests, checksums, P0 and known-issue snapshots, test reports, SBOM, provenance, attestation, and signature verification as GitHub Release assets.
     verification:
       - Independent Review Agent validates tag, repository visibility, GHCR digest, provenance, and evidence completeness.
     status: blocked

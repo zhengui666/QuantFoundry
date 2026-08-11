@@ -17,6 +17,13 @@
   "evidence_files": [],
   "images": [],
   "compose_images": [],
-  "supply_chain": [],
+  "supply_chain": {
+    "sbom": [],
+    "provenance": [],
+    "attestations": [],
+    "signature_verification": []
+  },
+  "release_assets": [],
+  "status": "pending",
   "checksums": "SHA256SUMS"
 }

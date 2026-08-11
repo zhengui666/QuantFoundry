@@ -62,3 +62,23 @@ Paper daily scheduler 的 P0 可执行边界为 PRD §52.1–§52.3、Backend §
 长期 evidence 必须以 GitHub Release assets 保存；GitHub Actions artifact 仅用于运行期调试，不得是唯一长期证据。Release manifest、checksum 和每个报告必须绑定同一 tag/ref/commit；GHCR digest 与 release Compose evidence 中渲染出的 backend/frontend image 必须逐项完全一致。没有 GitHub run、tag 或 digest 时不得预填或伪造其值。
 
 P0 口径至少覆盖产品、contract/schema、安全、CI 可复现性、供应链/release evidence。任何未关闭、blocked、缺 evidence 或无法独立验证的 P0 条目，均禁止发布 `v0.1.0-alpha`。
+
+## 7. CI、Release 与证据生命周期
+
+仓库 CI 的唯一工作流事实源位于 `.github/workflows/`。工作流必须按职责拆分为以下五类；名称、触发和 fail-closed 语义均为发布治理的一部分：
+
+| 工作流 | 触发 | 最低门禁 | 证据生命周期 |
+| --- | --- | --- | --- |
+| `pr-fast-gate` | `pull_request` | trusted ancestor visual baseline、静态/契约/schema/单元与必要快速测试 | 短期调试 artifact |
+| `main-full-gate` | `push` 至 `main` | 全量后端/前端/契约/schema/migration/scheduler/security hygiene、P0 registry snapshot | 短期调试 artifact |
+| `nightly` | 定时及手工触发 | fresh clone、Compose、PG18 roundtrip、backup/restore、E2E/a11y/visual/bundle budget | 短期调试 artifact；缺宿主依赖必须结构化失败 |
+| `agent-change-gate` | Agent/编排/治理路径变更 | Tool registry exact 13-entry gate、Agent contract/policy/graph 与独立 review report | 短期调试 artifact |
+| `rc-release` | 仅 `v*` tag | `p0-check --require-closed`、完整 RC gate、Compose 实际镜像 GHCR publication、digest/SBOM/provenance/attestation/signature/checksum | GitHub Release assets（长期唯一证据） |
+
+PR visual comparison 的 baseline 必须是当前 revision 的可信 Git ancestor；不得由被测 revision 自行生成或批准。首次提交、浅历史或没有可信 ancestor 时，PR fast gate 只能运行一次 `visual-baseline-bootstrap` 候选流程并明确标为未批准候选，不能将其作为成功 visual baseline 或伪造比较通过。
+
+所有 workflow shell step 必须使用 `bash` 严格模式（至少 `set -euo pipefail`），固定路径必须被引用，所有外部下载必须校验固定版本或 digest。权限与 token 必须最小化：非发布 workflow 仅 `contents: read`；GHCR 登录只使用 `GITHUB_TOKEN`；仅 `rc-release` 在创建 Release、推送 package 或上传 attestation 时提升对应的 `contents/packages/attestations/id-token` 权限。工作流不得读取或要求长期 PAT、SSH key 或非必要 secret。
+
+本地可复现入口为 `scripts/ci/run-gate.sh <pr-fast|main-full|nightly|agent-change|rc>`。入口必须输出一份结构化 gate result；缺失 Docker、Compose、PG18、Node/Python/pnpm、浏览器或其他宿主依赖时记录 `environment_limitations` 后以非零退出，严禁吞错、quarantine 或重试至绿。入口和工作流执行的命令、退出码、commit/ref、P0 registry snapshot 与测试摘要必须进入对应报告。
+
+`rc-release` 仅接受远端存在且 checkout HEAD 精确等于 tag target 的 `v*` tag；在 P0 registry 未全部 `closed` 且完整 closure evidence 可验证前，`p0-check --require-closed` 必须先于 image build/publish 失败。无 tag、GitHub run identity、镜像 digest、SBOM/provenance/attestation 或签名/校验清单时，任何 release manifest、GitHub Release 或成功状态均不得创建。发布后必须将同一 tag/ref/commit 绑定的 manifest、P0 registry、known-issue registry、gate reports、Compose digest binding、SBOM/provenance/attestation/signature verification 与 `SHA256SUMS` 作为 Release assets 上传。

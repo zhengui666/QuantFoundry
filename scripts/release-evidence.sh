@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST' >&2
+  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | collect-inputs OUTPUT_DIR | collect-oci-sbom IMAGE DIGEST OUTPUT_FILE | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST' >&2
   exit 2
 }
 
@@ -52,6 +52,82 @@ gate() {
   run_gate "$output_dir" full-restore bash -c "cd '$repo_root/backend' && uv run --frozen pytest -q tests/test_event_migration_and_bootstrap.py -k 'restore or roundtrip'"
 }
 
+collect_inputs() {
+  local output_dir="$1"
+  mkdir -p "$output_dir"
+  cp "$repo_root/docs/治理/p0-blockers.yaml" "$output_dir/p0-blockers.yaml"
+  cp "$repo_root/docs/治理/release-known-issues.json" "$output_dir/release-known-issues.json"
+  git -C "$repo_root" rev-parse 'HEAD^{commit}' > "$output_dir/commit.txt"
+  (cd "$repo_root/backend" && uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
+  git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
+}
+
+collect_oci_sbom() {
+  local image="$1" digest="$2" output_file="$3"
+  [[ "$image" == ghcr.io/* ]]
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+  [[ -n "${GHCR_TOKEN:-}" ]] || {
+    printf '%s\n' 'GHCR_TOKEN is required to fetch the published image SBOM.' >&2
+    exit 1
+  }
+  mkdir -p "$(dirname "$output_file")"
+  local repository="${image#ghcr.io/}"
+  local token
+  token="$(curl --fail --silent --show-error --user "x-access-token:${GHCR_TOKEN}" \
+    "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+    | python3 -c 'import json,sys; value=json.load(sys.stdin).get("token"); assert isinstance(value,str) and value; print(value)')"
+  GHCR_BEARER_TOKEN="$token" python3 - "https://ghcr.io" "$repository" "$digest" "$output_file" <<'PY'
+import json
+import os
+import pathlib
+import sys
+import urllib.request
+
+registry, repository, subject_digest, output_name = sys.argv[1:]
+token = os.environ["GHCR_BEARER_TOKEN"]
+accept = ", ".join((
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+))
+
+def get(path, media_type=accept):
+    request = urllib.request.Request(
+        f"{registry}/v2/{repository}/{path}",
+        headers={"Authorization": f"Bearer {token}", "Accept": media_type},
+    )
+    with urllib.request.urlopen(request) as response:
+        return response.read()
+
+index = json.loads(get(f"manifests/{subject_digest}").decode("utf-8"))
+descriptors = index.get("manifests", [])
+attestations = [
+    item for item in descriptors
+    if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
+    and item.get("annotations", {}).get("vnd.docker.reference.digest") == subject_digest
+]
+if not attestations:
+    raise SystemExit("published image has no BuildKit attestation manifest bound to its digest")
+
+for descriptor in attestations:
+    manifest = json.loads(get(f"manifests/{descriptor['digest']}").decode("utf-8"))
+    for layer in manifest.get("layers", []):
+        predicate_type = layer.get("annotations", {}).get("in-toto.io/predicate-type")
+        if predicate_type != "https://spdx.dev/Document":
+            continue
+        payload = get(f"blobs/{layer['digest']}", "application/vnd.in-toto+json")
+        envelope = json.loads(payload.decode("utf-8"))
+        document = envelope.get("predicate")
+        if not isinstance(document, dict) or not isinstance(document.get("spdxVersion"), str):
+            raise SystemExit("SBOM attestation did not contain an SPDX document")
+        pathlib.Path(output_name).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        raise SystemExit(0)
+
+raise SystemExit("published image has no SPDX SBOM predicate")
+PY
+}
+
 manifest() {
   local tag="$1" commit="$2" output_dir="$3" backend_image="$4" backend_digest="$5" frontend_image="$6" frontend_digest="$7"
   require_tag_commit "$tag" "$commit"
@@ -86,11 +162,21 @@ required = [
     output / "alembic-heads.txt",
     output / "alembic-migrations.txt",
     output / "compose-images.json",
+    output / "p0-blockers.yaml",
+    output / "release-known-issues.json",
+    output / "sbom/backend.spdx.json",
+    output / "sbom/frontend.spdx.json",
+    output / "provenance/backend.json",
+    output / "provenance/frontend.json",
+    output / "attestations/backend.json",
+    output / "attestations/frontend.json",
+    output / "signature-verification/backend.json",
+    output / "signature-verification/frontend.json",
 ]
 migrations = sorted((root / "backend/alembic/versions").glob("*.py"))
-reports = sorted((output / "reports").glob("*"))
-if not migrations or not reports:
-    raise SystemExit("Alembic migrations and RC gate reports are required")
+reports = [output / "result.json", output / "steps.ndjson"]
+if not migrations or any(not path.is_file() for path in reports):
+    raise SystemExit("Alembic migrations and structured RC gate reports are required")
 evidence_files = sorted(path for path in output.rglob("*") if path.is_file() and path.name not in {"release-manifest.json", "SHA256SUMS"})
 
 manifest = {
@@ -107,11 +193,19 @@ manifest = {
     },
     "reports": [record(path) for path in reports],
     "evidence_files": [record(path) for path in evidence_files],
+    "release_assets": [record(path) for path in evidence_files],
     "images": [
         {"name": backend_image, "digest": backend_digest, "sbom": "buildkit-attestation", "provenance": "github-attestation", "signature": "github-attestation"},
         {"name": frontend_image, "digest": frontend_digest, "sbom": "buildkit-attestation", "provenance": "github-attestation", "signature": "github-attestation"},
     ],
     "compose_images": json.loads((output / "compose-images.json").read_text(encoding="utf-8")),
+    "supply_chain": {
+        "sbom": [record(output / "sbom/backend.spdx.json"), record(output / "sbom/frontend.spdx.json")],
+        "provenance": [record(output / "provenance/backend.json"), record(output / "provenance/frontend.json")],
+        "attestations": [record(output / "attestations/backend.json"), record(output / "attestations/frontend.json")],
+        "signature_verification": [record(output / "signature-verification/backend.json"), record(output / "signature-verification/frontend.json")],
+    },
+    "status": "complete",
 }
 if manifest["compose_images"] != {"api": f"{backend_image}@{backend_digest}", "frontend": f"{frontend_image}@{frontend_digest}"}:
     raise SystemExit("manifest refuses a Compose image binding that differs from published GHCR digests")
@@ -146,6 +240,8 @@ PY
 
 case "${1:-}" in
   gate) [[ "$#" == 4 ]] || usage; gate "$2" "$3" "$4" ;;
+  collect-inputs) [[ "$#" == 2 ]] || usage; collect_inputs "$2" ;;
+  collect-oci-sbom) [[ "$#" == 4 ]] || usage; collect_oci_sbom "$2" "$3" "$4" ;;
   manifest) [[ "$#" == 8 ]] || usage; manifest "$2" "$3" "$4" "$5" "$6" "$7" "$8" ;;
   compose-bind) [[ "$#" == 6 ]] || usage; compose_bind "$2" "$3" "$4" "$5" "$6" ;;
   *) usage ;;
