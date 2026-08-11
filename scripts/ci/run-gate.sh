@@ -117,6 +117,10 @@ require_ci_environment() {
     write_result ci-build-identity 'QF_GIT_COMMIT and QF_BUILD_ID are required' 2 'missing CI commit or build identity'
     exit 2
   fi
+  if [[ "$QF_GIT_COMMIT" != "$commit" ]]; then
+    write_result ci-build-identity 'QF_GIT_COMMIT must equal checkout HEAD' 2 'CI commit identity does not match checkout HEAD'
+    exit 2
+  fi
   if [[ "${QF_DATABASE_URL:-}" != postgresql+psycopg://* || "${QF_ALEMBIC_URL:-}" != "$QF_DATABASE_URL" || "${QF_SKIP_AUTO_CREATE:-}" != 1 ]]; then
     write_result ci-postgres 'QF_DATABASE_URL/QF_ALEMBIC_URL/QF_SKIP_AUTO_CREATE are required' 2 'missing real PostgreSQL CI configuration'
     exit 2
@@ -127,6 +131,7 @@ run_pr_fast() {
   require_ci_environment
   require_common_tooling
   run_step governance make governance
+  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
   run_step platform make platform
   run_step hygiene make hygiene
   run_step migration scripts/ci.sh migration
@@ -140,6 +145,7 @@ run_main_full() {
   require_ci_environment
   require_common_tooling
   run_step p0-registry-snapshot bash -c 'scripts/p0-check.sh docs/治理/p0-blockers.yaml --report'
+  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
   run_step full-ci make ci
 }
 
@@ -156,8 +162,14 @@ run_agent_change() {
   require_ci_environment
   require_common_tooling
   run_step governance make governance
+  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
   run_step tool-registry-exact make tools
   run_step agent-contract-and-policy make backend-ci
+  [[ -n "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]] || {
+    write_result independent-review-report 'QF_INDEPENDENT_REVIEW_REPORT is required' 2 'missing independent review report'
+    exit 2
+  }
+  run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$QF_INDEPENDENT_REVIEW_REPORT" "$commit"
 }
 
 run_rc() {
@@ -167,8 +179,22 @@ run_rc() {
     write_result release-tag 'QF_RELEASE_TAG is required' 2 'missing release tag'
     exit 2
   }
-  run_step p0-require-closed bash -c 'QF_RELEASE_TAG="$QF_RELEASE_TAG" make release-check'
+  [[ "$QF_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]] || {
+    write_result release-tag 'QF_RELEASE_TAG must be an alpha release tag' 2 'invalid release tag'
+    exit 2
+  }
+  [[ "$(git -C "$repo_root" rev-parse "refs/tags/$QF_RELEASE_TAG^{commit}")" == "$commit" ]] || {
+    write_result release-tag-target 'release tag must resolve to checkout HEAD' 2 'release tag target does not match checkout HEAD'
+    exit 2
+  }
+  run_step remote-release-tag git -C "$repo_root" ls-remote --exit-code --refs origin "refs/tags/$QF_RELEASE_TAG"
+  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
+  run_step p0-require-closed env "QF_RELEASE_COMMIT=$commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
+  run_step known-issues-review scripts/release-known-issues-check.sh
   run_step rc-full-ci make ci
+  run_step fresh-compose-migration make fullstack
+  run_step pg18-migration make pg18
+  run_step backup-restore bash -c 'cd backend && uv run --frozen pytest -q tests/test_event_migration_and_bootstrap.py -k "restore or roundtrip"'
   run_step release-input-snapshot scripts/release-evidence.sh collect-inputs "$report_dir"
 }
 

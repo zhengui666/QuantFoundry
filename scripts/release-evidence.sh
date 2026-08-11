@@ -16,21 +16,6 @@ require_tag_commit() {
   [[ "$(git -C "$repo_root" rev-parse HEAD)" == "$commit" ]]
 }
 
-run_gate() {
-  local output_dir="$1" name="$2"
-  shift 2
-  local status=0
-  set +e
-  "$@" >"$output_dir/reports/$name.log" 2>&1
-  status=$?
-  set -e
-  python3 - "$output_dir/reports/$name.json" "$name" "$status" <<'PY'
-import json, pathlib, sys
-pathlib.Path(sys.argv[1]).write_text(json.dumps({"gate": sys.argv[2], "exit_code": int(sys.argv[3])}, sort_keys=True) + "\n", encoding="utf-8")
-PY
-  [[ "$status" == 0 ]] || exit "$status"
-}
-
 gate() {
   local tag="$1" commit="$2" output_dir="$3"
   require_tag_commit "$tag" "$commit"
@@ -42,14 +27,7 @@ gate() {
   printf '%s\n' "$tag" > "$output_dir/tag.txt"
   (cd "$repo_root/backend" && uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
   git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
-  run_gate "$output_dir" p0-evidence make -C "$repo_root" p0-check
-  run_gate "$output_dir" known-issues "$repo_root/scripts/release-known-issues-check.sh"
-  run_gate "$output_dir" platform-static make -C "$repo_root" platform
-  run_gate "$output_dir" makefile-parse make -C "$repo_root" -n p0-check platform hygiene ci
-  run_gate "$output_dir" security-license-secret make -C "$repo_root" hygiene
-  run_gate "$output_dir" full-ci make -C "$repo_root" ci
-  run_gate "$output_dir" offline-fixture-unit bash -c "cd '$repo_root/backend' && uv run --frozen pytest -q tests/test_p0.py tests/test_quant_engines.py tests/test_event_migration_and_bootstrap.py -k 'not sqlite_foreign_keys'"
-  run_gate "$output_dir" full-restore bash -c "cd '$repo_root/backend' && uv run --frozen pytest -q tests/test_event_migration_and_bootstrap.py -k 'restore or roundtrip'"
+  QF_RELEASE_TAG="$tag" QF_RELEASE_COMMIT="$commit" "$repo_root/scripts/ci/run-gate.sh" rc "$output_dir"
 }
 
 collect_inputs() {
@@ -193,7 +171,7 @@ manifest = {
     },
     "reports": [record(path) for path in reports],
     "evidence_files": [record(path) for path in evidence_files],
-    "release_assets": [record(path) for path in evidence_files],
+    "release_assets": ["release-manifest.json", "SHA256SUMS"] + [str(path.relative_to(output)) for path in evidence_files],
     "images": [
         {"name": backend_image, "digest": backend_digest, "sbom": "buildkit-attestation", "provenance": "github-attestation", "signature": "github-attestation"},
         {"name": frontend_image, "digest": frontend_digest, "sbom": "buildkit-attestation", "provenance": "github-attestation", "signature": "github-attestation"},
@@ -206,6 +184,7 @@ manifest = {
         "signature_verification": [record(output / "signature-verification/backend.json"), record(output / "signature-verification/frontend.json")],
     },
     "status": "complete",
+    "checksums": {"algorithm": "sha256", "path": "SHA256SUMS"},
 }
 if manifest["compose_images"] != {"api": f"{backend_image}@{backend_digest}", "frontend": f"{frontend_image}@{frontend_digest}"}:
     raise SystemExit("manifest refuses a Compose image binding that differs from published GHCR digests")

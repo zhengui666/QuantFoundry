@@ -39,6 +39,8 @@
 
 `release_blocking: true` 的 P0 条目无豁免：仅当 `closure_criteria` 全部满足、`verification` 已由独立角色执行且 `evidence` 完整可追溯时，状态才可从 `open` 或 `blocked` 变为 `closed`。不接受口头确认、局部绿灯、重试掩盖失败或未归档证据。
 
+闭合 evidence 的每条记录必须绑定当前 release commit、独立 Test/Review 角色、GitHub Actions run identity 和一个可验证的长期或运行期远端对象：GitHub Actions artifact、GitHub Release asset 或 GHCR `sha256` digest。在线 `p0-check --require-closed` 必须以 `GITHUB_TOKEN`/`gh api` 或等价公开 API 验证 run 的 `head_sha`、artifact/release asset/digest 的存在性与 SHA-256，以及 release tag 或 OCI revision 对 commit 的绑定；网络、token、远端对象或校验信息缺失一律失败。`p0-check --offline-report`（兼容别名 `--report`）仅输出本地结构和未闭合状态，不是 closure 验证，不能用于 release、将 blocker 闭合或替代独立 evidence。
+
 Paper daily scheduler 是 P0 发布阻断项。其缺失、重复执行、失败 gate 后仍产生订单、无法恢复或无 Audit/Event evidence 均阻断发布。
 
 ## 4. 架构与兼容围栏
@@ -81,4 +83,8 @@ PR visual comparison 的 baseline 必须是当前 revision 的可信 Git ancesto
 
 本地可复现入口为 `scripts/ci/run-gate.sh <pr-fast|main-full|nightly|agent-change|rc>`。入口必须输出一份结构化 gate result；缺失 Docker、Compose、PG18、Node/Python/pnpm、浏览器或其他宿主依赖时记录 `environment_limitations` 后以非零退出，严禁吞错、quarantine 或重试至绿。入口和工作流执行的命令、退出码、commit/ref、P0 registry snapshot 与测试摘要必须进入对应报告。
 
-`rc-release` 仅接受远端存在且 checkout HEAD 精确等于 tag target 的 `v*` tag；在 P0 registry 未全部 `closed` 且完整 closure evidence 可验证前，`p0-check --require-closed` 必须先于 image build/publish 失败。无 tag、GitHub run identity、镜像 digest、SBOM/provenance/attestation 或签名/校验清单时，任何 release manifest、GitHub Release 或成功状态均不得创建。发布后必须将同一 tag/ref/commit 绑定的 manifest、P0 registry、known-issue registry、gate reports、Compose digest binding、SBOM/provenance/attestation/signature verification 与 `SHA256SUMS` 作为 Release assets 上传。
+`rc-release` 仅接受远端存在且 checkout HEAD 精确等于 tag target 的 `v*` tag；在 P0 registry 未全部 `closed` 且完整 closure evidence 可验证前，`p0-check --require-closed` 必须先于 image build/publish 失败。RC job 必须调用 `scripts/ci/run-gate.sh rc` 这一唯一完整入口；该入口按顺序执行 online P0 验证、known-issue review、full CI、fresh Compose/PG18 migration、backup/restore，并将每项命令、退出码和环境限制写入结构化结果。无 tag、GitHub run identity、镜像 digest、SBOM/provenance/attestation 或签名/校验清单时，任何 release manifest、GitHub Release 或成功状态均不得创建。发布后必须将同一 tag/ref/commit 绑定的 manifest、P0 registry、known-issue registry、gate reports、Compose digest binding、SBOM/provenance/attestation/signature verification 与 `SHA256SUMS` 作为 Release assets 上传。release manifest 的 `checksums` 字段和 `release_assets` 必须明确包含 `release-manifest.json` 与 `SHA256SUMS`。
+
+`agent-change-gate` 的路径覆盖必须包括 `AGENTS.md`、`PROJECT_BACKGROUND.md`、`docs/治理/**`、`.github/workflows/**`、`scripts/ci/**` 及 `scripts/release*`，不得使用会排除这些路径的 `paths-ignore`。它必须消费可验证的、与当前 commit 绑定的独立 review report；缺失、格式无效、commit 不一致或无法独立验证时均失败。工作流不得生成“review required”等占位文本作为 review evidence。
+
+工作流顶层默认仅申请 `contents: read`。仅 `rc-release` 的 publish job 可按实际发布动作提升 `packages: write`、`attestations: write`、`id-token: write` 和 `contents: write`；其余 job 不得继承发布权限。ShellCheck 必须使用固定、校验过的发行版本或可信固定 action，不能依赖 runner 当日 apt 包。

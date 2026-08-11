@@ -15,7 +15,7 @@ def main() -> int:
             "http://127.0.0.1:8000/api/v1/system/health", timeout=2
         ) as response:
             payload = json.load(response)
-    except OSError, ValueError, urllib.error.URLError:
+    except (OSError, ValueError, urllib.error.URLError):
         return 1
     return 0 if payload.get("status") == "HEALTHY" else 1
 

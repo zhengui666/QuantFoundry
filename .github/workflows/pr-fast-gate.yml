@@ -127,8 +127,7 @@ jobs:
           uv --directory backend sync --frozen --all-groups
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend exec playwright install --with-deps chromium
-          sudo apt-get update
-          sudo apt-get install --yes shellcheck
+          scripts/ci/install-shellcheck.sh
           curl --fail --location --silent --show-error --output /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check --strict
           tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint

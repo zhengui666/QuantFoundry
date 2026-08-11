@@ -23,7 +23,13 @@
     "attestations": [],
     "signature_verification": []
   },
-  "release_assets": [],
+  "release_assets": [
+    "release-manifest.json",
+    "SHA256SUMS"
+  ],
   "status": "pending",
-  "checksums": "SHA256SUMS"
+  "checksums": {
+    "algorithm": "sha256",
+    "path": "SHA256SUMS"
+  }
 }
