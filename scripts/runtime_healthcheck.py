@@ -7,10 +7,9 @@ import argparse
 import sys
 from datetime import UTC, datetime, timedelta
 
+from app.main import RuntimeHeartbeat, SessionLocal
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-
-from app.main import RuntimeHeartbeat, SessionLocal
 
 
 def parse_args() -> argparse.Namespace:

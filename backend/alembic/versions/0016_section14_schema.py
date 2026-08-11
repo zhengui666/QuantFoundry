@@ -201,7 +201,7 @@ def _deterministic_uuid4(namespace: str, value: Any) -> uuid.UUID:
 def _workspace_uuid(value: Any) -> uuid.UUID:
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-    except (TypeError, ValueError, AttributeError):
+    except TypeError, ValueError, AttributeError:
         return _deterministic_uuid4("workspace", value)
 
 
@@ -559,7 +559,7 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
     if isinstance(column_type, Uuid):
         try:
             return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-        except (TypeError, ValueError, AttributeError):
+        except TypeError, ValueError, AttributeError:
             if column.table.name == "records" and column.name == "id":
                 # Python 3.14 provides uuid7; keep a deterministic compatible
                 # fallback for the migration's supported interpreter boundary.
@@ -1420,7 +1420,9 @@ def _drop_sqlite_guard_triggers() -> None:
     if bind.dialect.name != "sqlite":
         return
     triggers = bind.execute(
-        text("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'")
+        text(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'"
+        )
     ).scalars()
     preparer = bind.dialect.identifier_preparer
     for name in triggers:
@@ -1482,9 +1484,7 @@ def _install_guards() -> None:
         "snapshot_partitions",
     ):
         for action in ("UPDATE", "DELETE"):
-            op.execute(
-                f"DROP TRIGGER IF EXISTS qf_{table}_{action.lower()}_immutable"
-            )
+            op.execute(f"DROP TRIGGER IF EXISTS qf_{table}_{action.lower()}_immutable")
             op.execute(
                 f"CREATE TRIGGER qf_{table}_{action.lower()}_immutable BEFORE "
                 f"{action} ON {table} BEGIN SELECT RAISE(ABORT, "
@@ -1607,7 +1607,13 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
             bind,
             metadata,
             restore_rows,
-            prefer_aliases=not (target_is_current and roundtrip_preexisting),
+            # A downgrade starts from the current canonical schema.  Its
+            # UUID primary keys are already the authority for every scoped
+            # child FK, so aliasing (for example cost_model_versions.id <-
+            # legacy_id) would mint a different parent ID while preserving
+            # app_settings.active_cost_model_id.  Aliases remain necessary
+            # only when upgrading an actual pre-0016 source.
+            prefer_aliases=target_is_current and not roundtrip_preexisting,
         )
         if bind.dialect.name == "postgresql" and target_is_current:
             _install_and_validate_domain_locator_check()

@@ -11,10 +11,9 @@ import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from app.main import SessionLocal, SessionToken, User, Workspace
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
-
-from app.main import SessionLocal, SessionToken, User, Workspace
 
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 

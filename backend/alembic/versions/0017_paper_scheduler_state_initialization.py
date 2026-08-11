@@ -155,9 +155,7 @@ def _quarantine_table_name(bind: Connection) -> str:
     )
 
 
-def _persist_quarantine(
-    bind: Connection, error: SchedulerInitializationError
-) -> None:
+def _persist_quarantine(bind: Connection, error: SchedulerInitializationError) -> None:
     """Persist a restricted migration-only record after rolling back 0017 data."""
     reports = error.reports or [_quarantine_report(None, str(error))]
     rows = error.quarantine_rows or [{} for _ in reports]
@@ -170,7 +168,9 @@ def _persist_quarantine(
     try:
         if bind.dialect.name == "postgresql":
             connection.execute(text("CREATE SCHEMA IF NOT EXISTS migration_quarantine"))
-            connection.execute(text("REVOKE ALL ON SCHEMA migration_quarantine FROM PUBLIC"))
+            connection.execute(
+                text("REVOKE ALL ON SCHEMA migration_quarantine FROM PUBLIC")
+            )
             connection.execute(
                 text(
                     "CREATE TABLE IF NOT EXISTS "
@@ -239,7 +239,9 @@ def _legacy_target(deployment: Mapping[str, Any]) -> str:
         or isinstance(revision, bool)
         or revision < 1
     ):
-        _block("ambiguous scheduler initialization: unclassifiable legacy data", deployment)
+        _block(
+            "ambiguous scheduler initialization: unclassifiable legacy data", deployment
+        )
     return _STATUS_MAP[cast(str, status)]
 
 
@@ -251,7 +253,10 @@ def _validate_deployment_authority(rows: Sequence[Mapping[str, Any]]) -> None:
         identity = (deployment["workspace_id"], deployment["id"])
         locator = (deployment["workspace_id"], deployment["paper_id"])
         if identity in seen_identity or locator in seen_locator:
-            _block("ambiguous scheduler initialization: duplicate legacy deployment", deployment)
+            _block(
+                "ambiguous scheduler initialization: duplicate legacy deployment",
+                deployment,
+            )
         seen_identity.add(identity)
         seen_locator.add(locator)
 
@@ -390,7 +395,10 @@ def _validate_evidence(
     ]
     events = bind.execute(select(domain_events).where(*event_filters)).mappings().all()
     if len(events) != 1:
-        _block("missing or ambiguous scheduler initialization paper.updated event", deployment)
+        _block(
+            "missing or ambiguous scheduler initialization paper.updated event",
+            deployment,
+        )
     event = events[0]
     payload = event["payload"]
     event_instant = _utc_timestamp(bind, event["occurred_at"], "event occurred_at")
@@ -445,16 +453,24 @@ def _validate_support_rows(
         .mappings()
         .one_or_none()
     )
-    head = bind.execute(
-        select(audit_chain_heads)
-        .where(audit_chain_heads.c.workspace_id == workspace_id)
-        .with_for_update()
-    ).mappings().one_or_none()
-    watermark = bind.execute(
-        select(event_stream_watermarks)
-        .where(event_stream_watermarks.c.workspace_id == workspace_id)
-        .with_for_update()
-    ).mappings().one_or_none()
+    head = (
+        bind.execute(
+            select(audit_chain_heads)
+            .where(audit_chain_heads.c.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        .mappings()
+        .one_or_none()
+    )
+    watermark = (
+        bind.execute(
+            select(event_stream_watermarks)
+            .where(event_stream_watermarks.c.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        .mappings()
+        .one_or_none()
+    )
     if audit is None:
         head_valid = head is None
     else:
@@ -475,7 +491,10 @@ def _validate_support_rows(
             and watermark["expired_through_sequence"] <= watermark["last_sequence"]
         )
     if not head_valid or not watermark_valid:
-        _block("ambiguous scheduler initialization support state", {"workspace_id": workspace_id})
+        _block(
+            "ambiguous scheduler initialization support state",
+            {"workspace_id": workspace_id},
+        )
 
 
 def _validate_baselines(bind: Connection) -> None:
@@ -489,12 +508,11 @@ def _validate_baselines(bind: Connection) -> None:
     state_rows = bind.execute(select(states).with_for_update()).mappings().all()
     grouped: dict[tuple[Any, Any], list[Mapping[str, Any]]] = {}
     for row in state_rows:
-        grouped.setdefault((row["workspace_id"], row["paper_id"]), []).append(
-            dict(row)
-        )
+        grouped.setdefault((row["workspace_id"], row["paper_id"]), []).append(dict(row))
     if set(grouped) - deployment_pairs:
         orphan = next(
-            row for pair, rows_for_pair in grouped.items()
+            row
+            for pair, rows_for_pair in grouped.items()
             if pair not in deployment_pairs
             for row in rows_for_pair
         )
@@ -504,7 +522,9 @@ def _validate_baselines(bind: Connection) -> None:
     ambiguous = [pair for pair in deployment_pairs if len(grouped.get(pair, [])) > 1]
     if missing or ambiguous:
         affected = next(
-            row for row in rows if (row["workspace_id"], row["id"]) in (missing or ambiguous)
+            row
+            for row in rows
+            if (row["workspace_id"], row["id"]) in (missing or ambiguous)
         )
         _block(
             "missing or ambiguous scheduler state initialization; readiness blocked",
@@ -525,7 +545,9 @@ def _validate_baselines(bind: Connection) -> None:
             and ((target == "ACTIVE") == (baseline["suppressed_since_utc"] is None))
         )
         if not valid:
-            _block("ambiguous scheduler state initialization; readiness blocked", baseline)
+            _block(
+                "ambiguous scheduler state initialization; readiness blocked", baseline
+            )
         _validate_evidence(
             bind, audit_events, domain_events, dict(deployment), baseline, target
         )
@@ -631,7 +653,9 @@ def _insert_baseline(
         "detail_artifact_id": None,
         "prev_event_hash": _previous_audit_hash(audit_events, bind, workspace_id),
         "occurred_at": instant,
-        "input_hash": _hash({"paper_id": paper_id, "status": str(deployment["status"])}),
+        "input_hash": _hash(
+            {"paper_id": paper_id, "status": str(deployment["status"])}
+        ),
         "before_hash": None,
         "after_hash": _hash(evidence),
     }
@@ -665,11 +689,15 @@ def _insert_baseline(
             **{key: value for key, value in event.items() if key in domain_events.c}
         )
     )
-    head = bind.execute(
-        select(audit_chain_heads)
-        .where(audit_chain_heads.c.workspace_id == workspace_id)
-        .with_for_update()
-    ).mappings().one_or_none()
+    head = (
+        bind.execute(
+            select(audit_chain_heads)
+            .where(audit_chain_heads.c.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        .mappings()
+        .one_or_none()
+    )
     if head is None:
         bind.execute(
             audit_chain_heads.insert().values(
@@ -682,11 +710,15 @@ def _insert_baseline(
             .where(audit_chain_heads.c.workspace_id == workspace_id)
             .values(event_sha256=audit["event_hash"], revision=head["revision"] + 1)
         )
-    watermark = bind.execute(
-        select(event_stream_watermarks)
-        .where(event_stream_watermarks.c.workspace_id == workspace_id)
-        .with_for_update()
-    ).mappings().one_or_none()
+    watermark = (
+        bind.execute(
+            select(event_stream_watermarks)
+            .where(event_stream_watermarks.c.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        .mappings()
+        .one_or_none()
+    )
     event_sequence = event["sequence"]
     if watermark is None:
         bind.execute(
@@ -714,9 +746,7 @@ def _initialize_missing_baselines(bind: Connection) -> None:
     existing = bind.execute(select(states).with_for_update()).mappings().all()
     grouped: dict[tuple[Any, Any], list[Mapping[str, Any]]] = {}
     for row in existing:
-        grouped.setdefault((row["workspace_id"], row["paper_id"]), []).append(
-            dict(row)
-        )
+        grouped.setdefault((row["workspace_id"], row["paper_id"]), []).append(dict(row))
     deployment_pairs = {(row["workspace_id"], row["id"]) for row in rows}
     if set(grouped) - deployment_pairs or any(
         len(grouped.get(pair, [])) > 1 for pair in deployment_pairs

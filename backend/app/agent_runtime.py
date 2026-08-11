@@ -23,6 +23,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
+from psycopg.rows import dict_row
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -286,30 +287,32 @@ def _checkpoint_saver() -> Iterator[BaseCheckpointSaver[str]]:
                     "SQLite Agent checkpoint path is not configured"
                 )
             path = str(Path(artifact_root) / "agent-checkpoints.sqlite3")
-        connection = sqlite3.connect(path, check_same_thread=False)
+        sqlite_connection = sqlite3.connect(path, check_same_thread=False)
         try:
-            saver = SqliteSaver(connection)
+            saver = SqliteSaver(sqlite_connection)
             saver.setup()
             yield saver
         finally:
-            connection.close()
+            sqlite_connection.close()
         return
     normalized = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
-    connection = psycopg.connect(normalized, autocommit=True, prepare_threshold=0)
+    postgres_connection = psycopg.connect(
+        normalized, autocommit=True, prepare_threshold=0, row_factory=dict_row
+    )
     try:
-        connection.execute("SET search_path TO agent_checkpoint")
-        postgres_saver = PostgresSaver(connection)
-        installed = connection.execute(
+        postgres_connection.execute("SET search_path TO agent_checkpoint")
+        postgres_saver = PostgresSaver(postgres_connection)
+        installed = postgres_connection.execute(
             "SELECT max(v) FROM checkpoint_migrations"
         ).fetchone()
         expected = len(postgres_saver.MIGRATIONS) - 1
-        if installed is None or installed[0] != expected:
+        if installed is None or installed["max"] != expected:
             raise AgentRuntimeError(
                 "Agent checkpoint schema is not at the Alembic-managed version"
             )
         yield postgres_saver
     finally:
-        connection.close()
+        postgres_connection.close()
 
 
 def _compiled_graph(model: Model, saver: BaseCheckpointSaver[str]) -> Any:

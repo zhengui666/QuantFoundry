@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, Protocol, cast
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Security
@@ -140,6 +140,90 @@ engine = create_engine(
     connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {},
 )
 logger = logging.getLogger(__name__)
+
+type JsonScalar = None | bool | int | float | str
+type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
+type JsonObject = dict[str, JsonValue]
+
+
+class _ExperimentReferenceFields(Protocol):
+    data_snapshot_ref_id: uuid.UUID | None
+
+
+class _ApprovalTimestampFields(Protocol):
+    requested_at: datetime
+    decided_at: datetime | None
+
+
+class _ApprovalDetailFields(_ApprovalTimestampFields, Protocol):
+    approval_type: str
+    subject_hash: str
+    requested_by_type: str
+    requested_by_id: str
+    reason: str
+    prerequisites: JsonValue
+    risk_summary: JsonValue
+    effects: JsonValue
+    decision_reason: str | None
+    decided_by: str | None
+
+
+class _HoldoutReferenceFields(Protocol):
+    validation_run_ref_id: uuid.UUID | None
+    provenance_ref_id: uuid.UUID | None
+    exposure_count: int
+    contaminated_for_future_versions: bool
+
+
+class _WatermarkFields(Protocol):
+    last_sequence: int
+
+
+class _AuditChainHeadFields(Protocol):
+    event_sha256: str
+    revision: int
+
+
+class _ApprovalMutationFields(Protocol):
+    status: str
+    revision: int
+    detail: str
+
+
+class _ValidationMutationFields(Protocol):
+    holdout_state: str
+    revision: int
+
+
+class _AgentConfigMutationFields(Protocol):
+    revision: int
+    updated_at: datetime
+
+
+def _as_str(value: object) -> str:
+    """Narrow legacy SQLAlchemy runtime values to their persisted string form."""
+    return cast(str, value)
+
+
+def _json_loads(value: object) -> JsonObject:
+    """Decode persisted JSON text from legacy declarative model attributes."""
+    return cast(JsonObject, json.loads(_as_str(value)))
+
+
+def _as_optional_str(value: object) -> str | None:
+    return cast(str | None, value)
+
+
+def _as_int(value: object) -> int:
+    return cast(int, value)
+
+
+def _as_json_object(value: JsonValue) -> JsonObject:
+    return cast(JsonObject, value)
+
+
+def _as_json_objects(value: JsonValue) -> list[JsonObject]:
+    return cast(list[JsonObject], value)
 
 
 if DB_URL.startswith("sqlite"):
@@ -774,7 +858,7 @@ def _enforce_paper_scheduler_evidence_boundary(
         if not isinstance(audit, Audit):
             continue
         try:
-            summary = json.loads(audit.payload)
+            summary = _json_loads(audit.payload)
         except (TypeError, json.JSONDecodeError) as error:
             raise RuntimeError("audit summary must be JSON") from error
         if not isinstance(summary, dict) or "state_transition_id" not in summary:
@@ -1189,20 +1273,25 @@ def _install_sqlite_immutability_guards() -> None:
             "SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END"
         ).execute_if(dialect="sqlite"),
     )
-    for model, condition, message in (
-        (ExperimentRow, "OLD.immutable = 1", "completed experiment cannot be changed"),
-        (ApprovalRow, "OLD.status != 'PENDING'", "terminal approval cannot be changed"),
-    ):
-        for action in ("UPDATE", "DELETE"):
-            event.listen(
-                model.__table__,
-                "after_create",
-                DDL(
-                    f"CREATE TRIGGER qf_{model.__tablename__}_{action.lower()}_immutable "
-                    f"BEFORE {action} ON {model.__tablename__} WHEN {condition} BEGIN "
-                    f"SELECT RAISE(ABORT, '{message}'); END"
-                ).execute_if(dialect="sqlite"),
-            )
+    for action in ("UPDATE", "DELETE"):
+        event.listen(
+            ExperimentRow.__table__,
+            "after_create",
+            DDL(
+                f"CREATE TRIGGER qf_{ExperimentRow.__tablename__}_{action.lower()}_immutable "
+                f"BEFORE {action} ON {ExperimentRow.__tablename__} WHEN OLD.immutable = 1 BEGIN "
+                "SELECT RAISE(ABORT, 'completed experiment cannot be changed'); END"
+            ).execute_if(dialect="sqlite"),
+        )
+        event.listen(
+            ApprovalRow.__table__,
+            "after_create",
+            DDL(
+                f"CREATE TRIGGER qf_{ApprovalRow.__tablename__}_{action.lower()}_immutable "
+                f"BEFORE {action} ON {ApprovalRow.__tablename__} WHEN OLD.status != 'PENDING' BEGIN "
+                "SELECT RAISE(ABORT, 'terminal approval cannot be changed'); END"
+            ).execute_if(dialect="sqlite"),
+        )
 
 
 _install_sqlite_immutability_guards()
@@ -1401,19 +1490,26 @@ def _resolve_section14_internal_refs(
                     row.workspace_id = row.workspace_id or policy.workspace_id
                     row.research_policy_ref_id = policy.internal_id
             elif isinstance(row, ExperimentRow):
+                experiment_refs = cast(_ExperimentReferenceFields, row)
                 research = _public_row(
-                    session, ResearchRow, row.research_id, workspace_id
+                    session,
+                    ResearchRow,
+                    _as_optional_str(row.research_id),
+                    workspace_id,
                 )
                 if research is not None:
                     row.research_ref_id = research.internal_id
                 source = _public_row(
-                    session, ExperimentRow, row.source_experiment_id, workspace_id
+                    session,
+                    ExperimentRow,
+                    _as_optional_str(row.source_experiment_id),
+                    workspace_id,
                 )
                 if source is not None:
                     row.source_experiment_ref_id = source.internal_id
-                detail = json.loads(row.detail)
+                detail = _json_loads(row.detail)
                 snapshot_table = Base.metadata.tables["dataset_snapshots"]
-                row.data_snapshot_ref_id = session.execute(
+                experiment_refs.data_snapshot_ref_id = session.execute(
                     select(snapshot_table.c.id).where(
                         snapshot_table.c.snapshot_id == detail["data_snapshot_id"],
                         snapshot_table.c.workspace_id == workspace_id,
@@ -1442,11 +1538,14 @@ def _resolve_section14_internal_refs(
                     row.research_policy_ref_id = policy.internal_id
             elif isinstance(row, StrategyVersionRow):
                 strategy = _public_row(
-                    session, StrategyRow, row.strategy_id, workspace_id
+                    session,
+                    StrategyRow,
+                    _as_optional_str(row.strategy_id),
+                    workspace_id,
                 )
                 if strategy is not None:
                     row.strategy_ref_id = strategy.internal_id
-                detail = json.loads(row.detail)
+                detail = _json_loads(row.detail)
                 cost_model_id = detail.get("cost_model_id")
                 cost_query = session.query(CostModelVersionRow).filter_by(
                     workspace_id=row.workspace_id
@@ -1462,36 +1561,58 @@ def _resolve_section14_internal_refs(
                 row.validation_period_range = detail.get("validation_period")
                 row.holdout_period_range = detail.get("holdout_period")
             elif isinstance(row, ApprovalRow):
-                detail = json.loads(row.detail)
-                subject = detail.get("subject", {})
-                requester = detail.get("requester", {})
-                row.approval_type = detail.get("type", row.approval_type)
-                row.subject_hash = subject.get("sha256", row.subject_sha256)
-                row.requested_by_type = requester.get("type", "SYSTEM")
-                row.requested_by_id = requester.get("id", "system")
-                row.reason = detail.get("reason", "")
-                row.prerequisites = detail.get("prerequisites", [])
-                row.risk_summary = detail.get("risk_summary", {})
-                row.effects = detail.get("effects", [])
-                row.requested_at = _detail_datetime(
+                approval_timestamps = cast(_ApprovalDetailFields, row)
+                detail = _json_loads(row.detail)
+                subject = _as_json_object(detail.get("subject", {}))
+                requester = _as_json_object(detail.get("requester", {}))
+                approval_timestamps.approval_type = _as_str(
+                    detail.get("type", _as_str(row.approval_type))
+                )
+                approval_timestamps.subject_hash = _as_str(
+                    subject.get("sha256", _as_str(row.subject_sha256))
+                )
+                approval_timestamps.requested_by_type = _as_str(
+                    requester.get("type", "SYSTEM")
+                )
+                approval_timestamps.requested_by_id = _as_str(
+                    requester.get("id", "system")
+                )
+                approval_timestamps.reason = _as_str(detail.get("reason", ""))
+                approval_timestamps.prerequisites = detail.get("prerequisites", [])
+                approval_timestamps.risk_summary = detail.get("risk_summary", {})
+                approval_timestamps.effects = detail.get("effects", [])
+                approval_timestamps.requested_at = _detail_datetime(
                     detail.get("requested_at")
                 ) or datetime.now(UTC)
-                row.decided_at = _detail_datetime(detail.get("decided_at"))
-                row.decision_reason = detail.get("decision_reason")
-                row.decided_by = detail.get("decided_by")
+                approval_timestamps.decided_at = _detail_datetime(
+                    detail.get("decided_at")
+                )
+                approval_timestamps.decision_reason = _as_optional_str(
+                    detail.get("decision_reason")
+                )
+                approval_timestamps.decided_by = _as_optional_str(
+                    detail.get("decided_by")
+                )
             elif isinstance(row, HoldoutExposureRow):
+                holdout_refs = cast(_HoldoutReferenceFields, row)
                 strategy = _public_row(
-                    session, StrategyVersionRow, row.strategy_version_id, workspace_id
+                    session,
+                    StrategyVersionRow,
+                    _as_optional_str(row.strategy_version_id),
+                    workspace_id,
                 )
                 if strategy is not None:
                     row.strategy_version_ref_id = strategy.internal_id
                 approval = _public_row(
-                    session, ApprovalRow, row.approval_id, workspace_id
+                    session,
+                    ApprovalRow,
+                    _as_optional_str(row.approval_id),
+                    workspace_id,
                 )
                 if approval is not None:
                     row.approval_ref_id = approval.internal_id
                 validation_runs = Base.metadata.tables["validation_runs"]
-                row.validation_run_ref_id = session.execute(
+                holdout_refs.validation_run_ref_id = session.execute(
                     select(validation_runs.c.id).where(
                         validation_runs.c.validation_id == row.validation_id,
                         validation_runs.c.workspace_id == workspace_id,
@@ -1508,49 +1629,73 @@ def _resolve_section14_internal_refs(
                 if artifact is not None:
                     row.result_artifact_ref_id = artifact.id
                 provenance_records = Base.metadata.tables["provenance_records"]
-                row.provenance_ref_id = session.execute(
+                holdout_refs.provenance_ref_id = session.execute(
                     select(provenance_records.c.id).where(
                         provenance_records.c.provenance_id == row.provenance_id,
                         provenance_records.c.workspace_id == workspace_id,
                     )
                 ).scalar_one_or_none()
-                exposed_by_job = _public_row(session, JobRow, row.job_id, workspace_id)
+                exposed_by_job = _public_row(
+                    session, JobRow, _as_optional_str(row.job_id), workspace_id
+                )
                 if exposed_by_job is not None:
                     row.exposed_by_job_ref_id = exposed_by_job.internal_id
-                row.exposure_count = max(1, row.exposure_count or 1)
+                holdout_refs.exposure_count = max(1, _as_int(row.exposure_count or 1))
                 row.holdout_period = row.period
-                row.contaminated_for_future_versions = True
+                holdout_refs.contaminated_for_future_versions = True
             elif isinstance(row, AgentRunRow):
                 research = _public_row(
-                    session, ResearchRow, row.research_id, workspace_id
+                    session,
+                    ResearchRow,
+                    _as_optional_str(row.research_id),
+                    workspace_id,
                 )
                 if research is not None:
                     row.research_ref_id = research.internal_id
                 root = _public_row(
-                    session, AgentRunRow, row.root_agent_run_id, workspace_id
+                    session,
+                    AgentRunRow,
+                    _as_optional_str(row.root_agent_run_id),
+                    workspace_id,
                 )
                 if root is not None:
                     row.root_agent_run_ref_id = root.internal_id
                 parent = _public_row(
-                    session, AgentRunRow, row.parent_agent_run_id, workspace_id
+                    session,
+                    AgentRunRow,
+                    _as_optional_str(row.parent_agent_run_id),
+                    workspace_id,
                 )
                 if parent is not None:
                     row.parent_agent_run_ref_id = parent.internal_id
             elif isinstance(row, ToolCallRow):
-                run = _public_row(session, AgentRunRow, row.agent_run_id, workspace_id)
+                run = _public_row(
+                    session,
+                    AgentRunRow,
+                    _as_optional_str(row.agent_run_id),
+                    workspace_id,
+                )
                 if run is not None:
                     row.agent_run_ref_id = run.internal_id
                 research = _public_row(
-                    session, ResearchRow, row.research_id, workspace_id
+                    session,
+                    ResearchRow,
+                    _as_optional_str(row.research_id),
+                    workspace_id,
                 )
                 if research is not None:
                     row.research_ref_id = research.internal_id
                 experiment = _public_row(
-                    session, ExperimentRow, row.experiment_id, workspace_id
+                    session,
+                    ExperimentRow,
+                    _as_optional_str(row.experiment_id),
+                    workspace_id,
                 )
                 if experiment is not None:
                     row.experiment_ref_id = experiment.internal_id
-                job_row = _public_row(session, JobRow, row.job_id, workspace_id)
+                job_row = _public_row(
+                    session, JobRow, _as_optional_str(row.job_id), workspace_id
+                )
                 if job_row is not None:
                     row.job_ref_id = job_row.internal_id
                 if row.output_artifact_id:
@@ -1565,9 +1710,14 @@ def _resolve_section14_internal_refs(
                     if artifact is not None:
                         row.output_artifact_ref_id = artifact.id
             elif isinstance(row, JobDependencyRow):
-                job_row = _public_row(session, JobRow, row.job_id, workspace_id)
+                job_row = _public_row(
+                    session, JobRow, _as_optional_str(row.job_id), workspace_id
+                )
                 dependency = _public_row(
-                    session, JobRow, row.depends_on_job_id, workspace_id
+                    session,
+                    JobRow,
+                    _as_optional_str(row.depends_on_job_id),
+                    workspace_id,
                 )
                 if job_row is not None:
                     row.job_internal_id = job_row.internal_id
@@ -1707,7 +1857,12 @@ def _configured_test_actor(token: str, request_id: str) -> Actor | None:
         isinstance(item, str) and item for item in (actor_id, workspace_id, role)
     ):
         return None
-    return Actor(actor_id, canonical_workspace_id(workspace_id), role, request_id)
+    return Actor(
+        _as_str(actor_id),
+        canonical_workspace_id(_as_str(workspace_id)),
+        _as_str(role),
+        request_id,
+    )
 
 
 def _session_is_active(row: SessionToken, now: datetime) -> bool:
@@ -1750,7 +1905,9 @@ def auth(
         or (user.role == "OWNER" and workspace.owner_id != user.id)
     ):
         raise problem(401, "UNAUTHENTICATED", "Bearer session is no longer valid")
-    actor = Actor(user.id, workspace.id, user.role, request_id)
+    actor = Actor(
+        _as_str(user.id), _as_str(workspace.id), _as_str(user.role), request_id
+    )
     return actor
 
 
@@ -1797,9 +1954,9 @@ async def authenticate_before_request_validation(request: Request, call_next):
                     and (user.role != "OWNER" or workspace.owner_id == user.id)
                 ):
                     actor = Actor(
-                        user.id,
-                        workspace.id,
-                        user.role,
+                        _as_str(user.id),
+                        _as_str(workspace.id),
+                        _as_str(user.role),
                         request.state.request_id,
                     )
         finally:
@@ -2072,7 +2229,7 @@ def save(
     s.add(r)
     s.flush()
     if event_type is not None:
-        emit(s, kind, r.record_key, 1, event_type)
+        emit(s, kind, _as_str(r.record_key), 1, event_type)
     return r
 
 
@@ -2197,8 +2354,8 @@ def emit(
         )
         s.add(watermark)
     else:
-        next_sequence = watermark.last_sequence + 1
-        watermark.last_sequence = next_sequence
+        next_sequence = _as_int(watermark.last_sequence) + 1
+        cast(_WatermarkFields, watermark).last_sequence = next_sequence
     event = Event(
         sequence=next_sequence,
         event_id=event_id,
@@ -2256,8 +2413,9 @@ def emit(
         )
         s.add(head)
     else:
-        head.event_sha256 = event_sha256
-        head.revision += 1
+        head_fields = cast(_AuditChainHeadFields, head)
+        head_fields.event_sha256 = event_sha256
+        head_fields.revision = _as_int(head.revision) + 1
     s.add(
         Audit(
             id=new_id("AUD"),
@@ -2384,18 +2542,15 @@ def validation_action_capabilities(
     *,
     prerequisites_ready: bool = False,
 ) -> list[dict[str, Any]]:
-    capability_options = {
-        "idempotency_required": True,
-        "if_match_required": True,
-        "danger_level": "STATE_CHANGE",
-    }
     if status in {"QUEUED", "RUNNING"}:
         return [
             cap(
                 "request_holdout_approval",
                 allowed=False,
                 reason="VALIDATION_IN_PROGRESS",
-                **capability_options,
+                idempotency_required=True,
+                if_match_required=True,
+                danger_level="STATE_CHANGE",
             )
         ]
     if status == "WAITING_HOLDOUT" and result == "PASS" and holdout_state == "LOCKED":
@@ -2406,7 +2561,9 @@ def validation_action_capabilities(
                 reason=(
                     None if prerequisites_ready else "HOLDOUT_PREREQUISITES_INCOMPLETE"
                 ),
-                **capability_options,
+                idempotency_required=True,
+                if_match_required=True,
+                danger_level="STATE_CHANGE",
             )
         ]
     return []
@@ -3313,7 +3470,7 @@ def overview(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
     )
     active_research = []
     for row in research_rows:
-        detail = json.loads(row.detail)
+        detail = _json_loads(row.detail)
         if not detail or row.status in {"COMPLETED", "ARCHIVED"}:
             continue
         active_research.append(
@@ -3572,14 +3729,16 @@ def get_snapshot(
     s: Session = Depends(db),
 ):
     r = owned(s, SnapshotRow, snapshot_id, actor, "snapshot")
-    return JSONResponse(json.loads(r.detail), headers={"ETag": f'"{r.content_sha256}"'})
+    return JSONResponse(
+        _json_loads(r.detail), headers={"ETag": f'"{r.content_sha256}"'}
+    )
 
 
 @app.get("/api/v1/research")
 def list_research(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
     items = []
     for row in s.query(ResearchRow).filter_by(workspace_id=actor.workspace_id).all():
-        detail = json.loads(row.detail)
+        detail = _json_loads(row.detail)
         items.append(
             {
                 key: detail[key]
@@ -4178,14 +4337,14 @@ def get_experiment(
 ):
     row = owned(s, ExperimentRow, experiment_id, actor, "experiment")
     return JSONResponse(
-        json.loads(row.detail), headers={"ETag": f'W/"{row.id}:{row.revision}"'}
+        _json_loads(row.detail), headers={"ETag": f'W/"{row.id}:{row.revision}"'}
     )
 
 
 def _reproducible_source(
     s: Session, source: ExperimentRow, actor: Actor
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    detail = json.loads(source.detail)
+    detail = _json_loads(source.detail)
     if not source.immutable:
         raise problem(409, "EXPERIMENT_IMMUTABLE", "source experiment is not immutable")
     if detail.get("status") != "COMPLETED" or detail.get("validity_state") != "VALID":
@@ -4193,7 +4352,7 @@ def _reproducible_source(
     capability = next(
         (
             item
-            for item in detail.get("action_capabilities", [])
+            for item in _as_json_objects(detail.get("action_capabilities", []))
             if item.get("action") == "reproduce"
         ),
         None,
@@ -4228,7 +4387,7 @@ def _reproducible_source(
         not isinstance(provenance_id, str)
         or provenance_row is None
         or provenance_row.kind != "provenance"
-        or json.loads(provenance_row.body) != provenance
+        or _json_loads(provenance_row.body) != provenance
         or provenance.get("experiment_id") != source.id
         or (
             provenance.get("source_experiment_id") is not None
@@ -4252,7 +4411,7 @@ def _reproducible_source(
     if snapshot_row is None or not snapshot_row.immutable:
         raise problem(422, "NON_REPRODUCIBLE", "source snapshot is unavailable")
     try:
-        require_cost_model(detail["cost_model_id"])
+        require_cost_model(_as_str(detail["cost_model_id"]))
     except HTTPException as error:
         raise problem(
             422, "NON_REPRODUCIBLE", "source cost model is unavailable"
@@ -4532,12 +4691,12 @@ def has_completed_backtest(s: Session, strategy: StrategyVersionRow) -> bool:
         .all()
     )
     return any(
-        json.loads(candidate.input_payload).get("strategy_id") == strategy.strategy_id
-        and json.loads(candidate.input_payload).get("strategy_version")
+        _json_loads(candidate.input_payload).get("strategy_id") == strategy.strategy_id
+        and _json_loads(candidate.input_payload).get("strategy_version")
         == strategy.version
-        and json.loads(candidate.input_payload).get("strategy_version_id")
+        and _json_loads(candidate.input_payload).get("strategy_version_id")
         == strategy.id
-        and json.loads(candidate.input_payload).get("strategy_spec_sha256")
+        and _json_loads(candidate.input_payload).get("strategy_spec_sha256")
         == strategy.spec_sha256
         and bool(candidate.result_ref)
         for candidate in rows
@@ -4547,17 +4706,20 @@ def has_completed_backtest(s: Session, strategy: StrategyVersionRow) -> bool:
 def strategy_version_payload(
     s: Session, strategy: StrategyVersionRow
 ) -> dict[str, Any]:
-    detail = json.loads(strategy.detail)
+    detail = _json_loads(strategy.detail)
     detail.update(
         {
-            "lifecycle_state": strategy.state,
-            "revision": strategy.revision,
-            "action_capabilities": strategy_action_capabilities(
-                strategy.state,
-                completed_backtest=(
-                    has_completed_backtest(s, strategy)
-                    if strategy.state == "CANDIDATE"
-                    else False
+            "lifecycle_state": _as_str(strategy.state),
+            "revision": _as_int(strategy.revision),
+            "action_capabilities": cast(
+                list[JsonValue],
+                strategy_action_capabilities(
+                    _as_str(strategy.state),
+                    completed_backtest=(
+                        has_completed_backtest(s, strategy)
+                        if strategy.state == "CANDIDATE"
+                        else False
+                    ),
                 ),
             ),
         }
@@ -4808,7 +4970,7 @@ def holdout_gate(
     if strategy is None:
         raise problem(500, "INTERNAL_ERROR", "validation strategy version is missing")
     require_workspace(strategy, actor)
-    strategy_detail = json.loads(strategy.detail)
+    strategy_detail = _json_loads(strategy.detail)
     approval = (
         s.query(ApprovalRow)
         .filter_by(validation_id=validation_id, workspace_id=actor.workspace_id)
@@ -4888,7 +5050,7 @@ def approval_prerequisites(
                 if validation.strategy_version_id == strategy.id
                 and validation.holdout_state in {"LOCKED", "APPROVAL_PENDING"}
                 and validation.status in {"WAITING_HOLDOUT", "COMPLETED"}
-                and json.loads(validation.detail).get("result") == "PASS"
+                and _json_loads(validation.detail).get("result") == "PASS"
                 else "FAIL"
             ),
             "detail": "Completed validation and strategy revision are bound",
@@ -4897,7 +5059,7 @@ def approval_prerequisites(
 
 
 def validation_payload(s: Session, validation: ValidationRow) -> dict[str, Any]:
-    detail = json.loads(validation.detail)
+    detail = _json_loads(validation.detail)
     strategy = s.execute(
         select(StrategyVersionRow).where(
             StrategyVersionRow.id == validation.strategy_version_id,
@@ -4912,14 +5074,17 @@ def validation_payload(s: Session, validation: ValidationRow) -> dict[str, Any]:
         )
     detail.update(
         {
-            "status": validation.status,
-            "holdout_state": validation.holdout_state,
-            "revision": validation.revision,
-            "action_capabilities": validation_action_capabilities(
-                validation.status,
-                detail.get("result"),
-                validation.holdout_state,
-                prerequisites_ready=prerequisites_ready,
+            "status": _as_str(validation.status),
+            "holdout_state": _as_str(validation.holdout_state),
+            "revision": _as_int(validation.revision),
+            "action_capabilities": cast(
+                list[JsonValue],
+                validation_action_capabilities(
+                    _as_str(validation.status),
+                    _as_optional_str(detail.get("result")),
+                    _as_str(validation.holdout_state),
+                    prerequisites_ready=prerequisites_ready,
+                ),
             ),
         }
     )
@@ -5145,7 +5310,7 @@ def holdout_result(
     )
     if exposure is None:
         raise problem(404, "RESOURCE_NOT_FOUND", "holdout result not found")
-    result = json.loads(exposure.result)
+    result = _json_loads(exposure.result)
     return JSONResponse(
         validated_payload("HoldoutResult", result),
         headers={"ETag": f'W/"{row.id}:{row.revision}"'},
@@ -5234,7 +5399,7 @@ def list_approvals(actor: Actor = Depends(require_owner), s: Session = Depends(d
         .order_by(ApprovalRow.id)
         .all()
     ):
-        detail = json.loads(row.detail)
+        detail = _json_loads(row.detail)
         items.append(
             {
                 key: detail[key]
@@ -5307,7 +5472,7 @@ def decide(
         if validation_row is not None
         else None
     )
-    detail = json.loads(r.detail)
+    detail = _json_loads(r.detail)
     prerequisites = (
         approval_prerequisites(s, validation_row, strategy)
         if validation_row is not None and strategy is not None
@@ -5339,19 +5504,23 @@ def decide(
         or bool(acknowledged and acknowledged != r.subject_sha256)
     )
     if stale:
-        r.status = "STALE"
-        r.revision += 1
-        detail.update({"status": "STALE", "decided_at": NOW(), "revision": r.revision})
-        r.detail = json.dumps(detail)
+        approval_fields = cast(_ApprovalMutationFields, r)
+        approval_fields.status = "STALE"
+        approval_fields.revision = _as_int(r.revision) + 1
+        detail.update(
+            {"status": "STALE", "decided_at": NOW(), "revision": _as_int(r.revision)}
+        )
+        approval_fields.detail = json.dumps(detail)
         s.flush([r])
         if validation_row is not None:
-            validation_row.holdout_state = "LOCKED"
-            validation_row.revision += 1
+            validation_fields = cast(_ValidationMutationFields, validation_row)
+            validation_fields.holdout_state = "LOCKED"
+            validation_fields.revision = _as_int(validation_row.revision) + 1
         emit(
             s,
             "approval",
-            r.id,
-            r.revision,
+            _as_str(r.id),
+            _as_int(r.revision),
             "approval.updated",
             payload={"state": "STALE", "status": "STALE"},
         )
@@ -5367,20 +5536,24 @@ def decide(
             "field_errors": [],
             "context": {},
         }
-    r.status = status
-    r.revision += 1
+    approval_fields = cast(_ApprovalMutationFields, r)
+    approval_fields.status = status
+    approval_fields.revision = _as_int(r.revision) + 1
     d = detail
-    d.update({"status": status, "decided_at": NOW(), "revision": r.revision})
-    r.detail = json.dumps(d)
+    d.update({"status": status, "decided_at": NOW(), "revision": _as_int(r.revision)})
+    approval_fields.detail = json.dumps(d)
     s.flush([r])
     if validation_row:
-        validation_row.holdout_state = "UNLOCKED" if status == "APPROVED" else "LOCKED"
-        validation_row.revision += 1
+        validation_fields = cast(_ValidationMutationFields, validation_row)
+        validation_fields.holdout_state = (
+            "UNLOCKED" if status == "APPROVED" else "LOCKED"
+        )
+        validation_fields.revision = _as_int(validation_row.revision) + 1
     emit(
         s,
         "approval",
-        r.id,
-        r.revision,
+        _as_str(r.id),
+        _as_int(r.revision),
         "approval.updated",
         payload={"state": status, "status": status},
     )
@@ -5563,14 +5736,15 @@ def agent_config(
     row.max_tool_calls_override = payload.get(
         "max_tool_calls_override", row.max_tool_calls_override
     )
-    row.revision += 1
-    row.updated_at = datetime.now(UTC)
+    config_fields = cast(_AgentConfigMutationFields, row)
+    config_fields.revision = _as_int(row.revision) + 1
+    config_fields.updated_at = datetime.now(UTC)
     response_payload = validated_payload("AgentConfig", agent_config_payload(row))
     emit(
         s,
         "agent_config",
         role,
-        row.revision,
+        _as_int(row.revision),
         "notification.updated",
         payload={"state": "UPDATED", "status": "UPDATED"},
     )
@@ -5853,4 +6027,4 @@ def application_openapi() -> dict[str, Any]:
     return generated
 
 
-app.openapi = application_openapi
+object.__setattr__(app, "openapi", application_openapi)
