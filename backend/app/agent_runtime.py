@@ -392,7 +392,9 @@ class ToolRegistry:
         Path(__file__).resolve().parents[2]
         / "docs/后端系统技术方案/contracts/tools/v1-p0.yaml"
     )
-    _CANONICAL_SHA256 = "d13e3c4b60b6dd7232bd6fd3bd96fedb964b07846e502b249beb16b95b840633"
+    _CANONICAL_SHA256 = (
+        "d13e3c4b60b6dd7232bd6fd3bd96fedb964b07846e502b249beb16b95b840633"
+    )
     _EXPECTED_TOOLS = frozenset(
         {
             ("get_market_data", "1.0"),
@@ -414,8 +416,14 @@ class ToolRegistry:
         "type": "object",
         "additionalProperties": False,
         "required": [
-            "$schema", "title", "schema_version", "contract_stage",
-            "additionalProperties", "required", "properties", "tools",
+            "$schema",
+            "title",
+            "schema_version",
+            "contract_stage",
+            "additionalProperties",
+            "required",
+            "properties",
+            "tools",
         ],
         "properties": {
             "$schema": {"const": "https://json-schema.org/draft/2020-12/schema"},
@@ -432,9 +440,16 @@ class ToolRegistry:
                     "type": "object",
                     "additionalProperties": False,
                     "required": [
-                        "name", "version", "input_schema", "output_schema",
-                        "allowed_agent_roles", "idempotency_class", "side_effect_class",
-                        "execution_mode", "timeout_seconds", "requires_policy_checks",
+                        "name",
+                        "version",
+                        "input_schema",
+                        "output_schema",
+                        "allowed_agent_roles",
+                        "idempotency_class",
+                        "side_effect_class",
+                        "execution_mode",
+                        "timeout_seconds",
+                        "requires_policy_checks",
                         "requires_snapshot",
                     ],
                     "properties": {
@@ -461,7 +476,9 @@ class ToolRegistry:
         self.tools = {item["name"]: item for item in contract["tools"]}
         actual = {(item["name"], item["version"]) for item in contract["tools"]}
         if len(actual) != len(contract["tools"]) or actual != self._EXPECTED_TOOLS:
-            raise AgentRuntimeError("tool registry does not match canonical name@version set")
+            raise AgentRuntimeError(
+                "tool registry does not match canonical name@version set"
+            )
 
     @classmethod
     def _validate_contract(cls, contract: dict[str, Any]) -> None:
@@ -494,7 +511,9 @@ class ToolRegistry:
         actual_sha256 = hashlib.sha256(raw).hexdigest()
         required_sha256 = expected_sha256 if test_only else cls._CANONICAL_SHA256
         if actual_sha256 != required_sha256:
-            raise AgentRuntimeError("tool registry content hash does not match authority")
+            raise AgentRuntimeError(
+                "tool registry content hash does not match authority"
+            )
         try:
             contract = yaml.safe_load(raw)
         except yaml.YAMLError as error:
@@ -668,13 +687,9 @@ def evaluated_policy_checks(
                 StrategyVersionRow.workspace_id == run.workspace_id,
             )
         ).scalar_one_or_none()
-    if (
-        strategy is not None and strategy.state == "CANDIDATE"
-    ):
+    if strategy is not None and strategy.state == "CANDIDATE":
         passed.update({"strategy_candidate", "strategy_freeze_eligible"})
-    if (
-        strategy is not None and strategy.state == "FROZEN"
-    ):
+    if strategy is not None and strategy.state == "FROZEN":
         passed.update({"strategy_frozen", "validation_allowed"})
     experiment_ids = arguments.get("experiment_ids")
     if (
@@ -860,8 +875,13 @@ def _finish_run(
     row.decision_summary = summary
     row.ended_at = now
     row.revision += 1
-    research_status = "COMPLETED" if status == "COMPLETED" else "WAITING_USER"
-    _research_status(session, row, research_status)
+    if (
+        row.role == "RESEARCH_DIRECTOR"
+        and row.parent_agent_run_id is None
+        and row.root_agent_run_id is None
+    ):
+        research_status = "COMPLETED" if status == "COMPLETED" else "WAITING_USER"
+        _research_status(session, row, research_status)
     emit(
         session,
         "agent_run",

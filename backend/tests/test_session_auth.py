@@ -115,9 +115,19 @@ def test_owner_sessions_cannot_cross_workspace_aggregates_or_dataset_sources() -
     )
     assert research.status_code == 201
     research_id = research.json()["research_id"]
-    denied = client.get(f"/api/v1/research/{research_id}", headers=auth_b)
-    assert denied.status_code == 403
-    assert denied.json()["code"] == "PERMISSION_DENIED"
+    foreign = client.get(f"/api/v1/research/{research_id}", headers=auth_b)
+    absent = client.get(
+        f"/api/v1/research/RSCH-{uuid.uuid4()}",
+        headers=auth_b,
+    )
+    assert (foreign.status_code, foreign.json()["code"]) == (
+        404,
+        "RESOURCE_NOT_FOUND",
+    )
+    assert (absent.status_code, absent.json()["code"]) == (
+        404,
+        "RESOURCE_NOT_FOUND",
+    )
     assert all(
         item["research_id"] != research_id
         for item in client.get("/api/v1/research", headers=auth_b).json()["items"]

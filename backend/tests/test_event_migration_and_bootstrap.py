@@ -59,7 +59,7 @@ def _roundtrip_fingerprint(total_rows: int) -> dict[str, tuple[int, str]]:
     remainder = total_rows - sum(counts.values())
     if remainder < 0:
         deficit = -remainder
-        for name in sorted(names, key=counts.get, reverse=True):
+        for name in sorted(names, key=lambda name: counts[name], reverse=True):
             removable = max(counts[name] - 1, 0)
             removed = min(removable, deficit)
             counts[name] -= removed
@@ -411,7 +411,7 @@ def test_section14_closed_locator_backfill_requires_unique_workspace_authority()
         "object_id": strategy_id,
         "revision": 4,
     }
-    source_rows = {
+    source_rows: dict[str, list[dict[str, Any]]] = {
         "domain_events": [event],
         "strategy_versions": [
             {
@@ -533,7 +533,7 @@ def test_section14_closed_json_migration_quarantines_without_rewriting() -> None
     )
     bad_result = {"type": "job", "id": "must-not-be-normalized"}
     bad_next_action = {"action": "resume", "object_type": "job"}
-    source_rows = {
+    source_rows: dict[str, list[dict[str, Any]]] = {
         "jobs": [
             {
                 "id": "JOB-550e8400-e29b-41d4-a716-446655440012",
@@ -704,18 +704,15 @@ def _database_fingerprint(engine) -> dict[str, tuple[int, str]]:
 
 
 def _load_0017_migration() -> dict[str, Any]:
-    try:
-        return runpy.run_path(
-            str(
-                BACKEND_ROOT
-                / "alembic/versions/0017_paper_scheduler_state_initialization.py"
-            )
+    return runpy.run_path(
+        str(
+            BACKEND_ROOT
+            / "alembic/versions/0017_paper_scheduler_state_initialization.py"
         )
-    except SyntaxError as exc:
-        pytest.skip(f"0017 migration import blocked by repository syntax error: {exc}")
+    )
 
 
-def _sqlite_0017_tables() -> tuple[Any, Any, Any, Any]:
+def _sqlite_0017_tables() -> tuple[Any, Any, Any, Any, Any, Any, Any]:
     metadata = MetaData()
     deployments = Table(
         "paper_deployments",
@@ -761,7 +758,42 @@ def _sqlite_0017_tables() -> tuple[Any, Any, Any, Any]:
         Column("before_hash", String()),
         Column("after_hash", String()),
     )
-    return metadata, deployments, states, audit_events
+    domain_events = Table(
+        "domain_events",
+        metadata,
+        Column("sequence", Integer(), primary_key=True),
+        Column("event_id", String(), nullable=False),
+        Column("workspace_id", String(), nullable=False),
+        Column("event_type", String(), nullable=False),
+        Column("object_type", String(), nullable=False),
+        Column("object_id", String(), nullable=False),
+        Column("payload", JSON(), nullable=False),
+        Column("occurred_at", DateTime(timezone=True), nullable=False),
+        Column("expires_at", DateTime(timezone=True), nullable=False),
+        Column("actor_id", String()),
+        Column("object_version", Integer()),
+        Column("object_revision", Integer()),
+        Column("revision", Integer()),
+        Column("request_id", String()),
+        Column("correlation_id", String()),
+        Column("causation_id", String()),
+        Column("job_id", String()),
+        Column("agent_run_id", String()),
+        Column("tool_call_id", String()),
+        Column("schema_version", Integer()),
+    )
+    heads = Table(
+        "audit_chain_heads", metadata,
+        Column("workspace_id", String(), primary_key=True),
+        Column("event_sha256", String()), Column("revision", Integer(), nullable=False),
+    )
+    watermarks = Table(
+        "event_stream_watermarks", metadata,
+        Column("workspace_id", String(), primary_key=True),
+        Column("last_sequence", Integer(), nullable=False),
+        Column("expired_through_sequence", Integer(), nullable=False),
+    )
+    return metadata, deployments, states, audit_events, domain_events, heads, watermarks
 
 
 def _invoke_0017(migration: dict[str, Any], connection: Any) -> None:
@@ -775,6 +807,9 @@ def _insert_0017_baseline(
     deployments: Any,
     states: Any,
     audit_events: Any,
+    domain_events: Any,
+    heads: Any,
+    watermarks: Any,
 ) -> datetime:
     instant = datetime(2026, 1, 5, 10, 0, tzinfo=UTC)
     paper_locator = "PAPER-550e8400-e29b-41d4-a716-446655440000"
@@ -845,17 +880,41 @@ def _insert_0017_baseline(
             after_hash="c" * 64,
         )
     )
+    connection.execute(
+        domain_events.insert().values(
+            sequence=1,
+            event_id="EVT-550e8400-e29b-41d4-a716-446655440001",
+            workspace_id="workspace-1",
+            event_type="paper.updated",
+            object_type="paper",
+            object_id=paper_locator,
+            payload={"status": "ACTIVE"},
+            occurred_at=instant,
+            expires_at=instant + timedelta(days=7),
+            actor_id="alembic:0017", object_version=None, object_revision=1,
+            revision=1, request_id=None, correlation_id=None, causation_id=None,
+            job_id=None, agent_run_id=None, tool_call_id=None, schema_version=1,
+        )
+    )
+    connection.execute(heads.insert().values(
+        workspace_id="workspace-1", event_sha256="a" * 64, revision=1
+    ))
+    connection.execute(watermarks.insert().values(
+        workspace_id="workspace-1", last_sequence=1, expired_through_sequence=0
+    ))
     return instant
 
 
-def test_0017_scheduler_state_initialization_commits_and_is_restart_idempotent() -> None:
+def test_0017_scheduler_state_initialization_commits_and_is_restart_idempotent() -> (
+    None
+):
     migration = _load_0017_migration()
-    metadata, deployments, states, audit_events = _sqlite_0017_tables()
+    metadata, deployments, states, audit_events, domain_events, heads, watermarks = _sqlite_0017_tables()
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.connect() as connection:
         metadata.create_all(connection)
         instant = _insert_0017_baseline(
-            connection, deployments, states, audit_events
+            connection, deployments, states, audit_events, domain_events, heads, watermarks
         )
         connection.commit()
         _invoke_0017(migration, connection)
@@ -867,19 +926,196 @@ def test_0017_scheduler_state_initialization_commits_and_is_restart_idempotent()
         audits = connection.execute(select(audit_events)).mappings().all()
         assert len(audits) == 1
         assert audits[0]["detail_artifact_id"] is None
+        assert len(connection.execute(select(domain_events)).all()) == 1
+        assert connection.execute(select(heads.c.event_sha256)).scalar_one() == "a" * 64
+        assert connection.execute(select(watermarks.c.last_sequence)).scalar_one() == 1
         connection.commit()
         _invoke_0017(migration, connection)
         assert not connection.in_transaction()
         rerun = connection.execute(select(states)).mappings().all()
         assert len(rerun) == 1
         assert len(connection.execute(select(audit_events)).all()) == 1
+        assert len(connection.execute(select(domain_events)).all()) == 1
         assert rerun[0]["resume_watermark_utc"] == rows[0]["resume_watermark_utc"]
     engine.dispose()
 
 
-def test_0017_scheduler_state_initialization_rolls_back_on_missing_or_ambiguous_history() -> None:
+def test_0017_scheduler_state_initialization_creates_proven_baseline() -> None:
     migration = _load_0017_migration()
-    metadata, deployments, states, audit_events = _sqlite_0017_tables()
+    metadata, deployments, states, audit_events, domain_events, heads, watermarks = _sqlite_0017_tables()
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.connect() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            deployments.insert().values(
+                id="paper-legacy",
+                workspace_id="workspace-legacy",
+                paper_id="PAPER-550e8400-e29b-41d4-a716-446655440099",
+                status="STOPPED",
+                revision=3,
+            )
+        )
+        connection.commit()
+        _invoke_0017(migration, connection)
+        assert not connection.in_transaction()
+        state = connection.execute(select(states)).mappings().one()
+        audit = connection.execute(select(audit_events)).mappings().one()
+        event = connection.execute(select(domain_events)).mappings().one()
+        assert state["scheduler_status"] == "DISABLED"
+        assert state["suppressed_since_utc"] == state["resume_watermark_utc"]
+        assert connection.execute(select(deployments.c.status)).scalar_one() == "DISABLED"
+        assert audit["detail_artifact_id"] is None
+        assert audit["summary"]["paper_scheduler_state_evidence.v1"][
+            "reason_code"
+        ] == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY"
+        assert event["event_type"] == "paper.updated"
+        assert event["payload"] == {"status": "DISABLED"}
+        assert connection.execute(select(heads.c.event_sha256)).scalar_one() == audit["event_hash"]
+        assert connection.execute(select(watermarks.c.last_sequence)).scalar_one() == event["sequence"]
+        connection.commit()
+        _invoke_0017(migration, connection)
+        assert len(connection.execute(select(states)).all()) == 1
+        assert len(connection.execute(select(audit_events)).all()) == 1
+        assert len(connection.execute(select(domain_events)).all()) == 1
+    engine.dispose()
+
+
+def test_0017_rejects_unclassifiable_legacy_data_with_quarantine_report(
+    tmp_path: Path,
+) -> None:
+    migration = _load_0017_migration()
+    metadata, deployments, states, audit_events, domain_events, _, _ = _sqlite_0017_tables()
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'quarantine.db'}")
+    with engine.connect() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            deployments.insert().values(
+                id="paper-unknown",
+                workspace_id="workspace-unknown",
+                paper_id="PAPER-550e8400-e29b-41d4-a716-446655440077",
+                status="UNKNOWN",
+                revision=1,
+            )
+        )
+        connection.commit()
+        with pytest.raises(migration["SchedulerInitializationError"]) as error:
+            _invoke_0017(migration, connection)
+        assert error.value.reports[0]["locator"] == (
+            "PAPER-550e8400-e29b-41d4-a716-446655440077"
+        )
+        assert len(error.value.reports[0]["payload_sha256"]) == 64
+        assert "unclassifiable legacy data" in error.value.reports[0]["reason"]
+        assert not connection.in_transaction()
+        assert connection.execute(select(states)).all() == []
+        assert connection.execute(select(audit_events)).all() == []
+        assert connection.execute(select(domain_events)).all() == []
+        quarantine = connection.execute(
+            text(
+                "SELECT workspace_locator, source_locator, reason, payload_sha256 "
+                "FROM _qf_migration_quarantine_0017"
+            )
+        ).mappings().one()
+        assert quarantine["workspace_locator"] == "workspace-unknown"
+        assert quarantine["source_locator"] == error.value.reports[0]["locator"]
+        assert quarantine["reason"] == error.value.reports[0]["reason"]
+        assert quarantine["payload_sha256"] == error.value.reports[0]["payload_sha256"]
+    engine.dispose()
+
+
+def test_0017_blocks_restart_when_closed_baseline_event_is_missing() -> None:
+    migration = _load_0017_migration()
+    metadata, deployments, states, audit_events, domain_events, heads, watermarks = _sqlite_0017_tables()
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.connect() as connection:
+        metadata.create_all(connection)
+        instant = _insert_0017_baseline(
+            connection, deployments, states, audit_events, domain_events, heads, watermarks
+        )
+        connection.execute(domain_events.delete())
+        connection.commit()
+        with pytest.raises(
+            migration["SchedulerInitializationError"], match="paper.updated event"
+        ):
+            _invoke_0017(migration, connection)
+        assert not connection.in_transaction()
+        state = connection.execute(select(states)).mappings().one()
+        assert state["resume_watermark_utc"] == instant.replace(tzinfo=None)
+        assert len(connection.execute(select(audit_events)).all()) == 1
+        assert connection.execute(select(domain_events)).all() == []
+    engine.dispose()
+
+
+def test_0017_restart_validates_the_single_closed_baseline_event() -> None:
+    migration = _load_0017_migration()
+    metadata, deployments, states, audit_events, domain_events, heads, watermarks = (
+        _sqlite_0017_tables()
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.connect() as connection:
+        metadata.create_all(connection)
+        _insert_0017_baseline(
+            connection,
+            deployments,
+            states,
+            audit_events,
+            domain_events,
+            heads,
+            watermarks,
+        )
+        connection.execute(domain_events.update().values(actor_id="untrusted"))
+        connection.commit()
+        with pytest.raises(
+            migration["SchedulerInitializationError"],
+            match="paper.updated event",
+        ):
+            _invoke_0017(migration, connection)
+        assert not connection.in_transaction()
+        assert len(connection.execute(select(domain_events)).all()) == 1
+    engine.dispose()
+
+
+@pytest.mark.parametrize("support", ["audit_chain_heads", "event_stream_watermarks"])
+def test_0017_restart_rejects_ambiguous_support_state(
+    support: str,
+) -> None:
+    migration = _load_0017_migration()
+    metadata, deployments, states, audit_events, domain_events, heads, watermarks = (
+        _sqlite_0017_tables()
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.connect() as connection:
+        metadata.create_all(connection)
+        _insert_0017_baseline(
+            connection,
+            deployments,
+            states,
+            audit_events,
+            domain_events,
+            heads,
+            watermarks,
+        )
+        if support == "audit_chain_heads":
+            connection.execute(heads.update().values(event_sha256="f" * 64))
+        else:
+            connection.execute(watermarks.update().values(last_sequence=99))
+        connection.commit()
+        with pytest.raises(
+            migration["SchedulerInitializationError"],
+            match="support state",
+        ):
+            _invoke_0017(migration, connection)
+        assert not connection.in_transaction()
+        assert len(connection.execute(select(states)).all()) == 1
+        assert len(connection.execute(select(audit_events)).all()) == 1
+        assert len(connection.execute(select(domain_events)).all()) == 1
+    engine.dispose()
+
+
+def test_0017_scheduler_state_initialization_rolls_back_on_missing_or_ambiguous_history() -> (
+    None
+):
+    migration = _load_0017_migration()
+    metadata, deployments, states, audit_events, _, _, _ = _sqlite_0017_tables()
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with engine.connect() as connection:
         metadata.create_all(connection)
@@ -1094,8 +1330,8 @@ def test_section14_downgrade_upgrade_preserves_every_table_and_content(
                     "workspace_id": str(first_workspace),
                     "record_key": "SETTINGS-DEFAULT",
                     "kind": "settings",
-                    "revision": 1,
-                    "body": "{}",
+                    "revision": 7,
+                    "body": '{"workspace":"first","retained":true}',
                     "created_at": now,
                     "updated_at": now,
                 },
@@ -1104,8 +1340,8 @@ def test_section14_downgrade_upgrade_preserves_every_table_and_content(
                     "workspace_id": second_workspace,
                     "record_key": "SETTINGS-DEFAULT",
                     "kind": "settings",
-                    "revision": 1,
-                    "body": "{}",
+                    "revision": 11,
+                    "body": '{"workspace":"second","retained":true}',
                     "created_at": now,
                     "updated_at": now,
                 },
@@ -1120,6 +1356,51 @@ def test_section14_downgrade_upgrade_preserves_every_table_and_content(
             for name in inspect(connection).get_table_names()
             if name.startswith("_qf0016_roundtrip_")
         }
+        downgraded_records = connection.execute(
+            text(
+                "SELECT id, workspace_id, record_key, kind, revision, body "
+                "FROM records WHERE kind = 'settings' ORDER BY workspace_id"
+            )
+        ).mappings().all()
+        assert {
+            (
+                str(row["workspace_id"]),
+                row["record_key"],
+                row["kind"],
+                row["revision"],
+                row["body"],
+            )
+            for row in downgraded_records
+        } == {
+            (
+                str(first_workspace),
+                "SETTINGS-DEFAULT",
+                "settings",
+                7,
+                '{"workspace":"first","retained":true}',
+            ),
+            (
+                second_workspace,
+                "SETTINGS-DEFAULT",
+                "settings",
+                11,
+                '{"workspace":"second","retained":true}',
+            ),
+        }
+        assert all(
+            row["id"] != row["record_key"] for row in downgraded_records
+        )
+        settings_fk = next(
+            foreign_key
+            for foreign_key in inspect(connection).get_foreign_keys("setup_bindings")
+            if foreign_key["name"] == "fk_setup_bindings_settings_record_records"
+        )
+        assert settings_fk["constrained_columns"] == [
+            "workspace_id",
+            "settings_record_id",
+        ]
+        assert settings_fk["referred_columns"] == ["workspace_id", "record_key"]
+        assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
     assert backup_names == {f"_qf0016_roundtrip_{name}" for name in before}
     _upgrade(database_url, "head")
     after = _database_fingerprint(engine)
@@ -1306,6 +1587,14 @@ def test_postgres_section14_populated_downgrade_upgrade_preserves_content() -> N
             )
 
         _upgrade(database_url, "head")
+        with engine.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT column_default FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'records' "
+                    "AND column_name = 'id'"
+                )
+            ).scalar_one() == "uuidv7()"
         before = _database_fingerprint(engine)
         assert len(before) == 63
         assert sum(count for count, _ in before.values()) == 3

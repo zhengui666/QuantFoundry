@@ -1401,10 +1401,14 @@ def _resolve_section14_internal_refs(
                     row.workspace_id = row.workspace_id or policy.workspace_id
                     row.research_policy_ref_id = policy.internal_id
             elif isinstance(row, ExperimentRow):
-                research = _public_row(session, ResearchRow, row.research_id, workspace_id)
+                research = _public_row(
+                    session, ResearchRow, row.research_id, workspace_id
+                )
                 if research is not None:
                     row.research_ref_id = research.internal_id
-                source = _public_row(session, ExperimentRow, row.source_experiment_id, workspace_id)
+                source = _public_row(
+                    session, ExperimentRow, row.source_experiment_id, workspace_id
+                )
                 if source is not None:
                     row.source_experiment_ref_id = source.internal_id
                 detail = json.loads(row.detail)
@@ -1437,7 +1441,9 @@ def _resolve_section14_internal_refs(
                 if policy is not None:
                     row.research_policy_ref_id = policy.internal_id
             elif isinstance(row, StrategyVersionRow):
-                strategy = _public_row(session, StrategyRow, row.strategy_id, workspace_id)
+                strategy = _public_row(
+                    session, StrategyRow, row.strategy_id, workspace_id
+                )
                 if strategy is not None:
                     row.strategy_ref_id = strategy.internal_id
                 detail = json.loads(row.detail)
@@ -1479,7 +1485,9 @@ def _resolve_section14_internal_refs(
                 )
                 if strategy is not None:
                     row.strategy_version_ref_id = strategy.internal_id
-                approval = _public_row(session, ApprovalRow, row.approval_id, workspace_id)
+                approval = _public_row(
+                    session, ApprovalRow, row.approval_id, workspace_id
+                )
                 if approval is not None:
                     row.approval_ref_id = approval.internal_id
                 validation_runs = Base.metadata.tables["validation_runs"]
@@ -1513,23 +1521,33 @@ def _resolve_section14_internal_refs(
                 row.holdout_period = row.period
                 row.contaminated_for_future_versions = True
             elif isinstance(row, AgentRunRow):
-                research = _public_row(session, ResearchRow, row.research_id, workspace_id)
+                research = _public_row(
+                    session, ResearchRow, row.research_id, workspace_id
+                )
                 if research is not None:
                     row.research_ref_id = research.internal_id
-                root = _public_row(session, AgentRunRow, row.root_agent_run_id, workspace_id)
+                root = _public_row(
+                    session, AgentRunRow, row.root_agent_run_id, workspace_id
+                )
                 if root is not None:
                     row.root_agent_run_ref_id = root.internal_id
-                parent = _public_row(session, AgentRunRow, row.parent_agent_run_id, workspace_id)
+                parent = _public_row(
+                    session, AgentRunRow, row.parent_agent_run_id, workspace_id
+                )
                 if parent is not None:
                     row.parent_agent_run_ref_id = parent.internal_id
             elif isinstance(row, ToolCallRow):
                 run = _public_row(session, AgentRunRow, row.agent_run_id, workspace_id)
                 if run is not None:
                     row.agent_run_ref_id = run.internal_id
-                research = _public_row(session, ResearchRow, row.research_id, workspace_id)
+                research = _public_row(
+                    session, ResearchRow, row.research_id, workspace_id
+                )
                 if research is not None:
                     row.research_ref_id = research.internal_id
-                experiment = _public_row(session, ExperimentRow, row.experiment_id, workspace_id)
+                experiment = _public_row(
+                    session, ExperimentRow, row.experiment_id, workspace_id
+                )
                 if experiment is not None:
                     row.experiment_ref_id = experiment.internal_id
                 job_row = _public_row(session, JobRow, row.job_id, workspace_id)
@@ -2512,7 +2530,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3076,7 +3094,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+    except httpx.HTTPError, KeyError, TypeError, ValueError:
         return False
     return payload.get("model_name") in available_models
 

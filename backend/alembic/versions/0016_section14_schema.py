@@ -47,6 +47,11 @@ from app.locator_contract import (
 )
 from app.physical_schema import load_physical_metadata
 from app.public_ids import is_public_id
+from app.section14_schema import (
+    JSONTextCompat,
+    WorkspaceScopeId,
+    canonical_workspace_id,
+)
 
 revision = "0016_section14_schema"
 down_revision = "0015_langgraph_checkpoint"
@@ -254,10 +259,6 @@ _COLUMN_ALIASES = {
     "risk_policy_versions": {
         "id": "legacy_id",
         "legacy_id": "id",
-    },
-    "records": {
-        "id": "record_key",
-        "record_key": "id",
     },
     "cost_model_versions": {
         "id": "legacy_id",
@@ -548,6 +549,8 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
         and isinstance(value, (str, uuid.UUID))
     ):
         return _public_id(value, prefix)
+    if isinstance(column_type, WorkspaceScopeId):
+        return canonical_workspace_id(value)
     if (
         column.name == "workspace_id"
         or (column.table.name == "workspaces" and column.name == "id")
@@ -561,14 +564,20 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
                 # Python 3.14 provides uuid7; keep a deterministic compatible
                 # fallback for the migration's supported interpreter boundary.
                 uuid7 = getattr(uuid, "uuid7", None)
-                return uuid7() if callable(uuid7) else _deterministic_uuid4("uuid7", value)
+                return (
+                    uuid7() if callable(uuid7) else _deterministic_uuid4("uuid7", value)
+                )
             return _deterministic_uuid4("internal", value)
-    if isinstance(column_type, JSON):
+    if isinstance(column_type, JSON) or isinstance(
+        getattr(column_type, "impl", None), JSON
+    ):
         if isinstance(value, str):
             try:
-                return json.loads(value)
+                value = json.loads(value)
             except json.JSONDecodeError:
-                return {"legacy_value": value}
+                value = {"legacy_value": value}
+        if isinstance(column_type, JSONTextCompat):
+            return json.dumps(value, sort_keys=True, separators=(",", ":"))
         return value
     if isinstance(column_type, (String, Text)):
         if isinstance(value, (dict, list)):
@@ -824,7 +833,9 @@ def _resolve_locator(
         if len(strategy_authority) != 1:
             return f"strategy version authority count is {len(strategy_authority)}"
         values["object_version"] = strategy_authority[0][0]
-        values["object_revision"] = values["object_revision"] or strategy_authority[0][1]
+        values["object_revision"] = (
+            values["object_revision"] or strategy_authority[0][1]
+        )
     elif object_type in {"settings", "provider_connection", "agent_config"}:
         authority = _special_authority(
             source_rows, workspace_id, str(object_type), object_id
@@ -912,13 +923,14 @@ def _backfill_closed_storage(
         raise MigrationQuarantineError(reports)
 
 
-def _defer_domain_locator_check(metadata: MetaData) -> None:
+def _defer_domain_locator_check(metadata: MetaData) -> Any:
     """Leave the retained-data locator check for PostgreSQL NOT VALID validation."""
     table = metadata.tables["domain_events"]
     constraint = next(
         item for item in table.constraints if item.name == _DOMAIN_LOCATOR_CHECK_NAME
     )
     table.constraints.remove(constraint)
+    return constraint
 
 
 def _install_and_validate_domain_locator_check() -> None:
@@ -947,16 +959,6 @@ def _prepare_rows(
             use_alias = (
                 alias is not None and source.get(alias) is not None and prefer_aliases
             )
-            # The legacy records.id was a global PK, while current record_key
-            # is workspace-scoped and may legitimately repeat (notably the
-            # SETTINGS-DEFAULT singleton).  Preserve the current internal UUID
-            # during downgrade; the fenced backup restores record_key exactly.
-            if (
-                table.name == "records"
-                and column.name == "id"
-                and "record_key" in source
-            ):
-                use_alias = False
             if use_alias and alias is not None:
                 source_name = alias
             if source_name in source and source[source_name] is not None:
@@ -1058,27 +1060,17 @@ def _restore_all_tables(
     source_rows = {
         name: [dict(row) for row in rows] for name, rows in source_rows.items()
     }
-    records_table = metadata.tables.get("records")
-    if records_table is not None and "record_key" not in records_table.c:
-        # The legacy setup FK targets the global records.id.  Current records
-        # use an internal UUID plus a workspace-local record_key, so point the
-        # transient downgraded binding at that preserved UUID.  The fenced
-        # current-schema backup restores SETTINGS-DEFAULT after re-upgrade.
-        record_ids = {
-            (
-                str(_workspace_uuid(row.get("workspace_id"))),
-                row.get("record_key"),
-            ): row.get("id")
-            for row in source_rows.get("records", [])
-            if row.get("record_key") is not None and row.get("id") is not None
-        }
-        for row in source_rows.get("setup_bindings", []):
-            identity = (
-                str(_workspace_uuid(row.get("workspace_id"))),
-                row.get("settings_record_id"),
-            )
-            if identity in record_ids:
-                row["settings_record_id"] = record_ids[identity]
+    # Section-14 uses UUID workspace keys.  Apply one deterministic mapping to
+    # every scoped row before restoring, including legacy text-backed schemas.
+    # Keep generic helper callers unchanged when no workspace authority exists.
+    if "workspaces" in metadata.tables:
+        for rows in source_rows.values():
+            for row in rows:
+                if row.get("workspace_id") is not None:
+                    row["workspace_id"] = str(_workspace_uuid(row["workspace_id"]))
+        for row in source_rows.get("workspaces", []):
+            if row.get("id") is not None:
+                row["id"] = str(_workspace_uuid(row["id"]))
     if "users" in metadata.tables and "workspaces" in metadata.tables:
         referenced_workspaces = {
             _workspace_uuid(row["workspace_id"])
@@ -1422,8 +1414,22 @@ def _drop_application_tables() -> None:
         op.execute(text(f"DROP TABLE IF EXISTS {preparer.quote(name)}"))
 
 
+def _drop_sqlite_guard_triggers() -> None:
+    """Free stable guard names after source tables were renamed as backups."""
+    bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        return
+    triggers = bind.execute(
+        text("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'")
+    ).scalars()
+    preparer = bind.dialect.identifier_preparer
+    for name in triggers:
+        op.execute(text(f"DROP TRIGGER IF EXISTS {preparer.quote(name)}"))
+
+
 def _install_guards() -> None:
     bind = op.get_bind()
+    _drop_sqlite_guard_triggers()
     if bind.dialect.name == "postgresql":
         for table in (
             "audit_events",
@@ -1477,20 +1483,26 @@ def _install_guards() -> None:
     ):
         for action in ("UPDATE", "DELETE"):
             op.execute(
+                f"DROP TRIGGER IF EXISTS qf_{table}_{action.lower()}_immutable"
+            )
+            op.execute(
                 f"CREATE TRIGGER qf_{table}_{action.lower()}_immutable BEFORE "
                 f"{action} ON {table} BEGIN SELECT RAISE(ABORT, "
                 "'immutable evidence cannot be changed'); END"
             )
+    op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     op.execute(
         "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
         "domain_events BEGIN SELECT RAISE(ABORT, "
         "'immutable evidence cannot be changed'); END"
     )
+    op.execute("DROP TRIGGER IF EXISTS qf_domain_events_delete_immutable")
     op.execute(
         "CREATE TRIGGER qf_domain_events_delete_immutable BEFORE DELETE ON "
         "domain_events WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN SELECT "
         "RAISE(ABORT, 'unexpired event cannot be deleted'); END"
     )
+    op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_transition")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_transition BEFORE UPDATE OF "
         "holdout_state, exposure_count ON validations WHEN NOT ("
@@ -1502,6 +1514,7 @@ def _install_guards() -> None:
         "NEW.holdout_state = 'FAILED') BEGIN SELECT RAISE(ABORT, "
         "'invalid holdout state transition'); END"
     )
+    op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_binding")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_binding BEFORE UPDATE OF "
         "holdout_state, exposure_count ON validations WHEN "
@@ -1537,18 +1550,18 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         _backfill_closed_storage(restore_rows)
 
     def metadata_for(path: Path) -> MetaData:
-        if path == CURRENT:
-            from app.main import Base
-
-            return Base.metadata
         return load_physical_metadata(
             path,
             include_checks=(bind.dialect.name == "postgresql"),
             include_sqlite_partial_indexes=(bind.dialect.name == "postgresql"),
-            include_server_defaults=False,
+            # The frozen physical authority requires records.id to retain its
+            # PostgreSQL uuidv7() default.  SQLite deliberately omits it: its
+            # compatibility path supplies explicit UUID values instead.
+            include_server_defaults=(bind.dialect.name == "postgresql"),
         )
 
     try:
+        _drop_sqlite_guard_triggers()
         _drop_application_tables()
         if bind.dialect.name == "postgresql" and target_is_current:
             if (bind.dialect.server_version_info or ()) < (18, 0):
@@ -1580,9 +1593,16 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
                 )
             )
         metadata = metadata_for(snapshot)
+        deferred_domain_locator_check = None
         if bind.dialect.name == "postgresql" and target_is_current:
-            _defer_domain_locator_check(metadata)
-        metadata.create_all(bind=bind)
+            deferred_domain_locator_check = _defer_domain_locator_check(metadata)
+        try:
+            metadata.create_all(bind=bind)
+        finally:
+            if deferred_domain_locator_check is not None:
+                metadata.tables["domain_events"].constraints.add(
+                    deferred_domain_locator_check
+                )
         _restore_all_tables(
             bind,
             metadata,

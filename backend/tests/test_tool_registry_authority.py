@@ -41,13 +41,19 @@ def _fixture(tmp_path: Path, mutate) -> tuple[Path, str]:
     [
         lambda contract: contract["tools"].pop(),
         lambda contract: contract["tools"].append(dict(contract["tools"][0])),
-        lambda contract: contract["tools"].__setitem__(0, {**contract["tools"][0], "name": "renamed"}),
-        lambda contract: contract["tools"].__setitem__(0, {**contract["tools"][0], "version": "1.1"}),
+        lambda contract: contract["tools"].__setitem__(
+            0, {**contract["tools"][0], "name": "renamed"}
+        ),
+        lambda contract: contract["tools"].__setitem__(
+            0, {**contract["tools"][0], "version": "1.1"}
+        ),
         lambda contract: contract.__setitem__("unexpected", True),
         lambda contract: contract["tools"][0].__setitem__("unexpected", True),
     ],
 )
-def test_test_fixture_rejects_registry_authority_changes(tmp_path: Path, mutate) -> None:
+def test_test_fixture_rejects_registry_authority_changes(
+    tmp_path: Path, mutate
+) -> None:
     path, digest = _fixture(tmp_path, mutate)
     with pytest.raises(AgentRuntimeError):
         ToolRegistry.load(path, test_only=True, expected_sha256=digest)
@@ -59,7 +65,9 @@ def test_environment_override_cannot_replace_canonical_registry(
     path, _digest = _fixture(tmp_path, lambda contract: contract["tools"].pop())
     monkeypatch.setenv("QF_TOOL_CONTRACT_PATH", str(path))
     registry = ToolRegistry.load()
-    assert set(registry.tools) == {name for name, _version in ToolRegistry._EXPECTED_TOOLS}
+    assert set(registry.tools) == {
+        name for name, _version in ToolRegistry._EXPECTED_TOOLS
+    }
 
 
 def test_test_fixture_requires_declared_content_hash(tmp_path: Path) -> None:
@@ -172,7 +180,9 @@ def test_workspace_resolver_first_lookup_is_sql_scoped() -> None:
     finally:
         event.remove(main.engine, "before_cursor_execute", capture)
     assert response.status_code == 404
-    lookup = next(statement for statement in statements if "from research_cases" in statement)
+    lookup = next(
+        statement for statement in statements if "from research_cases" in statement
+    )
     assert "workspace_id" in lookup
 
 
@@ -191,7 +201,9 @@ def test_internal_public_reference_lookups_are_sql_scoped() -> None:
             (AgentRunRow, "ARUN-550e8400-e29b-41d4-a716-446655440000"),
             (ToolCallRow, "TCALL-550e8400-e29b-41d4-a716-446655440000"),
         ]:
-            assert main._public_row(session, model, public_id, "matrix-workspace") is None
+            assert (
+                main._public_row(session, model, public_id, "matrix-workspace") is None
+            )
     finally:
         event.remove(main.engine, "before_cursor_execute", capture)
         session.close()

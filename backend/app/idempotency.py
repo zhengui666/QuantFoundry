@@ -11,10 +11,11 @@ import json
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -70,6 +71,18 @@ def _json_response(status: int, path: str, payload: dict[str, Any]) -> JSONRespo
     )
 
 
+def _takeover_is_safe(record: Any) -> bool:
+    """Prove that a stale PROCESSING record has no committed side effect evidence."""
+
+    return bool(
+        record.state == "PROCESSING"
+        and record.completed_at is None
+        and record.resource_ref is None
+        and record.status == 202
+        and record.response in (None, "{}", {})
+    )
+
+
 def execute(
     session: Session,
     record_type: Any,
@@ -92,10 +105,16 @@ def execute(
     request_hash = hashlib.sha256(
         json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+    method = method.upper()
     now = datetime.now(UTC)
     lease_owner_id = uuid.uuid4().hex
     try:
-        session.execute(delete(record_type).where(record_type.expires_at <= now))
+        session.execute(
+            delete(record_type).where(
+                record_type.workspace_id == workspace_id,
+                record_type.expires_at <= now,
+            )
+        )
         record = session.execute(
             select(record_type)
             .where(
@@ -120,6 +139,9 @@ def execute(
                 record.state == "PROCESSING"
                 and (_utc(record.lease_expires_at) or now) > now
             ):
+                session.rollback()
+                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
+            if not _takeover_is_safe(record):
                 session.rollback()
                 raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
             record.state = "PROCESSING"
@@ -149,15 +171,41 @@ def execute(
                 raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None) from error
 
         status, payload = operation()
-        record.status = status
-        record.response = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        completed_at = datetime.now(UTC)
+        response = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         resource_ref = payload.get("resource_ref")
-        record.resource_ref = resource_ref if isinstance(resource_ref, dict) else None
-        record.state = "SUCCEEDED"
-        record.lease_owner_id = None
-        record.lease_expires_at = None
-        record.completed_at = datetime.now(UTC)
-        record.expires_at = now + timedelta(days=RETENTION_DAYS)
+        terminal_write = cast(
+            CursorResult[Any],
+            session.execute(
+                update(record_type)
+                .where(
+                    record_type.actor_id == actor_id,
+                    record_type.workspace_id == workspace_id,
+                    record_type.method == method,
+                    record_type.path == path,
+                    record_type.key == key,
+                    record_type.state == "PROCESSING",
+                    record_type.lease_owner_id == lease_owner_id,
+                    record_type.lease_expires_at > completed_at,
+                )
+                .values(
+                    status=status,
+                    response=response,
+                    resource_ref=(
+                        resource_ref if isinstance(resource_ref, dict) else None
+                    ),
+                    state="SUCCEEDED",
+                    lease_owner_id=None,
+                    lease_expires_at=None,
+                    completed_at=completed_at,
+                    expires_at=completed_at + timedelta(days=RETENTION_DAYS),
+                )
+                .execution_options(synchronize_session=False)
+            ),
+        )
+        if terminal_write.rowcount != 1:
+            raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
+        session.expire(record)
         session.commit()
         persisted = session.execute(
             select(record_type).where(

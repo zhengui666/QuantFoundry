@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import exists, or_, select, update
+from sqlalchemy import and_, exists, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, aliased
 
@@ -107,9 +107,16 @@ def claim_job(
     prerequisite = aliased(JobRow)
     unsatisfied_dependency = (
         select(dependency.job_id)
-        .join(prerequisite, prerequisite.id == dependency.depends_on_job_id)
+        .join(
+            prerequisite,
+            and_(
+                prerequisite.id == dependency.depends_on_job_id,
+                prerequisite.workspace_id == dependency.workspace_id,
+            ),
+        )
         .where(
             dependency.job_id == JobRow.id,
+            dependency.workspace_id == JobRow.workspace_id,
             or_(
                 dependency.dependency_type == "SUCCESS",
                 dependency.dependency_type == "TERMINAL",

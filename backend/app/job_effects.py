@@ -191,10 +191,19 @@ def _persist_section14_snapshot(
     providers = Base.metadata.tables["data_providers"]
     datasets = Base.metadata.tables["datasets"]
     snapshots = Base.metadata.tables["dataset_snapshots"]
+    source = session.execute(
+        select(DataSource).where(
+            DataSource.id == inputs["dataset_id"],
+            DataSource.workspace_id == job.workspace_id,
+        )
+    ).scalar_one_or_none()
+    if source is None:
+        raise InvalidJobState("workspace-owned snapshot data source is missing")
+    provider_id = source.provider_id
     provider_internal_id = session.execute(
         select(providers.c.id).where(
             providers.c.workspace_id == job.workspace_id,
-            providers.c.provider_id == bundle.provider_id,
+            providers.c.provider_id == provider_id,
         )
     ).scalar_one_or_none()
     if provider_internal_id is None:
@@ -203,9 +212,9 @@ def _persist_section14_snapshot(
             providers.insert().values(
                 id=provider_internal_id,
                 workspace_id=job.workspace_id,
-                provider_id=bundle.provider_id,
+                provider_id=provider_id,
                 adapter_key=bundle.adapter_key,
-                display_name=bundle.provider_id,
+                display_name=provider_id,
                 status="CONNECTED",
                 is_default=False,
                 config={"adapter_version": bundle.adapter_version},

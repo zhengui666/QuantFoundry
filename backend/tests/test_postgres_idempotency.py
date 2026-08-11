@@ -109,13 +109,14 @@ def test_real_postgres_idempotency_concurrency_and_lease_takeover() -> None:
             Idempotency(
                 actor_id="actor-a",
                 workspace_id="workspace-a",
-                key="test-api-key-unavailable",
+                key="leased-idempotency-key-1",  # gitleaks:allow
                 method="POST",
                 path="/lease",
                 request_hash=__import__("hashlib").sha256(b'{"x":"lease"}').hexdigest(),
                 status=202,
                 response="{}",
                 state="PROCESSING",
+                lease_owner_id="paper-worker-a",
                 lease_expires_at=datetime.now(UTC) + timedelta(minutes=1),
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(days=7),
