@@ -81,7 +81,7 @@ printf '%s\n' \
   'for ((index = 1; index <= $#; index++)); do' \
   '  if [[ "${!index}" == --output ]]; then next=$((index + 1)); output="${!next}"; fi' \
   'done' \
-  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\\\"head_sha\\\":\\\"%s\\\"}\\n" "$QF_REVIEW_MOCK_COMMIT"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"event\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\"}\\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml@refs/heads/main}"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\\\"expired\\\":false,\\\"workflow_run\\\":{\\\"id\\\":100}}\\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; exit 0; fi' \
   'exit 1' > "$mock_gh"
@@ -90,7 +90,10 @@ chmod +x "$mock_gh"
 run_verifier() {
   local locator="$1"
   local archive="$2"
-  env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
+  local status="${3:-completed}"
+  local conclusion="${4:-success}"
+  local workflow_path="${5:-.github/workflows/independent-agent-review.yml@refs/heads/main}"
+  env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" QF_REVIEW_MOCK_STATUS="$status" QF_REVIEW_MOCK_CONCLUSION="$conclusion" QF_REVIEW_MOCK_PATH="$workflow_path" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
 }
 
 run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip"
@@ -100,6 +103,18 @@ if run_verifier "$fixture_dir/wrong-content-commit.json" "$fixture_dir/wrong-con
 fi
 if run_verifier "$fixture_dir/wrong-scope-digest.json" "$fixture_dir/wrong-scope-digest.zip" >/dev/null 2>&1; then
   printf '%s\n' 'Expected artifact content with a mismatched review scope digest to fail.' >&2
+  exit 1
+fi
+if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" completed failure >/dev/null 2>&1; then
+  printf '%s\n' 'Expected failed independent review run to fail.' >&2
+  exit 1
+fi
+if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" completed cancelled >/dev/null 2>&1; then
+  printf '%s\n' 'Expected cancelled independent review run to fail.' >&2
+  exit 1
+fi
+if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" completed success '.github/workflows/untrusted.yml@refs/heads/main' >/dev/null 2>&1; then
+  printf '%s\n' 'Expected unauthorized independent review workflow to fail.' >&2
   exit 1
 fi
 

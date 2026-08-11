@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-python3 - "$repo_root" <<'PY'
+uv --directory "$repo_root/backend" run --frozen python - "$repo_root" <<'PY'
 import ast
 import json
 import pathlib
@@ -34,14 +34,16 @@ makefile = read("Makefile")
 for required in ("backend-lint", "backend-typecheck", "backend-mypy"):
     if required not in makefile:
         errors.append(f"Makefile lacks canonical backend gate target {required}")
+if "release-check:\n\t@set -eu;" not in makefile or "QF_RELEASE_TAG is required for release-check" not in makefile:
+    errors.append("Makefile release-check must fail closed when QF_RELEASE_TAG is missing")
 
 p0_check = read("scripts/p0-check.sh")
-for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
+for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "required_p0_ids", "allowed_verification_workflows", "did not complete successfully", "unauthorized verification workflow", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
     if required not in p0_check:
         errors.append(f"p0-check lacks required remote verification control: {required}")
 
 release_script = read("scripts/release-evidence.sh")
-for required in ('"checksums": {"algorithm": "sha256", "path": "SHA256SUMS"}', '"name": name, "source": source', "package-assets", "verify-remote-assets", "remote release assets do not exactly match the manifest inventory", "release asset inventory name collision", 'run-gate.sh" rc'):
+for required in ('"checksums": {"algorithm": "sha256", "path": "SHA256SUMS"}', '"name": name, "source": source', "package-assets", "create-or-validate-draft", "create_or_validate_draft", "verify-remote-assets", "remote release assets do not exactly match the manifest inventory", "release asset inventory name collision", 'run-gate.sh" rc'):
     if required not in release_script:
         errors.append(f"release evidence manifest is missing {required}")
 
@@ -70,10 +72,12 @@ if "scripts/ci/run-gate.sh rc" not in rc:
     errors.append("rc-release does not invoke the canonical rc run-gate entrypoint")
 if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/release-assets" not in rc or "--clobber" in rc:
     errors.append("rc-release does not package and upload unique release assets safely")
-if "--draft" not in rc or "verify-remote-assets" not in rc or "gh release edit \"$TAG\" --draft=false" not in rc:
-    errors.append("rc-release does not create, remotely verify, and publish a draft release")
-if rc.index("gh release create") > rc.index("docker/build-push-action"):
-    errors.append("rc-release must create the draft release before image publication")
+if "create-or-validate-draft" not in publish or "verify-remote-assets" not in rc or "gh release edit \"$TAG\" --draft=false" not in rc:
+    errors.append("rc-release does not create-or-validate, remotely verify, and publish a draft release")
+if "Create commit-bound draft release" in rc or "gh release create" in rc.split("  rc:", 1)[1].split("  publish:", 1)[0]:
+    errors.append("rc-release must not create a draft from the read-only rc job")
+if publish.index("create-or-validate-draft") > publish.index("docker/build-push-action"):
+    errors.append("rc-release must create or validate the draft before image publication")
 
 agent = read(".github/workflows/agent-change-gate.yml")
 for required in ("AGENTS.md", "PROJECT_BACKGROUND.md", "docs/治理/**", ".github/workflows/**", "scripts/ci/**", "scripts/release*"):
@@ -83,6 +87,8 @@ if "paths-ignore:" in agent or "independent_review_evidence" in agent or "review
     errors.append("agent-change-gate contains an unsafe exclusion or self-generated review placeholder")
 if "QF_INDEPENDENT_REVIEW_REPORT" in agent or "docs/治理/independent-review-report.json" in agent:
     errors.append("agent-change-gate must not trust a repository-local review locator")
+if not re.search(r"(?m)^permissions:\n  contents: read\n  actions: read$", agent):
+    errors.append("agent-change-gate must request only the required actions: read permission for artifact verification")
 
 independent_review = read(".github/workflows/independent-agent-review.yml")
 if "workflow_dispatch:" not in independent_review or "independent-agent-review-${{ github.run_id }}" not in independent_review:
@@ -97,7 +103,7 @@ for required in ("actions/workflows/independent-agent-review.yml/runs", "head_sh
         errors.append(f"independent review artifact fetcher lacks {required}")
 
 review_verifier = read("scripts/ci/verify-independent-review-report.sh")
-for required in ("artifact_report", "zipfile", "reviewed_paths", "review_scope_sha256", "criteria", "artifact report is not bound to the current commit and run"):
+for required in ("artifact_report", "zipfile", "reviewed_paths", "review_scope_sha256", "criteria", 'run.get("status") != "completed"', 'run.get("conclusion") != "success"', "unauthorized workflow", "artifact report is not bound to the current commit and run"):
     if required not in review_verifier:
         errors.append(f"independent review verifier lacks artifact-content validation: {required}")
 

@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | collect-inputs OUTPUT_DIR | collect-oci-sbom IMAGE DIGEST OUTPUT_FILE | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | package-assets OUTPUT_DIR | verify-remote-assets TAG COMMIT OUTPUT_DIR' >&2
+  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | collect-inputs OUTPUT_DIR | collect-oci-sbom IMAGE DIGEST OUTPUT_FILE | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | package-assets OUTPUT_DIR | create-or-validate-draft TAG COMMIT | verify-remote-assets TAG COMMIT OUTPUT_DIR' >&2
   exit 2
 }
 
@@ -306,6 +306,36 @@ for name, digest in checksums.items():
 PY
 }
 
+create_or_validate_draft() {
+  local tag="$1" commit="$2"
+  require_tag_commit "$tag" "$commit"
+  [[ -n "${GH_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || {
+    printf '%s\n' 'GH_TOKEN and GITHUB_REPOSITORY are required to create or validate a draft release.' >&2
+    exit 1
+  }
+  command -v gh >/dev/null || { printf '%s\n' 'gh is required to create or validate a draft release.' >&2; exit 1; }
+
+  local release_json
+  if ! release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish 2>/dev/null)"; then
+    gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --target "$commit" --title "$tag" --generate-notes --draft
+    release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish)"
+  fi
+  python3 - "$tag" "$commit" "$release_json" <<'PY'
+import json
+import sys
+
+tag, commit, payload = sys.argv[1:]
+try:
+    release = json.loads(payload)
+except json.JSONDecodeError as error:
+    raise SystemExit(f"release lookup returned invalid JSON: {error}") from error
+if release.get("isDraft") is not True:
+    raise SystemExit(f"release {tag} already exists but is not a draft")
+if release.get("targetCommitish") != commit:
+    raise SystemExit(f"release {tag} draft target does not match the tagged commit")
+PY
+}
+
 verify_remote_assets() {
   local tag="$1" commit="$2" output_dir="$3"
   require_tag_commit "$tag" "$commit"
@@ -430,6 +460,7 @@ case "${1:-}" in
   manifest) [[ "$#" == 8 ]] || usage; manifest "$2" "$3" "$4" "$5" "$6" "$7" "$8" ;;
   compose-bind) [[ "$#" == 6 ]] || usage; compose_bind "$2" "$3" "$4" "$5" "$6" ;;
   package-assets) [[ "$#" == 2 ]] || usage; package_assets "$2" ;;
+  create-or-validate-draft) [[ "$#" == 3 ]] || usage; create_or_validate_draft "$2" "$3" ;;
   verify-remote-assets) [[ "$#" == 4 ]] || usage; verify_remote_assets "$2" "$3" "$4" ;;
   *) usage ;;
 esac

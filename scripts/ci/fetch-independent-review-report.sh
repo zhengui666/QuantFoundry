@@ -44,6 +44,10 @@ runs = gh_json(
 run = next((item for item in runs if item.get("head_sha") == commit and item.get("conclusion") == "success"), None)
 if not isinstance(run, dict) or not isinstance(run.get("id"), int):
     raise SystemExit("no successful independent-agent-review workflow run is bound to the current commit")
+if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
+    raise SystemExit("independent review run must be a completed successful workflow_dispatch run")
+if run.get("path", "").split("@", 1)[0] != ".github/workflows/independent-agent-review.yml":
+    raise SystemExit("independent review run used an unauthorized workflow")
 run_id = run["id"]
 artifacts = gh_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts").get("artifacts", [])
 artifact = next(

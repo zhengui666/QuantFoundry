@@ -94,7 +94,7 @@ printf '%s\n' \
   '  exit 0' \
   'fi' \
   'if [[ "$endpoint" =~ /releases/assets/204$ ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip" "$output"; exit 0; fi' \
-  'if [[ "$endpoint" =~ /actions/runs/[0-9]+$ ]]; then printf "{\\\"head_sha\\\":\\\"%s\\\"}\\n" "${QF_MOCK_RUN_HEAD:-$QF_MOCK_COMMIT}"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/[0-9]+$ ]]; then run_path="${QF_MOCK_RUN_PATH:-}"; if [[ -z "$run_path" ]]; then if [[ "$endpoint" == */actions/runs/100 ]]; then run_path=".github/workflows/independent-agent-test.yml@refs/heads/main"; else run_path=".github/workflows/independent-agent-review.yml@refs/heads/main"; fi; fi; printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\"}\\n" "${QF_MOCK_RUN_HEAD:-$QF_MOCK_COMMIT}" "${QF_MOCK_RUN_STATUS:-completed}" "${QF_MOCK_RUN_CONCLUSION:-success}" "$run_path"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/([0-9]+)$ ]]; then' \
   '  case "${BASH_REMATCH[1]}" in 200) run=100 ;; 201|202) run=101 ;; 203) run=100 ;; *) exit 1 ;; esac' \
   '  printf "{\\\"expired\\\":false,\\\"workflow_run\\\":{\\\"id\\\":%s}}\\n" "$run"' \
@@ -140,6 +140,16 @@ def record(item):
         "commands": item["commands"],
     }
 
+expected_ids = [
+    "P0-PRODUCT-PAPER-DAILY-SCHEDULER",
+    "P0-CONTRACT-OPENAPI-45",
+    "P0-CONTRACT-TOOLS-13",
+    "P0-SCHEMA-ALEMBIC-AUTHORITY",
+    "P0-ARCHITECTURE-TARGET-LAYERS",
+    "P0-SECURITY-RESEARCH-INTEGRITY",
+    "P0-CI-REPRODUCIBILITY",
+    "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE",
+]
 test = record(metadata["test"])
 review = record(metadata["review"])
 status = "closed"
@@ -163,17 +173,30 @@ elif case == "run-collision":
 elif case == "release-asset-positive":
     evidence = [test, record(metadata["review_release_asset"])]
 
-fixture = {
-    "version": "1.0.0",
-    "blockers": [{
-        "id": "P0-FIXTURE",
+def blocker(blocker_id):
+    return {
+        "id": blocker_id,
         "owner_role": "Release Agent",
         "closure_criteria": [criterion],
         "status": status,
         "release_blocking": True,
         "evidence": evidence,
-    }],
+    }
+
+fixture = {
+    "version": "1.0.0",
+    "blockers": [blocker(blocker_id) for blocker_id in expected_ids],
 }
+if case == "missing-id":
+    fixture["blockers"] = fixture["blockers"][:-1]
+elif case == "duplicate-id":
+    fixture["blockers"][-1]["id"] = fixture["blockers"][0]["id"]
+elif case == "release-flag":
+    fixture["blockers"][0]["release_blocking"] = False
+elif case == "empty-registry":
+    fixture["blockers"] = []
+elif case == "unknown-id":
+    fixture["blockers"][-1]["id"] = "P0-UNKNOWN"
 (directory / f"{case}.yaml").write_text(json.dumps(fixture), encoding="utf-8")
 PY
 }
@@ -208,7 +231,7 @@ if env PATH="$mock_dir:$PATH" QF_RELEASE_COMMIT="$commit_sha" \
   exit 1
 fi
 
-for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact status-bypass hash-mismatch report-identity run-collision; do
+for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact status-bypass hash-mismatch report-identity run-collision missing-id duplicate-id release-flag empty-registry unknown-id; do
   write_fixture "$case_name"
   if run_fixture "$case_name" >/dev/null 2>&1; then
     printf 'Expected fixture to fail: %s\n' "$case_name" >&2
@@ -226,6 +249,18 @@ if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN
 fi
 if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN='fixture-token' QF_RELEASE_COMMIT="$commit_sha" QF_MOCK_RUN_HEAD='ffffffffffffffffffffffffffffffffffffffff' "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
   printf '%s\n' 'Expected fixture to fail when run identity is not bound to the commit.' >&2
+  exit 1
+fi
+if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN='fixture-token' QF_RELEASE_COMMIT="$commit_sha" QF_MOCK_RUN_CONCLUSION='failure' "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
+  printf '%s\n' 'Expected fixture to fail when a verification run fails.' >&2
+  exit 1
+fi
+if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN='fixture-token' QF_RELEASE_COMMIT="$commit_sha" QF_MOCK_RUN_STATUS='completed' QF_MOCK_RUN_CONCLUSION='cancelled' "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
+  printf '%s\n' 'Expected fixture to fail when a verification run is cancelled.' >&2
+  exit 1
+fi
+if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN='fixture-token' QF_RELEASE_COMMIT="$commit_sha" QF_MOCK_RUN_PATH='.github/workflows/untrusted.yml@refs/heads/main' "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
+  printf '%s\n' 'Expected fixture to fail for an unauthorized verification workflow.' >&2
   exit 1
 fi
 

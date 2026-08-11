@@ -100,6 +100,10 @@ def gh_json(endpoint):
 run = gh_json(f"/repos/{repository}/actions/runs/{run_id}")
 if run.get("head_sha") != expected_commit:
     raise SystemExit("independent review report run is not bound to the current commit")
+if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
+    raise SystemExit("independent review report run did not complete successfully as workflow_dispatch")
+if run.get("path", "").split("@", 1)[0] != ".github/workflows/independent-agent-review.yml":
+    raise SystemExit("independent review report run used an unauthorized workflow")
 artifact_id = match.group(3)
 artifact = gh_json(f"/repos/{repository}/actions/artifacts/{artifact_id}")
 if artifact.get("expired") or artifact.get("workflow_run", {}).get("id") != run_id:

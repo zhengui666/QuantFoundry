@@ -48,6 +48,20 @@ role_content_types = {
     "Independent Test Agent": "application/vnd.quantfoundry.p0-test-evidence+json;version=1",
     "Independent Review Agent": "application/vnd.quantfoundry.p0-review-evidence+json;version=1",
 }
+required_p0_ids = {
+    "P0-PRODUCT-PAPER-DAILY-SCHEDULER",
+    "P0-CONTRACT-OPENAPI-45",
+    "P0-CONTRACT-TOOLS-13",
+    "P0-SCHEMA-ALEMBIC-AUTHORITY",
+    "P0-ARCHITECTURE-TARGET-LAYERS",
+    "P0-SECURITY-RESEARCH-INTEGRITY",
+    "P0-CI-REPRODUCIBILITY",
+    "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE",
+}
+allowed_verification_workflows = {
+    "Independent Test Agent": {".github/workflows/independent-agent-test.yml"},
+    "Independent Review Agent": {".github/workflows/independent-agent-review.yml"},
+}
 
 
 def invalid_value(value):
@@ -177,10 +191,15 @@ class RemoteVerifier:
             except OSError as error:
                 raise RuntimeError(f"gh api did not create downloaded evidence for {endpoint}") from error
 
-    def require_run(self, run_id, commit):
+    def require_run(self, run_id, commit, role):
         run = self.gh_json(f"/repos/{self.repository}/actions/runs/{run_id}")
         if run.get("head_sha") != commit:
             raise RuntimeError(f"GitHub Actions run {run_id} is not bound to commit {commit}")
+        if run.get("status") != "completed" or run.get("conclusion") != "success":
+            raise RuntimeError(f"GitHub Actions run {run_id} did not complete successfully")
+        workflow_path = run.get("path", "").split("@", 1)[0]
+        if workflow_path not in allowed_verification_workflows[role]:
+            raise RuntimeError(f"GitHub Actions run {run_id} used an unauthorized verification workflow")
 
     def resolve_tag_commit(self, tag):
         ref = self.gh_json(f"/repos/{self.repository}/git/ref/tags/{quote(tag, safe='')}")
@@ -197,14 +216,14 @@ class RemoteVerifier:
         if actual != expected:
             raise RuntimeError(f"download SHA-256 mismatch: expected {expected}, got {actual}")
 
-    def download_evidence(self, uri, commit, run_id, expected_sha256):
+    def download_evidence(self, uri, commit, run_id, role, expected_sha256):
         parsed = parse_artifact_uri(uri)
         if not parsed:
             raise RuntimeError("unsupported remote evidence URI")
         transport, repository, first, second = parsed
         if repository != self.repository:
             raise RuntimeError("remote evidence URI repository does not match GITHUB_REPOSITORY")
-        self.require_run(run_id, commit)
+        self.require_run(run_id, commit, role)
         if transport == "actions":
             artifact_run_id, artifact_id = first, second
             if artifact_run_id != str(run_id):
@@ -348,7 +367,7 @@ def validate_closed_evidence(blocker_id, item, remote):
         validate_commands(prefix, record.get("commands"), errors)
         if remote and len(errors) == record_error_count:
             try:
-                blob = remote.download_evidence(uri, commit_sha, run_id, artifact_sha256)
+                blob = remote.download_evidence(uri, commit_sha, run_id, role, artifact_sha256)
                 embedded_report = read_embedded_report(blob, report["path"], report["sha256"])
                 validate_embedded_report(prefix, embedded_report, record, role, run_id, remote, errors)
             except (RuntimeError, OSError) as error:
@@ -377,6 +396,30 @@ if (
     print(json.dumps({"registry": str(registry_path), "result": "invalid", "error": "blockers list is required"}, ensure_ascii=False))
     raise SystemExit(2)
 
+invalid = []
+registry_ids = []
+for index, item in enumerate(registry["blockers"]):
+    if not isinstance(item, dict):
+        invalid.append(f"blockers[{index}] must be an object")
+        continue
+    blocker_id = item.get("id")
+    if not isinstance(blocker_id, str) or not blocker_id:
+        invalid.append(f"blockers[{index}] has an invalid id")
+        continue
+    registry_ids.append(blocker_id)
+    if blocker_id not in required_p0_ids:
+        invalid.append(f"{blocker_id}: unknown P0 ID")
+    if item.get("release_blocking") is not True:
+        invalid.append(f"{blocker_id}: release_blocking must be true")
+    if item.get("status") not in {"open", "blocked", "closed"}:
+        invalid.append(f"{blocker_id}: unknown status")
+duplicate_ids = {blocker_id for blocker_id in registry_ids if registry_ids.count(blocker_id) > 1}
+if duplicate_ids:
+    invalid.extend(f"{blocker_id}: duplicate P0 ID" for blocker_id in sorted(duplicate_ids))
+missing_ids = required_p0_ids - set(registry_ids)
+if missing_ids:
+    invalid.extend(f"{blocker_id}: required P0 ID is missing" for blocker_id in sorted(missing_ids))
+
 closed_items = [item for item in registry["blockers"] if isinstance(item, dict) and item.get("release_blocking") and item.get("status") == "closed"]
 remote = None
 remote_error = None
@@ -386,7 +429,6 @@ if mode == "--require-closed" and closed_items:
     except RuntimeError as error:
         remote_error = str(error)
 
-invalid = []
 blocking = []
 for item in registry["blockers"]:
     if not isinstance(item, dict):
