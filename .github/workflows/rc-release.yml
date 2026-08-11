@@ -1,0 +1,246 @@
+name: rc-release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_TYPE" == tag ]]
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]]
+          commit="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
+          test "$commit" = "$GITHUB_SHA"
+          printf 'tag=%s\ncommit=%s\n' "$GITHUB_REF_NAME" "$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: 3.14.0
+      - name: Require all P0 closure evidence before any release work
+        shell: bash
+        env:
+          QF_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pip install --disable-pip-version-check uv==0.10.7
+          uv --directory backend sync --frozen --all-groups
+          scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
+
+  rc:
+    needs: preflight
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:18.0-alpine3.22@sha256:48c8ad3a7284b82be4482a52076d47d879fd6fb084a1cbfccbd551f9331b0e40
+        env: {POSTGRES_DB: quantfoundry, POSTGRES_USER: quantfoundry, POSTGRES_PASSWORD: ci-only-not-a-secret}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U quantfoundry -d quantfoundry"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      QF_ENV: test
+      QF_ENVIRONMENT: test
+      QF_GIT_COMMIT: ${{ needs.preflight.outputs.commit }}
+      QF_BUILD_ID: rc-${{ github.run_id }}-${{ github.run_attempt }}
+      QF_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
+      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
+      QF_SKIP_AUTO_CREATE: '1'
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      QF_ARTIFACT_ROOT: /tmp/quantfoundry/artifacts
+      QF_ARTIFACT_DIR: /tmp/quantfoundry/artifacts
+      QF_DATA_ROOT: /tmp/quantfoundry/data
+      QF_DATASET_DIR: /tmp/quantfoundry/data/datasets
+      QF_COST_MODEL_DIR: /tmp/quantfoundry/data/cost-models
+      QF_POLICY_DIR: /tmp/quantfoundry/data/policies
+      QF_TOOL_CONTRACT_PATH: ${{ github.workspace }}/docs/后端系统技术方案/contracts/tools/v1-p0.yaml
+      QF_AGENT_PROVIDER: local-deterministic
+      QF_AGENT_MODEL: local-v1
+      QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER: '1'
+      QF_CREDENTIAL_ENCRYPTION_KEY_ID: ci-test-key-v1
+      QF_CREDENTIAL_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: quantfoundry
+      PGPASSWORD: ci-only-not-a-secret
+      PGGSSENCMODE: disable
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: 3.14.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.19.0
+      - name: Install committed environments and host tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install --disable-pip-version-check uv==0.10.7
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          uv --directory backend sync --frozen --all-groups
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend exec playwright install --with-deps chromium
+          scripts/ci/install-shellcheck.sh
+          curl --fail --location --silent --show-error --output /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check --strict
+          tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint
+          sudo install --mode 0755 /tmp/actionlint /usr/local/bin/actionlint
+      - name: Run release-candidate gate
+        shell: bash
+        env:
+          QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-rc
+        run: |
+          set -euo pipefail
+          scripts/ci/run-gate.sh rc "$QF_CI_REPORT_DIR"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: rc-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qf-rc
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [preflight, rc]
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+      - id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'prefix=ghcr.io/%s\n' "$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Create or validate commit-bound draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          set -euo pipefail
+          scripts/release-evidence.sh create-or-validate-draft "$TAG" "$COMMIT"
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - id: backend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: deploy/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ steps.image.outputs.prefix }}/backend:${{ needs.preflight.outputs.tag }}
+            ${{ steps.image.outputs.prefix }}/backend:${{ needs.preflight.outputs.commit }}
+          sbom: true
+          provenance: mode=max
+          labels: |
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.commit }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.tag }}
+      - id: frontend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: deploy/Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ steps.image.outputs.prefix }}/frontend:${{ needs.preflight.outputs.tag }}
+            ${{ steps.image.outputs.prefix }}/frontend:${{ needs.preflight.outputs.commit }}
+          sbom: true
+          provenance: mode=max
+          labels: |
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.commit }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.tag }}
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.image.outputs.prefix }}/backend
+          subject-digest: ${{ steps.backend.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.image.outputs.prefix }}/frontend
+          subject-digest: ${{ steps.frontend.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rc-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence
+      - name: Collect immutable supply-chain and release evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+          IMAGE_PREFIX: ${{ steps.image.outputs.prefix }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/{attestations,provenance,signature-verification,sbom}
+          cp docs/治理/p0-blockers.yaml evidence/p0-blockers.yaml
+          cp docs/治理/release-known-issues.json evidence/release-known-issues.json
+          gh attestation download "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/attestations/backend.json
+          gh attestation download "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/attestations/frontend.json
+          gh attestation verify "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/signature-verification/backend.json
+          gh attestation verify "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/signature-verification/frontend.json
+          scripts/release-evidence.sh collect-oci-sbom "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" evidence/sbom/backend.spdx.json
+          scripts/release-evidence.sh collect-oci-sbom "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST" evidence/sbom/frontend.spdx.json
+          cp evidence/attestations/backend.json evidence/provenance/backend.json
+          cp evidence/attestations/frontend.json evidence/provenance/frontend.json
+          scripts/release-evidence.sh compose-bind evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
+          scripts/release-evidence.sh manifest "$TAG" "$COMMIT" evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
+          scripts/release-evidence.sh package-assets evidence
+      - name: Upload and remotely verify draft release evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test -s evidence/release-assets/release-manifest.json
+          test -s evidence/release-assets/SHA256SUMS
+          find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG"
+          scripts/release-evidence.sh verify-remote-assets "$TAG" "$COMMIT" evidence
+          gh release edit "$TAG" --draft=false

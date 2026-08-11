@@ -9,8 +9,9 @@ import os
 import sys
 
 import httpx
-from app.bootstrap import seed_local
 from bootstrap_owner import EMAIL_PATTERN, provision
+
+from app.bootstrap import seed_local
 
 
 def parse_args() -> argparse.Namespace:

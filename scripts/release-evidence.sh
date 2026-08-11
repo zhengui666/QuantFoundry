@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST' >&2
+  printf '%s\n' 'usage: release-evidence.sh gate TAG COMMIT OUTPUT_DIR | collect-inputs OUTPUT_DIR | collect-oci-sbom IMAGE DIGEST OUTPUT_FILE | manifest TAG COMMIT OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | compose-bind OUTPUT_DIR BACKEND_IMAGE BACKEND_DIGEST FRONTEND_IMAGE FRONTEND_DIGEST | package-assets OUTPUT_DIR | create-or-validate-draft TAG COMMIT | verify-remote-assets TAG COMMIT OUTPUT_DIR' >&2
   exit 2
 }
 
@@ -14,21 +14,6 @@ require_tag_commit() {
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
   [[ "$(git -C "$repo_root" rev-parse "refs/tags/$tag^{commit}")" == "$commit" ]]
   [[ "$(git -C "$repo_root" rev-parse HEAD)" == "$commit" ]]
-}
-
-run_gate() {
-  local output_dir="$1" name="$2"
-  shift 2
-  local status=0
-  set +e
-  "$@" >"$output_dir/reports/$name.log" 2>&1
-  status=$?
-  set -e
-  python3 - "$output_dir/reports/$name.json" "$name" "$status" <<'PY'
-import json, pathlib, sys
-pathlib.Path(sys.argv[1]).write_text(json.dumps({"gate": sys.argv[2], "exit_code": int(sys.argv[3])}, sort_keys=True) + "\n", encoding="utf-8")
-PY
-  [[ "$status" == 0 ]] || exit "$status"
 }
 
 gate() {
@@ -42,14 +27,83 @@ gate() {
   printf '%s\n' "$tag" > "$output_dir/tag.txt"
   (cd "$repo_root/backend" && uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
   git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
-  run_gate "$output_dir" p0-evidence make -C "$repo_root" p0-check
-  run_gate "$output_dir" known-issues "$repo_root/scripts/release-known-issues-check.sh"
-  run_gate "$output_dir" platform-static make -C "$repo_root" platform
-  run_gate "$output_dir" makefile-parse make -C "$repo_root" -n p0-check platform hygiene ci
-  run_gate "$output_dir" security-license-secret make -C "$repo_root" hygiene
-  run_gate "$output_dir" full-ci make -C "$repo_root" ci
-  run_gate "$output_dir" offline-fixture-unit bash -c "cd '$repo_root/backend' && uv run --frozen pytest -q tests/test_p0.py tests/test_quant_engines.py tests/test_event_migration_and_bootstrap.py -k 'not sqlite_foreign_keys'"
-  run_gate "$output_dir" full-restore bash -c "cd '$repo_root/backend' && uv run --frozen pytest -q tests/test_event_migration_and_bootstrap.py -k 'restore or roundtrip'"
+  QF_RELEASE_TAG="$tag" QF_RELEASE_COMMIT="$commit" "$repo_root/scripts/ci/run-gate.sh" rc "$output_dir"
+}
+
+collect_inputs() {
+  local output_dir="$1"
+  mkdir -p "$output_dir"
+  cp "$repo_root/docs/治理/p0-blockers.yaml" "$output_dir/p0-blockers.yaml"
+  cp "$repo_root/docs/治理/release-known-issues.json" "$output_dir/release-known-issues.json"
+  git -C "$repo_root" rev-parse 'HEAD^{commit}' > "$output_dir/commit.txt"
+  (cd "$repo_root/backend" && uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
+  git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
+}
+
+collect_oci_sbom() {
+  local image="$1" digest="$2" output_file="$3"
+  [[ "$image" == ghcr.io/* ]]
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+  [[ -n "${GHCR_TOKEN:-}" ]] || {
+    printf '%s\n' 'GHCR_TOKEN is required to fetch the published image SBOM.' >&2
+    exit 1
+  }
+  mkdir -p "$(dirname "$output_file")"
+  local repository="${image#ghcr.io/}"
+  local token
+  token="$(curl --fail --silent --show-error --user "x-access-token:${GHCR_TOKEN}" \
+    "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+    | python3 -c 'import json,sys; value=json.load(sys.stdin).get("token"); assert isinstance(value,str) and value; print(value)')"
+  GHCR_BEARER_TOKEN="$token" python3 - "https://ghcr.io" "$repository" "$digest" "$output_file" <<'PY'
+import json
+import os
+import pathlib
+import sys
+import urllib.request
+
+registry, repository, subject_digest, output_name = sys.argv[1:]
+token = os.environ["GHCR_BEARER_TOKEN"]
+accept = ", ".join((
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+))
+
+def get(path, media_type=accept):
+    request = urllib.request.Request(
+        f"{registry}/v2/{repository}/{path}",
+        headers={"Authorization": f"Bearer {token}", "Accept": media_type},
+    )
+    with urllib.request.urlopen(request) as response:
+        return response.read()
+
+index = json.loads(get(f"manifests/{subject_digest}").decode("utf-8"))
+descriptors = index.get("manifests", [])
+attestations = [
+    item for item in descriptors
+    if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
+    and item.get("annotations", {}).get("vnd.docker.reference.digest") == subject_digest
+]
+if not attestations:
+    raise SystemExit("published image has no BuildKit attestation manifest bound to its digest")
+
+for descriptor in attestations:
+    manifest = json.loads(get(f"manifests/{descriptor['digest']}").decode("utf-8"))
+    for layer in manifest.get("layers", []):
+        predicate_type = layer.get("annotations", {}).get("in-toto.io/predicate-type")
+        if predicate_type != "https://spdx.dev/Document":
+            continue
+        payload = get(f"blobs/{layer['digest']}", "application/vnd.in-toto+json")
+        envelope = json.loads(payload.decode("utf-8"))
+        document = envelope.get("predicate")
+        if not isinstance(document, dict) or not isinstance(document.get("spdxVersion"), str):
+            raise SystemExit("SBOM attestation did not contain an SPDX document")
+        pathlib.Path(output_name).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        raise SystemExit(0)
+
+raise SystemExit("published image has no SPDX SBOM predicate")
+PY
 }
 
 manifest() {
@@ -86,12 +140,40 @@ required = [
     output / "alembic-heads.txt",
     output / "alembic-migrations.txt",
     output / "compose-images.json",
+    output / "p0-blockers.yaml",
+    output / "release-known-issues.json",
+    output / "sbom/backend.spdx.json",
+    output / "sbom/frontend.spdx.json",
+    output / "provenance/backend.json",
+    output / "provenance/frontend.json",
+    output / "attestations/backend.json",
+    output / "attestations/frontend.json",
+    output / "signature-verification/backend.json",
+    output / "signature-verification/frontend.json",
 ]
 migrations = sorted((root / "backend/alembic/versions").glob("*.py"))
-reports = sorted((output / "reports").glob("*"))
-if not migrations or not reports:
-    raise SystemExit("Alembic migrations and RC gate reports are required")
+reports = [output / "result.json", output / "steps.ndjson"]
+if not migrations or any(not path.is_file() for path in reports):
+    raise SystemExit("Alembic migrations and structured RC gate reports are required")
+if (output / "release-assets").exists() or (output / "SHA256SUMS").exists():
+    raise SystemExit("release asset staging directory and SHA256SUMS must not pre-exist")
+
 evidence_files = sorted(path for path in output.rglob("*") if path.is_file() and path.name not in {"release-manifest.json", "SHA256SUMS"})
+
+def asset_name(source):
+    if source in {"release-manifest.json", "SHA256SUMS"}:
+        return source
+    if not source or source.startswith("/") or any(part in {"", ".", ".."} for part in source.split("/")):
+        raise SystemExit(f"invalid release asset source: {source!r}")
+    return source.replace("/", "--")
+
+asset_sources = ["release-manifest.json", "SHA256SUMS"] + [str(path.relative_to(output)) for path in evidence_files]
+asset_names = [asset_name(source) for source in asset_sources]
+if len(set(asset_sources)) != len(asset_sources):
+    raise SystemExit("release asset inventory has duplicate sources")
+if len(set(asset_names)) != len(asset_names):
+    raise SystemExit("release asset inventory name collision")
+release_assets = [{"name": name, "source": source} for name, source in zip(asset_names, asset_sources, strict=True)]
 
 manifest = {
     "schema_version": "1.0.0",
@@ -107,15 +189,242 @@ manifest = {
     },
     "reports": [record(path) for path in reports],
     "evidence_files": [record(path) for path in evidence_files],
+    "release_assets": release_assets,
     "images": [
         {"name": backend_image, "digest": backend_digest, "sbom": "buildkit-attestation", "provenance": "github-attestation", "signature": "github-attestation"},
         {"name": frontend_image, "digest": frontend_digest, "sbom": "buildkit-attestation", "provenance": "github-attestation", "signature": "github-attestation"},
     ],
     "compose_images": json.loads((output / "compose-images.json").read_text(encoding="utf-8")),
+    "supply_chain": {
+        "sbom": [record(output / "sbom/backend.spdx.json"), record(output / "sbom/frontend.spdx.json")],
+        "provenance": [record(output / "provenance/backend.json"), record(output / "provenance/frontend.json")],
+        "attestations": [record(output / "attestations/backend.json"), record(output / "attestations/frontend.json")],
+        "signature_verification": [record(output / "signature-verification/backend.json"), record(output / "signature-verification/frontend.json")],
+    },
+    "status": "complete",
+    "checksums": {"algorithm": "sha256", "path": "SHA256SUMS"},
 }
 if manifest["compose_images"] != {"api": f"{backend_image}@{backend_digest}", "frontend": f"{frontend_image}@{frontend_digest}"}:
     raise SystemExit("manifest refuses a Compose image binding that differs from published GHCR digests")
 (output / "release-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+package_assets() {
+  local output_dir="$1"
+  python3 - "$output_dir" <<'PY'
+import hashlib
+import json
+import pathlib
+import shutil
+import sys
+
+output = pathlib.Path(sys.argv[1]).resolve()
+manifest_path = output / "release-manifest.json"
+if not manifest_path.is_file():
+    raise SystemExit("release-manifest.json is required before packaging release assets")
+if (output / "release-assets").exists() or (output / "SHA256SUMS").exists():
+    raise SystemExit("release asset staging directory and SHA256SUMS must not pre-exist")
+try:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as error:
+    raise SystemExit(f"invalid release manifest: {error}") from error
+
+inventory = manifest.get("release_assets")
+if not isinstance(inventory, list) or not inventory:
+    raise SystemExit("release manifest requires a non-empty release_assets inventory")
+
+names = []
+sources = []
+for index, item in enumerate(inventory):
+    if not isinstance(item, dict) or set(item) != {"name", "source"}:
+        raise SystemExit(f"release_assets[{index}] must contain exactly name and source")
+    name, source = item["name"], item["source"]
+    if not isinstance(name, str) or not name or "/" in name or name in {".", ".."}:
+        raise SystemExit(f"release_assets[{index}].name must be a non-empty flat filename")
+    if not isinstance(source, str) or not source or source.startswith("/") or any(part in {"", ".", ".."} for part in source.split("/")):
+        raise SystemExit(f"release_assets[{index}].source must be a safe relative path")
+    names.append(name)
+    sources.append(source)
+
+if len(set(names)) != len(names):
+    raise SystemExit("release asset inventory name collision")
+if len(set(sources)) != len(sources):
+    raise SystemExit("release asset inventory source collision")
+if {"release-manifest.json", "SHA256SUMS"} - set(names):
+    raise SystemExit("release asset inventory must upload release-manifest.json and SHA256SUMS")
+if not {"release-manifest.json", "SHA256SUMS"}.issubset(sources):
+    raise SystemExit("release asset inventory must map release-manifest.json and SHA256SUMS sources")
+
+source_files = {
+    path.relative_to(output).as_posix()
+    for path in output.rglob("*")
+    if path.is_file() and "release-assets" not in path.relative_to(output).parts and path.name != "SHA256SUMS"
+}
+
+declared_source_files = set(sources) - {"SHA256SUMS"}
+missing = declared_source_files - source_files
+orphan = source_files - declared_source_files
+if missing:
+    raise SystemExit(f"release asset inventory missing source files: {sorted(missing)}")
+if orphan:
+    raise SystemExit(f"release asset inventory has orphan source files: {sorted(orphan)}")
+
+staging = output / "release-assets"
+staging.mkdir()
+for item in inventory:
+    if item["source"] == "SHA256SUMS":
+        continue
+    shutil.copyfile(output / item["source"], staging / item["name"])
+
+checksum_entries = []
+for path in sorted(staging.iterdir(), key=lambda candidate: candidate.name):
+    if not path.is_file():
+        raise SystemExit(f"release asset staging contains a non-file: {path.name}")
+    checksum_entries.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n")
+checksum_path = output / "SHA256SUMS"
+checksum_path.write_text("".join(checksum_entries), encoding="utf-8")
+checksum_name = next(item["name"] for item in inventory if item["source"] == "SHA256SUMS")
+shutil.copyfile(checksum_path, staging / checksum_name)
+
+staged_names = {path.name for path in staging.iterdir() if path.is_file()}
+if staged_names != set(names):
+    raise SystemExit("release asset staging does not exactly match manifest inventory")
+checksums = {}
+for line in checksum_path.read_text(encoding="utf-8").splitlines():
+    digest, separator, name = line.partition("  ")
+    if not separator or len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest) or not name:
+        raise SystemExit("SHA256SUMS contains an invalid entry")
+    if name in checksums:
+        raise SystemExit("SHA256SUMS contains a duplicate asset")
+    checksums[name] = digest
+if set(checksums) != staged_names - {checksum_name}:
+    raise SystemExit("SHA256SUMS inventory does not exactly match uploaded assets excluding itself")
+for name, digest in checksums.items():
+    if hashlib.sha256((staging / name).read_bytes()).hexdigest() != digest:
+        raise SystemExit(f"SHA256SUMS digest mismatch for {name}")
+PY
+}
+
+create_or_validate_draft() {
+  local tag="$1" commit="$2"
+  require_tag_commit "$tag" "$commit"
+  [[ -n "${GH_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || {
+    printf '%s\n' 'GH_TOKEN and GITHUB_REPOSITORY are required to create or validate a draft release.' >&2
+    exit 1
+  }
+  command -v gh >/dev/null || { printf '%s\n' 'gh is required to create or validate a draft release.' >&2; exit 1; }
+
+  local release_json
+  if ! release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish 2>/dev/null)"; then
+    gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --target "$commit" --title "$tag" --generate-notes --draft
+    release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish)"
+  fi
+  python3 - "$tag" "$commit" "$release_json" <<'PY'
+import json
+import sys
+
+tag, commit, payload = sys.argv[1:]
+try:
+    release = json.loads(payload)
+except json.JSONDecodeError as error:
+    raise SystemExit(f"release lookup returned invalid JSON: {error}") from error
+if release.get("isDraft") is not True:
+    raise SystemExit(f"release {tag} already exists but is not a draft")
+if release.get("targetCommitish") != commit:
+    raise SystemExit(f"release {tag} draft target does not match the tagged commit")
+PY
+}
+
+verify_remote_assets() {
+  local tag="$1" commit="$2" output_dir="$3"
+  require_tag_commit "$tag" "$commit"
+  [[ -n "${GH_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || {
+    printf '%s\n' 'GH_TOKEN and GITHUB_REPOSITORY are required for remote release verification.' >&2
+    exit 1
+  }
+  command -v gh >/dev/null || { printf '%s\n' 'gh is required for remote release verification.' >&2; exit 1; }
+  python3 - "$tag" "$commit" "$output_dir" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+from urllib.parse import quote
+
+tag, commit, output_name = sys.argv[1:]
+repository = os.environ["GITHUB_REPOSITORY"]
+staging = pathlib.Path(output_name) / "release-assets"
+local_manifest = staging / "release-manifest.json"
+local_checksums = staging / "SHA256SUMS"
+if not local_manifest.is_file() or not local_checksums.is_file():
+    raise SystemExit("local packaged manifest and SHA256SUMS are required before remote verification")
+env = os.environ.copy()
+
+def gh_json(endpoint):
+    completed = subprocess.run(["gh", "api", endpoint], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if completed.returncode:
+        raise SystemExit(f"gh api failed for {endpoint}: {completed.stderr.strip() or completed.returncode}")
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
+
+release = gh_json(f"/repos/{repository}/releases/tags/{quote(tag, safe='')}")
+if release.get("draft") is not True or release.get("target_commitish") != commit:
+    raise SystemExit("remote release is not a draft bound to the tagged commit")
+assets = release.get("assets")
+if not isinstance(assets, list):
+    raise SystemExit("remote release assets inventory is invalid")
+by_name = {}
+for asset in assets:
+    if not isinstance(asset, dict) or not isinstance(asset.get("name"), str) or not isinstance(asset.get("id"), int) or asset["name"] in by_name:
+        raise SystemExit("remote release asset metadata is invalid")
+    by_name[asset["name"]] = asset
+
+def download(name):
+    if name not in by_name:
+        raise SystemExit(f"remote release is missing required asset: {name}")
+    with tempfile.TemporaryDirectory(prefix="qf-release-asset-") as directory:
+        destination = pathlib.Path(directory) / "asset"
+        completed = subprocess.run(
+            ["gh", "api", f"/repos/{repository}/releases/assets/{by_name[name]['id']}", "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(destination)],
+            env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        if completed.returncode:
+            raise SystemExit(f"cannot download remote release asset {name}: {completed.stderr.strip() or completed.returncode}")
+        return destination.read_bytes()
+
+remote_manifest = download("release-manifest.json")
+remote_checksums = download("SHA256SUMS")
+if remote_manifest != local_manifest.read_bytes() or remote_checksums != local_checksums.read_bytes():
+    raise SystemExit("remote manifest or SHA256SUMS does not exactly match the packaged release evidence")
+try:
+    manifest = json.loads(remote_manifest)
+except json.JSONDecodeError as error:
+    raise SystemExit(f"remote release manifest is invalid JSON: {error}") from error
+if manifest.get("tag") != tag or manifest.get("commit") != commit:
+    raise SystemExit("remote release manifest is not bound to the tag and commit")
+inventory = manifest.get("release_assets")
+if not isinstance(inventory, list) or not inventory:
+    raise SystemExit("remote release manifest has no asset inventory")
+names = [item.get("name") for item in inventory if isinstance(item, dict) and set(item) == {"name", "source"}]
+if len(names) != len(inventory) or any(not isinstance(name, str) for name in names) or len(set(names)) != len(names) or set(names) != set(by_name):
+    raise SystemExit("remote release assets do not exactly match the manifest inventory")
+checksums = {}
+for line in remote_checksums.decode("utf-8").splitlines():
+    digest, separator, name = line.partition("  ")
+    if not separator or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest) or not name or name in checksums:
+        raise SystemExit("remote SHA256SUMS is invalid")
+    checksums[name] = digest
+if set(checksums) != set(names) - {"SHA256SUMS"}:
+    raise SystemExit("remote SHA256SUMS does not cover exactly the non-self asset inventory")
+for name, digest in checksums.items():
+    if hashlib.sha256(download(name)).hexdigest() != digest:
+        raise SystemExit(f"remote asset SHA-256 mismatch: {name}")
+print(json.dumps({"tag": tag, "commit": commit, "assets": len(names), "result": "pass"}, sort_keys=True))
 PY
 }
 
@@ -146,7 +455,12 @@ PY
 
 case "${1:-}" in
   gate) [[ "$#" == 4 ]] || usage; gate "$2" "$3" "$4" ;;
+  collect-inputs) [[ "$#" == 2 ]] || usage; collect_inputs "$2" ;;
+  collect-oci-sbom) [[ "$#" == 4 ]] || usage; collect_oci_sbom "$2" "$3" "$4" ;;
   manifest) [[ "$#" == 8 ]] || usage; manifest "$2" "$3" "$4" "$5" "$6" "$7" "$8" ;;
   compose-bind) [[ "$#" == 6 ]] || usage; compose_bind "$2" "$3" "$4" "$5" "$6" ;;
+  package-assets) [[ "$#" == 2 ]] || usage; package_assets "$2" ;;
+  create-or-validate-draft) [[ "$#" == 3 ]] || usage; create_or_validate_draft "$2" "$3" ;;
+  verify-remote-assets) [[ "$#" == 4 ]] || usage; verify_remote_assets "$2" "$3" "$4" ;;
   *) usage ;;
 esac

@@ -17,6 +17,25 @@
   "evidence_files": [],
   "images": [],
   "compose_images": [],
-  "supply_chain": [],
-  "checksums": "SHA256SUMS"
+  "supply_chain": {
+    "sbom": [],
+    "provenance": [],
+    "attestations": [],
+    "signature_verification": []
+  },
+  "release_assets": [
+    {
+      "name": "release-manifest.json",
+      "source": "release-manifest.json"
+    },
+    {
+      "name": "SHA256SUMS",
+      "source": "SHA256SUMS"
+    }
+  ],
+  "status": "pending",
+  "checksums": {
+    "algorithm": "sha256",
+    "path": "SHA256SUMS"
+  }
 }
