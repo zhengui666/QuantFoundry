@@ -1,0 +1,38 @@
+name: Visual baseline bootstrap candidate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    if: github.event_name == 'workflow_dispatch' || github.event.before == '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.19.0'
+      - name: Generate unapproved candidate from current revision
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend exec playwright install --with-deps chromium
+          pnpm --dir frontend exec playwright test e2e/visual.spec.ts --update-snapshots
+          pnpm --dir frontend exec playwright test e2e/golden.spec.ts --grep 'P15 memo' --update-snapshots
+          mkdir -p /tmp/qf-linux-bootstrap
+          find frontend/e2e -type f -name '*-linux.png' -exec cp --parents '{}' /tmp/qf-linux-bootstrap/ \;
+          test -n "$(find /tmp/qf-linux-bootstrap -type f -name '*-linux.png' -print -quit)"
+          printf '%s\n' 'Candidate only: a human must review and commit an approved baseline before normal PR CI can use it.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: visual-baseline-candidate-${{ github.sha }}
+          path: /tmp/qf-linux-bootstrap
+          if-no-files-found: error
+          retention-days: 7

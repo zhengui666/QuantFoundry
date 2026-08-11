@@ -1,0 +1,9 @@
+{
+  "manifest_version": 1,
+  "float64_correlation": {"absolute": 1e-12, "relative": 1e-12},
+  "float64_return": {"absolute": 1e-12, "relative": 1e-12},
+  "float64_weight": {"absolute": 1e-12, "relative": 1e-12},
+  "counts": "exact",
+  "states": "exact",
+  "hashes": "exact"
+}

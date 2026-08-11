@@ -1,0 +1,11 @@
+:root {
+  --qf-radius-sm: 6px;
+  --qf-radius-md: 10px;
+  --qf-radius-full: 999px;
+  --qf-shadow-drawer: -12px 0 32px rgb(23 32 42 / 18%);
+}
+
+@theme inline {
+  --radius-qf-sm: var(--qf-radius-sm);
+  --radius-qf-md: var(--qf-radius-md);
+}

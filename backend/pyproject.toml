@@ -1,0 +1,58 @@
+[project]
+name = "quantfoundry-backend"
+version = "0.1.0"
+license = "AGPL-3.0-only"
+requires-python = "==3.14.*"
+dependencies = [
+    "fastapi>=0.139,<0.140",
+    "uvicorn>=0.30",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.12",
+    "alembic>=1.18,<1.19",
+    "psycopg[binary]>=3.3.4",
+    "pyyaml>=6.0.3",
+    "jsonschema>=4.26.0",
+    "duckdb>=1.5,<1.6",
+    "pyarrow>=23,<24",
+    "httpx>=0.28.1",
+    "cryptography>=45,<47",
+    "langgraph>=1,<2",
+    "langgraph-checkpoint-postgres>=3,<4",
+    "langgraph-checkpoint-sqlite>=3,<4",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "BLE"]
+# FastAPI dependency injection intentionally uses Depends/Security defaults.
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+    "paper_scheduler: QF-PAPER-SCH-001..007 PostgreSQL acceptance coverage",
+    "pg18: requires a real PostgreSQL 18+ database and Alembic head",
+]
+
+[tool.mypy]
+files = ["app", "workers", "scheduler"]
+explicit_package_bases = true
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# Legacy declarative models remain the only untyped boundary; all other codes/modules
+# are strict.  Remove with the SQLAlchemy 2 Mapped migration.
+module = ["app.main", "app.queue", "app.job_effects", "app.agent_runtime"]
+disable_error_code = ["arg-type", "assignment"]
+
+[dependency-groups]
+dev = [
+    "datamodel-code-generator==0.35.0",
+    "httpx>=0.28.1",
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.2",
+]
