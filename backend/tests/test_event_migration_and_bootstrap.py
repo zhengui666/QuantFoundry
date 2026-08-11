@@ -15,12 +15,9 @@ from typing import Any
 
 import psycopg
 import pytest
-from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from app.event_contract import EVENT_TYPES
-from app.public_ids import is_public_id
 from sqlalchemy import (
     JSON,
     Column,
@@ -40,6 +37,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError
 
+from alembic import command
+from app.event_contract import EVENT_TYPES
+from app.public_ids import is_public_id
 from scripts import migration_roundtrip_check
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
