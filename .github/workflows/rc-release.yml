@@ -219,9 +219,7 @@ jobs:
           cp evidence/attestations/frontend.json evidence/provenance/frontend.json
           scripts/release-evidence.sh compose-bind evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
           scripts/release-evidence.sh manifest "$TAG" "$COMMIT" evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
-          checksum_file="$RUNNER_TEMP/qf-release-SHA256SUMS"
-          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$checksum_file")
-          mv "$checksum_file" evidence/SHA256SUMS
+          scripts/release-evidence.sh package-assets evidence
       - name: Create release only after evidence is complete
         shell: bash
         env:
@@ -229,7 +227,7 @@ jobs:
           TAG: ${{ needs.preflight.outputs.tag }}
         run: |
           set -euo pipefail
-          test -s evidence/release-manifest.json
-          test -s evidence/SHA256SUMS
+          test -s evidence/release-assets/release-manifest.json
+          test -s evidence/release-assets/SHA256SUMS
           gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
-          find evidence -type f -print0 | sort -z | xargs -0 gh release upload "$TAG" --clobber
+          find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG"

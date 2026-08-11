@@ -24,20 +24,23 @@ if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-
     errors.append("agent-change gate does not require and validate an independent review report")
 
 p0_check = read("scripts/p0-check.sh")
-for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "verify_ghcr", "remote_verification"):
+for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "distinct GitHub Actions runs", "remote_verification"):
     if required not in p0_check:
         errors.append(f"p0-check lacks required remote verification control: {required}")
 
 release_script = read("scripts/release-evidence.sh")
-for required in ('"checksums": {"algorithm": "sha256", "path": "SHA256SUMS"}', '"release-manifest.json", "SHA256SUMS"', 'run-gate.sh" rc'):
+for required in ('"checksums": {"algorithm": "sha256", "path": "SHA256SUMS"}', '"name": name, "source": source', "package-assets", "release asset inventory name collision", 'run-gate.sh" rc'):
     if required not in release_script:
         errors.append(f"release evidence manifest is missing {required}")
 
 template = json.loads(read("docs/治理/release-evidence-manifest.template.json"))
 if template.get("checksums") != {"algorithm": "sha256", "path": "SHA256SUMS"}:
     errors.append("release evidence template checksums field is not canonical")
-if not {"release-manifest.json", "SHA256SUMS"}.issubset(set(template.get("release_assets", []))):
+release_assets = template.get("release_assets")
+if not isinstance(release_assets, list) or not {"release-manifest.json", "SHA256SUMS"}.issubset({item.get("name") for item in release_assets if isinstance(item, dict)}):
     errors.append("release evidence template does not enumerate manifest and SHA256SUMS assets")
+if any(not isinstance(item, dict) or set(item) != {"name", "source"} for item in release_assets or []):
+    errors.append("release evidence template asset inventory is not canonical")
 
 try:
     ast.parse(read("scripts/api_healthcheck.py"))
@@ -53,6 +56,8 @@ for required in ("contents: write", "packages: write", "attestations: write", "i
         errors.append(f"rc-release publish job lacks required scoped permission {required}")
 if "scripts/ci/run-gate.sh rc" not in rc:
     errors.append("rc-release does not invoke the canonical rc run-gate entrypoint")
+if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/release-assets" not in rc or "--clobber" in rc:
+    errors.append("rc-release does not package and upload unique release assets safely")
 
 agent = read(".github/workflows/agent-change-gate.yml")
 for required in ("AGENTS.md", "PROJECT_BACKGROUND.md", "docs/治理/**", ".github/workflows/**", "scripts/ci/**", "scripts/release*"):
@@ -60,6 +65,11 @@ for required in ("AGENTS.md", "PROJECT_BACKGROUND.md", "docs/治理/**", ".githu
         errors.append(f"agent-change-gate path coverage misses {required}")
 if "paths-ignore:" in agent or "independent_review_evidence" in agent or "review required" in agent:
     errors.append("agent-change-gate contains an unsafe exclusion or self-generated review placeholder")
+
+review_verifier = read("scripts/ci/verify-independent-review-report.sh")
+for required in ("artifact_report", "zipfile", "reviewed_paths", "artifact report is not bound to the current commit and run"):
+    if required not in review_verifier:
+        errors.append(f"independent review verifier lacks artifact-content validation: {required}")
 
 for workflow in sorted((root / ".github/workflows").glob("*.yml")):
     text = workflow.read_text(encoding="utf-8")
@@ -76,3 +86,6 @@ if errors:
     raise SystemExit("\n".join(errors))
 print(json.dumps({"gate": "release-governance-static", "result": "pass"}, sort_keys=True))
 PY
+"$repo_root/scripts/p0-check-test.sh"
+"$repo_root/scripts/ci/release-evidence-assets-test.sh"
+"$repo_root/scripts/ci/verify-independent-review-report-test.sh"

@@ -3,6 +3,28 @@ status_semantics:
   open: "Defined but not independently verified."
   blocked: "Cannot close until a stated dependency or authority is available."
   closed: "All closure criteria, independent verification, and evidence are complete."
+closure_evidence_contract:
+  schema_version: "1.0.0"
+  artifact_transport: "GitHub Actions artifact or GitHub Release asset ZIP containing the declared JSON report_path."
+  report_fields:
+    - schema_version
+    - content_type
+    - commit_sha
+    - github_run_id
+    - verifier_role
+    - verified_at_utc
+    - closure_criteria
+    - commands
+    - artifact
+    - attestation
+  role_content_types:
+    Independent Test Agent: "application/vnd.quantfoundry.p0-test-evidence+json;version=1"
+    Independent Review Agent: "application/vnd.quantfoundry.p0-review-evidence+json;version=1"
+  attestation_requirements:
+    - provider is github-actions
+    - issuer is https://token.actions.githubusercontent.com
+    - repository, run_id, subject_uri, and subject_sha256 bind the downloaded report content
+  independence: "Independent Test Agent and Independent Review Agent records must use distinct github-actions run ids."
 blockers:
   - id: P0-PRODUCT-PAPER-DAILY-SCHEDULER
     title: Paper daily scheduler is safe, unique, recoverable, and audited

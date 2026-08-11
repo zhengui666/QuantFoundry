@@ -24,8 +24,14 @@
     "signature_verification": []
   },
   "release_assets": [
-    "release-manifest.json",
-    "SHA256SUMS"
+    {
+      "name": "release-manifest.json",
+      "source": "release-manifest.json"
+    },
+    {
+      "name": "SHA256SUMS",
+      "source": "SHA256SUMS"
+    }
   ],
   "status": "pending",
   "checksums": {
