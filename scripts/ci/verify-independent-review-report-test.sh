@@ -7,21 +7,35 @@ mock_dir="$fixture_dir/mock-bin"
 trap 'rm -rf "$fixture_dir"' EXIT
 mkdir -p "$mock_dir"
 
-commit_sha='0123456789abcdef0123456789abcdef01234567'
+commit_sha="$(git -C "$repo_root" rev-parse HEAD)"
 export QF_REVIEW_MOCK_COMMIT="$commit_sha"
 
-python3 - "$fixture_dir" "$commit_sha" <<'PY'
+python3 - "$fixture_dir" "$commit_sha" "$repo_root" <<'PY'
 import hashlib
 import json
 import pathlib
+import subprocess
 import sys
 import zipfile
 
 directory = pathlib.Path(sys.argv[1])
 commit = sys.argv[2]
+repository_root = sys.argv[3]
 content_type = "application/vnd.quantfoundry.independent-review+json;version=1"
+criteria = [
+    "Agent/governance change conforms to canonical contracts and fail-closed CI policy.",
+    "Independent review commands completed successfully on the reviewed commit.",
+]
+scope_paths = [
+    "AGENTS.md", "PROJECT_BACKGROUND.md", "backend/app/agent_runtime", "backend/workers",
+    "docs/Agent技术方案", "docs/后端系统技术方案/contracts/tools", "docs/治理",
+    ".github/workflows", "scripts/ci", "scripts/release-evidence.sh", "scripts/release-check.sh",
+]
+scope_digest = hashlib.sha256(subprocess.check_output([
+    "git", "-C", repository_root, "ls-tree", "-r", "--full-tree", commit, "--", *scope_paths,
+])).hexdigest()
 
-def make_artifact(name, report_commit):
+def make_artifact(name, report_commit, report_scope_digest=scope_digest):
     embedded = {
         "schema_version": "1.0.0",
         "content_type": content_type,
@@ -29,8 +43,10 @@ def make_artifact(name, report_commit):
         "github_run_id": 100,
         "verifier_role": "Independent Review Agent",
         "result": "approved",
-        "reviewed_paths": ["scripts/ci/verify-independent-review-report.sh"],
-        "commands": [{"command": "shellcheck scripts/ci/verify-independent-review-report.sh", "exit_code": 0}],
+        "criteria": criteria,
+        "reviewed_paths": scope_paths,
+        "review_scope_sha256": report_scope_digest,
+        "commands": [{"command": "shellcheck scripts/ci/verify-independent-review-report.sh", "result": "pass", "exit_code": 0}],
     }
     payload = json.dumps(embedded, sort_keys=True, separators=(",", ":")).encode()
     archive = directory / f"{name}.zip"
@@ -51,6 +67,7 @@ def make_artifact(name, report_commit):
 
 make_artifact("positive", commit)
 make_artifact("wrong-content-commit", "ffffffffffffffffffffffffffffffffffffffff")
+make_artifact("wrong-scope-digest", commit, "f" * 64)
 PY
 
 mock_gh="$mock_dir/gh"
@@ -79,6 +96,10 @@ run_verifier() {
 run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip"
 if run_verifier "$fixture_dir/wrong-content-commit.json" "$fixture_dir/wrong-content-commit.zip" >/dev/null 2>&1; then
   printf '%s\n' 'Expected artifact content with a stale commit to fail.' >&2
+  exit 1
+fi
+if run_verifier "$fixture_dir/wrong-scope-digest.json" "$fixture_dir/wrong-scope-digest.zip" >/dev/null 2>&1; then
+  printf '%s\n' 'Expected artifact content with a mismatched review scope digest to fail.' >&2
   exit 1
 fi
 

@@ -3,12 +3,14 @@ set -euo pipefail
 
 report_path="${1:-}"
 expected_commit="${2:-}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 [[ -n "$report_path" && -f "$report_path" ]] || { printf '%s\n' 'Independent review report is required and must be an existing file.' >&2; exit 2; }
 [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'Expected commit must be a full lowercase SHA.' >&2; exit 2; }
 [[ -n "${GITHUB_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || { printf '%s\n' 'GITHUB_TOKEN and GITHUB_REPOSITORY are required to verify independent review evidence.' >&2; exit 2; }
 command -v gh >/dev/null || { printf '%s\n' 'gh is required to verify independent review evidence.' >&2; exit 2; }
 
+cd "$repo_root"
 GITHUB_TOKEN="$GITHUB_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" python3 - "$report_path" "$expected_commit" <<'PY'
 import hashlib
 import io
@@ -28,6 +30,34 @@ repository = os.environ["GITHUB_REPOSITORY"]
 token = os.environ["GITHUB_TOKEN"]
 content_type = "application/vnd.quantfoundry.independent-review+json;version=1"
 sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
+criteria = [
+    "Agent/governance change conforms to canonical contracts and fail-closed CI policy.",
+    "Independent review commands completed successfully on the reviewed commit.",
+]
+scope_paths = [
+    "AGENTS.md",
+    "PROJECT_BACKGROUND.md",
+    "backend/app/agent_runtime",
+    "backend/workers",
+    "docs/Agent技术方案",
+    "docs/后端系统技术方案/contracts/tools",
+    "docs/治理",
+    ".github/workflows",
+    "scripts/ci",
+    "scripts/release-evidence.sh",
+    "scripts/release-check.sh",
+]
+
+def review_scope_sha256():
+    completed = subprocess.run(
+        ["git", "ls-tree", "-r", "--full-tree", expected_commit, "--", *scope_paths],
+        text=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode:
+        raise SystemExit(f"cannot calculate independent review scope digest: {completed.stderr.decode().strip() or completed.returncode}")
+    return hashlib.sha256(completed.stdout).hexdigest()
 try:
     report = json.loads(report_path.read_text(encoding="utf-8"))
 except (OSError, json.JSONDecodeError) as error:
@@ -104,13 +134,25 @@ if embedded.get("commit") != expected_commit or embedded.get("github_run_id") !=
     raise SystemExit("independent review artifact report is not bound to the current commit and run")
 if embedded.get("verifier_role") != "Independent Review Agent" or embedded.get("result") != "approved":
     raise SystemExit("independent review artifact report is not an approved independent review")
+if embedded.get("criteria") != criteria:
+    raise SystemExit("independent review artifact report criteria do not match the canonical review contract")
 reviewed_paths = embedded.get("reviewed_paths")
-if not isinstance(reviewed_paths, list) or not reviewed_paths or any(not isinstance(path, str) or not path.strip() for path in reviewed_paths):
-    raise SystemExit("independent review artifact report requires non-empty reviewed_paths")
+if reviewed_paths != scope_paths:
+    raise SystemExit("independent review artifact report reviewed_paths do not match the canonical review scope")
+scope_digest = embedded.get("review_scope_sha256")
+if not isinstance(scope_digest, str) or not sha256_pattern.fullmatch(scope_digest) or scope_digest != review_scope_sha256():
+    raise SystemExit("independent review artifact report review_scope_sha256 does not match the current commit")
 commands = embedded.get("commands")
 if not isinstance(commands, list) or not commands:
     raise SystemExit("independent review artifact report requires successful review commands")
 for command in commands:
-    if not isinstance(command, dict) or not isinstance(command.get("command"), str) or not command["command"].strip() or command.get("exit_code") != 0:
+    if (
+        not isinstance(command, dict)
+        or set(command) != {"command", "result", "exit_code"}
+        or not isinstance(command.get("command"), str)
+        or not command["command"].strip()
+        or command.get("result") != "pass"
+        or command.get("exit_code") != 0
+    ):
         raise SystemExit("independent review artifact report contains an invalid review command")
 PY

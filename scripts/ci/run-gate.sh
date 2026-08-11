@@ -165,11 +165,11 @@ run_agent_change() {
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
   run_step tool-registry-exact make tools
   run_step agent-contract-and-policy make backend-ci
-  [[ -n "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]] || {
-    write_result independent-review-report 'QF_INDEPENDENT_REVIEW_REPORT is required' 2 'missing independent review report'
-    exit 2
-  }
-  run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$QF_INDEPENDENT_REVIEW_REPORT" "$commit"
+  local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
+  if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
+    run_step independent-review-locator scripts/ci/fetch-independent-review-report.sh "$commit" "$review_locator"
+  fi
+  run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$review_locator" "$commit"
 }
 
 run_rc() {

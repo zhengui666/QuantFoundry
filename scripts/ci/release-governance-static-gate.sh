@@ -22,14 +22,26 @@ for required in ("known-issues-review", "fresh-compose-migration", "pg18-migrati
         errors.append(f"run-gate rc path is missing {required}")
 if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
     errors.append("agent-change gate does not require and validate an independent review report")
+if "fetch-independent-review-report.sh" not in run_gate:
+    errors.append("agent-change gate does not fetch an independent review artifact when no locator is supplied")
+
+ci_script = read("scripts/ci.sh")
+if 'run_backend mypy --explicit-package-bases app workers scheduler' not in ci_script:
+    errors.append("backend mypy must run from backend cwd with explicit package bases")
+if "backend-typecheck|backend-mypy" not in ci_script:
+    errors.append("backend typecheck/mypy canonical entrypoint is missing")
+makefile = read("Makefile")
+for required in ("backend-lint", "backend-typecheck", "backend-mypy"):
+    if required not in makefile:
+        errors.append(f"Makefile lacks canonical backend gate target {required}")
 
 p0_check = read("scripts/p0-check.sh")
-for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "distinct GitHub Actions runs", "remote_verification"):
+for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
     if required not in p0_check:
         errors.append(f"p0-check lacks required remote verification control: {required}")
 
 release_script = read("scripts/release-evidence.sh")
-for required in ('"checksums": {"algorithm": "sha256", "path": "SHA256SUMS"}', '"name": name, "source": source', "package-assets", "release asset inventory name collision", 'run-gate.sh" rc'):
+for required in ('"checksums": {"algorithm": "sha256", "path": "SHA256SUMS"}', '"name": name, "source": source', "package-assets", "verify-remote-assets", "remote release assets do not exactly match the manifest inventory", "release asset inventory name collision", 'run-gate.sh" rc'):
     if required not in release_script:
         errors.append(f"release evidence manifest is missing {required}")
 
@@ -58,6 +70,10 @@ if "scripts/ci/run-gate.sh rc" not in rc:
     errors.append("rc-release does not invoke the canonical rc run-gate entrypoint")
 if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/release-assets" not in rc or "--clobber" in rc:
     errors.append("rc-release does not package and upload unique release assets safely")
+if "--draft" not in rc or "verify-remote-assets" not in rc or "gh release edit \"$TAG\" --draft=false" not in rc:
+    errors.append("rc-release does not create, remotely verify, and publish a draft release")
+if rc.index("gh release create") > rc.index("docker/build-push-action"):
+    errors.append("rc-release must create the draft release before image publication")
 
 agent = read(".github/workflows/agent-change-gate.yml")
 for required in ("AGENTS.md", "PROJECT_BACKGROUND.md", "docs/治理/**", ".github/workflows/**", "scripts/ci/**", "scripts/release*"):
@@ -65,9 +81,23 @@ for required in ("AGENTS.md", "PROJECT_BACKGROUND.md", "docs/治理/**", ".githu
         errors.append(f"agent-change-gate path coverage misses {required}")
 if "paths-ignore:" in agent or "independent_review_evidence" in agent or "review required" in agent:
     errors.append("agent-change-gate contains an unsafe exclusion or self-generated review placeholder")
+if "QF_INDEPENDENT_REVIEW_REPORT" in agent or "docs/治理/independent-review-report.json" in agent:
+    errors.append("agent-change-gate must not trust a repository-local review locator")
+
+independent_review = read(".github/workflows/independent-agent-review.yml")
+if "workflow_dispatch:" not in independent_review or "independent-agent-review-${{ github.run_id }}" not in independent_review:
+    errors.append("independent-agent-review workflow must produce a dispatch-only run-bound artifact")
+for required in ("review_scope_sha256", "Independent Review Agent", "criteria", "commands", "actions/upload-artifact"):
+    if required not in independent_review:
+        errors.append(f"independent-agent-review workflow lacks {required}")
+
+review_fetcher = read("scripts/ci/fetch-independent-review-report.sh")
+for required in ("actions/workflows/independent-agent-review.yml/runs", "head_sha", "independent-agent-review-", "artifact_sha256"):
+    if required not in review_fetcher:
+        errors.append(f"independent review artifact fetcher lacks {required}")
 
 review_verifier = read("scripts/ci/verify-independent-review-report.sh")
-for required in ("artifact_report", "zipfile", "reviewed_paths", "artifact report is not bound to the current commit and run"):
+for required in ("artifact_report", "zipfile", "reviewed_paths", "review_scope_sha256", "criteria", "artifact report is not bound to the current commit and run"):
     if required not in review_verifier:
         errors.append(f"independent review verifier lacks artifact-content validation: {required}")
 
