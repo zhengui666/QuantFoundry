@@ -23,6 +23,7 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
           TARGET: ${{ inputs.target }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           test "${TAG}" = "v0.1.0-alpha"
