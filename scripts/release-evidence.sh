@@ -389,6 +389,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from urllib.parse import quote
 
 tag, commit, output_name = sys.argv[1:]
