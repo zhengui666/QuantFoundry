@@ -159,6 +159,13 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.commit }}
           fetch-depth: 0
+      - name: Load current release evidence collector
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          git show refs/remotes/origin/main:scripts/release-evidence.sh > scripts/release-evidence.sh
+          chmod +x scripts/release-evidence.sh
       - id: image
         shell: bash
         run: |
