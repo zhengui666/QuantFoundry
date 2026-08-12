@@ -81,6 +81,7 @@ jobs:
           set -euo pipefail
           scripts/ci/run-gate.sh main-full "$QF_CI_REPORT_DIR"
       - name: Produce independent test execution report
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
