@@ -95,7 +95,7 @@ printf '%s\n' \
   '  cp "$QF_MOCK_ARTIFACT_DIR/artifact-${BASH_REMATCH[1]}.zip" "$output"' \
   '  exit 0' \
   'fi' \
-  'if [[ "$endpoint" =~ /releases/assets/204$ ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip" "$output"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /releases/assets/204$ ]]; then if [[ -n "$output" ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip" "$output"; else cat "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip"; fi; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/runs/[0-9]+$ ]]; then run_path="${QF_MOCK_RUN_PATH:-}"; if [[ -z "$run_path" ]]; then if [[ "$endpoint" == */actions/runs/100 ]]; then run_path=".github/workflows/independent-agent-test.yml@refs/heads/main"; else run_path=".github/workflows/independent-agent-review.yml@refs/heads/main"; fi; fi; printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\"}\\n" "${QF_MOCK_RUN_HEAD:-$QF_MOCK_COMMIT}" "${QF_MOCK_RUN_STATUS:-completed}" "${QF_MOCK_RUN_CONCLUSION:-success}" "$run_path"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/([0-9]+)$ ]]; then' \
   '  case "${BASH_REMATCH[1]}" in 200) run=100 ;; 201|202) run=101 ;; 203) run=100 ;; *) exit 1 ;; esac' \
