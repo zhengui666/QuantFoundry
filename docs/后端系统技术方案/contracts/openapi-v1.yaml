@@ -1,0 +1,2968 @@
+openapi: 3.1.0
+info:
+  title: QuantFoundry Core API
+  version: 1.0.0-p0
+  license:
+    name: Proprietary
+    url: https://quantfoundry.local/license
+  description: Canonical field-level HTTP contract for the 45-operation executable V1 P0 research vertical slice (contract revision P0_EXECUTABLE_R2). Full-V1 catalog operations absent here remain future staged and cannot be codegen, fixture, or runtime-contract targets. Public semantic IDs are high-entropy and globally unique for collision prevention and tracing, but every authenticated resolver remains scoped to the caller's server-derived workspace; global uniqueness never grants cross-workspace visibility or access.
+  x-quantfoundry-contract-stage: P0_EXECUTABLE
+  x-quantfoundry-contract-revision: P0_EXECUTABLE_R2
+  x-quantfoundry-operation-count: 45
+  x-quantfoundry-full-v1-status: FUTURE_STAGED
+  x-quantfoundry-public-id-policy:
+    generation: PREFIXED_CANONICAL_CROCKFORD_ULID_OR_LOWERCASE_UUIDV4
+    ulid-suffix-pattern: '^[0-7][0-9A-HJKMNP-TV-Z]{25}$'
+    uuidv4-suffix-pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    uniqueness: GLOBAL
+    authorization-scope: SERVER_DERIVED_AUTHENTICATED_WORKSPACE
+    resolution: WORKSPACE_AND_PUBLIC_ID
+    cross-workspace-access-from-global-uniqueness: FORBIDDEN
+  x-quantfoundry-public-id-schemas:
+    research_policy: &ResearchPolicyId {type: string, minLength: 29, maxLength: 39, oneOf: [{type: string, minLength: 29, maxLength: 29, pattern: '^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 39, maxLength: 39, pattern: '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [RP-01ARZ3NDEKTSV4RRFFQ69G5FAV, RP-550e8400-e29b-41d4-a716-446655440000]}
+    risk_policy: &RiskPolicyId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV, RISK-550e8400-e29b-41d4-a716-446655440000]}
+    cost_model: &CostModelId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [COST-01ARZ3NDEKTSV4RRFFQ69G5FAV, COST-550e8400-e29b-41d4-a716-446655440000]}
+    credential: &CredentialId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^CRED-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^CRED-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [CRED-01ARZ3NDEKTSV4RRFFQ69G5FAV, CRED-550e8400-e29b-41d4-a716-446655440000]}
+    capability: &CapabilityId {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [CAP-01ARZ3NDEKTSV4RRFFQ69G5FAV, CAP-550e8400-e29b-41d4-a716-446655440000]}
+    dataset: &DatasetIdSchema {type: string, minLength: 32, maxLength: 42, oneOf: [{type: string, minLength: 32, maxLength: 32, pattern: '^DSSET-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 42, maxLength: 42, pattern: '^DSSET-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [DSSET-01ARZ3NDEKTSV4RRFFQ69G5FAV, DSSET-550e8400-e29b-41d4-a716-446655440000]}
+    snapshot: &SnapshotIdSchema {type: string, minLength: 29, maxLength: 39, oneOf: [{type: string, minLength: 29, maxLength: 29, pattern: '^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 39, maxLength: 39, pattern: '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [DS-01ARZ3NDEKTSV4RRFFQ69G5FAV, DS-550e8400-e29b-41d4-a716-446655440000]}
+    data_quality_run: &DataQualityRunId {type: string, minLength: 29, maxLength: 39, oneOf: [{type: string, minLength: 29, maxLength: 29, pattern: '^DQ-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 39, maxLength: 39, pattern: '^DQ-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [DQ-01ARZ3NDEKTSV4RRFFQ69G5FAV, DQ-550e8400-e29b-41d4-a716-446655440000]}
+    data_quality_issue: &DataQualityIssueId {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^DQI-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^DQI-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [DQI-01ARZ3NDEKTSV4RRFFQ69G5FAV, DQI-550e8400-e29b-41d4-a716-446655440000]}
+    research: &ResearchIdSchema {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [RSCH-01ARZ3NDEKTSV4RRFFQ69G5FAV, RSCH-550e8400-e29b-41d4-a716-446655440000]}
+    evidence: &EvidenceId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^EVID-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^EVID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [EVID-01ARZ3NDEKTSV4RRFFQ69G5FAV, EVID-550e8400-e29b-41d4-a716-446655440000]}
+    conclusion: &ConclusionId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [CONC-01ARZ3NDEKTSV4RRFFQ69G5FAV, CONC-550e8400-e29b-41d4-a716-446655440000]}
+    experiment: &ExperimentIdSchema {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [EXP-01ARZ3NDEKTSV4RRFFQ69G5FAV, EXP-550e8400-e29b-41d4-a716-446655440000]}
+    factor: &FactorIdSchema {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [FAC-01ARZ3NDEKTSV4RRFFQ69G5FAV, FAC-550e8400-e29b-41d4-a716-446655440000]}
+    strategy: &StrategyIdSchema {type: string, minLength: 32, maxLength: 42, oneOf: [{type: string, minLength: 32, maxLength: 32, pattern: '^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 42, maxLength: 42, pattern: '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [STRAT-01ARZ3NDEKTSV4RRFFQ69G5FAV, STRAT-550e8400-e29b-41d4-a716-446655440000]}
+    validation: &ValidationIdSchema {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [VAL-01ARZ3NDEKTSV4RRFFQ69G5FAV, VAL-550e8400-e29b-41d4-a716-446655440000]}
+    exposure: &ExposureId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [HOLD-01ARZ3NDEKTSV4RRFFQ69G5FAV, HOLD-550e8400-e29b-41d4-a716-446655440000]}
+    red_team_run: &RedTeamRunId {type: string, minLength: 29, maxLength: 39, oneOf: [{type: string, minLength: 29, maxLength: 29, pattern: '^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 39, maxLength: 39, pattern: '^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [RT-01ARZ3NDEKTSV4RRFFQ69G5FAV, RT-550e8400-e29b-41d4-a716-446655440000]}
+    portfolio: &PortfolioId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^PORT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^PORT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [PORT-01ARZ3NDEKTSV4RRFFQ69G5FAV, PORT-550e8400-e29b-41d4-a716-446655440000]}
+    memo: &MemoIdSchema {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [MEMO-01ARZ3NDEKTSV4RRFFQ69G5FAV, MEMO-550e8400-e29b-41d4-a716-446655440000]}
+    approval: &ApprovalIdSchema {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [APR-01ARZ3NDEKTSV4RRFFQ69G5FAV, APR-550e8400-e29b-41d4-a716-446655440000]}
+    paper: &PaperId {type: string, minLength: 32, maxLength: 42, oneOf: [{type: string, minLength: 32, maxLength: 32, pattern: '^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 42, maxLength: 42, pattern: '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [PAPER-01ARZ3NDEKTSV4RRFFQ69G5FAV, PAPER-550e8400-e29b-41d4-a716-446655440000]}
+    paper_run: &PaperRunId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [PRUN-01ARZ3NDEKTSV4RRFFQ69G5FAV, PRUN-550e8400-e29b-41d4-a716-446655440000]}
+    paper_order: &PaperOrderId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^PORD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^PORD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [PORD-01ARZ3NDEKTSV4RRFFQ69G5FAV, PORD-550e8400-e29b-41d4-a716-446655440000]}
+    paper_fill: &PaperFillId {type: string, minLength: 32, maxLength: 42, oneOf: [{type: string, minLength: 32, maxLength: 32, pattern: '^PFILL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 42, maxLength: 42, pattern: '^PFILL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [PFILL-01ARZ3NDEKTSV4RRFFQ69G5FAV, PFILL-550e8400-e29b-41d4-a716-446655440000]}
+    review: &ReviewId {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [REV-01ARZ3NDEKTSV4RRFFQ69G5FAV, REV-550e8400-e29b-41d4-a716-446655440000]}
+    agent_run: &AgentRunIdSchema {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [ARUN-01ARZ3NDEKTSV4RRFFQ69G5FAV, ARUN-550e8400-e29b-41d4-a716-446655440000]}
+    tool_call: &ToolCallIdSchema {type: string, minLength: 32, maxLength: 42, oneOf: [{type: string, minLength: 32, maxLength: 32, pattern: '^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 42, maxLength: 42, pattern: '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [TCALL-01ARZ3NDEKTSV4RRFFQ69G5FAV, TCALL-550e8400-e29b-41d4-a716-446655440000]}
+    job: &JobIdSchema {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [JOB-01ARZ3NDEKTSV4RRFFQ69G5FAV, JOB-550e8400-e29b-41d4-a716-446655440000]}
+    domain_event: &DomainEventId {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [EVT-01ARZ3NDEKTSV4RRFFQ69G5FAV, EVT-550e8400-e29b-41d4-a716-446655440000]}
+    audit_event: &AuditEventId {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [AUD-01ARZ3NDEKTSV4RRFFQ69G5FAV, AUD-550e8400-e29b-41d4-a716-446655440000]}
+    artifact: &ArtifactId {type: string, minLength: 30, maxLength: 40, oneOf: [{type: string, minLength: 30, maxLength: 30, pattern: '^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 40, maxLength: 40, pattern: '^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [ART-01ARZ3NDEKTSV4RRFFQ69G5FAV, ART-550e8400-e29b-41d4-a716-446655440000]}
+    notification: &NotificationId {type: string, minLength: 32, maxLength: 42, oneOf: [{type: string, minLength: 32, maxLength: 32, pattern: '^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 42, maxLength: 42, pattern: '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [NOTIF-01ARZ3NDEKTSV4RRFFQ69G5FAV, NOTIF-550e8400-e29b-41d4-a716-446655440000]}
+    provenance: &ProvenanceId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [PROV-01ARZ3NDEKTSV4RRFFQ69G5FAV, PROV-550e8400-e29b-41d4-a716-446655440000]}
+    any_public_semantic_id: &AnyPublicSemanticId {oneOf: [*ResearchPolicyId, *RiskPolicyId, *CostModelId, *CredentialId, *CapabilityId, *DatasetIdSchema, *SnapshotIdSchema, *DataQualityRunId, *DataQualityIssueId, *ResearchIdSchema, *EvidenceId, *ConclusionId, *ExperimentIdSchema, *FactorIdSchema, *StrategyIdSchema, *ValidationIdSchema, *ExposureId, *RedTeamRunId, *PortfolioId, *MemoIdSchema, *ApprovalIdSchema, *PaperId, *PaperRunId, *PaperOrderId, *PaperFillId, *ReviewId, *AgentRunIdSchema, *ToolCallIdSchema, *JobIdSchema, *DomainEventId, *AuditEventId, *ArtifactId, *NotificationId, *ProvenanceId]}
+  x-quantfoundry-event-object-type: &EventObjectType
+    type: string
+    description: Closed P0 R2 event/audit object-locator branch. The value selects the only legal object_id grammar; it is never an authorization token.
+    enum: [job, research, conclusion, experiment, factor, strategy_version, validation, approval, paper, paper_run, review, capability, snapshot, agent_run, tool_call, memo, notification, settings, provider_connection, agent_config, event_stream]
+  x-quantfoundry-event-object-id: &EventObjectId
+    anyOf:
+      - *JobIdSchema
+      - *ResearchIdSchema
+      - *ConclusionId
+      - *ExperimentIdSchema
+      - *FactorIdSchema
+      - *StrategyIdSchema
+      - *ValidationIdSchema
+      - *ApprovalIdSchema
+      - *PaperId
+      - *PaperRunId
+      - *ReviewId
+      - *CapabilityId
+      - *SnapshotIdSchema
+      - *AgentRunIdSchema
+      - *ToolCallIdSchema
+      - *MemoIdSchema
+      - *NotificationId
+      - {type: string, const: SETTINGS-DEFAULT}
+      - {type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}
+      - {type: string, enum: [RESEARCH_DIRECTOR, FACTOR_SCIENTIST, STRATEGY_SCIENTIST, PORTFOLIO_ANALYST, RED_TEAM_RESEARCHER, PERFORMANCE_ANALYST]}
+      - *DomainEventId
+  x-quantfoundry-event-object-pair-rules: &EventObjectPairRules
+    - {if: {properties: {object_type: {const: job}}, required: [object_type]}, then: {properties: {object_id: *JobIdSchema}}}
+    - {if: {properties: {object_type: {const: research}}, required: [object_type]}, then: {properties: {object_id: *ResearchIdSchema}}}
+    - {if: {properties: {object_type: {const: conclusion}}, required: [object_type]}, then: {properties: {object_id: *ConclusionId}}}
+    - {if: {properties: {object_type: {const: experiment}}, required: [object_type]}, then: {properties: {object_id: *ExperimentIdSchema}}}
+    - {if: {properties: {object_type: {const: factor}}, required: [object_type]}, then: {properties: {object_id: *FactorIdSchema}}}
+    - {if: {properties: {object_type: {const: strategy_version}}, required: [object_type]}, then: {properties: {object_id: *StrategyIdSchema, object_version: {type: integer, minimum: 1}, object_revision: {type: integer, format: int64, minimum: 1}}, required: [object_version, object_revision]}}
+    - {if: {properties: {object_type: {const: validation}}, required: [object_type]}, then: {properties: {object_id: *ValidationIdSchema}}}
+    - {if: {properties: {object_type: {const: approval}}, required: [object_type]}, then: {properties: {object_id: *ApprovalIdSchema}}}
+    - {if: {properties: {object_type: {const: paper}}, required: [object_type]}, then: {properties: {object_id: *PaperId}}}
+    - {if: {properties: {object_type: {const: paper_run}}, required: [object_type]}, then: {properties: {object_id: *PaperRunId}}}
+    - {if: {properties: {object_type: {const: review}}, required: [object_type]}, then: {properties: {object_id: *ReviewId}}}
+    - {if: {properties: {object_type: {const: capability}}, required: [object_type]}, then: {properties: {object_id: *CapabilityId}}}
+    - {if: {properties: {object_type: {const: snapshot}}, required: [object_type]}, then: {properties: {object_id: *SnapshotIdSchema}}}
+    - {if: {properties: {object_type: {const: agent_run}}, required: [object_type]}, then: {properties: {object_id: *AgentRunIdSchema}}}
+    - {if: {properties: {object_type: {const: tool_call}}, required: [object_type]}, then: {properties: {object_id: *ToolCallIdSchema}}}
+    - {if: {properties: {object_type: {const: memo}}, required: [object_type]}, then: {properties: {object_id: *MemoIdSchema}}}
+    - {if: {properties: {object_type: {const: notification}}, required: [object_type]}, then: {properties: {object_id: *NotificationId}}}
+    - {if: {properties: {object_type: {const: settings}}, required: [object_type]}, then: {properties: {object_id: {type: string, const: SETTINGS-DEFAULT}, object_version: {type: 'null'}, object_revision: {type: integer, format: int64, minimum: 1}}, required: [object_revision]}}
+    - {if: {properties: {object_type: {const: provider_connection}}, required: [object_type]}, then: {properties: {object_id: {type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}, object_version: {type: 'null'}, object_revision: {type: integer, format: int64, minimum: 1}}, required: [object_revision]}}
+    - {if: {properties: {object_type: {const: agent_config}}, required: [object_type]}, then: {properties: {object_id: {type: string, enum: [RESEARCH_DIRECTOR, FACTOR_SCIENTIST, STRATEGY_SCIENTIST, PORTFOLIO_ANALYST, RED_TEAM_RESEARCHER, PERFORMANCE_ANALYST]}, object_version: {type: 'null'}, object_revision: {type: integer, format: int64, minimum: 1}}, required: [object_revision]}}
+    - {if: {properties: {object_type: {const: event_stream}}, required: [object_type]}, then: {properties: {object_id: *DomainEventId, object_version: {type: 'null'}, object_revision: {type: integer, format: int64, minimum: 1}}, required: [object_revision]}}
+    - {if: {properties: {object_type: {type: 'null'}}, required: [object_type]}, then: {properties: {object_id: {type: 'null'}, object_version: {type: 'null'}, object_revision: {type: 'null'}}}}
+    - {if: {properties: {object_id: {type: 'null'}}, required: [object_id]}, then: {properties: {object_type: {type: 'null'}, object_version: {type: 'null'}, object_revision: {type: 'null'}}}}
+    - {if: {properties: {event_type: {const: job.updated}}, required: [event_type]}, then: {properties: {object_type: {const: job}}}}
+    - {if: {properties: {event_type: {enum: [research.created, research.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: research}}}}
+    - {if: {properties: {event_type: {const: research.conclusion.created}}, required: [event_type]}, then: {properties: {object_type: {const: conclusion}}}}
+    - {if: {properties: {event_type: {enum: [experiment.created, experiment.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: experiment}}}}
+    - {if: {properties: {event_type: {const: factor.updated}}, required: [event_type]}, then: {properties: {object_type: {const: factor}}}}
+    - {if: {properties: {event_type: {enum: [strategy.created, strategy.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: strategy_version}}}}
+    - {if: {properties: {event_type: {enum: [validation.created, validation.updated, validation.holdout.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: validation}}}}
+    - {if: {properties: {event_type: {enum: [approval.created, approval.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: approval}}}}
+    - {if: {properties: {event_type: {enum: [paper.created, paper.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: paper}}}}
+    - {if: {properties: {event_type: {const: paper.run.updated}}, required: [event_type]}, then: {properties: {object_type: {const: paper_run}}}}
+    - {if: {properties: {event_type: {enum: [review.created, review.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: review}}}}
+    - {if: {properties: {event_type: {const: data.provider.updated}}, required: [event_type]}, then: {properties: {object_type: {const: provider_connection}}}}
+    - {if: {properties: {event_type: {const: data.capability.updated}}, required: [event_type]}, then: {properties: {object_type: {const: capability}}}}
+    - {if: {properties: {event_type: {const: data.quality.updated}}, required: [event_type]}, then: {properties: {object_type: {const: snapshot}}}}
+    - {if: {properties: {event_type: {const: agent.run.updated}}, required: [event_type]}, then: {properties: {object_type: {const: agent_run}}}}
+    - {if: {properties: {event_type: {const: tool.call.updated}}, required: [event_type]}, then: {properties: {object_type: {const: tool_call}}}}
+    - {if: {properties: {event_type: {enum: [memo.created, memo.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: memo}}}}
+    - {if: {properties: {event_type: {const: setup.completed}}, required: [event_type]}, then: {properties: {object_type: {const: settings}}}}
+    - {if: {properties: {event_type: {const: notification.created}}, required: [event_type]}, then: {properties: {object_type: {const: notification}}}}
+    - {if: {properties: {event_type: {const: notification.updated}}, required: [event_type]}, then: {properties: {object_type: {const: agent_config}}}}
+    - {if: {properties: {event_type: {enum: [system.health.updated, system.resync_required]}}, required: [event_type]}, then: {properties: {object_type: {const: event_stream}}}}
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /system/health:
+    get:
+      summary: Read public component health
+      operationId: getSystemHealth
+      security: []
+      responses:
+        '200':
+          description: Public component health
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SystemHealth'}
+        '503': {$ref: '#/components/responses/Problem503'}
+        '422': {$ref: '#/components/responses/Problem422'}
+  /setup/status:
+    get:
+      summary: Read authenticated setup status
+      operationId: getSetupStatus
+      responses:
+        '200':
+          description: Setup status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SetupStatus'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /setup/complete:
+    post:
+      summary: Complete required owner setup with the R2 required AI connection reference
+      operationId: completeSetup
+      x-quantfoundry-error-codes: [INVALID_REQUEST, CONNECTION_VALIDATION_EXPIRED, CONNECTION_KIND_MISMATCH, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS]
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetupCompleteRequest'}
+      responses:
+        '200':
+          description: Persisted settings
+          headers:
+            ETag:
+              required: true
+              description: 'Exact weak ETag of the persisted SettingsDetail representation. It MUST equal W/"{settings_id}:{revision}" for the response body and must not be derived from request input or client state.'
+              schema: {type: string, pattern: '^W/"[^"]+:[1-9][0-9]*"$'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SettingsDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /setup/capabilities:
+    get:
+      summary: Read server-supported setup provider and model capabilities
+      operationId: getSetupCapabilities
+      responses:
+        '200':
+          description: Redacted setup capability catalog
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SetupCapabilityCatalog'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /setup/provider-connections/validate:
+    post:
+      summary: Validate write-only AI or data provider connection for setup
+      operationId: validateSetupProviderConnection
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetupProviderConnectionValidationRequest'}
+      responses:
+        '200':
+          description: Connection and capability validation result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SetupProviderConnectionValidationResult'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /overview:
+    get:
+      summary: Read the owner overview projection and P0 paper performance chart
+      operationId: getOverview
+      responses:
+        '200':
+          description: Server-authoritative overview projection
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OverviewReadModel'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+        '503': {$ref: '#/components/responses/Problem503'}
+  /data/capabilities:
+    get:
+      summary: List verified provider data capabilities
+      operationId: listDataCapabilities
+      responses:
+        '200':
+          description: Data capabilities
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DataCapabilityList'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /data/capabilities/evaluate:
+    post:
+      summary: Evaluate research data requirements
+      operationId: evaluateDataCapabilities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CapabilityEvaluationRequest'}
+      responses:
+        '200':
+          description: Capability evaluation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CapabilityEvaluationResponse'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /data/datasets/{dataset_id}/validate:
+    post:
+      summary: Start deterministic dataset validation
+      operationId: validateDataset
+      parameters:
+        - {$ref: '#/components/parameters/DatasetId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DatasetValidationRequest'}
+      responses:
+        '202':
+          description: Dataset validation job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /data/datasets/{dataset_id}/snapshots:
+    post:
+      summary: Create immutable dataset snapshot
+      operationId: createDatasetSnapshot
+      parameters:
+        - {$ref: '#/components/parameters/DatasetId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SnapshotCreateRequest'}
+      responses:
+        '202':
+          description: Snapshot creation job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /data/snapshots/{snapshot_id}:
+    get:
+      summary: Read immutable dataset snapshot metadata
+      operationId: getDatasetSnapshot
+      parameters:
+        - {$ref: '#/components/parameters/SnapshotId'}
+      responses:
+        '200':
+          description: Dataset snapshot
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DatasetSnapshot'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /research:
+    get:
+      summary: List research cases
+      operationId: listResearch
+      responses:
+        '200':
+          description: Paged research cases
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResearchPage'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+    post:
+      summary: Create research case
+      operationId: createResearch
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResearchCreateRequest'}
+      responses:
+        '201':
+          description: Research case
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResearchDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /research/{research_id}:
+    get:
+      summary: Read research case detail
+      operationId: getResearch
+      parameters:
+        - {$ref: '#/components/parameters/ResearchId'}
+      responses:
+        '200':
+          description: Research case
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResearchDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /research/{research_id}/start:
+    post:
+      summary: Start research program
+      operationId: startResearch
+      parameters:
+        - {$ref: '#/components/parameters/ResearchId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResearchStartRequest'}
+      responses:
+        '202':
+          description: Research program job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /experiments:
+    post:
+      summary: Create deterministic experiment
+      operationId: createExperiment
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExperimentCreateRequest'}
+      responses:
+        '202':
+          description: Experiment execution job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /experiments/{experiment_id}:
+    get:
+      summary: Read immutable experiment detail
+      operationId: getExperiment
+      parameters:
+        - {$ref: '#/components/parameters/ExperimentId'}
+      responses:
+        '200':
+          description: Experiment detail
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExperimentDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /experiments/{experiment_id}/reproduce:
+    post:
+      summary: Create and execute a new experiment from an immutable source experiment
+      operationId: reproduceExperiment
+      parameters:
+        - {$ref: '#/components/parameters/ExperimentId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExperimentReproduceRequest'}
+      responses:
+        '202':
+          description: New experiment and durable execution job accepted; the source experiment is unchanged
+          headers:
+            Location: {required: true, description: Canonical URI of the newly created Experiment, schema: {type: string, format: uri-reference}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExperimentReproduceAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /factors:
+    post:
+      summary: Define versioned factor
+      operationId: createFactor
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FactorCreateRequest'}
+      responses:
+        '201':
+          description: Factor detail
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FactorDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /factors/{factor_id}/analyses:
+    post:
+      summary: Start factor analysis
+      operationId: analyzeFactor
+      parameters:
+        - {$ref: '#/components/parameters/FactorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FactorAnalysisRequest'}
+      responses:
+        '202':
+          description: Factor analysis job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /strategies:
+    post:
+      summary: Define candidate strategy
+      operationId: createStrategy
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StrategyCreateRequest'}
+      responses:
+        '201':
+          description: Candidate strategy version
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StrategyVersionDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /strategies/{strategy_id}/versions/{version}:
+    get:
+      summary: Read versioned strategy detail including frozen immutable versions
+      operationId: getStrategyVersion
+      parameters:
+        - {$ref: '#/components/parameters/StrategyId'}
+        - {$ref: '#/components/parameters/Version'}
+      responses:
+        '200':
+          description: Strategy version detail
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StrategyVersionDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /strategies/{strategy_id}/current-version:
+    get:
+      summary: Resolve and read the server-selected current strategy version
+      operationId: getCurrentStrategyVersion
+      parameters:
+        - {$ref: '#/components/parameters/StrategyId'}
+      responses:
+        '200':
+          description: Current strategy version selected by the strategy aggregate
+          headers:
+            ETag: {schema: {type: string}}
+            Content-Location: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StrategyVersionDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /strategies/{strategy_id}/versions/{version}/backtests:
+    post:
+      summary: Start candidate fast backtest
+      operationId: runFastBacktest
+      parameters:
+        - {$ref: '#/components/parameters/StrategyId'}
+        - {$ref: '#/components/parameters/Version'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BacktestRequest'}
+      responses:
+        '202':
+          description: Backtest job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /strategies/{strategy_id}/versions/{version}/freeze:
+    post:
+      summary: Freeze eligible strategy version
+      operationId: freezeStrategy
+      parameters:
+        - {$ref: '#/components/parameters/StrategyId'}
+        - {$ref: '#/components/parameters/Version'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FreezeStrategyRequest'}
+      responses:
+        '200':
+          description: Frozen immutable strategy version
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StrategyVersionDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /validations:
+    post:
+      summary: Start strict validation for frozen strategy
+      operationId: createValidation
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ValidationCreateRequest'}
+      responses:
+        '202':
+          description: Validation job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /validations/{validation_id}:
+    get:
+      summary: Read validation matrix and immutable failure evidence
+      operationId: getValidation
+      parameters:
+        - {$ref: '#/components/parameters/ValidationId'}
+      responses:
+        '200':
+          description: Validation detail
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ValidationDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /validations/{validation_id}/holdout:
+    get:
+      summary: Read holdout gate without protected results
+      operationId: getHoldoutGate
+      parameters:
+        - {$ref: '#/components/parameters/ValidationId'}
+      responses:
+        '200':
+          description: Holdout gate
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HoldoutGate'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /validations/{validation_id}/holdout-approval-requests:
+    post:
+      summary: Request owner holdout unlock approval
+      operationId: requestHoldoutApproval
+      parameters:
+        - {$ref: '#/components/parameters/ValidationId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HoldoutApprovalRequest'}
+      responses:
+        '201':
+          description: Holdout approval request
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /validations/{validation_id}/holdout-runs:
+    post:
+      summary: Start approved one-time holdout execution
+      operationId: runHoldout
+      parameters:
+        - {$ref: '#/components/parameters/ValidationId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HoldoutRunRequest'}
+      responses:
+        '202':
+          description: Holdout execution job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /validations/{validation_id}/holdout/result:
+    get:
+      summary: Read authorized exposed holdout result
+      operationId: getHoldoutResult
+      parameters:
+        - {$ref: '#/components/parameters/ValidationId'}
+      responses:
+        '200':
+          description: Holdout result
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HoldoutResult'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /memos:
+    post:
+      summary: Generate an investment memo from server-authoritative research evidence
+      operationId: generateMemo
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MemoGenerateRequest'}
+      responses:
+        '202':
+          description: Memo generation job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobAccepted'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /memos/{memo_id}:
+    get:
+      summary: Read generated investment memo and evidence links
+      operationId: getMemo
+      parameters:
+        - {$ref: '#/components/parameters/MemoId'}
+      responses:
+        '200':
+          description: Memo detail
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MemoDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /memos/{memo_id}/export:
+    get:
+      summary: Export memo as P0 Markdown artifact
+      operationId: exportMemo
+      parameters:
+        - {$ref: '#/components/parameters/MemoId'}
+        - {in: query, name: format, required: true, schema: {type: string, const: MARKDOWN}}
+      responses:
+        '200':
+          description: Immutable Markdown export artifact
+          headers:
+            ETag: {schema: {type: string}}
+            Content-Disposition: {schema: {type: string}}
+          content:
+            text/markdown:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /approvals:
+    get:
+      summary: List approval requests by server-authoritative status
+      operationId: listApprovals
+      responses:
+        '200':
+          description: Paged approval summaries
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalPage'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /approvals/{approval_id}:
+    get:
+      summary: Read approval request detail
+      operationId: getApproval
+      parameters:
+        - {$ref: '#/components/parameters/ApprovalId'}
+      responses:
+        '200':
+          description: Approval detail
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /approvals/{approval_id}/approve:
+    post:
+      summary: Approve pending request
+      operationId: approveApproval
+      parameters:
+        - {$ref: '#/components/parameters/ApprovalId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApprovalDecisionRequest'}
+      responses:
+        '200':
+          description: Approval decision
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalDecisionResult'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /approvals/{approval_id}/reject:
+    post:
+      summary: Reject pending request
+      operationId: rejectApproval
+      parameters:
+        - {$ref: '#/components/parameters/ApprovalId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApprovalRejectRequest'}
+      responses:
+        '200':
+          description: Approval decision
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalDecisionResult'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /agents:
+    get:
+      summary: List runtime agent configurations
+      operationId: listAgents
+      responses:
+        '200':
+          description: Agent configurations
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentConfigList'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /agents/{role}/config:
+    get:
+      summary: Read single mutable agent runtime configuration
+      operationId: getAgentConfig
+      parameters:
+        - {$ref: '#/components/parameters/AgentRole'}
+      responses:
+        '200':
+          description: Agent configuration with mutable aggregate ETag
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentConfig'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+    put:
+      summary: Update agent runtime configuration and admission state
+      operationId: updateAgentConfig
+      parameters:
+        - {$ref: '#/components/parameters/AgentRole'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AgentConfigUpdate'}
+      responses:
+        '200':
+          description: Updated agent configuration
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentConfig'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /agent-runs/{agent_run_id}:
+    get:
+      summary: Read auditable agent run lineage and usage
+      operationId: getAgentRun
+      parameters:
+        - {$ref: '#/components/parameters/AgentRunId'}
+      responses:
+        '200':
+          description: Agent run detail
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentRunDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /tool-calls/{tool_call_id}:
+    get:
+      summary: Read redacted semantic tool call trace
+      operationId: getToolCall
+      parameters:
+        - {$ref: '#/components/parameters/ToolCallId'}
+      responses:
+        '200':
+          description: Tool call detail
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ToolCallDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /jobs/{job_id}:
+    get:
+      summary: Read durable job status and progress
+      operationId: getJob
+      parameters:
+        - {$ref: '#/components/parameters/JobId'}
+      responses:
+        '200':
+          description: Job detail
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobDetail'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /events/stream:
+    get:
+      summary: Stream replayable server events
+      operationId: streamEvents
+      x-quantfoundry-sse-data-schema: {$ref: '#/components/schemas/SseEnvelope'}
+      parameters:
+        - {in: header, name: Last-Event-ID, required: false, schema: {type: integer, format: int64, minimum: 0}}
+      responses:
+        '200':
+          description: SSE stream whose data records validate as SseEnvelope
+          content:
+            text/event-stream:
+              schema: {$ref: '#/components/schemas/SseEnvelope'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '429': {$ref: '#/components/responses/Problem429'}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-owner-session
+  parameters:
+    IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, minLength: 20, maxLength: 128}}
+    IfMatch: {in: header, name: If-Match, required: true, schema: {type: string, minLength: 1}}
+    ResearchId: {in: path, name: research_id, required: true, schema: *ResearchIdSchema}
+    DatasetId:
+      in: path
+      name: dataset_id
+      required: true
+      description: High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Global uniqueness never grants cross-workspace access.
+      schema: *DatasetIdSchema
+    SnapshotId: {in: path, name: snapshot_id, required: true, schema: *SnapshotIdSchema}
+    ExperimentId: {in: path, name: experiment_id, required: true, schema: *ExperimentIdSchema}
+    FactorId: {in: path, name: factor_id, required: true, schema: *FactorIdSchema}
+    StrategyId: {in: path, name: strategy_id, required: true, schema: *StrategyIdSchema}
+    ValidationId: {in: path, name: validation_id, required: true, schema: *ValidationIdSchema}
+    ApprovalId: {in: path, name: approval_id, required: true, schema: *ApprovalIdSchema}
+    MemoId: {in: path, name: memo_id, required: true, schema: *MemoIdSchema}
+    JobId: {in: path, name: job_id, required: true, schema: *JobIdSchema}
+    AgentRunId: {in: path, name: agent_run_id, required: true, schema: *AgentRunIdSchema}
+    ToolCallId: {in: path, name: tool_call_id, required: true, schema: *ToolCallIdSchema}
+    Version: {in: path, name: version, required: true, schema: {type: integer, minimum: 1}}
+    AgentRole: {in: path, name: role, required: true, schema: {$ref: '#/components/schemas/AgentRoleKey'}}
+  responses:
+    Problem401: {description: Authentication required or invalid, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem403: {description: Authenticated actor lacks authority, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem404: {description: Resource not found, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem409: {description: 'Domain, idempotency, or lifecycle conflict', content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem412: {description: If-Match revision mismatch, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem422: {description: Field or domain validation failed, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem428: {description: Required precondition header missing, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem429: {description: 'Budget, rate, or multiple-testing limit reached', headers: {Retry-After: {schema: {type: integer, minimum: 1}}}, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Problem503: {description: Required service unavailable or degraded, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+  schemas:
+    SystemHealth:
+      type: object
+      additionalProperties: false
+      required: [status, database, job_queue, event_stream, artifact_store, checked_at]
+      properties:
+        status: {enum: [HEALTHY, DEGRADED, UNAVAILABLE]}
+        database: {enum: [HEALTHY, DEGRADED, UNAVAILABLE]}
+        job_queue: {enum: [HEALTHY, DEGRADED, UNAVAILABLE]}
+        event_stream: {enum: [HEALTHY, DEGRADED, UNAVAILABLE]}
+        artifact_store: {enum: [HEALTHY, DEGRADED, UNAVAILABLE]}
+        checked_at: {type: string, format: date-time}
+    CanonicalErrorCode:
+      type: string
+      enum: [INVALID_REQUEST, RESOURCE_NOT_FOUND, PRECONDITION_REQUIRED, REVISION_MISMATCH, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS, RESOURCE_CONFLICT, SERVICE_DEGRADED, INTERNAL_ERROR, UNAUTHENTICATED, PERMISSION_DENIED, HUMAN_APPROVAL_REQUIRED, RESEARCH_NOT_MUTABLE, RESEARCH_WAITING_USER, EXPERIMENT_IMMUTABLE, EXPERIMENT_INVALID, NON_REPRODUCIBLE, MULTIPLE_TESTING_LIMIT_REACHED, STRATEGY_VERSION_FROZEN, STRATEGY_VERSION_MISMATCH, STRATEGY_NOT_FROZEN, STRATEGY_NOT_VALIDATED, VALIDATION_IN_PROGRESS, VALIDATION_FAILED, VALIDATION_PREREQUISITES_INCOMPLETE, VALIDATION_TEST_BLOCKED, HOLDOUT_LOCKED, HOLDOUT_APPROVAL_REQUIRED, HOLDOUT_PREREQUISITES_INCOMPLETE, HOLDOUT_ALREADY_EXPOSED, HOLDOUT_RESULT_FORBIDDEN, APPROVAL_STALE, APPROVAL_ALREADY_RESOLVED, APPROVAL_PREREQUISITES_CHANGED, APPROVAL_TYPE_MISMATCH, DATA_CAPABILITY_MISSING, DATA_QUALITY_BLOCKED, DATA_SNAPSHOT_MISSING, PIT_GUARANTEE_UNAVAILABLE, STALE_DATA, PROVIDER_UNAVAILABLE, JOB_CONFLICT, JOB_NOT_CANCELLABLE, JOB_LEASE_LOST, JOB_FAILED, PAPER_APPROVAL_REQUIRED, PAPER_RISK_BLOCKED, PAPER_DATA_BLOCKED, PAPER_DUPLICATE_RUN, PAPER_VERSION_MISMATCH, RISK_LIMIT_EXCEEDED, AGENT_DISABLED, AGENT_TOOL_FORBIDDEN, AGENT_BUDGET_EXCEEDED, AGENT_OUTPUT_INVALID, AGENT_MODEL_UNAVAILABLE, AGENT_RESUME_CONFLICT, AGENT_CONTEXT_STALE, AGENT_RETRY_EXHAUSTED, TOOL_INPUT_INVALID, TOOL_EXECUTION_FAILED, CREDENTIAL_INVALID, CREDENTIAL_NOT_CONFIGURED, CONNECTION_VALIDATION_EXPIRED, CONNECTION_KIND_MISMATCH]
+    ApiProblem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, detail, instance, request_id, retryable, field_errors, context]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string}
+        status: {type: integer, minimum: 400, maximum: 599}
+        code: {$ref: '#/components/schemas/CanonicalErrorCode'}
+        detail: {type: [string, 'null']}
+        instance: {type: [string, 'null']}
+        request_id: {type: string}
+        retryable: {type: boolean}
+        field_errors: {type: array, items: {$ref: '#/components/schemas/FieldError'}}
+        context: {$ref: '#/components/schemas/ProblemContext'}
+    FieldError:
+      type: object
+      additionalProperties: false
+      required: [field, code, message]
+      properties: {field: {type: string}, code: {type: string}, message: {type: string}}
+    ProblemContext:
+      type: object
+      additionalProperties: false
+      description: Stable optional diagnostic keys; object locator is a closed type/id/version/revision tuple and secrets or raw provider payloads are forbidden.
+      allOf: *EventObjectPairRules
+      dependentRequired: {object_type: [object_id, object_version, object_revision], object_id: [object_type, object_version, object_revision], object_version: [object_type, object_id, object_revision], object_revision: [object_type, object_id, object_version]}
+      properties:
+        object_type: {oneOf: [*EventObjectType, {type: 'null'}]}
+        object_id: {anyOf: [*EventObjectId, {type: 'null'}]}
+        object_version: {type: [integer, 'null'], minimum: 1}
+        object_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        expected_revision: {type: [integer, 'null'], minimum: 1}
+        actual_revision: {type: [integer, 'null'], minimum: 1}
+        approval_id: {oneOf: [*ApprovalIdSchema, {type: 'null'}]}
+        validation_id: {oneOf: [*ValidationIdSchema, {type: 'null'}]}
+        retry_after_seconds: {type: [integer, 'null'], minimum: 1}
+    ActionCapability:
+      type: object
+      additionalProperties: false
+      required: [action, visibility, allowed, reason_code, reason_detail, requires_confirmation, idempotency_required, if_match_required, result_mode, danger_level]
+      properties:
+        action: {type: string}
+        visibility: {enum: [SHOW, HIDE]}
+        allowed: {type: boolean}
+        reason_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        reason_detail: {type: [string, 'null']}
+        requires_confirmation: {type: boolean}
+        idempotency_required: {type: boolean}
+        if_match_required: {type: boolean}
+        result_mode: {enum: [IMMEDIATE, JOB]}
+        danger_level: {enum: [NORMAL, STATE_CHANGE, IRREVERSIBLE, CAPITAL_GATE]}
+    ObjectRef:
+      type: object
+      additionalProperties: false
+      description: Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST still resolve and authorize it inside the caller's authenticated workspace.
+      required: [type, id, version, revision]
+      properties:
+        type: {enum: [research_policy, risk_policy, cost_model, credential, capability, dataset, snapshot, data_quality_run, data_quality_issue, research, evidence, conclusion, experiment, factor, strategy, validation, exposure, red_team_run, portfolio, memo, approval, paper, paper_run, paper_order, paper_fill, review, agent_run, tool_call, job, domain_event, audit_event, artifact, notification, provenance]}
+        id: *AnyPublicSemanticId
+        version: {type: [integer, 'null'], minimum: 1}
+        revision: {type: integer, minimum: 1}
+      allOf:
+        - if: {properties: {type: {const: research_policy}}, required: [type]}
+          then: {properties: {id: *ResearchPolicyId}}
+        - if: {properties: {type: {const: risk_policy}}, required: [type]}
+          then: {properties: {id: *RiskPolicyId}}
+        - if: {properties: {type: {const: cost_model}}, required: [type]}
+          then: {properties: {id: *CostModelId}}
+        - if: {properties: {type: {const: credential}}, required: [type]}
+          then: {properties: {id: *CredentialId}}
+        - if: {properties: {type: {const: capability}}, required: [type]}
+          then: {properties: {id: *CapabilityId}}
+        - if:
+            required: [type]
+            properties: {type: {const: dataset}}
+          then:
+            properties: {id: *DatasetIdSchema}
+        - if: {properties: {type: {const: snapshot}}, required: [type]}
+          then: {properties: {id: *SnapshotIdSchema}}
+        - if: {properties: {type: {const: data_quality_run}}, required: [type]}
+          then: {properties: {id: *DataQualityRunId}}
+        - if: {properties: {type: {const: data_quality_issue}}, required: [type]}
+          then: {properties: {id: *DataQualityIssueId}}
+        - if: {properties: {type: {const: research}}, required: [type]}
+          then: {properties: {id: *ResearchIdSchema}}
+        - if: {properties: {type: {const: evidence}}, required: [type]}
+          then: {properties: {id: *EvidenceId}}
+        - if: {properties: {type: {const: conclusion}}, required: [type]}
+          then: {properties: {id: *ConclusionId}}
+        - if: {properties: {type: {const: experiment}}, required: [type]}
+          then: {properties: {id: *ExperimentIdSchema}}
+        - if: {properties: {type: {const: factor}}, required: [type]}
+          then: {properties: {id: *FactorIdSchema}}
+        - if: {properties: {type: {const: strategy}}, required: [type]}
+          then: {properties: {id: *StrategyIdSchema}}
+        - if: {properties: {type: {const: validation}}, required: [type]}
+          then: {properties: {id: *ValidationIdSchema}}
+        - if: {properties: {type: {const: exposure}}, required: [type]}
+          then: {properties: {id: *ExposureId}}
+        - if: {properties: {type: {const: red_team_run}}, required: [type]}
+          then: {properties: {id: *RedTeamRunId}}
+        - if: {properties: {type: {const: portfolio}}, required: [type]}
+          then: {properties: {id: *PortfolioId}}
+        - if: {properties: {type: {const: memo}}, required: [type]}
+          then: {properties: {id: *MemoIdSchema}}
+        - if: {properties: {type: {const: approval}}, required: [type]}
+          then: {properties: {id: *ApprovalIdSchema}}
+        - if: {properties: {type: {const: paper}}, required: [type]}
+          then: {properties: {id: *PaperId}}
+        - if: {properties: {type: {const: paper_run}}, required: [type]}
+          then: {properties: {id: *PaperRunId}}
+        - if: {properties: {type: {const: paper_order}}, required: [type]}
+          then: {properties: {id: *PaperOrderId}}
+        - if: {properties: {type: {const: paper_fill}}, required: [type]}
+          then: {properties: {id: *PaperFillId}}
+        - if: {properties: {type: {const: review}}, required: [type]}
+          then: {properties: {id: *ReviewId}}
+        - if: {properties: {type: {const: agent_run}}, required: [type]}
+          then: {properties: {id: *AgentRunIdSchema}}
+        - if: {properties: {type: {const: tool_call}}, required: [type]}
+          then: {properties: {id: *ToolCallIdSchema}}
+        - if: {properties: {type: {const: job}}, required: [type]}
+          then: {properties: {id: *JobIdSchema}}
+        - if: {properties: {type: {const: domain_event}}, required: [type]}
+          then: {properties: {id: *DomainEventId}}
+        - if: {properties: {type: {const: audit_event}}, required: [type]}
+          then: {properties: {id: *AuditEventId}}
+        - if: {properties: {type: {const: artifact}}, required: [type]}
+          then: {properties: {id: *ArtifactId}}
+        - if: {properties: {type: {const: notification}}, required: [type]}
+          then: {properties: {id: *NotificationId}}
+        - if: {properties: {type: {const: provenance}}, required: [type]}
+          then: {properties: {id: *ProvenanceId}}
+    VersionedHashRef:
+      type: object
+      additionalProperties: false
+      description: id is globally unique but remains workspace-authorized; hash equality never grants object access.
+      required: [id, version, sha256]
+      properties: {id: {oneOf: [*StrategyIdSchema, *FactorIdSchema, *CostModelId]}, version: {type: integer, minimum: 1}, sha256: {type: string, pattern: '^[0-9a-f]{64}$'}}
+    NamedVersion:
+      type: object
+      additionalProperties: false
+      required: [name, version]
+      properties: {name: {type: string}, version: {type: string}}
+    CodeVersion:
+      type: object
+      additionalProperties: false
+      required: [commit, build_id]
+      properties: {commit: {type: string}, build_id: {type: string}}
+    PolicyRef:
+      type: object
+      additionalProperties: false
+      description: Policy id is globally unique but MUST resolve to an active policy of the required kind in the authenticated workspace.
+      required: [type, id, version]
+      properties: {type: {enum: [research_policy, risk_policy]}, id: {oneOf: [*ResearchPolicyId, *RiskPolicyId]}, version: {type: integer, minimum: 1}}
+      allOf:
+        - if: {properties: {type: {const: research_policy}}, required: [type]}
+          then: {properties: {id: *ResearchPolicyId}}
+        - if: {properties: {type: {const: risk_policy}}, required: [type]}
+          then: {properties: {id: *RiskPolicyId}}
+    ProvenanceRef:
+      type: object
+      additionalProperties: false
+      description: provenance_id is globally unique but MUST be resolved and authorized in the authenticated workspace.
+      required: [provenance_id]
+      properties: {provenance_id: *ProvenanceId}
+    Provenance:
+      type: object
+      additionalProperties: false
+      required: [provenance_id, schema_version, experiment_id, source_experiment_id, tool_call_id, data_snapshot_ids, engine, adapter, code, policies, strategy, factors, cost_model, parameters_sha256, input_sha256, output_sha256, calculated_at]
+      properties:
+        provenance_id: *ProvenanceId
+        schema_version: {type: integer, const: 1}
+        experiment_id: {oneOf: [*ExperimentIdSchema, {type: 'null'}]}
+        source_experiment_id: {oneOf: [*ExperimentIdSchema, {type: 'null'}]}
+        tool_call_id: {oneOf: [*ToolCallIdSchema, {type: 'null'}]}
+        data_snapshot_ids: {type: array, items: *SnapshotIdSchema}
+        engine: {$ref: '#/components/schemas/NamedVersion'}
+        adapter: {oneOf: [{$ref: '#/components/schemas/NamedVersion'}, {type: 'null'}]}
+        code: {$ref: '#/components/schemas/CodeVersion'}
+        policies: {type: array, items: {$ref: '#/components/schemas/PolicyRef'}}
+        strategy: {oneOf: [{allOf: [{$ref: '#/components/schemas/VersionedHashRef'}, {properties: {id: *StrategyIdSchema}}]}, {type: 'null'}]}
+        factors: {type: array, items: {allOf: [{$ref: '#/components/schemas/VersionedHashRef'}, {properties: {id: *FactorIdSchema}}]}}
+        cost_model: {oneOf: [{allOf: [{$ref: '#/components/schemas/VersionedHashRef'}, {properties: {id: *CostModelId}}]}, {type: 'null'}]}
+        parameters_sha256: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+        input_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        output_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        calculated_at: {type: string, format: date-time}
+    OverviewAttentionItem:
+      type: object
+      additionalProperties: false
+      required: [attention_id, type, severity, object, title_key, summary, reason_code, action_capabilities]
+      properties:
+        attention_id: {type: string}
+        type: {enum: [CRITICAL, APPROVAL_REQUIRED, AGENT_WAITING, VALIDATION_FAILURE, INFORMATIONAL]}
+        severity: {enum: [CRITICAL, ACTION_REQUIRED, WARNING, INFORMATIONAL]}
+        object: {$ref: '#/components/schemas/ObjectRef'}
+        title_key: {type: string}
+        summary: {type: string}
+        reason_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+    OverviewCurrentAgent:
+      type: object
+      additionalProperties: false
+      required: [role, agent_run_id]
+      properties:
+        role: {$ref: '#/components/schemas/AgentRoleKey'}
+        agent_run_id: *AgentRunIdSchema
+    OverviewActiveResearchItem:
+      type: object
+      additionalProperties: false
+      required: [research_id, title, status, evidence_status, progress, current_agent, revision, action_capabilities, updated_at]
+      properties:
+        research_id: *ResearchIdSchema
+        title: {type: string}
+        status: {$ref: '#/components/schemas/ResearchStatus'}
+        evidence_status: {enum: [INSUFFICIENT, WEAK, MIXED, SUPPORTIVE, STRONG]}
+        progress: {$ref: '#/components/schemas/JobProgress'}
+        current_agent: {oneOf: [{$ref: '#/components/schemas/OverviewCurrentAgent'}, {type: 'null'}]}
+        revision: {type: integer, format: int64, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        updated_at: {type: string, format: date-time}
+    OverviewStrategyPipeline:
+      type: object
+      additionalProperties: false
+      required: [candidate, frozen, validating, validated, paper]
+      properties:
+        candidate: {type: integer, minimum: 0}
+        frozen: {type: integer, minimum: 0}
+        validating: {type: integer, minimum: 0}
+        validated: {type: integer, minimum: 0}
+        paper: {type: integer, minimum: 0}
+    OverviewPaperSummary:
+      type: object
+      additionalProperties: false
+      required: [active_count, total_nav, currency, daily_return, mtd_return, since_start_return, benchmark_since_start_return, as_of_date, provenance]
+      properties:
+        active_count: {type: integer, minimum: 0}
+        total_nav: {type: [string, 'null']}
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        daily_return: {type: [string, 'null']}
+        mtd_return: {type: [string, 'null']}
+        since_start_return: {type: [string, 'null']}
+        benchmark_since_start_return: {type: [string, 'null']}
+        as_of_date: {type: [string, 'null'], format: date}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+    OverviewRecentFinding:
+      type: object
+      additionalProperties: false
+      required: [finding_id, evidence_status, finding, research, provenance, updated_at]
+      properties:
+        finding_id: {type: string}
+        evidence_status: {enum: [INSUFFICIENT, WEAK, MIXED, SUPPORTIVE, STRONG]}
+        finding: {type: string}
+        research: {$ref: '#/components/schemas/ObjectRef'}
+        provenance: {$ref: '#/components/schemas/ProvenanceRef'}
+        updated_at: {type: string, format: date-time}
+    OverviewAgentActivityItem:
+      type: object
+      additionalProperties: false
+      required: [agent_run_id, role, objective, status, decision_summary, next_action, updated_at]
+      properties:
+        agent_run_id: *AgentRunIdSchema
+        role: {$ref: '#/components/schemas/AgentRoleKey'}
+        objective: {type: string}
+        status: {enum: [QUEUED, RUNNING, WAITING_USER, COMPLETED, FAILED, CANCELLED]}
+        decision_summary: {type: [string, 'null']}
+        next_action: {type: [string, 'null']}
+        updated_at: {type: string, format: date-time}
+    OverviewDataHealth:
+      type: object
+      additionalProperties: false
+      required: [state, blocker_count, warning_count, checked_at, action_capabilities]
+      properties:
+        state: {enum: [HEALTHY, DEGRADED, BLOCKED, UNKNOWN]}
+        blocker_count: {type: integer, minimum: 0}
+        warning_count: {type: integer, minimum: 0}
+        checked_at: {type: string, format: date-time}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+    ChartXAxis:
+      type: object
+      additionalProperties: false
+      required: [kind, timezone]
+      properties:
+        kind: {enum: [TIME, CATEGORY, NUMERIC]}
+        timezone: {type: [string, 'null']}
+    ChartValueFormat:
+      type: object
+      additionalProperties: false
+      required: [kind, precision]
+      properties:
+        kind: {enum: [DECIMAL, PERCENT, BPS, CURRENCY, INTEGER]}
+        precision: {type: [integer, 'null'], minimum: 0, maximum: 18}
+    ChartPoint:
+      type: object
+      additionalProperties: false
+      required: [x, y]
+      properties:
+        x: {oneOf: [{type: string}, {type: number}]}
+        y: {type: [string, 'null']}
+    ChartSeries:
+      type: object
+      additionalProperties: false
+      required: [series_id, series_key, display_label, unit, value_format, points]
+      properties:
+        series_id: {type: string}
+        series_key: {type: string}
+        display_label: {type: string}
+        unit: {type: string}
+        value_format: {$ref: '#/components/schemas/ChartValueFormat'}
+        points: {type: array, items: {$ref: '#/components/schemas/ChartPoint'}}
+    ChartPeriodMarker:
+      type: object
+      additionalProperties: false
+      required: [period_type, start, end, state]
+      properties:
+        period_type: {enum: [RESEARCH, VALIDATION, HOLDOUT, PAPER]}
+        start: {type: string, format: date}
+        end: {type: string, format: date}
+        state: {enum: [EXPOSED, LOCKED]}
+    ChartAssumption:
+      type: object
+      additionalProperties: false
+      required: [key, value, unit]
+      properties:
+        key: {type: string}
+        value: {type: string}
+        unit: {type: [string, 'null']}
+    EquityCurveSummaryParams:
+      type: object
+      additionalProperties: false
+      required: [ending_nav, benchmark_ending_nav]
+      properties:
+        ending_nav: {type: [string, 'null']}
+        benchmark_ending_nav: {type: [string, 'null']}
+    ChartSummary:
+      type: object
+      additionalProperties: false
+      required: [template_key, params]
+      properties:
+        template_key: {const: chart.equity_curve.summary}
+        params: {$ref: '#/components/schemas/EquityCurveSummaryParams'}
+    ChartDownsampling:
+      type: object
+      additionalProperties: false
+      required: [applied, source_points, returned_points, method]
+      properties:
+        applied: {type: boolean}
+        source_points: {type: integer, minimum: 0}
+        returned_points: {type: integer, minimum: 0}
+        method: {type: [string, 'null']}
+    ChartAggregate:
+      type: object
+      additionalProperties: false
+      required: [schema_version, chart_id, chart_type, metric_key, x_axis, series, period_markers, assumptions, summary, downsampling, provenance, generated_at]
+      properties:
+        schema_version: {type: integer, const: 1}
+        chart_id: {type: string}
+        chart_type: {const: EQUITY_CURVE}
+        metric_key: {type: string}
+        x_axis: {$ref: '#/components/schemas/ChartXAxis'}
+        series: {type: array, items: {$ref: '#/components/schemas/ChartSeries'}}
+        period_markers: {type: array, items: {$ref: '#/components/schemas/ChartPeriodMarker'}}
+        assumptions: {type: array, items: {$ref: '#/components/schemas/ChartAssumption'}}
+        summary: {$ref: '#/components/schemas/ChartSummary'}
+        downsampling: {$ref: '#/components/schemas/ChartDownsampling'}
+        provenance: {$ref: '#/components/schemas/ProvenanceRef'}
+        generated_at: {type: string, format: date-time}
+    OverviewReadModel:
+      type: object
+      additionalProperties: false
+      required: [as_of, revision, needs_attention, active_research, strategy_pipeline, paper_summary, paper_performance_chart, recent_findings, agent_activity, data_health, provenance, action_capabilities]
+      properties:
+        as_of: {type: string, format: date-time}
+        revision: {type: integer, format: int64, minimum: 1}
+        needs_attention: {type: array, items: {$ref: '#/components/schemas/OverviewAttentionItem'}}
+        active_research: {type: array, items: {$ref: '#/components/schemas/OverviewActiveResearchItem'}}
+        strategy_pipeline: {$ref: '#/components/schemas/OverviewStrategyPipeline'}
+        paper_summary: {$ref: '#/components/schemas/OverviewPaperSummary'}
+        paper_performance_chart: {oneOf: [{$ref: '#/components/schemas/ChartAggregate'}, {type: 'null'}]}
+        recent_findings: {type: array, items: {$ref: '#/components/schemas/OverviewRecentFinding'}}
+        agent_activity: {type: array, items: {$ref: '#/components/schemas/OverviewAgentActivityItem'}}
+        data_health: {$ref: '#/components/schemas/OverviewDataHealth'}
+        provenance: {type: array, items: {$ref: '#/components/schemas/ProvenanceRef'}}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+    SetupStatus:
+      type: object
+      additionalProperties: false
+      description: Canonical P00 reload truth. Reference readiness booleans and nullable references are machine-coupled; clients must never reconstruct references from names, defaults, or browser storage.
+      required: [completed, owner_session_ready, ai_provider_configured, ai_connection_id, data_provider_configured, research_policy_active, research_policy_id, risk_policy_active, risk_policy_id, cost_model_active, cost_model_id, fallback_step]
+      properties:
+        completed: {type: boolean}
+        owner_session_ready: {type: boolean}
+        ai_provider_configured: {type: boolean}
+        ai_connection_id:
+          type: [string, 'null']
+          description: Opaque reference only when the selected AI connection is validated, active, unexpired, owner-bound, and kind AI. Invalid, expired, missing, or wrong-kind references are returned as null; credentials and provider secrets are never returned.
+        data_provider_configured: {type: boolean}
+        research_policy_active: {type: boolean}
+        research_policy_id:
+          oneOf: [*ResearchPolicyId, {type: 'null'}]
+          description: Stable public research-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+        risk_policy_active: {type: boolean}
+        risk_policy_id:
+          oneOf: [*RiskPolicyId, {type: 'null'}]
+          description: Stable public risk-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+        cost_model_active: {type: boolean}
+        cost_model_id:
+          oneOf: [*CostModelId, {type: 'null'}]
+          description: Stable public cost-model reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+        fallback_step:
+          type: [string, 'null']
+          enum: [AI_PROVIDER, RESEARCH_DEFAULTS, RESEARCH_CONSTITUTION, null]
+          description: Earliest required recovery step caused by an invalid server reference. Null means no AI/policy/cost reference recovery is required; it does not by itself mean setup is completed.
+      allOf:
+        - if:
+            required: [ai_provider_configured]
+            properties: {ai_provider_configured: {const: true}}
+          then:
+            properties: {ai_connection_id: {type: string, minLength: 1}}
+          else:
+            properties: {ai_connection_id: {type: 'null'}}
+        - if:
+            required: [research_policy_active]
+            properties: {research_policy_active: {const: true}}
+          then:
+            properties: {research_policy_id: *ResearchPolicyId}
+          else:
+            properties: {research_policy_id: {type: 'null'}}
+        - if:
+            required: [risk_policy_active]
+            properties: {risk_policy_active: {const: true}}
+          then:
+            properties: {risk_policy_id: *RiskPolicyId}
+          else:
+            properties: {risk_policy_id: {type: 'null'}}
+        - if:
+            required: [cost_model_active]
+            properties: {cost_model_active: {const: true}}
+          then:
+            properties: {cost_model_id: *CostModelId}
+          else:
+            properties: {cost_model_id: {type: 'null'}}
+        - if:
+            required: [ai_provider_configured]
+            properties: {ai_provider_configured: {const: false}}
+          then:
+            properties: {fallback_step: {const: AI_PROVIDER}}
+          else:
+            if:
+              required: [cost_model_active]
+              properties: {cost_model_active: {const: false}}
+            then:
+              properties: {fallback_step: {const: RESEARCH_DEFAULTS}}
+            else:
+              if:
+                anyOf:
+                  - required: [research_policy_active]
+                    properties: {research_policy_active: {const: false}}
+                  - required: [risk_policy_active]
+                    properties: {risk_policy_active: {const: false}}
+              then:
+                properties: {fallback_step: {const: RESEARCH_CONSTITUTION}}
+              else:
+                properties: {fallback_step: {type: 'null'}}
+        - if:
+            required: [completed]
+            properties: {completed: {const: true}}
+          then:
+            properties:
+              owner_session_ready: {const: true}
+              ai_provider_configured: {const: true}
+              ai_connection_id: {type: string, minLength: 1}
+              research_policy_active: {const: true}
+              research_policy_id: *ResearchPolicyId
+              risk_policy_active: {const: true}
+              risk_policy_id: *RiskPolicyId
+              cost_model_active: {const: true}
+              cost_model_id: *CostModelId
+              fallback_step: {type: 'null'}
+    SetupProviderKind: {type: string, enum: [AI, DATA]}
+    SetupModelCapability:
+      type: object
+      additionalProperties: false
+      required: [model_name, connection_test_supported]
+      properties:
+        model_name: {type: string}
+        connection_test_supported: {const: true}
+    SetupProviderCapability:
+      type: object
+      additionalProperties: false
+      required: [provider_id, display_name, kind, connection_test_supported, models, data_capabilities]
+      properties:
+        provider_id: {type: string}
+        display_name: {type: string}
+        kind: {$ref: '#/components/schemas/SetupProviderKind'}
+        connection_test_supported: {const: true}
+        models: {type: array, items: {$ref: '#/components/schemas/SetupModelCapability'}}
+        data_capabilities: {type: array, items: {$ref: '#/components/schemas/DataCapability'}}
+    SetupCapabilityCatalog:
+      type: object
+      additionalProperties: false
+      required: [providers, server_checked_at]
+      properties:
+        providers: {type: array, items: {$ref: '#/components/schemas/SetupProviderCapability'}}
+        server_checked_at: {type: string, format: date-time}
+    SetupProviderConnectionValidationRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_id, kind, credential]
+      properties:
+        provider_id: {type: string}
+        kind: {$ref: '#/components/schemas/SetupProviderKind'}
+        model_name: {type: [string, 'null']}
+        credential: {type: string, writeOnly: true, minLength: 1}
+    SetupProviderConnectionValidationSuccess:
+      type: object
+      additionalProperties: false
+      required: [connection_id, provider_id, kind, state, detail, data_capabilities, checked_at]
+      properties:
+        connection_id: {type: string, minLength: 1}
+        provider_id: {type: string}
+        kind: {$ref: '#/components/schemas/SetupProviderKind'}
+        state: {const: SUCCESS}
+        detail: {type: [string, 'null']}
+        data_capabilities: {type: array, items: {$ref: '#/components/schemas/DataCapability'}}
+        checked_at: {type: string, format: date-time}
+    SetupProviderConnectionValidationFailure:
+      type: object
+      additionalProperties: false
+      required: [provider_id, kind, state, detail, error_code, data_capabilities, checked_at]
+      properties:
+        provider_id: {type: string}
+        kind: {$ref: '#/components/schemas/SetupProviderKind'}
+        state: {const: FAILED}
+        detail: {type: string, minLength: 1}
+        error_code: {$ref: '#/components/schemas/CanonicalErrorCode'}
+        data_capabilities: {type: array, items: {$ref: '#/components/schemas/DataCapability'}}
+        checked_at: {type: string, format: date-time}
+    SetupProviderConnectionValidationResult:
+      discriminator:
+        propertyName: state
+        mapping:
+          SUCCESS: '#/components/schemas/SetupProviderConnectionValidationSuccess'
+          FAILED: '#/components/schemas/SetupProviderConnectionValidationFailure'
+      oneOf:
+        - {$ref: '#/components/schemas/SetupProviderConnectionValidationSuccess'}
+        - {$ref: '#/components/schemas/SetupProviderConnectionValidationFailure'}
+    SetupCompleteRequest:
+      type: object
+      additionalProperties: false
+      description: P0 R2 intentionally tightens the pre-release executable baseline by requiring a successful, unexpired, unconsumed, owner-bound AI connection reference of kind AI.
+      required: [language, timezone, base_currency, number_format_locale, ai_connection_id, default_benchmark, default_frequency, initial_paper_capital, research_policy_id, risk_policy_id, cost_model_id]
+      properties:
+        language: {enum: [zh-CN, en]}
+        timezone: {type: string}
+        base_currency: {type: string, pattern: '^[A-Z]{3}$'}
+        number_format_locale: {type: string}
+        ai_connection_id: {type: string, minLength: 1, description: Required in P0_EXECUTABLE_R2; expired refs fail with CONNECTION_VALIDATION_EXPIRED and non-AI refs fail with CONNECTION_KIND_MISMATCH.}
+        default_data_provider_id: {type: [string, 'null']}
+        default_benchmark: {type: string}
+        default_frequency: {const: DAILY}
+        default_research_start: {type: [string, 'null'], format: date}
+        initial_paper_capital: {type: string, pattern: '^[0-9]+(\\.[0-9]+)?$'}
+        research_policy_id: {allOf: [*ResearchPolicyId], description: 'Must resolve to status ACTIVE, current Owner/workspace, and kind RESEARCH_POLICY.'}
+        risk_policy_id: {allOf: [*RiskPolicyId], description: 'Must resolve to status ACTIVE, current Owner/workspace, and kind RISK_POLICY.'}
+        cost_model_id: {allOf: [*CostModelId], description: 'Must resolve to status ACTIVE, current Owner/workspace, and kind COST_MODEL.'}
+    SettingsDetail:
+      type: object
+      additionalProperties: false
+      required: [settings_id, revision, language, timezone, base_currency, number_format_locale, ai_connection_id, default_data_provider_id, default_benchmark, default_frequency, default_research_start, initial_paper_capital, research_policy_id, risk_policy_id, cost_model_id, created_at, updated_at]
+      properties:
+        settings_id: {type: string, const: SETTINGS-DEFAULT, description: Workspace-local singleton alias; not a public semantic object ID.}
+        revision: {type: integer, minimum: 1}
+        language: {enum: [zh-CN, en]}
+        timezone: {type: string}
+        base_currency: {type: string}
+        number_format_locale: {type: string}
+        ai_connection_id: {type: string}
+        default_data_provider_id: {type: [string, 'null']}
+        default_benchmark: {type: string}
+        default_frequency: {const: DAILY}
+        default_research_start: {type: [string, 'null'], format: date}
+        initial_paper_capital: {type: string}
+        research_policy_id: {allOf: [*ResearchPolicyId], description: 'Exact public RESEARCH_POLICY binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity.'}
+        risk_policy_id: {allOf: [*RiskPolicyId], description: 'Exact public RISK_POLICY binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity.'}
+        cost_model_id: {allOf: [*CostModelId], description: 'Exact public COST_MODEL binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity.'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    DateCoverage:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties: {start: {type: [string, 'null'], format: date}, end: {type: [string, 'null'], format: date}}
+    PointInTimeCapability:
+      type: object
+      additionalProperties: false
+      required: [supported, available_from, semantics]
+      properties: {supported: {type: [boolean, 'null']}, available_from: {type: [string, 'null'], format: date}, semantics: {type: [string, 'null']}}
+    CapabilityLimitation:
+      type: object
+      additionalProperties: false
+      required: [code, detail]
+      properties: {code: {type: string}, detail: {type: string}}
+    DataCapability:
+      type: object
+      additionalProperties: false
+      required: [capability_id, provider_id, capability_key, state, asset_classes, frequencies, coverage, point_in_time, fields, limitations, checked_at]
+      properties:
+        capability_id: *CapabilityId
+        provider_id: {type: string}
+        capability_key: {type: string}
+        state: {enum: [SUPPORTED, PARTIAL, UNAVAILABLE, UNKNOWN]}
+        asset_classes: {type: array, items: {type: string}}
+        frequencies: {type: array, items: {type: string}}
+        coverage: {$ref: '#/components/schemas/DateCoverage'}
+        point_in_time: {$ref: '#/components/schemas/PointInTimeCapability'}
+        fields: {type: array, items: {type: string}}
+        limitations: {type: array, items: {$ref: '#/components/schemas/CapabilityLimitation'}}
+        checked_at: {type: string, format: date-time}
+    DataCapabilityList: {type: array, items: {$ref: '#/components/schemas/DataCapability'}}
+    CapabilityRequirement:
+      type: object
+      additionalProperties: false
+      required: [capability_key, asset_class, frequency, start, end, fields, pit_required]
+      properties:
+        capability_key: {type: string}
+        asset_class: {type: string}
+        frequency: {type: [string, 'null']}
+        start: {type: [string, 'null'], format: date}
+        end: {type: [string, 'null'], format: date}
+        fields: {type: array, items: {type: string}}
+        pit_required: {type: boolean}
+    CapabilityEvaluationRequest:
+      type: object
+      additionalProperties: false
+      required: [requirements]
+      properties: {requirements: {type: array, minItems: 1, items: {$ref: '#/components/schemas/CapabilityRequirement'}}}
+    RequirementEvaluation:
+      type: object
+      additionalProperties: false
+      required: [requirement_index, state, provider_id, reason_code, available_from]
+      properties:
+        requirement_index: {type: integer, minimum: 0}
+        state: {enum: [SUPPORTED, PARTIAL, UNAVAILABLE, UNKNOWN]}
+        provider_id: {type: [string, 'null']}
+        reason_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        available_from: {type: [string, 'null'], format: date}
+    CapabilityEvaluationResponse:
+      type: object
+      additionalProperties: false
+      required: [overall_state, requirements, action_capabilities]
+      properties:
+        overall_state: {enum: [SUPPORTED, PARTIAL, BLOCKED, UNKNOWN]}
+        requirements: {type: array, items: {$ref: '#/components/schemas/RequirementEvaluation'}}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+    DatasetValidationRequest:
+      type: object
+      additionalProperties: false
+      required: [check_profile]
+      properties: {check_profile: {enum: [RESEARCH_BASELINE, POINT_IN_TIME_STRICT]}}
+    SnapshotCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [snapshot_kind, as_of_time, coverage_start, coverage_end]
+      properties:
+        snapshot_kind: {enum: [RESEARCH, VALIDATION]}
+        as_of_time: {type: string, format: date-time}
+        coverage_start: {type: string, format: date}
+        coverage_end: {type: string, format: date}
+    ProviderMetadata:
+      type: object
+      additionalProperties: false
+      description: Named, redacted provider lineage; raw provider payload is stored only as an artifact.
+      required: [provider_id, adapter_key, adapter_version]
+      properties: {provider_id: {type: string}, adapter_key: {type: string}, adapter_version: {type: string}}
+    DatasetSnapshot:
+      type: object
+      additionalProperties: false
+      required: [snapshot_id, dataset_id, snapshot_kind, as_of_time, coverage_start, coverage_end, manifest_artifact_id, row_count, schema_sha256, content_sha256, provider_metadata, quality_run_id, created_at, created_by_job_id, provenance]
+      properties:
+        snapshot_id: *SnapshotIdSchema
+        dataset_id: *DatasetIdSchema
+        snapshot_kind: {enum: [RESEARCH, VALIDATION]}
+        as_of_time: {type: string, format: date-time}
+        coverage_start: {type: string, format: date}
+        coverage_end: {type: string, format: date}
+        manifest_artifact_id: *ArtifactId
+        row_count: {type: [integer, 'null'], format: int64, minimum: 0}
+        schema_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        provider_metadata: {$ref: '#/components/schemas/ProviderMetadata'}
+        quality_run_id: {oneOf: [*DataQualityRunId, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+        created_by_job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        provenance: {$ref: '#/components/schemas/ProvenanceRef'}
+    ResearchCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [title, original_user_prompt]
+      properties: {title: {type: string, minLength: 1, maxLength: 256}, original_user_prompt: {type: string, minLength: 1}, research_policy_id: {oneOf: [*ResearchPolicyId, {type: 'null'}]}}
+    ResearchStartRequest:
+      type: object
+      additionalProperties: false
+      required: [research_revision_no, capability_evaluation_confirmed]
+      properties: {research_revision_no: {type: integer, minimum: 1}, capability_evaluation_confirmed: {type: boolean, const: true}}
+    ResearchSummary:
+      type: object
+      additionalProperties: false
+      required: [research_id, title, status, evidence_status, current_revision_no, revision, updated_at]
+      properties:
+        research_id: *ResearchIdSchema
+        title: {type: string}
+        status: {$ref: '#/components/schemas/ResearchStatus'}
+        evidence_status: {enum: [INSUFFICIENT, WEAK, MIXED, SUPPORTIVE, STRONG]}
+        current_revision_no: {type: integer, minimum: 1}
+        revision: {type: integer, minimum: 1}
+        updated_at: {type: string, format: date-time}
+    ResearchBriefReadModel:
+      type: object
+      additionalProperties: false
+      required: [revision_no, question, hypothesis, economic_rationale, supporting_evidence_definition, disconfirming_evidence_definition, universe, benchmark, period, frequency, content_sha256]
+      properties:
+        revision_no: {type: integer, minimum: 1}
+        question: {type: string}
+        hypothesis: {type: [string, 'null']}
+        economic_rationale: {type: [string, 'null']}
+        supporting_evidence_definition: {type: [string, 'null']}
+        disconfirming_evidence_definition: {type: [string, 'null']}
+        universe: {$ref: '#/components/schemas/UniverseSpec'}
+        benchmark: {type: string}
+        period: {$ref: '#/components/schemas/DateRange'}
+        frequency: {const: DAILY}
+        content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+    ResearchConclusionReadModel:
+      type: object
+      additionalProperties: false
+      required: [conclusion_id, evidence_status, summary, evidence_refs, uncertainties, recommendation, provenance, created_at]
+      properties:
+        conclusion_id: *ConclusionId
+        evidence_status: {enum: [INSUFFICIENT, WEAK, MIXED, SUPPORTIVE, STRONG]}
+        summary: {type: string}
+        evidence_refs: {type: array, items: {$ref: '#/components/schemas/ObjectRef'}}
+        uncertainties: {type: array, items: {type: string}}
+        recommendation: {type: [string, 'null']}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+    ResearchPlanNodeReadModel:
+      type: object
+      additionalProperties: false
+      required: [node_key, title, owner_agent_role, status, depends_on, objective, finding_summary, experiment_count, sort_order]
+      properties:
+        node_key: {type: string}
+        title: {type: string}
+        owner_agent_role: {type: [string, 'null']}
+        status: {enum: [PENDING, RUNNING, COMPLETED, FAILED, SKIPPED]}
+        depends_on: {type: array, items: {type: string}}
+        objective: {type: [string, 'null']}
+        finding_summary: {type: [string, 'null']}
+        experiment_count: {type: integer, minimum: 0}
+        sort_order: {type: integer}
+    ResearchPlanReadModel:
+      type: object
+      additionalProperties: false
+      required: [plan_version, source_revision_no, status, rationale_summary, nodes, content_sha256, provenance, created_at]
+      properties:
+        plan_version: {type: integer, minimum: 1}
+        source_revision_no: {type: integer, minimum: 1}
+        status: {enum: [ACTIVE, SUPERSEDED]}
+        rationale_summary: {type: [string, 'null']}
+        nodes: {type: array, items: {$ref: '#/components/schemas/ResearchPlanNodeReadModel'}}
+        content_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+    ResearchCurrentAgentWork:
+      type: object
+      additionalProperties: false
+      required: [agent_run_id, agent_role, status, objective, current_action, tool, next_action, provenance, updated_at]
+      properties:
+        agent_run_id: *AgentRunIdSchema
+        agent_role: {type: string}
+        status: {enum: [QUEUED, RUNNING, WAITING_USER, COMPLETED, FAILED, CANCELLED]}
+        objective: {type: [string, 'null']}
+        current_action: {type: [string, 'null']}
+        tool: {oneOf: [{$ref: '#/components/schemas/NamedVersion'}, {type: 'null'}]}
+        next_action: {type: [string, 'null']}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        updated_at: {type: string, format: date-time}
+    ResearchEvidenceResultLocator:
+      type: object
+      additionalProperties: false
+      required: [result_sha256, metric_key, artifact]
+      properties:
+        result_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        metric_key: {type: [string, 'null']}
+        artifact: {oneOf: [{$ref: '#/components/schemas/ObjectRef'}, {type: 'null'}]}
+    ResearchEvidenceItem:
+      type: object
+      additionalProperties: false
+      required: [evidence, stance, claim, source_experiment, result_locator, strength, limitations, is_invalidated, provenance, created_at]
+      properties:
+        evidence: {$ref: '#/components/schemas/ObjectRef'}
+        stance: {enum: [SUPPORTING, CONTRADICTING, NEUTRAL]}
+        claim: {type: string}
+        source_experiment: {$ref: '#/components/schemas/ObjectRef'}
+        result_locator: {$ref: '#/components/schemas/ResearchEvidenceResultLocator'}
+        strength: {enum: [WEAK, MODERATE, STRONG]}
+        limitations: {type: [string, 'null']}
+        is_invalidated: {type: boolean}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+    ResearchOverviewReadModel:
+      type: object
+      additionalProperties: false
+      required: [brief, current_conclusion, progress, latest_evidence, current_agent_work]
+      properties:
+        brief: {$ref: '#/components/schemas/ResearchBriefReadModel'}
+        current_conclusion: {oneOf: [{$ref: '#/components/schemas/ResearchConclusionReadModel'}, {type: 'null'}]}
+        progress: {type: array, items: {$ref: '#/components/schemas/ResearchPlanNodeReadModel'}}
+        latest_evidence: {type: array, items: {$ref: '#/components/schemas/ResearchEvidenceItem'}}
+        current_agent_work: {oneOf: [{$ref: '#/components/schemas/ResearchCurrentAgentWork'}, {type: 'null'}]}
+    ResearchTimelineItem:
+      type: object
+      additionalProperties: false
+      required: [event_id, agent_role, objective, tool, result_summary, decision_summary, next_action, object, provenance, occurred_at]
+      properties:
+        event_id: *DomainEventId
+        agent_role: {type: [string, 'null']}
+        objective: {type: [string, 'null']}
+        tool: {oneOf: [{$ref: '#/components/schemas/NamedVersion'}, {type: 'null'}]}
+        result_summary: {type: [string, 'null']}
+        decision_summary: {type: [string, 'null']}
+        next_action: {type: [string, 'null']}
+        object: {oneOf: [{$ref: '#/components/schemas/ObjectRef'}, {type: 'null'}]}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        occurred_at: {type: string, format: date-time}
+    ResearchTimelinePage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ResearchTimelineItem'}}
+        page: {$ref: '#/components/schemas/PageInfo'}
+    ResearchExperimentItem:
+      type: object
+      additionalProperties: false
+      required: [experiment, objective, experiment_type, status, validity_state, job_id, provenance, created_at]
+      properties:
+        experiment: {$ref: '#/components/schemas/ObjectRef'}
+        objective: {type: string}
+        experiment_type: {enum: [FACTOR_ANALYSIS, FAST_BACKTEST, PARAMETER_SENSITIVITY, DATA_VALIDATION, STRICT_VALIDATION]}
+        status: {$ref: '#/components/schemas/ExperimentStatus'}
+        validity_state: {$ref: '#/components/schemas/ExperimentValidityState'}
+        job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+    ResearchExperimentPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ResearchExperimentItem'}}
+        page: {$ref: '#/components/schemas/PageInfo'}
+    ResearchEvidencePage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ResearchEvidenceItem'}}
+        page: {$ref: '#/components/schemas/PageInfo'}
+    ArtifactReadModel:
+      type: object
+      additionalProperties: false
+      required: [artifact, kind, media_type, sha256, size_bytes, provenance, created_at]
+      properties:
+        artifact: {$ref: '#/components/schemas/ObjectRef'}
+        kind: {type: string}
+        media_type: {type: string}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        size_bytes: {type: integer, format: int64, minimum: 0}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+    ArtifactPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ArtifactReadModel'}}
+        page: {$ref: '#/components/schemas/PageInfo'}
+    ResearchAuditItem:
+      type: object
+      additionalProperties: false
+      required: [event_id, action, actor, object, request_id, provenance, occurred_at]
+      properties:
+        event_id: *AuditEventId
+        action: {type: string}
+        actor: {$ref: '#/components/schemas/RequesterRef'}
+        object: {$ref: '#/components/schemas/ObjectRef'}
+        request_id: {type: string}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        occurred_at: {type: string, format: date-time}
+    ResearchAuditPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ResearchAuditItem'}}
+        page: {$ref: '#/components/schemas/PageInfo'}
+    ResearchDetail:
+      type: object
+      additionalProperties: false
+      description: Canonical P04 seven-tab server truth. Overview is explicit; absent plan/conclusion/current work use null and absent tab rows use empty items arrays, never omitted properties.
+      required: [research_id, title, original_user_prompt, normalized_question, status, evidence_status, current_revision_no, active_plan_version, research_policy_id, director_agent_version, current_agent_run_id, current_job_id, overview, plan, timeline, experiments, evidence, artifacts, audit, revision, action_capabilities, created_at, updated_at, completed_at]
+      properties:
+        research_id: *ResearchIdSchema
+        title: {type: string}
+        original_user_prompt: {type: string}
+        normalized_question: {type: [string, 'null']}
+        status: {$ref: '#/components/schemas/ResearchStatus'}
+        evidence_status: {enum: [INSUFFICIENT, WEAK, MIXED, SUPPORTIVE, STRONG]}
+        current_revision_no: {type: integer, minimum: 1}
+        active_plan_version: {type: [integer, 'null'], minimum: 1}
+        research_policy_id: *ResearchPolicyId
+        director_agent_version: {type: [string, 'null']}
+        current_agent_run_id: {oneOf: [*AgentRunIdSchema, {type: 'null'}]}
+        current_job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        overview: {$ref: '#/components/schemas/ResearchOverviewReadModel'}
+        plan: {oneOf: [{$ref: '#/components/schemas/ResearchPlanReadModel'}, {type: 'null'}]}
+        timeline: {$ref: '#/components/schemas/ResearchTimelinePage'}
+        experiments: {$ref: '#/components/schemas/ResearchExperimentPage'}
+        evidence: {$ref: '#/components/schemas/ResearchEvidencePage'}
+        artifacts: {$ref: '#/components/schemas/ArtifactPage'}
+        audit: {$ref: '#/components/schemas/ResearchAuditPage'}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        completed_at: {type: [string, 'null'], format: date-time}
+    ResearchStatus: {type: string, description: Exact PRD Research aggregate lifecycle; unknown aliases such as READY or STOPPED fail closed., enum: [DRAFT, PLANNING, RUNNING, WAITING_USER, PAUSED, CANDIDATE_FOUND, COMPLETED, REJECTED, FAILED]}
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required: [next_cursor, has_more]
+      properties: {next_cursor: {type: [string, 'null']}, has_more: {type: boolean}}
+    ResearchPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties: {items: {type: array, items: {$ref: '#/components/schemas/ResearchSummary'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    Parameter:
+      type: object
+      additionalProperties: false
+      required: [key, value]
+      properties: {key: {type: string}, value: {type: string}}
+    ExperimentCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [research_id, research_revision_no, objective, hypothesis, experiment_type, data_snapshot_id, cost_model_id, parameters, engine_key, engine_version]
+      properties:
+        research_id: *ResearchIdSchema
+        research_revision_no: {type: integer, minimum: 1}
+        objective: {type: string}
+        hypothesis: {type: string}
+        experiment_type: {enum: [FACTOR_ANALYSIS, FAST_BACKTEST, PARAMETER_SENSITIVITY, DATA_VALIDATION, STRICT_VALIDATION]}
+        data_snapshot_id: *SnapshotIdSchema
+        factor_id: {oneOf: [*FactorIdSchema, {type: 'null'}]}
+        factor_version: {type: [integer, 'null'], minimum: 1}
+        strategy_id: {oneOf: [*StrategyIdSchema, {type: 'null'}]}
+        strategy_version: {type: [integer, 'null'], minimum: 1}
+        cost_model_id: *CostModelId
+        parameters: {type: array, items: {$ref: '#/components/schemas/Parameter'}}
+        engine_key: {type: string}
+        engine_version: {type: string}
+    ExperimentReproduceExecutionOverrides:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        engine_version: {type: string, minLength: 1}
+        adapter_version: {type: string, minLength: 1}
+        code_version: {type: string, minLength: 1}
+    ExperimentReproduceExactRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mode: {type: string, const: EXACT, default: EXACT}
+    ExperimentReproduceControlledOverrideRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, execution_overrides, reason]
+      properties:
+        mode: {type: string, const: CONTROLLED_OVERRIDE}
+        execution_overrides: {$ref: '#/components/schemas/ExperimentReproduceExecutionOverrides'}
+        reason: {type: string, minLength: 1, maxLength: 4000}
+    ExperimentReproduceRequest:
+      description: Empty object or mode EXACT reproduces the immutable source snapshot, parameters, engine/adapter contract, policy, cost model, and code version. CONTROLLED_OVERRIDE may change only explicitly named execution-version fields and can never mutate the source experiment.
+      oneOf:
+        - {$ref: '#/components/schemas/ExperimentReproduceExactRequest'}
+        - {$ref: '#/components/schemas/ExperimentReproduceControlledOverrideRequest'}
+    NewExperimentResourceRef:
+      type: object
+      additionalProperties: false
+      description: The new Experiment id is high-entropy and globally unique; resource access remains restricted to the authenticated workspace that created it.
+      required: [type, id, version, revision]
+      properties:
+        type: {type: string, const: experiment}
+        id: *ExperimentIdSchema
+        version: {type: 'null'}
+        revision: {type: integer, const: 1}
+    ExperimentReproduceAccepted:
+      type: object
+      additionalProperties: false
+      description: Dedicated JobAccepted response for Reproduce; resource_ref is always the newly created Experiment and is never null.
+      required: [job_id, status, progress, resource_ref, source_experiment_id, source_provenance, reproduce_mode, created_at]
+      properties:
+        job_id: *JobIdSchema
+        status: {enum: [QUEUED, RUNNING]}
+        progress: {$ref: '#/components/schemas/JobProgress'}
+        resource_ref: {$ref: '#/components/schemas/NewExperimentResourceRef'}
+        source_experiment_id: *ExperimentIdSchema
+        source_provenance: {$ref: '#/components/schemas/ProvenanceRef'}
+        reproduce_mode: {enum: [EXACT, CONTROLLED_OVERRIDE]}
+        created_at: {type: string, format: date-time}
+    ExperimentStatus:
+      type: string
+      enum: [DRAFT, QUEUED, RUNNING, COMPLETED, FAILED, INVALID, CANCELLED]
+    ExperimentValidityState:
+      type: string
+      enum: [PENDING, VALID, INVALID, NON_REPRODUCIBLE]
+    ExperimentSearchSetDimension:
+      type: object
+      additionalProperties: false
+      required: [parameter_key, value_type, kind, values, minimum, maximum, step]
+      properties:
+        parameter_key: {type: string}
+        value_type: {enum: [INTEGER, DECIMAL, STRING, BOOLEAN]}
+        kind: {const: SET}
+        values: {type: array, minItems: 1, uniqueItems: true, items: {type: string}}
+        minimum: {type: 'null'}
+        maximum: {type: 'null'}
+        step: {type: 'null'}
+    ExperimentSearchRangeDimension:
+      type: object
+      additionalProperties: false
+      description: Numeric range bounds use canonical decimal strings. Runtime validation additionally enforces minimum < maximum, positive step, and integral values for INTEGER.
+      required: [parameter_key, value_type, kind, values, minimum, maximum, step]
+      properties:
+        parameter_key: {type: string}
+        value_type: {enum: [INTEGER, DECIMAL]}
+        kind: {const: RANGE}
+        values: {type: array, maxItems: 0}
+        minimum: {type: string, pattern: '^-?(0|[1-9][0-9]*)(\.[0-9]+)?$'}
+        maximum: {type: string, pattern: '^-?(0|[1-9][0-9]*)(\.[0-9]+)?$'}
+        step: {type: string, pattern: '^(0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\.[0-9]+)?)$'}
+    ExperimentSearchDimension:
+      discriminator:
+        propertyName: kind
+        mapping:
+          SET: '#/components/schemas/ExperimentSearchSetDimension'
+          RANGE: '#/components/schemas/ExperimentSearchRangeDimension'
+      oneOf:
+        - {$ref: '#/components/schemas/ExperimentSearchSetDimension'}
+        - {$ref: '#/components/schemas/ExperimentSearchRangeDimension'}
+    ExperimentSearchConfiguration:
+      type: object
+      additionalProperties: false
+      required: [method, objective_metric_key, objective_direction, max_evaluations, seed]
+      properties:
+        method: {enum: [GRID, RANDOM]}
+        objective_metric_key: {type: string}
+        objective_direction: {enum: [MAXIMIZE, MINIMIZE]}
+        max_evaluations: {type: integer, minimum: 1}
+        seed: {type: [integer, 'null'], format: int64}
+    ExperimentSearchResultNotApplicable:
+      type: object
+      additionalProperties: false
+      required: [state, evaluated_count, selected_parameters, selected_metric, result_ref, failure_code]
+      properties:
+        state: {const: NOT_APPLICABLE}
+        evaluated_count: {type: integer, const: 0}
+        selected_parameters: {type: array, maxItems: 0}
+        selected_metric: {type: 'null'}
+        result_ref: {type: 'null'}
+        failure_code: {type: 'null'}
+    ExperimentSearchResultPending:
+      type: object
+      additionalProperties: false
+      required: [state, evaluated_count, selected_parameters, selected_metric, result_ref, failure_code]
+      properties:
+        state: {const: PENDING}
+        evaluated_count: {type: integer, const: 0}
+        selected_parameters: {type: array, maxItems: 0}
+        selected_metric: {type: 'null'}
+        result_ref: {type: 'null'}
+        failure_code: {type: 'null'}
+    ExperimentSearchResultRunning:
+      type: object
+      additionalProperties: false
+      required: [state, evaluated_count, selected_parameters, selected_metric, result_ref, failure_code]
+      properties:
+        state: {const: RUNNING}
+        evaluated_count: {type: integer, minimum: 0}
+        selected_parameters: {type: array, maxItems: 0}
+        selected_metric: {type: 'null'}
+        result_ref: {type: 'null'}
+        failure_code: {type: 'null'}
+    ExperimentSearchResultCompleted:
+      type: object
+      additionalProperties: false
+      required: [state, evaluated_count, selected_parameters, selected_metric, result_ref, failure_code]
+      properties:
+        state: {const: COMPLETED}
+        evaluated_count: {type: integer, minimum: 1}
+        selected_parameters: {type: array, minItems: 1, items: {$ref: '#/components/schemas/Parameter'}}
+        selected_metric: {$ref: '#/components/schemas/Metric'}
+        result_ref: {$ref: '#/components/schemas/ObjectRef'}
+        failure_code: {type: 'null'}
+    ExperimentSearchResultFailed:
+      type: object
+      additionalProperties: false
+      required: [state, evaluated_count, selected_parameters, selected_metric, result_ref, failure_code]
+      properties:
+        state: {const: FAILED}
+        evaluated_count: {type: integer, minimum: 0}
+        selected_parameters: {type: array, maxItems: 0}
+        selected_metric: {type: 'null'}
+        result_ref: {type: 'null'}
+        failure_code: {$ref: '#/components/schemas/CanonicalErrorCode'}
+    ExperimentSearchResult:
+      description: State-discriminated Search result; every branch is closed and excludes contradictory partial success/failure fields.
+      discriminator:
+        propertyName: state
+        mapping:
+          NOT_APPLICABLE: '#/components/schemas/ExperimentSearchResultNotApplicable'
+          PENDING: '#/components/schemas/ExperimentSearchResultPending'
+          RUNNING: '#/components/schemas/ExperimentSearchResultRunning'
+          COMPLETED: '#/components/schemas/ExperimentSearchResultCompleted'
+          FAILED: '#/components/schemas/ExperimentSearchResultFailed'
+      oneOf:
+        - {$ref: '#/components/schemas/ExperimentSearchResultNotApplicable'}
+        - {$ref: '#/components/schemas/ExperimentSearchResultPending'}
+        - {$ref: '#/components/schemas/ExperimentSearchResultRunning'}
+        - {$ref: '#/components/schemas/ExperimentSearchResultCompleted'}
+        - {$ref: '#/components/schemas/ExperimentSearchResultFailed'}
+    ExperimentDetail:
+      type: object
+      additionalProperties: false
+      description: Canonical P05 detail including the typed Search projection. Non-search experiments return search_space=[], search_configuration=null, and search_result.state=NOT_APPLICABLE.
+      required: [experiment_id, research_id, parent_experiment_id, source_experiment_id, research_revision_no, objective, hypothesis, experiment_type, status, validity_state, data_snapshot_id, factor_ref, strategy_ref, cost_model_id, parameters, parameters_sha256, search_space, search_configuration, search_result, metrics, artifacts, engine, adapter, code_version, job_id, provenance, action_capabilities, started_at, finished_at, created_at, invalidated_at, invalid_reason_code, invalid_reason_detail]
+      properties:
+        experiment_id: *ExperimentIdSchema
+        research_id: *ResearchIdSchema
+        parent_experiment_id: {oneOf: [*ExperimentIdSchema, {type: 'null'}]}
+        source_experiment_id: {oneOf: [*ExperimentIdSchema, {type: 'null'}], description: Non-null only when this experiment was created by reproduce; the source remains immutable.}
+        research_revision_no: {type: integer, minimum: 1}
+        objective: {type: string}
+        hypothesis: {type: string}
+        experiment_type: {type: string}
+        status: {$ref: '#/components/schemas/ExperimentStatus'}
+        validity_state: {$ref: '#/components/schemas/ExperimentValidityState'}
+        data_snapshot_id: *SnapshotIdSchema
+        factor_ref: {oneOf: [{allOf: [{$ref: '#/components/schemas/VersionRef'}, {properties: {id: *FactorIdSchema}}]}, {type: 'null'}]}
+        strategy_ref: {oneOf: [{allOf: [{$ref: '#/components/schemas/VersionRef'}, {properties: {id: *StrategyIdSchema}}]}, {type: 'null'}]}
+        cost_model_id: *CostModelId
+        parameters: {type: array, items: {$ref: '#/components/schemas/Parameter'}}
+        parameters_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        search_space: {type: array, items: {$ref: '#/components/schemas/ExperimentSearchDimension'}}
+        search_configuration: {oneOf: [{$ref: '#/components/schemas/ExperimentSearchConfiguration'}, {type: 'null'}]}
+        search_result: {$ref: '#/components/schemas/ExperimentSearchResult'}
+        metrics: {type: array, items: {$ref: '#/components/schemas/Metric'}}
+        artifacts: {type: array, items: {$ref: '#/components/schemas/ArtifactReadModel'}}
+        engine: {$ref: '#/components/schemas/NamedVersion'}
+        adapter: {oneOf: [{$ref: '#/components/schemas/NamedVersion'}, {type: 'null'}]}
+        code_version: {type: string}
+        job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        provenance: {oneOf: [{$ref: '#/components/schemas/Provenance'}, {type: 'null'}]}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+        invalidated_at: {type: [string, 'null'], format: date-time}
+        invalid_reason_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        invalid_reason_detail: {type: [string, 'null']}
+    VersionRef:
+      type: object
+      additionalProperties: false
+      description: id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+      required: [id, version]
+      properties: {id: {oneOf: [*FactorIdSchema, *StrategyIdSchema]}, version: {type: integer, minimum: 1}}
+    UniverseSpec:
+      type: object
+      additionalProperties: false
+      required: [asset_class, symbols, universe_id]
+      properties: {asset_class: {type: string}, symbols: {type: array, items: {type: string}}, universe_id: {type: [string, 'null']}}
+    FactorFormula:
+      type: object
+      additionalProperties: false
+      required: [expression, required_fields]
+      properties: {expression: {type: string}, required_fields: {type: array, minItems: 1, items: {type: string}}}
+    FactorCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [research_id, name, category, description, economic_rationale, formula, universe, frequency]
+      properties:
+        research_id: *ResearchIdSchema
+        name: {type: string}
+        category: {type: string}
+        description: {type: string}
+        economic_rationale: {type: string}
+        formula: {$ref: '#/components/schemas/FactorFormula'}
+        universe: {$ref: '#/components/schemas/UniverseSpec'}
+        frequency: {const: DAILY}
+    FactorDetail:
+      type: object
+      additionalProperties: false
+      required: [factor_id, name, category, current_version, status, description, economic_rationale, formula, universe, frequency, definition_sha256, revision, action_capabilities, created_at, updated_at]
+      properties:
+        factor_id: *FactorIdSchema
+        name: {type: string}
+        category: {type: string}
+        current_version: {type: integer, minimum: 1}
+        status: {enum: [DRAFT, RESEARCHING, PROMISING, VALIDATED, REJECTED, ARCHIVED]}
+        description: {type: string}
+        economic_rationale: {type: string}
+        formula: {$ref: '#/components/schemas/FactorFormula'}
+        universe: {$ref: '#/components/schemas/UniverseSpec'}
+        frequency: {const: DAILY}
+        definition_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    FactorAnalysisRequest:
+      type: object
+      additionalProperties: false
+      required: [factor_version, snapshot_id, forward_return_horizons]
+      properties:
+        factor_version: {type: integer, minimum: 1}
+        snapshot_id: *SnapshotIdSchema
+        forward_return_horizons: {type: array, minItems: 1, items: {type: integer, minimum: 1}}
+    DateRange:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties: {start: {type: string, format: date}, end: {type: string, format: date}}
+    StrategySignal:
+      type: object
+      additionalProperties: false
+      required: [factor_id, factor_version, direction, weight]
+      properties: {factor_id: *FactorIdSchema, factor_version: {type: integer, minimum: 1}, direction: {enum: [LONG, SHORT]}, weight: {type: string}}
+    StrategyRules:
+      type: object
+      additionalProperties: false
+      required: [selection_count, weighting, rebalance_frequency, long_short, leverage_limit, position_limit]
+      properties:
+        selection_count: {type: integer, minimum: 1}
+        weighting: {enum: [EQUAL, SCORE, VOLATILITY]}
+        rebalance_frequency: {enum: [DAILY, WEEKLY, MONTHLY, QUARTERLY]}
+        long_short: {type: boolean}
+        leverage_limit: {type: string}
+        position_limit: {type: string}
+    StrategyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [research_id, name, thesis, universe, signals, rules, cost_model_id, benchmark, research_period, validation_period, holdout_period, known_failure_modes]
+      properties:
+        research_id: *ResearchIdSchema
+        name: {type: string}
+        thesis: {type: string}
+        universe: {$ref: '#/components/schemas/UniverseSpec'}
+        signals: {type: array, minItems: 1, items: {$ref: '#/components/schemas/StrategySignal'}}
+        rules: {$ref: '#/components/schemas/StrategyRules'}
+        cost_model_id: *CostModelId
+        benchmark: {type: string}
+        research_period: {$ref: '#/components/schemas/DateRange'}
+        validation_period: {$ref: '#/components/schemas/DateRange'}
+        holdout_period: {$ref: '#/components/schemas/DateRange'}
+        known_failure_modes: {type: array, items: {type: string}}
+    StrategySpecification:
+      type: object
+      additionalProperties: false
+      description: Canonical readable projection of the immutable version specification; values match the legacy top-level fields and spec_sha256 exactly.
+      required: [thesis, universe, signals, rules, cost_model_id, benchmark, research_period, validation_period, holdout_period, known_failure_modes, spec_sha256]
+      properties:
+        thesis: {type: string}
+        universe: {$ref: '#/components/schemas/UniverseSpec'}
+        signals: {type: array, items: {$ref: '#/components/schemas/StrategySignal'}}
+        rules: {$ref: '#/components/schemas/StrategyRules'}
+        cost_model_id: *CostModelId
+        benchmark: {type: string}
+        research_period: {$ref: '#/components/schemas/DateRange'}
+        validation_period: {$ref: '#/components/schemas/DateRange'}
+        holdout_period: {$ref: '#/components/schemas/DateRange'}
+        known_failure_modes: {type: array, items: {type: string}}
+        spec_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+    StrategyBacktestResultSummary:
+      type: object
+      additionalProperties: false
+      required: [experiment, status, validity_state, result_sha256, job_id, provenance, started_at, finished_at]
+      properties:
+        experiment: {$ref: '#/components/schemas/ObjectRef'}
+        status: {$ref: '#/components/schemas/ExperimentStatus'}
+        validity_state: {$ref: '#/components/schemas/ExperimentValidityState'}
+        result_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        provenance: {$ref: '#/components/schemas/ProvenanceRef'}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: string, format: date-time}
+    StrategyLatestBacktestAvailable:
+      type: object
+      additionalProperties: false
+      required: [state, result, metrics, chart]
+      properties:
+        state: {const: AVAILABLE}
+        result: {$ref: '#/components/schemas/StrategyBacktestResultSummary'}
+        metrics: {type: array, items: {$ref: '#/components/schemas/Metric'}}
+        chart: {$ref: '#/components/schemas/ChartAggregate'}
+    StrategyLatestBacktestUnavailable:
+      type: object
+      additionalProperties: false
+      description: EMPTY means no completed backtest exists. LOCKED means material exists but the current authorization/holdout gate forbids exposure; no protected value is substituted.
+      required: [state, result, metrics, chart]
+      properties:
+        state: {enum: [EMPTY, LOCKED]}
+        result: {type: 'null'}
+        metrics: {type: array, maxItems: 0}
+        chart: {type: 'null'}
+    StrategyLatestBacktest:
+      oneOf:
+        - {$ref: '#/components/schemas/StrategyLatestBacktestAvailable'}
+        - {$ref: '#/components/schemas/StrategyLatestBacktestUnavailable'}
+    ValidationResultCounts:
+      type: object
+      additionalProperties: false
+      required: [pending, running, pass, warn, fail, locked, skipped]
+      properties:
+        pending: {type: integer, minimum: 0}
+        running: {type: integer, minimum: 0}
+        pass: {type: integer, minimum: 0}
+        warn: {type: integer, minimum: 0}
+        fail: {type: integer, minimum: 0}
+        locked: {type: integer, minimum: 0}
+        skipped: {type: integer, minimum: 0}
+    StrategyValidationSummary:
+      type: object
+      additionalProperties: false
+      required: [validation, status, result, holdout_state, test_counts, provenance, revision]
+      properties:
+        validation: {$ref: '#/components/schemas/ObjectRef'}
+        status: {enum: [QUEUED, RUNNING, WAITING_HOLDOUT, COMPLETED, FAILED, CANCELLED]}
+        result: {type: [string, 'null'], enum: [PASS, WARN, FAIL, null]}
+        holdout_state: {enum: [LOCKED, APPROVAL_PENDING, UNLOCKED, RUNNING, EXPOSED, FAILED]}
+        test_counts: {$ref: '#/components/schemas/ValidationResultCounts'}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        revision: {type: integer, minimum: 1}
+    StrategyVersionDetail:
+      type: object
+      additionalProperties: false
+      description: Canonical P09 tab read model. Frozen versions remain readable and immutable; all writes are governed by action_capabilities and server enforcement.
+      required: [strategy_id, name, version, lifecycle_state, is_frozen, thesis, universe, signals, rules, cost_model_id, benchmark, research_period, validation_period, holdout_period, known_failure_modes, spec_sha256, specification, latest_backtest, validation_summary, artifacts, provenance, frozen_at, frozen_by, revision, action_capabilities, created_at]
+      properties:
+        strategy_id: *StrategyIdSchema
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        lifecycle_state: {enum: [CANDIDATE, FROZEN, VALIDATING, VALIDATED, REJECTED, PAPER, RETIRED]}
+        is_frozen: {type: boolean}
+        thesis: {type: string}
+        universe: {$ref: '#/components/schemas/UniverseSpec'}
+        signals: {type: array, items: {$ref: '#/components/schemas/StrategySignal'}}
+        rules: {$ref: '#/components/schemas/StrategyRules'}
+        cost_model_id: *CostModelId
+        benchmark: {type: string}
+        research_period: {$ref: '#/components/schemas/DateRange'}
+        validation_period: {$ref: '#/components/schemas/DateRange'}
+        holdout_period: {$ref: '#/components/schemas/DateRange'}
+        known_failure_modes: {type: array, items: {type: string}}
+        spec_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        specification: {$ref: '#/components/schemas/StrategySpecification'}
+        latest_backtest: {$ref: '#/components/schemas/StrategyLatestBacktest'}
+        validation_summary: {oneOf: [{$ref: '#/components/schemas/StrategyValidationSummary'}, {type: 'null'}]}
+        artifacts: {type: array, items: {$ref: '#/components/schemas/ArtifactReadModel'}}
+        provenance: {type: array, items: {$ref: '#/components/schemas/ProvenanceRef'}}
+        frozen_at: {type: [string, 'null'], format: date-time}
+        frozen_by: {type: [string, 'null']}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        created_at: {type: string, format: date-time}
+    BacktestRequest:
+      type: object
+      additionalProperties: false
+      required: [snapshot_id, cost_model_id, engine_key, engine_version, parameters]
+      properties:
+        snapshot_id: *SnapshotIdSchema
+        cost_model_id: *CostModelId
+        engine_key: {type: string}
+        engine_version: {type: string}
+        parameters: {type: array, items: {$ref: '#/components/schemas/Parameter'}}
+    FreezeStrategyRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_spec_sha256]
+      properties: {expected_spec_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}}
+    ValidationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [strategy_id, strategy_version, policy_id, strict_engine_key, strict_engine_version, test_suite_version]
+      properties:
+        strategy_id: *StrategyIdSchema
+        strategy_version: {type: integer, minimum: 1}
+        policy_id: *ResearchPolicyId
+        strict_engine_key: {type: string}
+        strict_engine_version: {type: string}
+        test_suite_version: {type: string}
+    ValidationTestResult:
+      type: object
+      additionalProperties: false
+      required: [test_key, attempt_no, test_version, state, purpose, configuration_summary, calculated_result, interpretation, failure_code, failure_detail, warning_codes, artifact_ids, provenance, override_permitted]
+      properties:
+        test_key: {type: string}
+        attempt_no: {type: integer, minimum: 1}
+        test_version: {type: string}
+        state: {enum: [PENDING, RUNNING, PASS, WARN, FAIL, LOCKED, SKIPPED]}
+        purpose: {type: string}
+        configuration_summary: {type: string}
+        calculated_result: {type: [string, 'null']}
+        interpretation: {type: [string, 'null']}
+        failure_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        failure_detail: {type: [string, 'null']}
+        warning_codes: {type: array, items: {type: string}}
+        artifact_ids: {type: array, items: *ArtifactId}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        override_permitted: {const: false}
+    ValidationDetail:
+      type: object
+      additionalProperties: false
+      required: [validation_id, strategy, policy_id, strict_engine, status, result, test_suite_version, tests, warnings, failures, holdout_state, red_team_run_id, job_id, revision, action_capabilities, started_at, finished_at, created_at]
+      properties:
+        validation_id: *ValidationIdSchema
+        strategy: {allOf: [{$ref: '#/components/schemas/VersionRef'}, {properties: {id: *StrategyIdSchema}}]}
+        policy_id: *ResearchPolicyId
+        strict_engine: {$ref: '#/components/schemas/NamedVersion'}
+        status: {enum: [QUEUED, RUNNING, WAITING_HOLDOUT, COMPLETED, FAILED, CANCELLED]}
+        result: {type: [string, 'null'], enum: [PASS, WARN, FAIL, null]}
+        test_suite_version: {type: string}
+        tests: {type: array, items: {$ref: '#/components/schemas/ValidationTestResult'}}
+        warnings: {type: array, items: {type: string}}
+        failures: {type: array, items: {type: string}}
+        holdout_state: {enum: [LOCKED, APPROVAL_PENDING, UNLOCKED, RUNNING, EXPOSED, FAILED]}
+        red_team_run_id: {oneOf: [*RedTeamRunId, {type: 'null'}]}
+        job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+    HoldoutApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: {reason: {type: string, minLength: 1}}
+    HoldoutRunRequest:
+      type: object
+      additionalProperties: false
+      required: [approval_id]
+      properties: {approval_id: *ApprovalIdSchema}
+    HoldoutGate:
+      type: object
+      additionalProperties: false
+      required: [validation_id, state, exposure_count, period, approval, action_capabilities, revision]
+      properties:
+        validation_id: *ValidationIdSchema
+        state: {enum: [LOCKED, APPROVAL_PENDING, UNLOCKED, RUNNING, EXPOSED, FAILED]}
+        exposure_count: {type: integer, minimum: 0}
+        period: {$ref: '#/components/schemas/DateRange'}
+        approval: {oneOf: [{$ref: '#/components/schemas/ApprovalSummary'}, {type: 'null'}]}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        revision: {type: integer, minimum: 1}
+        validation: {$ref: '#/components/schemas/ValidationDetail'}
+    HoldoutResult:
+      type: object
+      additionalProperties: false
+      required: [validation_id, exposure_id, result, metrics, provenance, exposed_at]
+      properties:
+        validation_id: *ValidationIdSchema
+        exposure_id: *ExposureId
+        result: {enum: [PASS, WARN, FAIL]}
+        metrics: {type: array, items: {$ref: '#/components/schemas/Metric'}}
+        provenance: {$ref: '#/components/schemas/Provenance'}
+        exposed_at: {type: string, format: date-time}
+    Metric:
+      type: object
+      additionalProperties: false
+      required: [key, value, unit]
+      properties: {key: {type: string}, value: {type: string}, unit: {type: [string, 'null']}}
+    MemoGenerateRequest:
+      type: object
+      additionalProperties: false
+      required: [strategy_id, strategy_version]
+      properties:
+        strategy_id: *StrategyIdSchema
+        strategy_version: {type: integer, minimum: 1}
+    MemoEvidenceLink:
+      type: object
+      additionalProperties: false
+      required: [experiment_id, provenance]
+      properties:
+        experiment_id: *ExperimentIdSchema
+        provenance: {$ref: '#/components/schemas/ProvenanceRef'}
+    MemoSection:
+      type: object
+      additionalProperties: false
+      required: [section_key, title, content, evidence_links]
+      properties:
+        section_key: {type: string}
+        title: {type: string}
+        content: {type: string}
+        evidence_links: {type: array, items: {$ref: '#/components/schemas/MemoEvidenceLink'}}
+    MemoDetail:
+      type: object
+      additionalProperties: false
+      required: [memo_id, strategy, status, sections, provenance, revision, action_capabilities, created_at, updated_at]
+      properties:
+        memo_id: *MemoIdSchema
+        strategy: {allOf: [{$ref: '#/components/schemas/VersionRef'}, {properties: {id: *StrategyIdSchema}}]}
+        status: {enum: [GENERATING, FINAL, FAILED]}
+        sections: {type: array, items: {$ref: '#/components/schemas/MemoSection'}}
+        provenance: {type: array, items: {$ref: '#/components/schemas/ProvenanceRef'}}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ApprovalSubject:
+      type: object
+      additionalProperties: false
+      required: [type, id, version, revision, sha256]
+      properties: {type: {enum: [STRATEGY_VERSION, VALIDATION, PAPER]}, id: {oneOf: [*StrategyIdSchema, *ValidationIdSchema, *PaperId]}, version: {type: [integer, 'null'], minimum: 1}, revision: {type: integer, minimum: 1}, sha256: {type: string, pattern: '^[0-9a-f]{64}$'}}
+      allOf:
+        - if: {properties: {type: {const: STRATEGY_VERSION}}, required: [type]}
+          then: {properties: {id: *StrategyIdSchema}}
+        - if: {properties: {type: {const: VALIDATION}}, required: [type]}
+          then: {properties: {id: *ValidationIdSchema}}
+        - if: {properties: {type: {const: PAPER}}, required: [type]}
+          then: {properties: {id: *PaperId}}
+    RequesterRef:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties: {type: {enum: [AGENT, SYSTEM, OWNER]}, id: {type: string}}
+    ApprovalPrerequisite:
+      type: object
+      additionalProperties: false
+      required: [key, state, detail]
+      properties: {key: {type: string}, state: {enum: [PASS, WARN, FAIL]}, detail: {type: string}}
+    RiskSummary:
+      type: object
+      additionalProperties: false
+      description: Named risk facts; new risk measures require an additive schema field.
+      required: [risk_level, warning_codes]
+      properties: {risk_level: {enum: [LOW, MEDIUM, HIGH, CRITICAL]}, warning_codes: {type: array, items: {type: string}}}
+    ApprovalEffect:
+      type: object
+      additionalProperties: false
+      required: [code, detail]
+      properties: {code: {type: string}, detail: {type: string}}
+    ApprovalSummary:
+      type: object
+      additionalProperties: false
+      required: [approval_id, status, revision]
+      properties: {approval_id: *ApprovalIdSchema, status: {enum: [PENDING, APPROVED, REJECTED, STALE, CANCELLED]}, revision: {type: integer, minimum: 1}}
+    ApprovalListItem:
+      type: object
+      additionalProperties: false
+      required: [approval_id, type, subject, requester, reason, status, requested_at, decided_at, revision, action_capabilities]
+      properties:
+        approval_id: *ApprovalIdSchema
+        type: {enum: [HOLDOUT_UNLOCK, PAPER_DEPLOYMENT, PAPER_ALLOCATION_CHANGE, RETIRE_PAPER]}
+        subject: {$ref: '#/components/schemas/ApprovalSubject'}
+        requester: {$ref: '#/components/schemas/RequesterRef'}
+        reason: {type: string}
+        status: {enum: [PENDING, APPROVED, REJECTED, STALE, CANCELLED]}
+        requested_at: {type: string, format: date-time}
+        decided_at: {type: [string, 'null'], format: date-time}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+    ApprovalPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ApprovalListItem'}}
+        page: {$ref: '#/components/schemas/PageInfo'}
+    ApprovalDetail:
+      type: object
+      additionalProperties: false
+      required: [approval_id, type, subject, requester, reason, prerequisites, risk_summary, effects, status, requested_at, decided_at, revision, action_capabilities]
+      properties:
+        approval_id: *ApprovalIdSchema
+        type: {enum: [HOLDOUT_UNLOCK, PAPER_DEPLOYMENT, PAPER_ALLOCATION_CHANGE, RETIRE_PAPER]}
+        subject: {$ref: '#/components/schemas/ApprovalSubject'}
+        requester: {$ref: '#/components/schemas/RequesterRef'}
+        reason: {type: string}
+        prerequisites: {type: array, items: {$ref: '#/components/schemas/ApprovalPrerequisite'}}
+        risk_summary: {$ref: '#/components/schemas/RiskSummary'}
+        effects: {type: array, items: {$ref: '#/components/schemas/ApprovalEffect'}}
+        status: {enum: [PENDING, APPROVED, REJECTED, STALE, CANCELLED]}
+        requested_at: {type: string, format: date-time}
+        decided_at: {type: [string, 'null'], format: date-time}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+    ApprovalDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [acknowledged_subject_sha256]
+      properties: {acknowledged_subject_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}}
+    ApprovalRejectRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, acknowledged_subject_sha256]
+      properties: {reason: {type: string, minLength: 1, maxLength: 4000}, acknowledged_subject_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}}
+    ApprovalDecisionResult:
+      type: object
+      additionalProperties: false
+      required: [approval, subject_ref, next_job]
+      properties:
+        approval: {$ref: '#/components/schemas/ApprovalDetail'}
+        subject_ref: {$ref: '#/components/schemas/ObjectRef'}
+        next_job: {oneOf: [{$ref: '#/components/schemas/JobAccepted'}, {type: 'null'}]}
+    JobProgress:
+      type: object
+      additionalProperties: false
+      required: [mode, completed_units, total_units, unit, percent, current_step_key, current_step_label]
+      properties:
+        mode: {enum: [NONE, UNITS]}
+        completed_units: {type: [integer, 'null'], format: int64, minimum: 0}
+        total_units: {type: [integer, 'null'], format: int64, minimum: 1}
+        unit: {type: [string, 'null']}
+        percent: {type: [number, 'null'], minimum: 0, maximum: 100}
+        current_step_key: {type: [string, 'null']}
+        current_step_label: {type: [string, 'null']}
+    JobResultRef:
+      type: object
+      additionalProperties: false
+      description: Closed result locator. A null object locator is represented only by four null object fields; artifact_id remains independently nullable.
+      allOf: *EventObjectPairRules
+      required: [object_type, object_id, object_version, object_revision, artifact_id]
+      properties:
+        object_type: {oneOf: [*EventObjectType, {type: 'null'}]}
+        object_id: {anyOf: [*EventObjectId, {type: 'null'}]}
+        object_version: {type: [integer, 'null'], minimum: 1}
+        object_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        artifact_id: {oneOf: [*ArtifactId, {type: 'null'}]}
+    JobAccepted:
+      type: object
+      additionalProperties: false
+      required: [job_id, status, progress, resource_ref, created_at]
+      properties:
+        job_id: *JobIdSchema
+        status: {enum: [QUEUED, RUNNING]}
+        progress: {$ref: '#/components/schemas/JobProgress'}
+        resource_ref: {oneOf: [{$ref: '#/components/schemas/ObjectRef'}, {type: 'null'}]}
+        created_at: {type: string, format: date-time}
+    JobDetail:
+      type: object
+      additionalProperties: false
+      required: [job_id, job_type, status, progress, error_code, result_ref, queued_at, started_at, finished_at, last_updated_at, revision]
+      properties:
+        job_id: *JobIdSchema
+        job_type: {type: string}
+        status: {enum: [QUEUED, RUNNING, WAITING_USER, COMPLETED, FAILED, CANCELLED]}
+        progress: {$ref: '#/components/schemas/JobProgress'}
+        error_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        result_ref: {oneOf: [{$ref: '#/components/schemas/JobResultRef'}, {type: 'null'}]}
+        queued_at: {type: string, format: date-time}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        last_updated_at: {type: string, format: date-time}
+        revision: {type: integer, minimum: 1}
+    EventType:
+      type: string
+      description: Exact lowercase P0 R2 SSE event-type allowlist. New members require a canonical contract revision before publication.
+      enum:
+        - job.updated
+        - research.created
+        - research.updated
+        - research.conclusion.created
+        - experiment.created
+        - experiment.updated
+        - factor.updated
+        - strategy.created
+        - strategy.updated
+        - validation.created
+        - validation.updated
+        - validation.holdout.updated
+        - approval.created
+        - approval.updated
+        - paper.created
+        - paper.updated
+        - paper.run.updated
+        - review.created
+        - review.updated
+        - data.provider.updated
+        - data.capability.updated
+        - data.quality.updated
+        - agent.run.updated
+        - tool.call.updated
+        - memo.created
+        - memo.updated
+        - setup.completed
+        - notification.created
+        - notification.updated
+        - system.health.updated
+        - system.resync_required
+    EventWaitingOn:
+      type: object
+      additionalProperties: false
+      required: [type, job_id]
+      properties:
+        type: {const: JOB}
+        job_id: *JobIdSchema
+    EventPayload:
+      type: object
+      additionalProperties: false
+      description: Named notification fields documented for P0 R2 only; full object truth remains the detail endpoint. Holdout result values, metrics, chart points, credentials, raw tool/model payloads, and internal scheduler evidence (including trading_date, attempt, lease, calendar/timezone, evidence Artifact, or failure-review detail) are forbidden. Scheduler evidence is the backend-only paper_scheduler_evidence.v1 Audit-linked Artifact.
+      allOf: *EventObjectPairRules
+      dependentRequired: {object_type: [object_id, object_version, object_revision], object_id: [object_type, object_version, object_revision], object_version: [object_type, object_id, object_revision], object_revision: [object_type, object_id, object_version]}
+      properties:
+        status: {type: [string, 'null']}
+        state: {type: [string, 'null']}
+        reason_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        resync_from_sequence: {type: [integer, 'null'], minimum: 1}
+        progress_mode: {type: [string, 'null'], enum: [NONE, UNITS, null]}
+        completed_units: {type: [integer, 'null'], format: int64, minimum: 0}
+        total_units: {type: [integer, 'null'], format: int64, minimum: 1}
+        current_step_key: {type: [string, 'null']}
+        agent_run_id: {oneOf: [*AgentRunIdSchema, {type: 'null'}]}
+        role: {oneOf: [{$ref: '#/components/schemas/AgentRoleKey'}, {type: 'null'}]}
+        objective: {type: [string, 'null']}
+        research_id: {oneOf: [*ResearchIdSchema, {type: 'null'}]}
+        object_type: {oneOf: [*EventObjectType, {type: 'null'}]}
+        object_id: {anyOf: [*EventObjectId, {type: 'null'}]}
+        object_version: {type: [integer, 'null'], minimum: 1}
+        object_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        waiting_on: {oneOf: [{$ref: '#/components/schemas/EventWaitingOn'}, {type: 'null'}]}
+    SseEnvelope:
+      type: object
+      additionalProperties: false
+      description: event_id and referenced public IDs are globally unique, while sequence and replay ordering are local to the authenticated workspace stream; no envelope authorizes cross-workspace resolution.
+      allOf: *EventObjectPairRules
+      required: [schema_version, event_id, sequence, event_type, occurred_at, object_type, object_id, object_version, object_revision, request_id, job_id, agent_run_id, tool_call_id, payload]
+      properties:
+        schema_version: {type: integer, const: 1}
+        event_id: *DomainEventId
+        sequence: {type: integer, format: int64, minimum: 1}
+        event_type: {$ref: '#/components/schemas/EventType'}
+        occurred_at: {type: string, format: date-time}
+        object_type: *EventObjectType
+        object_id: *EventObjectId
+        object_version: {type: [integer, 'null'], minimum: 1}
+        object_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        request_id: {type: [string, 'null']}
+        job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        agent_run_id: {oneOf: [*AgentRunIdSchema, {type: 'null'}]}
+        tool_call_id: {oneOf: [*ToolCallIdSchema, {type: 'null'}]}
+        payload: {$ref: '#/components/schemas/EventPayload'}
+    AgentRoleKey: {type: string, enum: [RESEARCH_DIRECTOR, FACTOR_SCIENTIST, STRATEGY_SCIENTIST, PORTFOLIO_ANALYST, RED_TEAM_RESEARCHER, PERFORMANCE_ANALYST]}
+    AgentConfigUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        enabled: {type: boolean}
+        model_provider: {type: string, minLength: 1, maxLength: 64}
+        model_name: {type: string, minLength: 1, maxLength: 128}
+        runtime_profile: {type: string, minLength: 1, maxLength: 32}
+        tool_timeout_seconds: {type: integer, minimum: 1}
+        max_steps_override: {type: [integer, 'null'], minimum: 1}
+        max_tool_calls_override: {type: [integer, 'null'], minimum: 1}
+    AgentConfig:
+      type: object
+      additionalProperties: false
+      required: [role_key, enabled, model_provider, model_name, runtime_profile, tool_timeout_seconds, max_steps_override, max_tool_calls_override, revision, action_capabilities, created_at, updated_at]
+      properties:
+        role_key: {$ref: '#/components/schemas/AgentRoleKey'}
+        enabled: {type: boolean}
+        model_provider: {type: string}
+        model_name: {type: string}
+        runtime_profile: {type: string}
+        tool_timeout_seconds: {type: integer, minimum: 1}
+        max_steps_override: {type: [integer, 'null'], minimum: 1}
+        max_tool_calls_override: {type: [integer, 'null'], minimum: 1}
+        revision: {type: integer, minimum: 1}
+        action_capabilities: {type: array, items: {$ref: '#/components/schemas/ActionCapability'}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    AgentConfigList: {type: array, items: {$ref: '#/components/schemas/AgentConfig'}}
+    AgentRunDetail:
+      type: object
+      additionalProperties: false
+      allOf: *EventObjectPairRules
+      required: [agent_run_id, agent_role, agent_version, model_provider, model_name, research_id, object_type, object_id, object_version, object_revision, objective, status, decision_summary, next_action, root_agent_run_id, parent_agent_run_id, context_sha256, model_call_count, input_tokens, output_tokens, tool_call_count, step_count, started_at, ended_at, created_at]
+      properties:
+        agent_run_id: *AgentRunIdSchema
+        agent_role: {$ref: '#/components/schemas/AgentRoleKey'}
+        agent_version: {type: string}
+        model_provider: {type: string}
+        model_name: {type: string}
+        research_id: {oneOf: [*ResearchIdSchema, {type: 'null'}]}
+        object_type: {oneOf: [*EventObjectType, {type: 'null'}]}
+        object_id: {anyOf: [*EventObjectId, {type: 'null'}]}
+        object_version: {type: [integer, 'null'], minimum: 1}
+        object_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        objective: {type: string}
+        status: {enum: [QUEUED, RUNNING, WAITING_USER, COMPLETED, FAILED, CANCELLED]}
+        decision_summary: {type: [string, 'null']}
+        next_action: {oneOf: [{$ref: '#/components/schemas/NextAction'}, {type: 'null'}]}
+        root_agent_run_id: {oneOf: [*AgentRunIdSchema, {type: 'null'}]}
+        parent_agent_run_id: {oneOf: [*AgentRunIdSchema, {type: 'null'}]}
+        context_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        model_call_count: {type: integer, minimum: 0}
+        input_tokens: {type: integer, format: int64, minimum: 0}
+        output_tokens: {type: integer, format: int64, minimum: 0}
+        tool_call_count: {type: integer, minimum: 0}
+        step_count: {type: integer, minimum: 0}
+        started_at: {type: [string, 'null'], format: date-time}
+        ended_at: {type: [string, 'null'], format: date-time}
+        created_at: {type: string, format: date-time}
+    NextAction:
+      type: object
+      additionalProperties: false
+      allOf: *EventObjectPairRules
+      required: [action, object_type, object_id, object_version, object_revision]
+      properties:
+        action: {type: string}
+        object_type: {oneOf: [*EventObjectType, {type: 'null'}]}
+        object_id: {anyOf: [*EventObjectId, {type: 'null'}]}
+        object_version: {type: [integer, 'null'], minimum: 1}
+        object_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+    ToolWarning:
+      type: object
+      additionalProperties: false
+      required: [code, detail]
+      properties: {code: {type: string}, detail: {type: string}}
+    ToolResultSummary:
+      type: object
+      additionalProperties: false
+      description: Stable small tool result references; large output is an artifact.
+      required: [object_refs, metric_keys]
+      properties: {object_refs: {type: array, items: {$ref: '#/components/schemas/ObjectRef'}}, metric_keys: {type: array, items: {type: string}}}
+    ToolCallDetail:
+      type: object
+      additionalProperties: false
+      required: [tool_call_id, agent_run_id, tool_name, tool_version, objective, research_id, experiment_id, job_id, input_sha256, policy_version_ref, status, result_summary, output_artifact_id, warnings, provenance, started_at, finished_at, duration_ms]
+      properties:
+        tool_call_id: *ToolCallIdSchema
+        agent_run_id: *AgentRunIdSchema
+        tool_name: {type: string}
+        tool_version: {type: string}
+        objective: {type: [string, 'null']}
+        research_id: {oneOf: [*ResearchIdSchema, {type: 'null'}]}
+        experiment_id: {oneOf: [*ExperimentIdSchema, {type: 'null'}]}
+        job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
+        input_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        policy_version_ref: {type: string}
+        status: {enum: [RUNNING, SUCCESS, ERROR, CANCELLED]}
+        result_summary: {oneOf: [{$ref: '#/components/schemas/ToolResultSummary'}, {type: 'null'}]}
+        output_artifact_id: {oneOf: [*ArtifactId, {type: 'null'}]}
+        warnings: {type: array, items: {$ref: '#/components/schemas/ToolWarning'}}
+        provenance: {oneOf: [{$ref: '#/components/schemas/ProvenanceRef'}, {type: 'null'}]}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        duration_ms: {type: [integer, 'null'], format: int64, minimum: 0}

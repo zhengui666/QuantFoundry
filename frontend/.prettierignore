@@ -1,0 +1,10 @@
+node_modules
+dist
+test-results
+playwright-report
+storybook-static
+coverage
+public/mockServiceWorker.js
+pnpm-lock.yaml
+src/api/generated.ts
+tsconfig.tsbuildinfo

@@ -1,61 +1,580 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíëÍüN‹Z–‹­¦ëeŠw¬Ôˆˆ‰…¹½¹¥…°•¹ÐÑ½½±Ì‰…­•‰äÑ¡”Í…µ”‘ÕÉ…‰±”‘½µ…¥¸É½ÝÌ…¹©½‰Ì…Ì!QQ@¸ˆˆˆ()™É½´}}™ÕÑÕÉ•}|¥µÁ½ÉÐ…¹¹½Ñ…Ñ¥½¹Ì()¥µÁ½ÉÐ©Í½¸)™É½´ÑåÁ¥¹œ¥µÁ½ÉÐ¹ä°…ÍÐ()™É½´ÍÅ±…±¡•µä¥µÁ½ÉÐÍ•±•Ð)™É½´ÍÅ±…±¡•µä¹½É´¥µÁ½ÉÐM•ÍÍ¥½¸()™É½´…ÁÀ¹…Á¥}µ½‘•±Ì¥µÁ½ÉÐ…Ñ½ÉÉ•…Ñ•I•ÅÕ•ÍÐ°MÑÉ…Ñ•åÉ•…Ñ•I•ÅÕ•ÍÐ)™É½´…ÁÀ¹½¹ÑÉ…ÑÌ¥µÁ½ÉÐ¹½Ü°Ù…±¥‘…Ñ•‘}Á…å±½…)™É½´…ÁÀ¹•¹¥¹•Ì¥µÁ½ÉÐ€ (€€€±½…‘}‘…Ñ…Í•Ð°(€€€Í¹…ÁÍ¡½Ñ}½¹Ñ•¹Ñ}Í¡„ÈÔØ°(€€€Í¹…ÁÍ¡½Ñ}É½ÝÌ°(¤)™É½´…ÁÀ¹µ…¥¸¥µÁ½ÉÐ€ (€€€	U%1}%°(€€€•¹ÑIÕ¹I½Ü°(€€€½ÍÑ5½‘•±Y•ÉÍ¥½¹I½Ü°(€€€…Ñ…M½ÕÉ”°(€€€áÁ•É¥µ•¹ÑI½Ü°(€€€…Ñ½ÉI½Ü°(€€€)½‰I½Ü°(€€€I•½É°(€€€I•Í•…É¡A½±¥åY•ÉÍ¥½¹I½Ü°(€€€I•Í•…É¡I½Ü°(€€€M•ÑÕÁ	¥¹‘¥¹I½Ü°(€€€M¹…ÁÍ¡½ÑA…ÉÑ¥Ñ¥½¹I½Ü°(€€€M¹…ÁÍ¡½ÑI½Ü°(€€€MÑÉ…Ñ•åI½Ü°(€€€MÑÉ…Ñ•åY•ÉÍ¥½¹I½Ü°(€€€Y…±¥‘…Ñ¥½¹I½Ü°(€€€…À°(€€€½¹Ñ•¹Ñ}¡…Í °(€€€•µ¥Ð°(€€€©½ˆ°(€€€¹•Ý}¥°(€€€ÍÑÉ…Ñ•å}…Ñ¥½¹}…Á…‰¥±¥Ñ¥•Ì°(€€€Ù…±¥‘…Ñ¥½¹}…Ñ¥½¹}…Á…‰¥±¥Ñ¥•Ì°(¤(()±…ÍÌQ½½±á•ÕÑ¥½¹ÉÉ½È¡IÕ¹Ñ¥µ•ÉÉ½È¤è(€€€Á…ÍÌ(()‘•˜}…•ÁÑ•‘}©½ˆ (€€€Í•ÍÍ¥½¸èM•ÍÍ¥½¸°(€€€©½‰}ÑåÁ”èÍÑÈ°(€€€¥¹ÁÕÑÌè‘¥ÑmÍÑÈ°¹åt°(€€€É•˜è‘¥ÑmÍÑÈ°¹åtð9½¹”€ô9½¹”°(¤€´ø‘¥ÑmÍÑÈ°¹åtè(€€€É•ÑÕÉ¸©½ˆ (€€€€€€€Í•ÍÍ¥½¸°(€€€€€€€©½‰}ÑåÁ”°(€€€€€€€É•˜°(€€€€€€€¥¹ÁÕÑ}Á…å±½…õ¥¹ÁÕÑÌ°(€€€€€€€ÅÕ•Õ•}¹…µ”ô‰½É”ˆ°(€€€€¤(()‘•˜}‘•™¥¹•}™…Ñ½È (€€€Í•ÍÍ¥½¸èM•ÍÍ¥½¸°ÉÕ¸è•¹ÑIÕ¹I½Ü°…ÉÕµ•¹ÑÌè‘¥ÑmÍÑÈ°¹åt(¤€´ø‘¥ÑmÍÑÈ°¹åtè(€€€Á…å±½…€ô…Ñ½ÉÉ•…Ñ•I•ÅÕ•ÍÐ¹µ½‘•±}Ù…±¥‘…Ñ” (€€€€€€€ì‰É•Í•…É¡}¥ˆè…ÉÕµ•¹ÑÍl‰É•Í•…É¡}¥‰t°€¨©…ÉÕµ•¹ÑÍl‰‘•™¥¹¥Ñ¥½¸‰uô(€€€€¤¹µ½‘•±}‘ÕµÀ¡µ½‘”ô‰©Í½¸ˆ°•á±Õ‘•}Õ¹Í•ÐõQÉÕ”¤(€€€É•Í•…É €ôÍ•ÍÍ¥½¸¹•Ð¡I•Í•…É¡I½Ü°Á…å±½…‘l‰É•Í•…É¡}¥‰t¤(€€€¥˜É•Í•…É ¥Ì9½¹”½ÈÉ•Í•…É ¹Ý½É­ÍÁ…•}¥€„ôÉÕ¸¹Ý½É­ÍÁ…•}¥è(€€€€€€€É…¥Í”Q½½±á•ÕÑ¥½¹ÉÉ½È ‰É•Í•…É ¥ÌÕ¹…Ù…¥±…‰±”Ñ¼Ñ¡¥ÌÝ½É­ÍÁ…”ˆ¤(€€€™…Ñ½É}¥€ô¹•Ý}¥ ‰ˆ¤(€€€É•…Ñ•‘}…Ð€ô¹½Ü ¤(€€€‘•Ñ…¥°€ôì(€€€€€€€€¨©Á…å±½…°(€€€€€€€€‰™…Ñ½É}¥ˆè™…Ñ½É}¥°(€€€€€€€€‰ÕÉÉ•¹Ñ}Ù•ÉÍ¥½¸ˆè€Ä°(€€€€€€€€‰ÍÑ…ÑÕÌˆè€‰IPˆ°(€€€€€€€€‰‘•™¥¹¥Ñ¥½¹}Í¡„ÈÔØˆè½¹Ñ•¹Ñ}¡…Í ¡Á…å±½…¤°(€€€€€€€€‰É•Ù¥Í¥½¸ˆè€Ä°(€€€€€€€€‰…Ñ¥½¹}…Á…‰¥±¥Ñ¥•Ìˆèm…À ‰…¹…±åé”ˆ¥t°(€€€€€€€€‰É•…Ñ•‘}…ÐˆèÉ•…Ñ•‘}…Ð°(€€€€€€€€‰ÕÁ‘…Ñ•‘}…ÐˆèÉ•…Ñ•‘}…Ð°(€€€ô(€€€Í•ÍÍ¥½¸¹…‘ (€€€€€€€…Ñ½ÉI½Ü (€€€€€€€€€€€¥õ™…Ñ½É}¥°(€€€€€€€€€€€Ý½É­ÍÁ…•}¥õÉÕ¸¹Ý½É­ÍÁ…•}¥°(€€€€€€€€€€€É•Í•…É¡}¥õÉ•Í•…É ¹¥°(€€€€€€€€€€€É•Ù¥Í¥½¸ôÄ°(€€€€€€€€€€€‘•Ñ…¥°õ©Í½¸¹‘ÕµÁÌ¡‘•Ñ…¥°¤°(€€€€€€€€¤(€€€€¤(€€€•µ¥Ð (€€€€€€€Í•ÍÍ¥½¸°(€€€€€€€€‰™…Ñ½Èˆ°(€€€€€€€™…Ñ½É}¥°(€€€€€€€€Ä°(€€€€€€€€‰™…Ñ½È¹ÕÁ‘…Ñ•ˆ°(€€€€€€€Á…å±½…õì‰ÍÑ…Ñ”ˆè€‰IPˆ°€‰ÍÑ…ÑÕÌˆè€‰IP‰ô°(€€€€€€€…•¹Ñ}ÉÕ¹}¥õ…ÍÐ¡ÍÑÈ°ÉÕ¸¹¥¤°(€€€€¤(€€€É•ÑÕÉ¸ì‰™…Ñ½É}¥ˆè™…Ñ½É}¥°€‰Ù•ÉÍ¥½¸ˆè€Åô(()‘•˜}‘•™¥¹•}ÍÑÉ…Ñ•ä (€€€Í•ÍÍ¥½¸èM•ÍÍ¥½¸°ÉÕ¸è•¹ÑIÕ¹I½Ü°…ÉÕµ•¹ÑÌè‘¥ÑmÍÑÈ°¹åt(¤€´ø‘¥ÑmÍÑÈ°¹åtè(€€€Á…å±½…€ôMÑÉ…Ñ•åÉ•…Ñ•I•ÅÕ•ÍÐ¹µ½‘•±}Ù…±¥‘…Ñ” (€€€€€€€ì‰É•Í•…É¡}¥ˆè…ÉÕµ•¹ÑÍl‰É•Í•…É¡}¥‰t°€¨©…ÉÕµ•¹ÑÍl‰‘•™¥¹¥Ñ¥½¸‰uô(€€€€¤¹µ½‘•±}‘ÕµÀ¡µ½‘”ô‰©Í½¸ˆ°•á±Õ‘•}Õ¹Í•ÐõQÉÕ”¤(€€€É•Í•…É €ôÍ•ÍÍ¥½¸¹•Ð¡I•Í•…É¡I½Ü°Á…å±½…‘l‰É•Í•…É¡}¥‰t¤(€€€¥˜É•Í•…É ¥Ì9½¹”½ÈÉ•Í•…É ¹Ý½É­ÍÁ…•}¥€„ôÉÕ¸¹Ý½É­ÍÁ…•}¥è(€€€€€€€É…¥Í”Q½½±á•ÕÑ¥½¹ÉÉ½È ‰É•Í•…É ¥ÌÕ¹…Ù…¥±…‰±”Ñ¼Ñ¡¥ÌÝ½É­ÍÁ…”ˆ¤(€€€™…Ñ½ÉÌ€ômÍ•ÍÍ¥½¸¹•Ð¡…Ñ½ÉI½Ü°¥Ñ•µl‰™…Ñ½É}¥‰t¤™½È¥Ñ•´¥¸Á…å±½…‘l‰Í¥¹…±Ì‰ut(€€€¥˜…¹ä¡É½Ü¥Ì9½¹”½ÈÉ½Ü¹Ý½É­ÍÁ…•}¥€„ôÉÕ¸¹Ý½É­ÍÁ…•}¥™½ÈÉ½Ü¥¸™…Ñ½ÉÌ¤è(€€€€€€€É…¥Í”Q½½±á•ÕÑ¥½¹ÉÉ½È ‰ÍÑÉ…Ñ•äÉ•™•É•¹•Ì…¸Õ¹…Ù…¥±…‰±”™…Ñ½Èˆ¤(€€€ÍÑÉ…Ñ•å}¥€ô¹•Ý}¥ ‰MQIPˆ¤(€€€‘¥•ÍÐ€ô½¹Ñ•¹Ñ}¡…Í ¡Á…å±½…¤(€€€É•…Ñ•‘}…Ð€ô¹½Ü ¤(€€€ÍÁ•¥™¥…Ñ¥½¸€ôì(€€€€€€€­•äèÁ…å±½…‘m­•åt(€€€€€€€™½È­•ä¥¸€ (€€€€€€€€€€€€‰Ñ¡•Í¥Ìˆ°(€€€€€€€€€€€€‰Õ¹¥Ù•ÉÍ”ˆ°(€€€€€€€€€€€€‰Í¥¹…±Ìˆ°(€€€€€€€€€€€€‰ÉÕ±•Ìˆ°(€€€€€€€€€€€€‰½ÍÑ}µ½‘•±}¥ˆ°(€€€€€€€€€€€€‰‰•¹¡µ…É¬ˆ°(€€€€€€€€€€€€‰É•Í•…É¡}Á•É¥½ˆ°(€€€€€€€€€€€€‰Ù…±¥‘…Ñ¥½¹}Á•É¥½ˆ°(€€€€€€€€€€€€‰¡½±‘½ÕÑ}Á•É¥½ˆ°(€€€€€€€€€€€€‰­¹½Ý¹}™…¥±ÕÉ•}µ½‘•Ìˆ°(€€€€€€€€¤(€€€ôðì‰ÍÁ•}Í¡„ÈÔØˆè‘¥•ÍÑô(€€€‘•Ñ…¥°€ôÙ…±¥‘…Ñ•‘}Á…å±½… (€€€€€€€€‰MÑÉ…Ñ•åY•ÉÍ¥½¹•Ñ…¥°ˆ°(€€€€€€€ì(€€€€€€€€€€€€‰ÍÑÉ…Ñ•å}¥ˆèÍÑÉ…Ñ•å}¥°(€€€€€€€€€€€€‰¹…µ”ˆèÁ…å±½…‘l‰¹…µ”‰t°(€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°(€€€€€€€€€€€€‰±¥™•å±•}ÍÑ…Ñ”ˆè€‰9%Qˆ°(€€€€€€€€€€€€‰¥Í}™É½é•¸ˆè…±Í”°(€€€€€€€€€€€€‰Ñ¡•Í¥ÌˆèÁ…å±½…‘l‰Ñ¡•Í¥Ì‰t°(€€€€€€€€€€€€‰Õ¹¥Ù•ÉÍ”ˆèÁ…å±½…‘l‰Õ¹¥Ù•ÉÍ”‰t°(€€€€€€€€€€€€‰Í¥¹…±ÌˆèÁ…å±½…‘l‰Í¥¹…±Ì‰t°(€€€€€€€€€€€€‰ÉÕ±•ÌˆèÁ…å±½…‘l‰ÉÕ±•Ì‰t°(€€€€€€€€€€€€‰½ÍÑ}µ½‘•±}¥ˆèÁ…å±½…‘l‰½ÍÑ}µ½‘•±}¥‰t°(€€€€€€€€€€€€‰‰•¹¡µ…É¬ˆèÁ…å±½…‘l‰‰•¹¡µ…É¬‰t°(€€€€€€€€€€€€‰É•Í•…É¡}Á•É¥½ˆèÁ…å±½…‘l‰É•Í•…É¡}Á•É¥½‰t°(€€€€€€€€€€€€‰Ù…±¥‘…Ñ¥½¹}Á•É¥½ˆèÁ…å±½…‘l‰Ù…±¥‘…Ñ¥½¹}Á•É¥½‰t°(€€€€€€€€€€€€‰¡½±‘½ÕÑ}Á•É¥½ˆèÁ…å±½…‘l‰¡½±‘½ÕÑ}Á•É¥½‰t°(€€€€€€€€€€€€‰­¹½Ý¹}™…¥±ÕÉ•}µ½‘•ÌˆèÁ…å±½…‘l‰­¹½Ý¹}™…¥±ÕÉ•}µ½‘•Ì‰t°(€€€€€€€€€€€€‰ÍÁ•}Í¡„ÈÔØˆè‘¥•ÍÐ°(€€€€€€€€€€€€‰ÍÁ•¥™¥…Ñ¥½¸ˆèÍÁ•¥™¥…Ñ¥½¸°(€€€€€€€€€€€€‰±…Ñ•ÍÑ}‰…­Ñ•ÍÐˆèì(€€€€€€€€€€€€€€€€‰ÍÑ…Ñ”ˆè€‰5AQdˆ°(€€€€€€€€€€€€€€€€‰É•ÍÕ±Ðˆè9½¹”°(€€€€€€€€€€€€€€€€‰µ•ÑÉ¥Ìˆèmt°(€€€€€€€€€€€€€€€€‰¡…ÉÐˆè9½¹”°(€€€€€€€€€€€ô°(€€€€€€€€€€€€‰Ù…±¥‘…Ñ¥½¹}ÍÕµµ…Éäˆè9½¹”°(€€€€€€€€€€€€‰…ÉÑ¥™…ÑÌˆèmt°(€€€€€€€€€€€€‰ÁÉ½Ù•¹…¹”ˆèmt°(€€€€€€€€€€€€‰™É½é•¹}…Ðˆè9½¹”°(€€€€€€€€€€€€‰™É½é•¹}‰äˆè9½¹”°(€€€€€€€€€€€€‰É•Ù¥Í¥½¸ˆè€Ä°(€€€€€€€€€€€€‰…Ñ¥½¹}…Á…‰¥±¥Ñ¥•ÌˆèÍÑÉ…Ñ•å}…Ñ¥½¹}…Á…‰¥±¥Ñ¥•Ì ‰9%Qˆ¤°(€€€€€€€€€€€€‰É•…Ñ•‘}…ÐˆèÉ•…Ñ•‘}…Ð°(€€€€€€€ô°(€€€€¤(€€€Í•ÍÍ¥½¸¹…‘ (€€€€€€€MÑÉ…Ñ•åI½Ü (€€€€€€€€€€€¥õÍÑÉ…Ñ•å}¥°(€€€€€€€€€€€Ý½É­ÍÁ…•}¥õÉÕ¸¹Ý½É­ÍÁ…•}¥°(€€€€€€€€€€€É•Í•…É¡}¥õÉ•Í•…É ¹¥°(€€€€€€€€€€€É•Ù¥Í¥½¸ôÄ°(€€€€€€€€€€€‘•Ñ…¥°õ©Í½¸¹‘ÕµÁÌ¡‘•Ñ…¥°¤°(€€€€€€€€¤(€€€€¤(€€€Í•ÍÍ¥½¸¹™±ÕÍ  ¤(€€€Í•ÍÍ¥½¸¹…‘ (€€€€€€€MÑÉ…Ñ•åY•ÉÍ¥½¹I½Ü (€€€€€€€€€€€¥õ¹•Ý}¥ ‰MXˆ¤°(€€€€€€€€€€€Ý½É­ÍÁ…•}¥õÉÕ¸¹Ý½É­ÍÁ…•}¥°(€€€€€€€€€€€ÍÑÉ…Ñ•å}¥õÍÑÉ…Ñ•å}¥°(€€€€€€€€€€€Ù•ÉÍ¥½¸ôÄ°(€€€€€€€€€€€ÍÑ…Ñ”ô‰9%Qˆ°(€€€€€€€€€€€ÍÁ•}Í¡„ÈÔØõ‘¥•ÍÐ°(€€€€€€€€€€€É•Ù¥Í¥½¸ôÄ°(€€€€€€€€€€€‘•Ñ…¥°õ©Í½¸¹‘ÕµÁÌ¡‘•Ñ…¥°¤°(€€€€€€€€¤(€€€€¤(€€€•µ¥Ð (€€€€€€€Í•ÍÍ¥½¸°(€€€€€€€€‰ÍÑÉ…Ñ•å}Ù•ÉÍ¥½¸ˆ°(€€€€€€€ÍÑÉ…Ñ•å}¥°(€€€€€€€€Ä°(€€€€€€€€‰ÍÑÉ…Ñ•ä¹É•…Ñ•ˆ°(€€€€€€€Á…å±½…õì‰ÍÑ…Ñ”ˆè€‰IPˆ°€‰ÍÑ…ÑÕÌˆè€‰IP‰ô°(€€€€€€€½‰©•Ñ}Ù•ÉÍ¥½¸ôÄ°(€€€€€€€…•¹Ñ}ÉÕ¹}¥õ…ÍÐ¡ÍÑÈ°ÉÕ¸¹¥¤°(€€€€¤(€€€É•ÑÕÉ¸ì‰ÍÑÉ…Ñ•å}¥ˆèÍÑÉ…Ñ•å}¥°€‰Ù•ÉÍ¥½¸ˆè€Åô(()‘•˜}ÅÕ•Õ•}™…Ñ½É}…¹…±åÍ¥Í}•áÁ•É¥µ•¹Ð (€€€Í•ÍÍ¥½¸èM•ÍÍ¥½¸°ÉÕ¸è•¹ÑIÕ¹I½Ü°…ÉÕµ•¹ÑÌè‘¥ÑmÍÑÈ°¹åt(¤€´ø‘¥ÑmÍÑÈ°¹åtè(€€€™…Ñ½È€ôÍ•ÍÍ¥½¸¹•Ð¡…Ñ½ÉI½Ü°…ÉÕµ•¹ÑÍl‰™…Ñ½É}¥‰t¤(€€€Í¹…ÁÍ¡½Ð€ôÍ•ÍÍ¥½¸¹•Ð¡M¹…ÁÍ¡½ÑI½Ü°…ÉÕµ•¹ÑÍl‰Í¹…ÁÍ¡½Ñ}¥‰t¤(€€€É•Í•…É €ôÍ•ÍÍ¥½¸¹•Ð¡I•Í•…É¡I½Ü°ÉÕ¸¹É•Í•…É¡}¥¤¥˜ÉÕ¸¹É•Í•…É¡}¥•±Í”9½¹”(€€€‰¥¹‘¥¹œ€ôÍ•ÍÍ¥½¸¹•Ð¡M•ÑÕÁ	¥¹‘¥¹I½Ü°ÉÕ¸¹Ý½É­ÍÁ…•}¥¤(€€€½ÍÐ€ô€ (€€€€€€€Í•ÍÍ¥½¸¹•Ð¡½ÍÑ5½‘•±Y•ÉÍ¥½¹I½Ü°‰¥¹‘¥¹œ¹½ÍÑ}µ½‘•±}Ù•ÉÍ¥½¹}¥¤(€€€€€€€¥˜‰¥¹‘¥¹œ¥Ì¹½Ð9½¹”(€€€€€€€•±Í”9½¹”(€€€€¤(€€€¥˜€ (€€€€€€€™…Ñ½È¥Ì9½¹”(€€€€€€€½ÈÍ¹…ÁÍ¡½Ð¥Ì9½¹”(€€€€€€€½ÈÉ•Í•…É ¥Ì9½¹”(€€€€€€€½È½ÍÐ¥Ì9½¹”(€€€€€€€½È™…Ñ½È¹Ý½É­ÍÁ…•}¥€„ôÉÕ¸¹Ý½É­ÍÁ…•}¥(€€€€€€€½ÈÍ¹…ÁÍ¡½Ð¹Ý½É­ÍÁ…•}¥€„ôÉÕ¸¹Ý½É­ÍÁ…•}¥(€€€€€€€½ÈÉ•Í•…É ¹Ý½É­ÍÁ…•}¥€„ôÉÕ¸¹Ý½É­ÍÁ…•}¥(€€€€€€€½È½ÍÐ¹Ý½É­ÍÁ…•}¥€„ôÉÕ¸¹Ý½É­ÍÁ…•}¥(€€€€€€€½È¹½ÐÍ¹…ÁÍ¡½Ð¹¥µµÕÑ…‰±”(€€€€€€€½È…ÉÕµ•¹ÑÍl‰™…Ñ½É}Ù•ÉÍ¥½¸‰t€„ô€Ä(€€€€¤è(€€€€€€€É…¥Í”Q½½±á•ÕÑ¥½¹ÉÉ½È (€€€€€€€€€€€€‰Ý½É­ÍÁ…”µ½Ý¹•™…Ñ½È°Í¹…ÁÍ¡½Ð°É•Í•…É …¹½ÍÐµ½‘•°…É”É•ÅÕ¥É•ˆ(€€€€€€€€¤(€€€™…Ñ½É}‘•Ñ…¥°€ô©Í½¸¹±½…‘Ì¡…ÍÐ¡ÍÑÈ°™…Ñ½È¹‘•Ñ…¥°¤¤(€€€•áÁ•É¥µ•¹Ñ}¥€ô¹•Ý}¥ ‰a@ˆ¤(€€€Á…É…µ•Ñ•ÉÌè±¥ÍÑm‘¥ÑmÍÑÈ°ÍÑÉut€ômt(€€€…•ÁÑ•€ô}…•ÁÑ•‘}©½ˆ (€€€€€€€Í•ÍÍ¥½¸°(€€€€€€€€‰Q=I}91eM%Lˆ°(€€€€€€€ì(€€€€€€€€€€€€‰•áÁ•É¥µ•¹Ñ}¥ˆè•áÁ•É¥µ•¹Ñ}¥°(€€€€€€€€€€€€¨©…ÉÕµ•¹ÑÌ°(€€€€€€€€€€€€‰™½ÉÝ…É‘}É•ÑÕÉ¹}¡½É¥é½¹ÌˆèlÅt°(€€€€€€€ô°(€€€€€€€ì(€€€€€€€€€€€€‰ÑåÁ”ˆè€‰•áÁ•É¥µ•¹Ðˆ°(€€€€€€€€€€€€‰¥ˆè•áÁ•É¥µ•¹Ñ}¥°(€€€ƒ_7òÚ$z{-®éÜj×œÛ˜\ÚÝÜ™\]Y\ÝŽˆÛ˜\ÚÝÜ™\]Y\ÝˆBˆ
-Kˆ™^XÝYØÛÛ[ÜÚLMˆŽˆÛ˜\ÚÝØÛÛ[ÜÚLMŠˆÛÝ\˜ÙWÚY[™KX›XË›ÝXÝYˆ
-KˆKˆÈ\HŽˆœÛ˜\ÚÝ‹šYŽˆÛ˜\ÚÝÚY™\œÚ[ÛˆŽˆ›Û™Kœ™]š\Ú[ÛˆŽˆ_Kˆ
-Bˆ™]\›ˆÈš›Ø—ÚYŽˆXØÙ\YÈš›Ø—ÚY—_BˆYˆ˜[YHOH™Yš[™WÙ˜XÝÜˆŽ‚ˆ™]\›ˆÙYš[™WÙ˜XÝÜŠÙ\ÜÚ[Û‹[‹\™Ý[Y[ÊBˆYˆ˜[YH[ˆÈ˜[˜[^™WÙ˜XÝÜˆ‹˜Ø[Ý[]WÙ˜XÝÜˆŸN‚ˆ™]\›ˆÜ]Y]YWÙ˜XÝÜ—Ø[˜[\Ú\×Ù^\š[Y[
-Ù\ÜÚ[Û‹[‹\™Ý[Y[ÊBˆYˆ˜[YHOH˜ÛÛ\\™WÙ˜XÝÜœÈŽ‚ˆÛ˜\ÚÝHÙ\ÜÚ[Û‹™Ù]
-Û˜\ÚÝ›ÝË\™Ý[Y[ÖÈœÛ˜\ÚÝÚY—JBˆ˜XÝÜ—Ü™YœÈH\™Ý[Y[ÖÈ™˜XÝÜ—Ü™YœÈ—Bˆ˜XÝÜœÈHÂˆÙ\ÜÚ[Û‹™Ù]
-˜XÝÜ”›ÝË][K™Ù]
-šYŠJBˆ›Üˆ][H[ˆ˜XÝÜ—Ü™YœÂˆYˆ\Ú[œÝ[˜ÙJ][KXÝ
-BˆBˆYˆ
-ˆÛ˜\ÚÝ\È›Û™BˆÜˆÛ˜\ÚÝÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚYˆÜˆ[Š˜XÝÜœÊHOH[Š˜XÝÜ—Ü™YœÊBˆÜˆ[žJˆ˜XÝÜˆ\È›Û™HÜˆ˜XÝÜ‹ÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚYˆ›Üˆ˜XÝÜˆ[ˆ˜XÝÜœÂˆ
-Bˆ
-N‚ˆ˜Z\ÙHÛÛ^XÝ][Û‘\œ›ÜŠ™˜XÝÜˆÛÛ\\š\ÛÛˆÝXš™XÝÈ\™H[˜]˜Z[X›HŠBˆXØÙ\YHØXØÙ\YÚ›ØŠÙ\ÜÚ[Û‹‘PÕÔ—ÐÓÓTT‘H‹\™Ý[Y[ÊBˆ™]\›ˆÈš›Ø—ÚYŽˆXØÙ\YÈš›Ø—ÚY—_BˆYˆ˜[YHOH™Yš[™WÜÝ˜]YÞHŽ‚ˆ™]\›ˆÙYš[™WÜÝ˜]YÞJÙ\ÜÚ[Û‹[‹\™Ý[Y[ÊBˆYˆ˜[YH[ˆÈœ[—Ù˜\ÝØ˜XÚÝ\Ý‹œ[—Ü\˜[Y]\—ÜÙ[œÚ]]š]HŸN‚ˆ™\œÚ[ÛˆHÙ\ÜÚ[Û‹™^XÝ]JˆÙ[XÝ
-Ý˜]YÞU™\œÚ[Û”›ÝÊKÚ\™JˆÝ˜]YÞU™\œÚ[Û”›ÝËœÝ˜]YÞWÚYOH\™Ý[Y[ÖÈœÝ˜]YÞWÚY—KˆÝ˜]YÞU™\œÚ[Û”›ÝË™\œÚ[ÛˆOH\™Ý[Y[ÖÈœÝ˜]YÞWÝ™\œÚ[Ûˆ—Kˆ
-Bˆ
-KœØØ[\—ÛÛ™WÛÜ—Û›Û™J
-BˆÛ˜\ÚÝHÙ\ÜÚ[Û‹™Ù]
-Û˜\ÚÝ›ÝË\™Ý[Y[ÖÈœÛ˜\ÚÝÚY—JBˆYˆ
-ˆ™\œÚ[Ûˆ\È›Û™BˆÜˆÛ˜\ÚÝ\È›Û™BˆÜˆ™\œÚ[Û‹ÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚYˆÜˆÛ˜\ÚÝÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚYˆÜˆ™\œÚ[Û‹œÝ]HOHÐS‘QUH‚ˆ
-N‚ˆ˜Z\ÙHÛÛ^XÝ][Û‘\œ›ÜŠœÝ˜]YÞHÜˆÛ˜\ÚÝ\È[˜]˜Z[X›HŠBˆ[œ]ÈHÂˆ
-Š˜\™Ý[Y[ËˆœÝ˜]YÞWÝ™\œÚ[Û—ÚYŽˆ™\œÚ[Û‹šYˆœÝ˜]YÞWÜÜX×ÜÚLMˆŽˆ™\œÚ[Û‹œÜX×ÜÚLM‹ˆ˜ÛÜÝÛ[Ù[ÚYŽˆœÛÛ‹›ØYÊØ\Ý
-Ý‹™\œÚ[Û‹™]Z[
-JVÈ˜ÛÜÝÛ[Ù[ÚY—Kˆ™[™Ú[™WÚÙ^HŽˆœY‹\Ú[][][Û‹]ŒH‹ˆ™[™Ú[™WÝ™\œÚ[ÛˆŽˆŒKŒŒ‹ˆœ\˜[Y]\œÈŽˆ×KˆBˆXØÙ\YHØXØÙ\YÚ›ØŠˆÙ\ÜÚ[Û‹ˆ‘TÕÐPÒÕTÕˆYˆ˜[YHOHœ[—Ù˜\ÝØ˜XÚÝ\Ýˆ[ÙH”TSQUT—ÔÑS”ÒUU’UH‹ˆ[œ]Ëˆ
-Bˆ™]\›ˆÈš›Ø—ÚYŽˆXØÙ\YÈš›Ø—ÚY—_BˆYˆ˜[YHOH˜ÛÛ\\™WØ˜XÚÝ\ÝÈŽ‚ˆ^\š[Y[ÈHÂˆÙ\ÜÚ[Û‹™Ù]
-^\š[Y[›ÝË][JH›Üˆ][H[ˆ\™Ý[Y[ÖÈ™^\š[Y[ÚYÈ—BˆBˆYˆ[žJˆ›ÝÈ\È›Û™HÜˆ›ÝËÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚY›Üˆ›ÝÈ[ˆ^\š[Y[Âˆ
-N‚ˆ˜Z\ÙHÛÛ^XÝ][Û‘\œ›ÜŠ™^\š[Y[\È[˜]˜Z[X›HŠBˆXØÙ\YHØXØÙ\YÚ›ØŠÙ\ÜÚ[Û‹PÒÕTÕÐÓÓTT‘H‹\™Ý[Y[ÊBˆ™]\›ˆÈš›Ø—ÚYŽˆXØÙ\YÈš›Ø—ÚY—_BˆYˆ˜[YHOH™œ™Y^™WÜÝ˜]YÞHŽ‚ˆ˜Z\ÙHÛÛ^XÝ][Û‘\œ›ÜŠˆ˜]]Û›Û[Ý\Èœ™Y^™H\È›ÚXš]YÈÝÛ™\ˆ[[\È™\]Z\™Y‚ˆ
-BˆYˆ˜[YHOHœ[—Ý˜[Y][Û—ÜÝZ]HŽ‚ˆ™\œÚ[ÛˆHÙ\ÜÚ[Û‹™^XÝ]JˆÙ[XÝ
-Ý˜]YÞU™\œÚ[Û”›ÝÊBˆÚ\™JˆÝ˜]YÞU™\œÚ[Û”›ÝËÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚYˆÝ˜]YÞU™\œÚ[Û”›ÝËœÝ˜]YÞWÚYOH\™Ý[Y[ÖÈœÝ˜]YÞWÚY—KˆÝ˜]YÞU™\œÚ[Û”›ÝË™\œÚ[ÛˆOH\™Ý[Y[ÖÈœÝ˜]YÞWÝ™\œÚ[Ûˆ—Kˆ
-BˆÚ]Ù›Ü—Ý\]J
-Bˆ
-KœØØ[\—ÛÛ™WÛÜ—Û›Û™J
-BˆYˆ
-ˆ™\œÚ[Ûˆ\È›Û™BˆÜˆ™\œÚ[Û‹ÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚYˆÜˆ™\œÚ[Û‹œÝ]HOH‘”“Ö‘Sˆ‚ˆ
-N‚ˆ˜Z\ÙHÛÛ^XÝ][Û‘\œ›ÜŠ™œ›Þ™[ˆÝ˜]YÞH\È[˜]˜Z[X›HŠBˆÛXÞWÝX›HH™\ÙX\˜ÚÛXÞU™\œÚ[Û”›ÝË—×ÝX›W×ÂˆÛXÞWÚYHÙ\ÜÚ[Û‹™^XÝ]JˆÙ[XÝ
-ÛXÞWÝX›K˜ËœÛXÞWÚY
-BˆÚ\™JˆÛXÞWÝX›K˜ËÛÜšÜÜXÙWÚYOH[‹ÛÜšÜÜXÙWÚYˆÛXÞWÝX›K˜ËœÛXÞWÙ˜[Z[HOH˜[Y][Ûˆ‹ˆÛXÞWÝX›K˜ËœÝ]\ÈOHPÕU‘H‹ˆ
-Bˆ›Ü™\—ØžJÛXÞWÝX›K˜Ë™\œÚ[Û‹™\ØÊ
-JBˆ›[Z]
-JBˆ
-KœØØ[\—ÛÛ™WÛÜ—Û›Û™J
-BˆYˆÛXÞWÚY\È›Û™N‚ˆ˜Z\ÙHÛÛ^XÝ][Û‘\œ›ÜŠ˜XÝ]™H˜[Y][ÛˆÛXÞH\È[˜]˜Z[X›HŠBˆÛXÞWÚYHØ\Ý
-Ý‹ÛXÞWÚY
-Bˆ˜[Y][Û—ÚYH™]×ÚY
-•SŠBˆXØÙ\YHØXØÙ\YÚ›ØŠˆÙ\ÜÚ[Û‹ˆ•SQUSÓˆ‹ˆÂˆ˜[Y][Û—ÚYŽˆ˜[Y][Û—ÚYˆ
-Š˜\™Ý[Y[ËˆœÛXÞWÚYŽˆÛXÞWÚYˆœÝšXÝÙ[™Ú[™WÚÙ^HŽˆœY‹]˜[Y][Û‹]ŒH‹ˆœÝšXÝÙ[™Ú[™WÝ™\œÚ[ÛˆŽˆŒKŒŒ‹ˆ\ÝÜÝZ]WÝ™\œÚ[ÛˆŽˆŒKŒŒ‹ˆKˆ
-Bˆ™\œÚ[Û—Ü›ÝÈHØ\Ý
-[žK™\œÚ[ÛŠBˆ™^Ü™]š\Ú[ÛˆHØ\Ý
-[™\œÚ[Û‹œ™]š\Ú[ÛŠH
-ÈBˆ™\œÚ[Û—Ü›ÝËœÝ]HH•SQUS‘È‚ˆ™\œÚ[Û—Ü›ÝËœ™]š\Ú[ÛˆH™^Ü™]š\Ú[Û‚ˆ™\œÚ[Û—Ù]Z[HœÛÛ‹›ØYÊØ\Ý
-Ý‹™\œÚ[Û‹™]Z[
-JBˆ™\œÚ[Û—Ù]Z[\]JˆÂˆ›Y™XÞXÛWÜÝ]HŽˆ•SQUS‘È‹ˆœ™]š\Ú[ÛˆŽˆ™^Ü™]š\Ú[Û‹ˆ˜XÝ[Û—ØØ\Xš[]Y\ÈŽˆÝ˜]YÞWØXÝ[Û—ØØ\Xš[]Y\Ê•SQUS‘ÈŠKˆBˆ
-Bˆ™\œÚ[Û—Ü›ÝË™]Z[HœÛÛ‹™[\Êˆ˜[Y]YÜ^[ØY
-”Ý˜]YÞU™\œÚ[Û‘]Z[‹™\œÚ[Û—Ù]Z[
-Bˆ
-BˆÜ™X]YØ]H›ÝÊ
-BˆÙ\ÜÚ[Û‹˜Y
-ˆ˜[Y][Û”›ÝÊˆY]˜[Y][Û—ÚYˆÛÜšÜÜXÙWÚY\[‹ÛÜšÜÜXÙWÚYˆÝ˜]YÞWÝ™\œÚ[Û—ÚY]™\œÚ[Û‹šYˆÝ]\ÏH”UQUQQ‹ˆÛÝ]ÜÝ]OH“ÐÒÑQ‹ˆ^ÜÝ\™WØÛÝ[Lˆ™]š\Ú[ÛLKˆ]Z[ZœÛÛ‹™[\ÊˆÂˆ˜[Y][Û—ÚYŽˆ˜[Y][Û—ÚYˆœÝ˜]YÞHŽˆÂˆšYŽˆ™\œÚ[Û‹œÝ˜]YÞWÚYˆ™\œÚ[ÛˆŽˆ™\œÚ[Û‹™\œÚ[Û‹ˆKˆœÛXÞWÚYŽˆÛXÞWÚYˆœÝšXÝÙ[™Ú[™HŽˆÂˆ›˜[YHŽˆœY‹]˜[Y][Û‹]ŒH‹ˆ™\œÚ[ÛˆŽˆŒKŒŒ‹ˆKˆœÝ]\ÈŽˆ”UQUQQ‹ˆœ™\Ý[Žˆ›Û™Kˆ\ÝÜÝZ]WÝ™\œÚ[ÛˆŽˆŒKŒŒ‹ˆ\ÝÈŽˆ×KˆØ\›š[™ÜÈŽˆ×Kˆ™˜Z[\™\ÈŽˆ×KˆšÛÝ]ÜÝ]HŽˆ“ÐÒÑQ‹ˆœ™YÝX[WÜ[—ÚYŽˆ™]×ÚY
-”•ŠKˆš›Ø—ÚYŽˆXØÙ\YÈš›Ø—ÚY—Kˆœ™]š\Ú[ÛˆŽˆKˆ˜XÝ[Û—ØØ\Xš[]Y\ÈŽˆ˜[Y][Û—ØXÝ[Û—ØØ\Xš[]Y\Êˆ”UQUQQ‹›Û™K“ÐÒÑQ‚ˆ
-KˆœÝ\YØ]Žˆ›Û™Kˆ™š[š\ÚYØ]Žˆ›Û™Kˆ˜Ü™X]YØ]ŽˆÜ™X]YØ]ˆBˆ
-Kˆ
-Bˆ
-Bˆ™]\›ˆÈš›Ø—ÚYŽˆXØÙ\YÈš›Ø—ÚY—_Bˆ˜Z\ÙHÛÛ^XÝ][Û‘\œ›ÜŠˆ[œÝ\ÜYØ[›ÛšXØ[ÛÛˆÛ˜[Y_HŠB
+"""Canonical Agent tools backed by the same durable domain rows and jobs as HTTP."""
+
+from __future__ import annotations
+
+import json
+from typing import Any, cast
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api_models import FactorCreateRequest, StrategyCreateRequest
+from app.contracts import now, validated_payload
+from app.engines import (
+    load_dataset,
+    snapshot_content_sha256,
+    snapshot_rows,
+)
+from app.main import (
+    BUILD_ID,
+    AgentRunRow,
+    CostModelVersionRow,
+    DataSource,
+    ExperimentRow,
+    FactorRow,
+    JobRow,
+    Record,
+    ResearchPolicyVersionRow,
+    ResearchRow,
+    SetupBindingRow,
+    SnapshotPartitionRow,
+    SnapshotRow,
+    StrategyRow,
+    StrategyVersionRow,
+    ValidationRow,
+    cap,
+    content_hash,
+    emit,
+    job,
+    new_id,
+    strategy_action_capabilities,
+    validation_action_capabilities,
+)
+
+
+class ToolExecutionError(RuntimeError):
+    pass
+
+
+def _accepted_job(
+    session: Session,
+    job_type: str,
+    inputs: dict[str, Any],
+    ref: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return job(
+        session,
+        job_type,
+        ref,
+        input_payload=inputs,
+        queue_name="core",
+    )
+
+
+def _define_factor(
+    session: Session, run: AgentRunRow, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = FactorCreateRequest.model_validate(
+        {"research_id": arguments["research_id"], **arguments["definition"]}
+    ).model_dump(mode="json", exclude_unset=True)
+    research = session.get(ResearchRow, payload["research_id"])
+    if research is None or research.workspace_id != run.workspace_id:
+        raise ToolExecutionError("research is unavailable to this workspace")
+    factor_id = new_id("FAC")
+    created_at = now()
+    detail = {
+        **payload,
+        "factor_id": factor_id,
+        "current_version": 1,
+        "status": "DRAFT",
+        "definition_sha256": content_hash(payload),
+        "revision": 1,
+        "action_capabilities": [cap("analyze")],
+        "created_at": created_at,
+        "updated_at": created_at,
+    }
+    session.add(
+        FactorRow(
+            id=factor_id,
+            workspace_id=run.workspace_id,
+            research_id=research.id,
+            revision=1,
+            detail=json.dumps(detail),
+        )
+    )
+    emit(
+        session,
+        "factor",
+        factor_id,
+        1,
+        "factor.updated",
+        payload={"state": "DRAFT", "status": "DRAFT"},
+        agent_run_id=cast(str, run.id),
+    )
+    return {"factor_id": factor_id, "version": 1}
+
+
+def _define_strategy(
+    session: Session, run: AgentRunRow, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    payload = StrategyCreateRequest.model_validate(
+        {"research_id": arguments["research_id"], **arguments["definition"]}
+    ).model_dump(mode="json", exclude_unset=True)
+    research = session.get(ResearchRow, payload["research_id"])
+    if research is None or research.workspace_id != run.workspace_id:
+        raise ToolExecutionError("research is unavailable to this workspace")
+    factors = [session.get(FactorRow, item["factor_id"]) for item in payload["signals"]]
+    if any(row is None or row.workspace_id != run.workspace_id for row in factors):
+        raise ToolExecutionError("strategy references an unavailable factor")
+    strategy_id = new_id("STRAT")
+    digest = content_hash(payload)
+    created_at = now()
+    specification = {
+        key: payload[key]
+        for key in (
+            "thesis",
+            "universe",
+            "signals",
+            "rules",
+            "cost_model_id",
+            "benchmark",
+            "research_period",
+            "validation_period",
+            "holdout_period",
+            "known_failure_modes",
+        )
+    } | {"spec_sha256": digest}
+    detail = validated_payload(
+        "StrategyVersionDetail",
+        {
+            "strategy_id": strategy_id,
+            "name": payload["name"],
+            "version": 1,
+            "lifecycle_state": "CANDIDATE",
+            "is_frozen": False,
+            "thesis": payload["thesis"],
+            "universe": payload["universe"],
+            "signals": payload["signals"],
+            "rules": payload["rules"],
+            "cost_model_id": payload["cost_model_id"],
+            "benchmark": payload["benchmark"],
+            "research_period": payload["research_period"],
+            "validation_period": payload["validation_period"],
+            "holdout_period": payload["holdout_period"],
+            "known_failure_modes": payload["known_failure_modes"],
+            "spec_sha256": digest,
+            "specification": specification,
+            "latest_backtest": {
+                "state": "EMPTY",
+                "result": None,
+                "metrics": [],
+                "chart": None,
+            },
+            "validation_summary": None,
+            "artifacts": [],
+            "provenance": [],
+            "frozen_at": None,
+            "frozen_by": None,
+            "revision": 1,
+            "action_capabilities": strategy_action_capabilities("CANDIDATE"),
+            "created_at": created_at,
+        },
+    )
+    session.add(
+        StrategyRow(
+            id=strategy_id,
+            workspace_id=run.workspace_id,
+            research_id=research.id,
+            revision=1,
+            detail=json.dumps(detail),
+        )
+    )
+    session.flush()
+    session.add(
+        StrategyVersionRow(
+            id=new_id("SV"),
+            workspace_id=run.workspace_id,
+            strategy_id=strategy_id,
+            version=1,
+            state="CANDIDATE",
+            spec_sha256=digest,
+            revision=1,
+            detail=json.dumps(detail),
+        )
+    )
+    emit(
+        session,
+        "strategy_version",
+        strategy_id,
+        1,
+        "strategy.created",
+        payload={"state": "DRAFT", "status": "DRAFT"},
+        object_version=1,
+        agent_run_id=cast(str, run.id),
+    )
+    return {"strategy_id": strategy_id, "version": 1}
+
+
+def _queue_factor_analysis_experiment(
+    session: Session, run: AgentRunRow, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    factor = session.get(FactorRow, arguments["factor_id"])
+    snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
+    research = session.get(ResearchRow, run.research_id) if run.research_id else None
+    binding = session.get(SetupBindingRow, run.workspace_id)
+    cost = (
+        session.get(CostModelVersionRow, binding.cost_model_version_id)
+        if binding is not None
+        else None
+    )
+    if (
+        factor is None
+        or snapshot is None
+        or research is None
+        or cost is None
+        or factor.workspace_id != run.workspace_id
+        or snapshot.workspace_id != run.workspace_id
+        or research.workspace_id != run.workspace_id
+        or cost.workspace_id != run.workspace_id
+        or not snapshot.immutable
+        or arguments["factor_version"] != 1
+    ):
+        raise ToolExecutionError(
+            "workspace-owned factor, snapshot, research and cost model are required"
+        )
+    factor_detail = json.loads(cast(str, factor.detail))
+    experiment_id = new_id("EXP")
+    parameters: list[dict[str, str]] = []
+    accepted = _accepted_job(
+        session,
+        "FACTOR_ANALYSIS",
+        {
+            "experiment_id": experiment_id,
+            **arguments,
+            "forward_return_horizons": [1],
+        },
+        {
+            "type": "experiment",
+            "id": experiment_id,
+            "version": None,
+            "revision": 1,
+        },
+    )
+    created_at = now()
+    detail = validated_payload(
+        "ExperimentDetail",
+        {
+            "experiment_id": experiment_id,
+            "research_id": research.id,
+            "parent_experiment_id": None,
+            "source_experiment_id": None,
+            "research_revision_no": research.revision,
+            "objective": run.objective,
+            "hypothesis": (
+                f"{factor_detail['name']} contains measurable cross-sectional signal"
+            ),
+            "experiment_type": "FACTOR_ANALYSIS",
+            "data_snapshot_id": snapshot.id,
+            "cost_model_id": cost.cost_model_id,
+            "parameters": parameters,
+            "parameters_sha256": content_hash(parameters),
+            "search_space": [],
+            "search_configuration": None,
+            "search_result": {
+                "state": "NOT_APPLICABLE",
+                "evaluated_count": 0,
+                "selected_parameters": [],
+                "selected_metric": None,
+                "result_ref": None,
+                "failure_code": None,
+            },
+            "metrics": [],
+            "artifacts": [],
+            "job_id": accepted["job_id"],
+            "status": "QUEUED",
+            "validity_state": "PENDING",
+            "factor_ref": {"id": factor.id, "version": 1},
+            "strategy_ref": None,
+            "engine": {"name": "qf-factor-v1", "version": "1.0.0"},
+            "adapter": None,
+            "code_version": BUILD_ID,
+            "provenance": None,
+            "action_capabilities": [],
+            "started_at": None,
+            "finished_at": None,
+            "created_at": created_at,
+            "invalidated_at": None,
+            "invalid_reason_code": None,
+            "invalid_reason_detail": None,
+        },
+    )
+    session.add(
+        ExperimentRow(
+            id=experiment_id,
+            workspace_id=run.workspace_id,
+            research_id=research.id,
+            source_experiment_id=None,
+            immutable=False,
+            revision=1,
+            detail=json.dumps(detail),
+        )
+    )
+    emit(
+        session,
+        "experiment",
+        experiment_id,
+        1,
+        "experiment.created",
+        payload={"state": "QUEUED", "status": "QUEUED"},
+        agent_run_id=cast(str, run.id),
+    )
+    return {"job_id": accepted["job_id"]}
+
+
+def execute_tool(
+    session: Session,
+    run: AgentRunRow,
+    parent_job: JobRow,
+    name: str,
+    arguments: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    del context
+    if name == "get_market_data":
+        snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
+        if snapshot is None or snapshot.workspace_id != run.workspace_id:
+            raise ToolExecutionError("snapshot is unavailable to this workspace")
+        partition = session.execute(
+            select(SnapshotPartitionRow).where(
+                SnapshotPartitionRow.snapshot_id == snapshot.id,
+                SnapshotPartitionRow.partition == "PUBLIC",
+            )
+        ).scalar_one_or_none()
+        if partition is None:
+            raise ToolExecutionError("public snapshot partition is missing")
+        artifact = session.execute(
+            select(Record).where(
+                Record.workspace_id == run.workspace_id,
+                Record.record_key == partition.artifact_id,
+            )
+        ).scalar_one_or_none()
+        if (
+            artifact is None
+            or artifact.kind != "artifact"
+            or artifact.workspace_id != run.workspace_id
+        ):
+            raise ToolExecutionError("public snapshot artifact is unavailable")
+        return {"artifact_id": partition.artifact_id, "snapshot_id": snapshot.id}
+    if name == "validate_dataset":
+        source = session.get(DataSource, (arguments["dataset_id"], run.workspace_id))
+        if source is None or source.workspace_id != run.workspace_id:
+            raise ToolExecutionError("dataset is unavailable to this workspace")
+        accepted = _accepted_job(
+            session,
+            "DATASET_VALIDATE",
+            {"dataset_id": source.id, "check_profile": "RESEARCH_BASELINE"},
+        )
+        return {"job_id": accepted["job_id"]}
+    if name == "create_data_snapshot":
+        source = session.get(DataSource, (arguments["dataset_id"], run.workspace_id))
+        if (
+            source is None
+            or source.workspace_id != run.workspace_id
+            or source.status != "VALID"
+        ):
+            raise ToolExecutionError("validated dataset is unavailable")
+        source_id = cast(str, source.id)
+        bundle = load_dataset(source_id)
+        dates = sorted({row["date"] for row in bundle.rows})
+        as_of_time = max(row["available_at"] for row in bundle.rows)
+        public, protected = snapshot_rows(bundle, dates[0], dates[-1], as_of_time)
+        snapshot_id = new_id("DS")
+        snapshot_request = {
+            "snapshot_kind": "RESEARCH",
+            "as_of_time": as_of_time,
+            "coverage_start": dates[0],
+            "coverage_end": dates[-1],
+        }
+        accepted = _accepted_job(
+            session,
+            "SNAPSHOT_CREATE",
+            {
+                "dataset_id": source_id,
+                "snapshot_id": snapshot_id,
+                **snapshot_request,
+                "request_sha256": content_hash(
+                    {
+                        "dataset_id": source_id,
+                        "snapshot_request": snapshot_request,
+                    }
+                ),
+                "expected_content_sha256": snapshot_content_sha256(
+                    source_id, bundle, public, protected
+                ),
+            },
+            {"type": "snapshot", "id": snapshot_id, "version": None, "revision": 1},
+        )
+        return {"job_id": accepted["job_id"]}
+    if name == "define_factor":
+        return _define_factor(session, run, arguments)
+    if name in {"analyze_factor", "calculate_factor"}:
+        return _queue_factor_analysis_experiment(session, run, arguments)
+    if name == "compare_factors":
+        snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
+        factor_refs = arguments["factor_refs"]
+        factors = [
+            session.get(FactorRow, item.get("id"))
+            for item in factor_refs
+            if isinstance(item, dict)
+        ]
+        if (
+            snapshot is None
+            or snapshot.workspace_id != run.workspace_id
+            or len(factors) != len(factor_refs)
+            or any(
+                factor is None or factor.workspace_id != run.workspace_id
+                for factor in factors
+            )
+        ):
+            raise ToolExecutionError("factor comparison subjects are unavailable")
+        accepted = _accepted_job(session, "FACTOR_COMPARE", arguments)
+        return {"job_id": accepted["job_id"]}
+    if name == "define_strategy":
+        return _define_strategy(session, run, arguments)
+    if name in {"run_fast_backtest", "run_parameter_sensitivity"}:
+        version = session.execute(
+            select(StrategyVersionRow).where(
+                StrategyVersionRow.strategy_id == arguments["strategy_id"],
+                StrategyVersionRow.version == arguments["strategy_version"],
+            )
+        ).scalar_one_or_none()
+        snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
+        if (
+            version is None
+            or snapshot is None
+            or version.workspace_id != run.workspace_id
+            or snapshot.workspace_id != run.workspace_id
+            or version.state != "CANDIDATE"
+        ):
+            raise ToolExecutionError("strategy or snapshot is unavailable")
+        inputs = {
+            **arguments,
+            "strategy_version_id": version.id,
+            "strategy_spec_sha256": version.spec_sha256,
+            "cost_model_id": json.loads(cast(str, version.detail))["cost_model_id"],
+            "engine_key": "qf-simulation-v1",
+            "engine_version": "1.0.0",
+            "parameters": [],
+        }
+        accepted = _accepted_job(
+            session,
+            "FAST_BACKTEST" if name == "run_fast_backtest" else "PARAMETER_SENSITIVITY",
+            inputs,
+        )
+        return {"job_id": accepted["job_id"]}
+    if name == "compare_backtests":
+        experiments = [
+            session.get(ExperimentRow, item) for item in arguments["experiment_ids"]
+        ]
+        if any(
+            row is None or row.workspace_id != run.workspace_id for row in experiments
+        ):
+            raise ToolExecutionError("experiment is unavailable")
+        accepted = _accepted_job(session, "BACKTEST_COMPARE", arguments)
+        return {"job_id": accepted["job_id"]}
+    if name == "freeze_strategy":
+        raise ToolExecutionError(
+            "autonomous freeze is prohibited; owner intent is required"
+        )
+    if name == "run_validation_suite":
+        version = session.execute(
+            select(StrategyVersionRow)
+            .where(
+                StrategyVersionRow.workspace_id == run.workspace_id,
+                StrategyVersionRow.strategy_id == arguments["strategy_id"],
+                StrategyVersionRow.version == arguments["strategy_version"],
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if (
+            version is None
+            or version.workspace_id != run.workspace_id
+            or version.state != "FROZEN"
+        ):
+            raise ToolExecutionError("frozen strategy is unavailable")
+        policy_table = ResearchPolicyVersionRow.__table__
+        policy_id = session.execute(
+            select(policy_table.c.policy_id)
+            .where(
+                policy_table.c.workspace_id == run.workspace_id,
+                policy_table.c.policy_family == "validation",
+                policy_table.c.status == "ACTIVE",
+            )
+            .order_by(policy_table.c.version.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if policy_id is None:
+            raise ToolExecutionError("active validation policy is unavailable")
+        policy_id = cast(str, policy_id)
+        validation_id = new_id("VAL")
+        accepted = _accepted_job(
+            session,
+            "VALIDATION",
+            {
+                "validation_id": validation_id,
+                **arguments,
+                "policy_id": policy_id,
+                "strict_engine_key": "qf-validation-v1",
+                "strict_engine_version": "1.0.0",
+                "test_suite_version": "1.0.0",
+            },
+        )
+        version_row = cast(Any, version)
+        next_revision = cast(int, version.revision) + 1
+        version_row.state = "VALIDATING"
+        version_row.revision = next_revision
+        version_detail = json.loads(cast(str, version.detail))
+        version_detail.update(
+            {
+                "lifecycle_state": "VALIDATING",
+                "revision": next_revision,
+                "action_capabilities": strategy_action_capabilities("VALIDATING"),
+            }
+        )
+        version_row.detail = json.dumps(
+            validated_payload("StrategyVersionDetail", version_detail)
+        )
+        created_at = now()
+        session.add(
+            ValidationRow(
+                id=validation_id,
+                workspace_id=run.workspace_id,
+                strategy_version_id=version.id,
+                status="QUEUED",
+                holdout_state="LOCKED",
+                exposure_count=0,
+                revision=1,
+                detail=json.dumps(
+                    {
+                        "validation_id": validation_id,
+                        "strategy": {
+                            "id": version.strategy_id,
+                            "version": version.version,
+                        },
+                        "policy_id": policy_id,
+                        "strict_engine": {
+                            "name": "qf-validation-v1",
+                            "version": "1.0.0",
+                        },
+                        "status": "QUEUED",
+                        "result": None,
+                        "test_suite_version": "1.0.0",
+                        "tests": [],
+                        "warnings": [],
+                        "failures": [],
+                        "holdout_state": "LOCKED",
+                        "red_team_run_id": new_id("RT"),
+                        "job_id": accepted["job_id"],
+                        "revision": 1,
+                        "action_capabilities": validation_action_capabilities(
+                            "QUEUED", None, "LOCKED"
+                        ),
+                        "started_at": None,
+                        "finished_at": None,
+                        "created_at": created_at,
+                    }
+                ),
+            )
+        )
+        return {"job_id": accepted["job_id"]}
+    raise ToolExecutionError(f"unsupported canonical tool: {name}")

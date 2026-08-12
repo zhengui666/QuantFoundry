@@ -1,0 +1,62 @@
+.DS_Store
+
+# Environment files: retain the safe, documented template only.
+.env
+.env.*
+!.env.example
+
+# Private credentials and local certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+credentials/
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+
+# Node, Vite, Storybook, and test output
+node_modules/
+.pnpm-store/
+dist/
+frontend/.next/
+storybook-static/
+playwright-report/
+test-results/
+coverage/
+*.tsbuildinfo
+
+# Playwright and browser state can contain session tokens or cookies.
+frontend/e2e/storage-state.json
+**/storage-state.json
+**/.playwright/
+**/.cache/ms-playwright/
+
+# Local runtime state. Docker named volumes are deliberately not bind-mounted.
+.qf-runtime/
+artifacts/
+data/
+!frontend/src/features/data/
+!frontend/src/features/data/DataCapabilitiesPage.tsx
+logs/
+*.log
+
+# Local CI/release evidence may contain operational metadata.
+evidence/

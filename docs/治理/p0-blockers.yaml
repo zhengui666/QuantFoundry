@@ -1,0 +1,155 @@
+version: "1.0.0"
+status_semantics:
+  open: "Defined but not independently verified."
+  blocked: "Cannot close until a stated dependency or authority is available."
+  closed: "All closure criteria, independent verification, and evidence are complete."
+closure_evidence_contract:
+  schema_version: "1.0.0"
+  artifact_transport: "GitHub Actions artifact or GitHub Release asset ZIP containing the declared JSON report_path."
+  report_fields:
+    - schema_version
+    - content_type
+    - commit_sha
+    - github_run_id
+    - verifier_role
+    - verified_at_utc
+    - closure_criteria
+    - commands
+    - artifact
+    - attestation
+  role_content_types:
+    Independent Test Agent: "application/vnd.quantfoundry.p0-test-evidence+json;version=1"
+    Independent Review Agent: "application/vnd.quantfoundry.p0-review-evidence+json;version=1"
+  attestation_requirements:
+    - provider is github-actions
+    - issuer is https://token.actions.githubusercontent.com
+    - repository, run_id, subject_uri, and subject_sha256 bind the downloaded report content
+  independence: "Independent Test Agent and Independent Review Agent records must use distinct github-actions run ids."
+blockers:
+  - id: P0-PRODUCT-PAPER-DAILY-SCHEDULER
+    title: Paper daily scheduler is safe, unique, recoverable, and audited
+    source:
+      - docs/PRD/V1.0.0.md#521-p0-日调度可执行契约
+      - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#23-paper-trading
+      - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#27-paper-acceptance--qf-e2e-060full-v1-future-staged
+    owner_role: Backend Agent
+    closure_criteria:
+      - Scheduler uses deployment execution_assumption due-time/timezone/calendar, derives trading_date deterministically, and fails closed on invalid configuration/calendar.
+      - Workspace-scoped paper_scheduler_states is the authoritative ACTIVE/PAUSED/DISABLED suppression state with non-null resume watermark, suppression timestamp invariant, and atomic append-only Audit `summary.paper_scheduler_state_evidence.v1` + closed paper.updated Event for every initialization or transition; state evidence creates no Job/Artifact and detail_artifact_id is NULL; missing/unknown/inconsistent state fails closed.
+      - Scheduler creates at most one PaperDailyRun per workspace, paper, and trading date; bounded catch-up handles only the most recent unfinished trading day strictly after the resume watermark. Paused/disabled intervals create no run or debt; resume never replays a pre-watermark due instant.
+      - Failed data-quality or risk gate produces BLOCKED and no orders; unknown post-side-effect recovery produces FAILED and no automatic replay.
+      - Lease, retry, crash, restart, suppression lifecycle, migration initialization, and duplicate-wake-up recovery preserve canonical state and atomically persist the correct evidence path: state detail in Audit summary only; execution-only `paper_scheduler_evidence.v1` Artifact metadata with non-null PAPER_DAILY_RUN Job binding and Audit detail_artifact_id. Empty/arbitrary Artifact cannot bypass either path; SSE exposes no state detail or EventPayload extension.
+    verification:
+      - Independent Test Agent executes QF-PAPER-SCH-001..007 scheduler, suppression/watermark, duplicate, gate-failure, calendar, migration-initialization, recovery, mutually exclusive state-Audit/execution-Artifact evidence, and closed-SSE negative acceptance coverage on real PostgreSQL.
+      - Independent Review Agent verifies declarative-model/Alembic authority, derived manifest/snapshot regeneration, documented state-Audit schema, execution Audit-to-Job-bound-Artifact links, and no-EventPayload-extension boundary against the canonical contracts.
+    status: blocked
+    release_blocking: true
+    evidence: []
+  - id: P0-CONTRACT-OPENAPI-45
+    title: Canonical OpenAPI 45-operation and /api/v1 wire compatibility
+    source:
+      - docs/后端系统技术方案/contracts/openapi-v1.yaml
+      - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#1812-openapi
+    owner_role: API / Contract Agent
+    closure_criteria:
+      - Runtime OpenAPI diff against the committed canonical schema is zero.
+      - All 45 operations preserve canonical /api/v1 URL and wire semantics.
+      - Generated consumers and negative contract tests pass without parallel schema definitions.
+    verification:
+      - Independent Test Agent runs committed-versus-runtime contract, auth, and Problem Details matrices.
+    status: open
+    release_blocking: true
+    evidence: []
+  - id: P0-CONTRACT-TOOLS-13
+    title: Thirteen canonical Tool contracts are implemented without scope expansion
+    source:
+      - docs/后端系统技术方案/contracts/tools/README.md
+      - docs/后端系统技术方案/contracts/tools/v1-p0.yaml
+      - docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md
+    owner_role: Agent-System Agent
+    closure_criteria:
+      - Exactly 13 staged canonical Tool contracts are versioned and enforced.
+      - Tool schema, role, policy, idempotency, side-effect, timeout, and snapshot requirements match the registry.
+      - No contract-blocked Tool is admitted by prompt, code, fixture, or test.
+    verification:
+      - Independent Test Agent runs schema/registry/policy diffs and forbidden-tool negatives.
+    status: open
+    release_blocking: true
+    evidence: []
+  - id: P0-SCHEMA-ALEMBIC-AUTHORITY
+    title: Declarative schema plus Alembic are authoritative and migration-safe
+    source:
+      - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#150-schema-authority-and-manifest
+      - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#34-migration-and-schema-gates
+    owner_role: Database Agent
+    closure_criteria:
+      - Declarative models and Alembic revisions generate the expected physical schema.
+      - Manifest and physical snapshots are regenerated derived verification artifacts, with zero exact schema/constraint diff.
+      - PG18 populated roundtrip and rollback/upgrade gates preserve required content and constraints.
+    verification:
+      - Independent Test Agent records Alembic, schema-diff, and populated-roundtrip evidence.
+    status: open
+    release_blocking: true
+    evidence: []
+  - id: P0-ARCHITECTURE-TARGET-LAYERS
+    title: Target backend and frontend layering is achieved
+    source:
+      - docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md
+      - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md
+      - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#4-architecture-and-compatibility-boundaries
+    owner_role: Architecture / Implementation Agent
+    closure_criteria:
+      - Backend conforms to the documented backend/src/quantfoundry layering.
+      - Frontend conforms to the documented app/routes/features/domain/design-system layering.
+      - Independent review finds no P0 boundary bypasses.
+    verification:
+      - Independent Review Agent provides a path-level conformance report.
+    status: blocked
+    release_blocking: true
+    evidence: []
+  - id: P0-SECURITY-RESEARCH-INTEGRITY
+    title: Security and research-integrity guards cannot be bypassed
+    source:
+      - docs/PRD/V1.0.0.md
+      - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#24-security
+    owner_role: Security Agent
+    closure_criteria:
+      - Authorization, Holdout, frozen-state, approval, risk, audit, and secret-isolation negative cases pass.
+      - No live-capital execution capability is exposed.
+      - Critical security findings are resolved with regression evidence.
+    verification:
+      - Independent Test Agent executes the documented security and negative E2E suites.
+    status: open
+    release_blocking: true
+    evidence: []
+  - id: P0-CI-REPRODUCIBILITY
+    title: P0 CI is reproducible from committed inputs
+    source:
+      - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#38-ci-pipeline
+    owner_role: Test Agent
+    closure_criteria:
+      - Required P0 PR, main, and release-candidate gates run from committed lockfiles and fixtures.
+      - Results reproduce for the same commit and declared environment.
+      - No P0 suite is silently quarantined, retried to green, or excluded.
+      - Named pr-fast, main-full, nightly, agent-change, and RC workflows emit structured command/exit-code/P0 evidence; missing host dependencies fail closed with recorded limitations.
+    verification:
+      - Independent Review Agent checks CI configuration, reports, and reproducibility records.
+    status: blocked
+    release_blocking: true
+    evidence: []
+  - id: P0-SUPPLY-CHAIN-RELEASE-EVIDENCE
+    title: Public GitHub, GHCR, and v0.1.0-alpha release evidence is complete
+    source:
+      - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#6-release-semantics
+      - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#44-test-evidence--release-artifacts
+    owner_role: Release Agent
+    closure_criteria:
+      - Public GitHub release v0.1.0-alpha is reproducible from a tagged commit.
+      - GHCR image digest, build provenance, SBOM or equivalent supply-chain record, and verification reports are archived.
+      - Every other release-blocking P0 registry entry is closed with evidence.
+      - The immutable release manifest binds tag/ref/commit, Compose-rendered GHCR digests, checksums, P0 and known-issue snapshots, test reports, SBOM, provenance, attestation, and signature verification as GitHub Release assets.
+    verification:
+      - Independent Review Agent validates tag, repository visibility, GHCR digest, provenance, and evidence completeness.
+    status: blocked
+    release_blocking: true
+    evidence: []
