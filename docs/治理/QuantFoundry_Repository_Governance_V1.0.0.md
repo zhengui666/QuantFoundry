@@ -92,7 +92,7 @@ PR visual comparison 的 baseline 必须是当前 revision 的可信 Git ancesto
 
 所有 workflow shell step 必须使用 `bash` 严格模式（至少 `set -euo pipefail`），固定路径必须被引用，所有外部下载必须校验固定版本或 digest。权限与 token 必须最小化：非发布 workflow 仅 `contents: read`，但 `agent-change-gate` 的 artifact consumer 额外申请 `actions: read`，仅用于列举、下载和验证 independent review artifact；`rc-release` 的 `preflight`（online `p0-check --require-closed`）与 `rc`（RC gate 内的 online P0 verification）也必须各自仅额外申请 `actions: read`，用于读取 GitHub Actions closure-evidence artifact。GHCR 登录只使用 `GITHUB_TOKEN`；仅 `rc-release` 在创建 Release、推送 package 或上传 attestation 时提升对应的 `contents/packages/attestations/id-token` 权限。工作流不得读取或要求长期 PAT、SSH key 或非必要 secret。
 
-CI 的 fail-closed negative fixture 在断言缺失凭据时必须显式清除继承的 `GITHUB_TOKEN`；fixture 只能依赖同一 workflow 已声明安装的工具或仓库自带的可移植工具，缺失命令不得被误判为产品或治理 gate 失败。
+所有启用 local-provider 的 CI Compose gate 必须显式注入仅用于测试的 `QF_LOCAL_PROVIDER_API_KEY`，且长度满足 provider 最低要求；该值不是生产凭据，不得从仓库外部 secret 推断，缺失时必须让 gate 结构化失败。\n\nCI 的 fail-closed negative fixture 在断言缺失凭据时必须显式清除继承的 `GITHUB_TOKEN`；fixture 只能依赖同一 workflow 已声明安装的工具或仓库自带的可移植工具，缺失命令不得被误判为产品或治理 gate 失败。
 
 本地可复现入口为 `scripts/ci/run-gate.sh <pr-fast|main-full|nightly|agent-change|rc>`。入口必须输出一份结构化 gate result；缺失 Docker、Compose、PG18、Node/Python/pnpm、浏览器或其他宿主依赖时记录 `environment_limitations` 后以非零退出，严禁吞错、quarantine 或重试至绿。入口和工作流执行的命令、退出码、commit/ref、P0 registry snapshot 与测试摘要必须进入对应报告。`main-full` 与 `rc` 的完整 CI 不得仅以聚合命令记录；其每个顺序子 gate 必须各自写入结构化报告，以便在不读取原始日志的情况下确定首个失败阶段。fullstack 失败时，报告还必须记录当前阶段（包括 frontend CI 子命令）与各 Compose 服务的容器/health 状态；该诊断不得包含原始容器日志或降低健康检查。
 
