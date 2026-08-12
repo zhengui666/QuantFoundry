@@ -42,6 +42,13 @@ export COMPOSE_PROJECT_NAME="$project_name"
 cleanup() {
   local status="$?"
   trap - EXIT INT TERM
+  if [[ "$status" != 0 ]]; then
+    printf '%s\n' 'Full-stack Compose failure diagnostics:' >&2
+    docker compose --project-name "$project_name" --profile local \
+      --env-file "$environment_file" ps --all >&2 || true
+    docker compose --project-name "$project_name" --profile local \
+      --env-file "$environment_file" logs --no-color --tail 300 >&2 || true
+  fi
   docker compose --project-name "$project_name" --profile local \
     --env-file "$environment_file" down --volumes --remove-orphans >/dev/null 2>&1 || true
   case "$fullstack_tmp" in
