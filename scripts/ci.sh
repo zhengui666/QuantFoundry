@@ -231,6 +231,7 @@ case "$target" in
   format) backend_format; frontend_format ;;
   lint) backend_lint; run_frontend lint ;;
   typecheck) backend_typecheck; run_frontend typecheck ;;
+  backend-format) backend_format ;;
   backend-lint) backend_lint ;;
   backend-typecheck|backend-mypy) backend_typecheck ;;
   migration) migration_check ;;

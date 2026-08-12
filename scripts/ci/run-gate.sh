@@ -146,7 +146,18 @@ run_main_full() {
   require_common_tooling
   run_step p0-registry-snapshot bash -c 'scripts/p0-check.sh docs/治理/p0-blockers.yaml --report'
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
-  run_step full-ci make ci
+  run_step full-ci-platform make platform
+  run_step full-ci-hygiene make hygiene
+  run_step full-ci-migration scripts/ci.sh migration
+  run_step full-ci-backend-format scripts/ci.sh backend-format
+  run_step full-ci-backend-lint make backend-lint
+  run_step full-ci-backend-mypy make backend-mypy
+  run_step full-ci-schema make schema
+  run_step full-ci-openapi make openapi
+  run_step full-ci-tools make tools
+  run_step full-ci-fresh-smoke make fresh-smoke
+  run_step full-ci-pg18 make pg18
+  run_step full-ci-fullstack make fullstack
 }
 
 run_nightly() {
