@@ -45,7 +45,8 @@ sha_pattern = re.compile(r"^[0-9a-f]{40}$")
 sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
 github_build_pattern = re.compile(r"^github-actions/([1-9][0-9]*)$")
 repository_pattern = re.compile(r"^[^/\s]+/[^/\s]+$")
-placeholder_pattern = re.compile(r"(?i)(placeholder|codeowners|todo|tbd|example|n/?a|unknown)")
+placeholder_pattern = re.compile(r"(?i)^(?:placeholder|codeowners|todo|tbd|example|n/?a|unknown)$")
+placeholder_token_pattern = re.compile(r"(?i)(?:\\b(?:placeholder|codeowners|todo|tbd|example|unknown)\\b|(?<![A-Za-z])n/?a(?![A-Za-z]))")
 allowed_roles = {"Independent Test Agent", "Independent Review Agent"}
 role_content_types = {
     "Independent Test Agent": "application/vnd.quantfoundry.p0-test-evidence+json;version=1",
@@ -68,7 +69,7 @@ allowed_verification_workflows = {
 
 
 def invalid_value(value):
-    return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.search(value))
+    return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.fullmatch(value.strip()))
 
 
 def commit_is_ancestor(verification_commit, release_commit):
