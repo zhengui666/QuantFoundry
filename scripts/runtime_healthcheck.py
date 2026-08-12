@@ -4,13 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-
-from app.main import RuntimeHeartbeat, SessionLocal
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,16 +29,32 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    database_url = os.environ.get("QF_DATABASE_URL")
+    if database_url is None:
+        print(
+            "QF_DATABASE_URL is required for heartbeat health checks", file=sys.stderr
+        )
+        return 1
+
     threshold = datetime.now(UTC) - timedelta(seconds=args.max_age_seconds)
-    statement = select(RuntimeHeartbeat).where(
-        RuntimeHeartbeat.component == args.component,
-        RuntimeHeartbeat.occurred_at >= threshold,
+    query = (
+        "SELECT 1 FROM runtime_heartbeats "
+        "WHERE component = :component AND occurred_at >= :threshold"
     )
+    parameters: dict[str, object] = {
+        "component": args.component,
+        "threshold": threshold,
+    }
     if args.queue is not None:
-        statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)
-    session = SessionLocal()
+        query += " AND queue_name = :queue"
+        parameters["queue"] = args.queue
+
+    engine = create_engine(database_url)
     try:
-        heartbeat = session.execute(statement.limit(1)).scalar_one_or_none()
+        with engine.connect() as connection:
+            heartbeat = connection.execute(
+                text(f"{query} LIMIT 1"), parameters
+            ).scalar_one_or_none()
         if heartbeat is not None:
             return 0
         print(
@@ -52,7 +67,7 @@ def main() -> int:
         print(f"heartbeat query failed: {error}", file=sys.stderr)
         return 1
     finally:
-        session.close()
+        engine.dispose()
 
 
 if __name__ == "__main__":
