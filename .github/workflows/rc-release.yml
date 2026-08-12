@@ -238,6 +238,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.rc-artifact.outputs.id }}
           path: evidence
+          merge-multiple: true
       - name: Collect immutable supply-chain and release evidence
         shell: bash
         env:
