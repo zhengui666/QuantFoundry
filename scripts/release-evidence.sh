@@ -273,6 +273,17 @@ source_files = {
     for path in output.rglob("*")
     if path.is_file() and "release-assets" not in path.relative_to(output).parts and path.name != "SHA256SUMS"
 }
+for path in output.rglob("*.log"):
+    relative = path.relative_to(output)
+    if (
+        path.is_file()
+        and "release-assets" not in relative.parts
+        and relative.parts
+        and relative.parts[0] == "logs"
+        and path.stat().st_size == 0
+    ):
+        path.write_text("command completed successfully with no stdout/stderr\\n", encoding="utf-8")
+
 empty_source_files = {
     path.relative_to(output).as_posix()
     for path in output.rglob("*")
