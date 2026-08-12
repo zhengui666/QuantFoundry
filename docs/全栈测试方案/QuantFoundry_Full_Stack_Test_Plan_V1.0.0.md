@@ -1763,7 +1763,7 @@ cookies: []
 origins:
   - origin: http://127.0.0.1:5173
     localStorage:
-      - qf.server-settings.locale = en/UTC
+      - qf.server-settings.locale = '{"language":"en","timezone":"UTC"}' (JSON string; equivalent to `JSON.stringify({ language: 'en', timezone: 'UTC' })`)
 ```
 
 该 inline state 不得包含 bearer/session/refresh/CSRF token、provider credential、signed URL 或其他可认证/授权的 browser storage。它只用于确定性 locale/timezone bootstrap；HTTP `/api/v1`、SSE `Authorization`/`Last-Event-ID`、ETag/`If-Match` 与 `Idempotency-Key` semantics 不得因该 harness 设置而改变。任何需要持久化 browser storage-state 的测试必须改为 inline deterministic state，否则属于测试治理失败。

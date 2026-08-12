@@ -12,7 +12,15 @@ export default defineConfig({
     browserName: 'chromium',
     // Product default remains zh-CN. CI seeds an explicit persisted server Settings
     // projection so role/text assertions cannot depend on a host/browser locale.
-    storageState: './e2e/storage-state.json',
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'http://127.0.0.1:5173',
+          localStorage: [{ name: 'qf.server-settings.locale', value: '{"language":"en","timezone":"UTC"}' }],
+        },
+      ],
+    },
     locale: 'en-US',
     timezoneId: 'UTC',
   },
