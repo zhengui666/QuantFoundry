@@ -47,7 +47,7 @@ PY
 
 finish() {
   local status="$1"
-  python3 - "$report_dir/result.json" "$gate" "$commit" "$ref" "$started_at" "$status" "$results_file" <<'PY'
+  python3 - "$report_dir/result.json" "$gate" "$commit" "$ref" "$started_at" "$status" "$results_file" "$report_dir/fullstack-diagnostics.json" <<'PY'
 import json
 import pathlib
 import sys
@@ -64,6 +64,9 @@ result = {
     "steps": steps,
     "environment_limitations": [step for step in steps if step["environment_limitation"]],
 }
+diagnostics_path = pathlib.Path(sys.argv[8])
+if diagnostics_path.is_file():
+    result["diagnostics"] = {"fullstack": json.loads(diagnostics_path.read_text(encoding="utf-8"))}
 output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
   exit "$status"
@@ -157,7 +160,7 @@ run_main_full() {
   run_step full-ci-tools make tools
   run_step full-ci-fresh-smoke make fresh-smoke
   run_step full-ci-pg18 make pg18
-  run_step full-ci-fullstack make fullstack
+  run_step full-ci-fullstack env "QF_FULLSTACK_DIAGNOSTICS_FILE=$report_dir/fullstack-diagnostics.json" make fullstack
 }
 
 run_nightly() {

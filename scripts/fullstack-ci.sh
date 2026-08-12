@@ -37,6 +37,7 @@ bootstrap_output="$fullstack_tmp/bootstrap.json"
 bootstrap_repeat_output="$fullstack_tmp/bootstrap-repeat.json"
 seed_output="$fullstack_tmp/seed.json"
 project_name="qf-fullstack-$$"
+phase="bootstrap"
 export COMPOSE_PROJECT_NAME="$project_name"
 
 cleanup() {
@@ -53,6 +54,69 @@ cleanup() {
         --env-file "$environment_file" ps --quiet "$service" \
         | xargs -r docker inspect --format '{{.Name}} {{json .State.Health}}' >&2 || true
     done
+    if [[ -n "${QF_FULLSTACK_DIAGNOSTICS_FILE:-}" ]]; then
+      python3 - "$QF_FULLSTACK_DIAGNOSTICS_FILE" "$status" "$phase" "$project_name" "$environment_file" <<'PY'
+import json
+import pathlib
+import subprocess
+import sys
+
+output, exit_code, phase, project_name, environment_file = sys.argv[1:]
+
+
+def compose(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--project-name",
+            project_name,
+            "--profile",
+            "local",
+            "--env-file",
+            environment_file,
+            *args,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def service_state(service: str) -> dict[str, object]:
+    container_ids = compose("ps", "--quiet", service).stdout.split()
+    if len(container_ids) != 1:
+        return {"state": "absent"}
+    inspected = subprocess.run(
+        ["docker", "inspect", container_ids[0]],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if inspected.returncode != 0:
+        return {"state": "inspect-unavailable"}
+    state = json.loads(inspected.stdout)[0].get("State", {})
+    health = state.get("Health", {})
+    return {
+        "state": state.get("Status"),
+        "exit_code": state.get("ExitCode"),
+        "health": health.get("Status"),
+    }
+
+
+diagnostics = {
+    "exit_code": int(exit_code),
+    "phase": phase,
+    "services": {
+        service: service_state(service)
+        for service in ("postgres", "local-provider", "api", "worker", "agent-worker", "scheduler", "frontend")
+    },
+}
+path = pathlib.Path(output)
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+    fi
   fi
   if [[ "$status" != 0 && "${QF_FULLSTACK_KEEP_FAILED:-0}" == "1" ]]; then
     printf 'Preserving failed full-stack Compose project: %s\n' "$project_name" >&2
@@ -111,6 +175,7 @@ QF_BOOTSTRAP_OWNER_EMAIL=fullstack-owner@local.invalid \
 QF_BOOTSTRAP_WORKSPACE_NAME='QuantFoundry Full Stack' \
   "$repo_root/scripts/bootstrap-local.sh"
 
+phase="bootstrap-repeat"
 QF_ENV_FILE="$environment_file" \
 QF_BOOTSTRAP_OUTPUT_FILE="$bootstrap_repeat_output" \
 QF_BOOTSTRAP_OWNER_EMAIL=fullstack-owner@local.invalid \
@@ -119,6 +184,7 @@ QF_BOOTSTRAP_WORKSPACE_NAME='QuantFoundry Full Stack' \
 python3 "$repo_root/scripts/bootstrap_result_check.py" \
   "$bootstrap_output" "$bootstrap_repeat_output"
 
+phase="security-verification"
 security_counts="$(
   docker compose --project-name "$project_name" --profile local \
     --env-file "$environment_file" exec -T postgres psql \
@@ -143,12 +209,14 @@ security_counts="$(
 printf '%s\n' 'Bootstrap persisted only token verifiers and encrypted provider credentials.'
 
 application_url="http://127.0.0.1:${http_port}"
+phase="seed"
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" exec -T api \
   python /workspace/scripts/fullstack_seed.py \
   --application-url "$application_url" \
   < "$bootstrap_repeat_output" > "$seed_output"
 
+phase="frontend-compose"
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" up --build --detach --wait frontend
 
@@ -174,5 +242,6 @@ fi
 printf 'Full-stack seed ready: factor=%s snapshot=%s cost=%s validation_policy=%s\n' \
   "$QF_FULLSTACK_FACTOR_ID" "$QF_FULLSTACK_SNAPSHOT_ID" \
   "$QF_FULLSTACK_COST_MODEL_ID" "$QF_FULLSTACK_VALIDATION_POLICY_ID"
+phase="frontend-ci"
 pnpm --dir "$repo_root/frontend" run ci
 printf '%s\n' 'Full-stack frontend CI passed with all six QF_FULLSTACK_* values.'
