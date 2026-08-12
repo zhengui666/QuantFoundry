@@ -85,7 +85,7 @@ jobs:
           }
           pathlib.Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
-          uv --directory backend run --frozen python scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
+          uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
             --command "scripts/ci/release-governance-static-gate.sh" \
             --command "scripts/ci/p0-architecture-review.sh" \
             --command "actionlint .github/workflows/*.yml"
