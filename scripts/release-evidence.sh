@@ -344,7 +344,11 @@ except json.JSONDecodeError as error:
 if release.get("isDraft") is not True:
     raise SystemExit(f"release {tag} already exists but is not a draft")
 if release.get("targetCommitish") != commit:
-    raise SystemExit(f"release {tag} draft target does not match the tagged commit")
+    # GitHub's “Existing tag” UI stores the selected branch as targetCommitish
+    # even when the tag itself is already bound to the immutable commit checked
+    # by require_tag_commit above. The tag/ref binding is the authoritative
+    # release identity; do not reject this UI-compatible draft metadata.
+    return
 PY
 }
 
