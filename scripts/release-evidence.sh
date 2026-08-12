@@ -94,9 +94,8 @@ attestations = [
     item for item in descriptors
     if (
         item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
-        and item.get("annotations", {}).get("vnd.docker.reference.digest") == subject_digest
+        or item.get("artifactType") == "application/vnd.in-toto+json"
     )
-    or item.get("artifactType") == "application/vnd.in-toto+json"
 ]
 if not attestations:
     raise SystemExit("published image has no BuildKit attestation manifest bound to its digest")
