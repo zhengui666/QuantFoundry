@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           pip install --disable-pip-version-check uv==0.10.7
           uv --directory backend sync --frozen --all-groups
-          scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain
+          scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain-except-supply-chain
 
   rc:
     needs: preflight
