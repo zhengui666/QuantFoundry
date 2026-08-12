@@ -119,11 +119,20 @@ if e2e_report.is_file():
     failed_tests: list[dict[str, object]] = []
     error_categories: dict[str, int] = {}
 
-    def classify(message: object) -> str:
-        value = message if isinstance(message, str) else ""
+    def error_text(value: object) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return "\n".join(error_text(item) for item in value)
+        if isinstance(value, dict):
+            return "\n".join(error_text(item) for item in value.values())
+        return ""
+
+    def classify(error: object) -> str:
+        value = error_text(error)
         if "Executable doesn't exist" in value or "browserType.launch" in value:
             return "browser-launch"
-        if "ERR_CONNECTION_REFUSED" in value or "ECONNREFUSED" in value:
+        if "ERR_CONNECTION_REFUSED" in value or "ECONNREFUSED" in value or "net::ERR_" in value:
             return "connection-refused"
         if "Timeout" in value or "timeout" in value:
             return "timeout"
@@ -154,14 +163,8 @@ if e2e_report.is_file():
                 for result in results:
                     if isinstance(result, dict) and result.get("status") != "passed":
                         errors = result.get("errors")
-                        messages = [
-                            error.get("message")
-                            for error in errors
-                            if isinstance(error, dict)
-                        ] if isinstance(errors, list) else []
-                        if not messages and isinstance(result.get("error"), dict):
-                            messages = [result["error"].get("message")]
-                        category = classify(messages[0] if messages else None)
+                        error_data = errors if isinstance(errors, list) else result.get("error")
+                        category = classify(error_data)
                         error_categories[category] = error_categories.get(category, 0) + 1
         for child in suite.get("suites", []):
             if isinstance(child, dict):
