@@ -201,7 +201,7 @@ def _deterministic_uuid4(namespace: str, value: Any) -> uuid.UUID:
 def _workspace_uuid(value: Any) -> uuid.UUID:
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-    except (TypeError, ValueError, AttributeError):
+    except TypeError, ValueError, AttributeError:
         return _deterministic_uuid4("workspace", value)
 
 
@@ -559,7 +559,7 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
     if isinstance(column_type, Uuid):
         try:
             return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-        except (TypeError, ValueError, AttributeError):
+        except TypeError, ValueError, AttributeError:
             if column.table.name == "records" and column.name == "id":
                 # Python 3.14 provides uuid7; keep a deterministic compatible
                 # fallback for the migration's supported interpreter boundary.
