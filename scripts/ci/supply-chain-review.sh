@@ -43,7 +43,6 @@ for asset in assets:
     if not isinstance(name, str) or not name or "/" in name or not isinstance(asset_id, int):
         raise SystemExit("release contains an invalid asset")
     names.append(name)
-    output = pathlib.Path(work_dir) / name
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not token:
         raise SystemExit("GITHUB_TOKEN or GH_TOKEN is required to download release assets")
