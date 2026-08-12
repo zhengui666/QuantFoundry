@@ -1754,6 +1754,20 @@ Critical a11y violation 阻塞 Release。
 
 Visual diff 不能替代 semantic test。
 
+## 20.1 Playwright storage-state 凭据边界
+
+Playwright harness 必须使用 inline、deterministic 且不含凭据的 `storageState` 对象；禁止提交或依赖 browser storage-state 文件（包括 `frontend/e2e/storage-state.json`）。该对象只能包含：
+
+```text
+cookies: []
+origins:
+  - origin: http://127.0.0.1:5173
+    localStorage:
+      - qf.server-settings.locale = en/UTC
+```
+
+该 inline state 不得包含 bearer/session/refresh/CSRF token、provider credential、signed URL 或其他可认证/授权的 browser storage。它只用于确定性 locale/timezone bootstrap；HTTP `/api/v1`、SSE `Authorization`/`Last-Event-ID`、ETag/`If-Match` 与 `Idempotency-Key` semantics 不得因该 harness 设置而改变。任何需要持久化 browser storage-state 的测试必须改为 inline deterministic state，否则属于测试治理失败。
+
 ---
 
 # 21. Full-stack Golden Flow — QF-E2E-001
