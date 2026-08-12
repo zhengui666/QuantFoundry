@@ -467,7 +467,11 @@ for item in registry["blockers"]:
 
 unclosed = [item for item in blocking if item["status"] != "closed"]
 non_supply_unclosed = [item for item in unclosed if item["id"] != "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE"]
-bootstrap_eligible = bootstrap_mode and not invalid and not non_supply_unclosed
+supply_unclosed = [item for item in unclosed if item["id"] == "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE"]
+bootstrap_eligible = bootstrap_mode and not invalid and not non_supply_unclosed and (
+    not supply_unclosed
+    or (len(supply_unclosed) == 1 and supply_unclosed[0]["status"] == "blocked")
+)
 summary = {
     "registry": str(registry_path),
     "mode": mode,
