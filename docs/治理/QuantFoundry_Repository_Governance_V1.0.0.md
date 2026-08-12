@@ -81,6 +81,7 @@ P0 口径至少覆盖产品、contract/schema、安全、CI 可复现性、供�
 | --- | --- | --- | --- | --- |
 | `pr-fast-gate` | `pull_request` | trusted ancestor visual baseline、静态/契约/schema/单元与必要快速测试 | `contents: read` | 短期调试 artifact |
 | `main-full-gate` | `push` 至 `main` | 全量后端/前端/契约/schema/migration/scheduler/security hygiene、P0 registry snapshot | `contents: read` | 短期调试 artifact |
+| `visual-baseline-bootstrap` | 仅 `workflow_dispatch` | 生成首次提交/无可信 ancestor 时的 Linux visual baseline 候选；必须人工审阅并提交到 Git，不能自动批准 | `contents: read` | 短期调试 artifact；候选不得作为长期证据 |
 | `independent-agent-test` | 仅 `workflow_dispatch` | 对指定 commit 执行完整独立 Test Agent gate，并上传绑定 run 的结构化测试执行报告；失败也必须保留结果 artifact | `contents: read`、`actions: read` | 短期调试 artifact；不能单独关闭 P0 |
 | `nightly` | 定时及手工触发 | fresh clone、Compose、PG18 roundtrip、backup/restore、E2E/a11y/visual/bundle budget | `contents: read` | 短期调试 artifact；缺宿主依赖必须结构化失败 |
 | `agent-change-gate` | Agent/编排/治理路径变更 | Tool registry exact 13-entry gate、Agent contract/policy/graph 与独立 review report | `contents: read`、`actions: read` | 短期调试 artifact |

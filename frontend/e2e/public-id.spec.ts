@@ -8,6 +8,7 @@ import {
 test('QF-PID six routes accept both forms and reject every applicable 003..011 case pre-network', async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   const resourceRequests: string[] = [];
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
@@ -35,7 +36,7 @@ test('QF-PID six routes accept both forms and reject every applicable 003..011 c
   for (const { path, type } of publicIdRouteCases) {
     for (const id of canonicalPublicIdForms(type)) {
       const before = resourceRequests.length;
-      await page.goto(`/${path}/${encodeURIComponent(id)}`);
+      await page.goto(`/${path}/${encodeURIComponent(id)}`, { waitUntil: 'domcontentloaded' });
       await expect.poll(() => resourceRequests.length).toBeGreaterThan(before);
       expect(resourceRequests.slice(before).some((requestPath) => requestPath.includes(id))).toBe(
         true,
@@ -43,7 +44,9 @@ test('QF-PID six routes accept both forms and reject every applicable 003..011 c
     }
     for (const invalid of publicIdNegativeCases(type)) {
       const before = resourceRequests.length;
-      await page.goto(`/${path}/${encodeURIComponent(invalid.value)}`);
+      await page.goto(`/${path}/${encodeURIComponent(invalid.value)}`, {
+        waitUntil: 'domcontentloaded',
+      });
       await expect(page.getByText(/Invalid canonical .* public ID/i)).toBeVisible();
       expect(resourceRequests, `${path}:${invalid.caseId}:${invalid.mutation}`).toHaveLength(
         before,

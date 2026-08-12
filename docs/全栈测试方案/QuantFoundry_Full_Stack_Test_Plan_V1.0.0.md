@@ -1049,6 +1049,8 @@ Adapter upgrade 若结果变化：
 - 若语义改变，必须 version/ADR；
 - 再更新 baseline。
 
+首次公开基线的 Linux visual snapshot 必须通过 `.github/workflows/visual-baseline-bootstrap.yml` 生成候选 artifact；候选 artifact 绑定 workflow run 与 commit，只能由人工审阅后提交到 `frontend/e2e/**-linux.png`。`main-full-gate` 只消费已提交 baseline，正常 PR 只允许使用可信 Git ancestor 生成的 baseline；任何被测 revision 自生成并自动批准的 snapshot 都不是有效证据。
+
 ## 10.4 Fast vs Strict Backtest
 
 V1 若 Fast Simulation 与 Strict Validation 使用不同 engine：
