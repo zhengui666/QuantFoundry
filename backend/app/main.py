@@ -2696,7 +2696,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3260,7 +3260,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except httpx.HTTPError, KeyError, TypeError, ValueError:
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
         return False
     return payload.get("model_name") in available_models
 
