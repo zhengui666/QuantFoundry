@@ -915,7 +915,64 @@ blockers:
     signature verification, and evidence completeness.
   - Independent Review Agent validates tag, repository visibility, GHCR digest, provenance,
     and evidence completeness.
-  status: blocked
+  status: closed
   release_blocking: true
-  evidence: []
-
+  evidence:
+  - build_id: github-actions/31633715954
+    artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31633715954/artifacts/9156542396
+    artifact_sha256: 2cd4279a7955334bd6aedcb416d49fd13c6efc53fedbc20f1ce353d0957092ee
+    report:
+      path: P0-SUPPLY-CHAIN-RELEASE-EVIDENCE.json
+      sha256: 0fccf8d4045efe84780702b652fa64a69b98ae344745be45180801102b300153
+      content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+    commit_sha: 87b63d8fc9dbdc6ef9424f8addff397fee5beee8
+    verifier_role: Independent Test Agent
+    verified_at_utc: '2026-08-12T19:53:39Z'
+    closure_criteria:
+    - Public GitHub release v0.1.0-alpha is reproducible from a tagged commit.
+    - GHCR image digest, build provenance, SBOM or equivalent supply-chain record, and
+      verification reports are archived.
+    - Every other release-blocking P0 registry entry is closed with evidence.
+    - The immutable release manifest binds tag/ref/commit, Compose-rendered GHCR digests,
+      checksums, P0 and known-issue snapshots, test reports, SBOM, provenance, attestation,
+      and signature verification as GitHub Release assets.
+    commands:
+    - command: scripts/ci/supply-chain-review.sh v0.1.0-alpha 98e89ed07de2b932ea3d1886c11cc7f1fee474f6
+      exit_code: 0
+      result: pass
+    attestation:
+      provider: github-actions
+      issuer: https://token.actions.githubusercontent.com
+      repository: zhengui666/QuantFoundry
+      run_id: 31633715954
+      subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31633715954
+      subject_sha256: 0fccf8d4045efe84780702b652fa64a69b98ae344745be45180801102b300153
+  - build_id: github-actions/31629788405
+    artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31629788405/artifacts/9154610541
+    artifact_sha256: 380ded685bb65bdf93956d954c913f604b95dc0039d3d513a87937cd80236ef1
+    report:
+      path: P0-SUPPLY-CHAIN-RELEASE-EVIDENCE.json
+      sha256: 5f9d5c50a4e191e9b676398e65493dd37231f57914ec6f92a8dda4c97acd05cc
+      content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+    commit_sha: 54be4a094ec077234b826c46aec7ef92cc8e8852
+    verifier_role: Independent Review Agent
+    verified_at_utc: '2026-08-12T18:52:53Z'
+    closure_criteria:
+    - Public GitHub release v0.1.0-alpha is reproducible from a tagged commit.
+    - GHCR image digest, build provenance, SBOM or equivalent supply-chain record, and
+      verification reports are archived.
+    - Every other release-blocking P0 registry entry is closed with evidence.
+    - The immutable release manifest binds tag/ref/commit, Compose-rendered GHCR digests,
+      checksums, P0 and known-issue snapshots, test reports, SBOM, provenance, attestation,
+      and signature verification as GitHub Release assets.
+    commands:
+    - command: scripts/ci/supply-chain-review.sh v0.1.0-alpha 98e89ed07de2b932ea3d1886c11cc7f1fee474f6
+      exit_code: 0
+      result: pass
+    attestation:
+      provider: github-actions
+      issuer: https://token.actions.githubusercontent.com
+      repository: zhengui666/QuantFoundry
+      run_id: 31629788405
+      subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31629788405
+      subject_sha256: 5f9d5c50a4e191e9b676398e65493dd37231f57914ec6f92a8dda4c97acd05cc
