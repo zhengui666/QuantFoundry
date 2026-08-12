@@ -88,16 +88,16 @@ actual = sorted(path.name for path in root.iterdir() if path.is_file() and path.
 if not isinstance(inventory, list) or sorted(item.get("name") for item in inventory) != actual:
     raise SystemExit("release assets do not match the manifest inventory")
 required_sources = {
-    "evidence/p0-blockers.yaml",
-    "evidence/release-known-issues.json",
-    "evidence/attestations/backend.json",
-    "evidence/attestations/frontend.json",
-    "evidence/provenance/backend.json",
-    "evidence/provenance/frontend.json",
-    "evidence/signature-verification/backend.json",
-    "evidence/signature-verification/frontend.json",
-    "evidence/sbom/backend.spdx.json",
-    "evidence/sbom/frontend.spdx.json",
+    "p0-blockers.yaml",
+    "release-known-issues.json",
+    "attestations/backend.json",
+    "attestations/frontend.json",
+    "provenance/backend.json",
+    "provenance/frontend.json",
+    "signature-verification/backend.json",
+    "signature-verification/frontend.json",
+    "sbom/backend.spdx.json",
+    "sbom/frontend.spdx.json",
 }
 sources = {item.get("source") for item in inventory if isinstance(item, dict)}
 if not required_sources.issubset(sources):
