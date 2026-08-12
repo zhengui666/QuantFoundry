@@ -18,7 +18,7 @@ if [[ "$mode" == "--report" ]]; then
 fi
 
 set +e
-QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
+QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
   uv --directory "$repo_root/backend" run --frozen python - "$registry" "$mode" <<'PY'
 import datetime as dt
 import hashlib
@@ -38,6 +38,7 @@ import yaml
 registry_path = pathlib.Path(sys.argv[1])
 mode = sys.argv[2]
 expected_commit = os.environ["QF_RELEASE_COMMIT"]
+repo_root = pathlib.Path(os.environ["QF_RELEASE_REPO_ROOT"])
 sha_pattern = re.compile(r"^[0-9a-f]{40}$")
 sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
 github_build_pattern = re.compile(r"^github-actions/([1-9][0-9]*)$")
@@ -66,6 +67,17 @@ allowed_verification_workflows = {
 
 def invalid_value(value):
     return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.search(value))
+
+
+def commit_is_ancestor(verification_commit, release_commit):
+    if verification_commit == release_commit:
+        return True
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", verification_commit, release_commit],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return completed.returncode == 0
 
 
 def valid_timestamp(value):
@@ -287,8 +299,8 @@ def validate_embedded_report(prefix, report, record, role, run_id, remote, error
         errors.append(f"{prefix}.embedded_report.schema_version must be 1.0.0")
     if report.get("content_type") != report_meta["content_type"]:
         errors.append(f"{prefix}.embedded_report.content_type does not match registry")
-    if report.get("commit_sha") != expected_commit:
-        errors.append(f"{prefix}.embedded_report.commit_sha does not match current release commit")
+    if report.get("commit_sha") != record.get("commit_sha"):
+        errors.append(f"{prefix}.embedded_report.commit_sha does not match verification commit")
     if report.get("github_run_id") != run_id:
         errors.append(f"{prefix}.embedded_report.github_run_id does not match build_id")
     if report.get("verifier_role") != role:
@@ -337,8 +349,8 @@ def validate_closed_evidence(blocker_id, item, remote):
         commit_sha = record.get("commit_sha")
         if not isinstance(commit_sha, str) or not sha_pattern.fullmatch(commit_sha):
             errors.append(f"{prefix}.commit_sha must be a full lowercase 40-character SHA")
-        elif commit_sha != expected_commit:
-            errors.append(f"{prefix}.commit_sha does not match current release commit")
+        elif not commit_is_ancestor(commit_sha, expected_commit):
+            errors.append(f"{prefix}.commit_sha is not an ancestor of the current release commit")
         build_id = record.get("build_id")
         build_match = github_build_pattern.fullmatch(build_id) if isinstance(build_id, str) else None
         if not build_match:
