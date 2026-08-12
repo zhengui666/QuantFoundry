@@ -72,8 +72,22 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, request, _file, _code, _msg, _headers, _newurl):
+            return None
+
     try:
-        with urllib.request.urlopen(request) as response, archive_path.open("wb") as archive_file:
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            response = opener.open(request)
+        except urllib.error.HTTPError as error:
+            if error.code not in {301, 302, 303, 307, 308}:
+                raise
+            location = error.headers.get("Location")
+            if not location:
+                raise SystemExit("GitHub artifact download redirect did not include a Location header")
+            response = urllib.request.urlopen(location)
+        with response, archive_path.open("wb") as archive_file:
             archive_file.write(response.read())
     except Exception as error:
         raise SystemExit(f"cannot download independent review artifact: {error}") from error
