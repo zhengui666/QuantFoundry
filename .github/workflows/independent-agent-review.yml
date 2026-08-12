@@ -2,6 +2,11 @@ name: independent-agent-review
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Published alpha release tag to verify for supply-chain closure"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -37,6 +42,16 @@ jobs:
           scripts/ci/release-governance-static-gate.sh
           scripts/ci/p0-architecture-review.sh
           actionlint .github/workflows/*.yml
+      - name: Verify published release supply-chain evidence
+        if: ${{ inputs.release_tag != '' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          scripts/ci/supply-chain-review.sh "$RELEASE_TAG" "$GITHUB_SHA"
       - name: Produce commit-bound independent review report
         shell: bash
         run: |
@@ -89,6 +104,11 @@ jobs:
             --command "scripts/ci/release-governance-static-gate.sh" \
             --command "scripts/ci/p0-architecture-review.sh" \
             --command "actionlint .github/workflows/*.yml"
+          if [[ -n "${{ inputs.release_tag }}" ]]; then
+            uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
+              --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
+              --command "scripts/ci/supply-chain-review.sh ${{ inputs.release_tag }} $GITHUB_SHA"
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: independent-agent-review-${{ github.run_id }}

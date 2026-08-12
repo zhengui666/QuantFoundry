@@ -30,6 +30,7 @@ REVIEW_BLOCKERS = (
     "P0-CI-REPRODUCIBILITY",
     "P0-SECURITY-RESEARCH-INTEGRITY",
 )
+SUPPLY_BLOCKER = "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE"
 CONTENT_TYPES = {
     "test": "application/vnd.quantfoundry.p0-test-evidence+json;version=1",
     "review": "application/vnd.quantfoundry.p0-review-evidence+json;version=1",
@@ -92,6 +93,8 @@ def main() -> None:
         TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS
     )
     allowed = set(TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS)
+    if options.role == "review":
+        allowed.add(SUPPLY_BLOCKER)
     if not blocker_ids or any(value not in allowed for value in blocker_ids):
         raise SystemExit("requested blocker is not assigned to this evidence role")
     commands = read_commands(options)
