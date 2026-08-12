@@ -21,6 +21,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 import zipfile
 from urllib.parse import urlparse
 
@@ -110,9 +112,34 @@ if artifact.get("expired") or artifact.get("workflow_run", {}).get("id") != run_
     raise SystemExit("independent review report artifact is missing, expired, or not bound to its run")
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-") as directory:
     output = pathlib.Path(directory) / "report.zip"
-    result = subprocess.run(["gh", "api", f"/repos/{repository}/actions/artifacts/{artifact_id}/zip", "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(output)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode:
-        raise SystemExit(f"cannot download independent review artifact: {result.stderr.strip() or result.returncode}")
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{repository}/actions/artifacts/{artifact_id}/zip",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, request, _file, _code, _msg, _headers, _newurl):
+            return None
+
+    try:
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            response = opener.open(request)
+        except urllib.error.HTTPError as error:
+            if error.code not in {301, 302, 303, 307, 308}:
+                raise
+            location = error.headers.get("Location")
+            if not location:
+                raise SystemExit("GitHub artifact download redirect did not include a Location header")
+            response = urllib.request.urlopen(location)
+        with response, output.open("wb") as archive_file:
+            archive_file.write(response.read())
+    except Exception as error:
+        raise SystemExit(f"cannot download independent review artifact: {error}") from error
     archive = output.read_bytes()
 if hashlib.sha256(archive).hexdigest() != artifact_sha256:
     raise SystemExit("independent review artifact SHA-256 does not match report")
