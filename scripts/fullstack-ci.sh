@@ -36,6 +36,7 @@ environment_file="$fullstack_tmp/local.env"
 bootstrap_output="$fullstack_tmp/bootstrap.json"
 bootstrap_repeat_output="$fullstack_tmp/bootstrap-repeat.json"
 seed_output="$fullstack_tmp/seed.json"
+e2e_report="$fullstack_tmp/playwright-report.json"
 project_name="qf-fullstack-$$"
 phase="bootstrap"
 export COMPOSE_PROJECT_NAME="$project_name"
@@ -112,6 +113,39 @@ diagnostics = {
         for service in ("postgres", "local-provider", "api", "worker", "agent-worker", "scheduler", "frontend")
     },
 }
+e2e_report = pathlib.Path(environment_file).with_name("playwright-report.json")
+if e2e_report.is_file():
+    playwright = json.loads(e2e_report.read_text(encoding="utf-8"))
+    failed_tests: list[dict[str, object]] = []
+
+    def collect(suite: dict[str, object], ancestors: list[str]) -> None:
+        suite_title = suite.get("title")
+        lineage = [*ancestors, suite_title] if isinstance(suite_title, str) and suite_title else ancestors
+        for spec in suite.get("specs", []):
+            if not isinstance(spec, dict):
+                continue
+            spec_title = spec.get("title")
+            for test in spec.get("tests", []):
+                if not isinstance(test, dict):
+                    continue
+                results = test.get("results", [])
+                statuses = [result.get("status") for result in results if isinstance(result, dict)]
+                if statuses and all(status == "passed" for status in statuses):
+                    continue
+                failed_tests.append(
+                    {
+                        "title": " > ".join([*lineage, spec_title]) if isinstance(spec_title, str) else " > ".join(lineage),
+                        "status": statuses[-1] if statuses else "not-run",
+                    }
+                )
+        for child in suite.get("suites", []):
+            if isinstance(child, dict):
+                collect(child, lineage)
+
+    for suite in playwright.get("suites", []):
+        if isinstance(suite, dict):
+            collect(suite, [])
+    diagnostics["playwright"] = {"failed_tests": failed_tests}
 path = pathlib.Path(output)
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -254,7 +288,10 @@ run_frontend_step format:check
 run_frontend_step lint
 run_frontend_step typecheck
 run_frontend_step test
-run_frontend_step test:e2e
+phase="frontend-test:e2e"
+if ! pnpm --dir "$repo_root/frontend" exec playwright test --reporter=json > "$e2e_report"; then
+  exit 1
+fi
 run_frontend_step build
 run_frontend_step bundle:check
 run_frontend_step storybook:build
