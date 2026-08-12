@@ -18,6 +18,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import urllib.request
 import zipfile
 
 commit, output_name = sys.argv[1:]
@@ -63,19 +64,19 @@ if not isinstance(artifact, dict):
 artifact_id = artifact["id"]
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as directory:
     archive_path = pathlib.Path(directory) / "review.zip"
-    with archive_path.open("wb") as archive_file:
-        completed = subprocess.run(
-            [
-                "gh", "api", f"/repos/{repository}/actions/artifacts/{artifact_id}/zip", "--method", "GET",
-                "-H", "Accept: application/octet-stream",
-            ],
-            env=env,
-            stdout=archive_file,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    if completed.returncode:
-        raise SystemExit(f"cannot download independent review artifact: {completed.stderr.strip() or completed.returncode}")
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{repository}/actions/artifacts/{artifact_id}/zip",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request) as response, archive_path.open("wb") as archive_file:
+            archive_file.write(response.read())
+    except Exception as error:
+        raise SystemExit(f"cannot download independent review artifact: {error}") from error
     archive = archive_path.read_bytes()
 try:
     with zipfile.ZipFile(__import__("io").BytesIO(archive)) as bundle:
