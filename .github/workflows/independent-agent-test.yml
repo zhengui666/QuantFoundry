@@ -101,7 +101,7 @@ jobs:
               "commands": result["steps"],
               "p0_registry_snapshot": "docs/治理/p0-blockers.yaml",
           }
-          destination.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          destination.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
