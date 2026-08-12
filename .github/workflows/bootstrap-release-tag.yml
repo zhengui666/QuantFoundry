@@ -29,6 +29,8 @@ jobs:
           test "${TAG}" = "v0.1.0-alpha"
           test "${TARGET}" = "a3e7143645d8069bca9cc72abff26b8cafd2ad8d"
           git init .
+          git config user.name "QuantFoundry Release Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags origin "${TARGET}"
           git tag -a "${TAG}" "${TARGET}" -m "QuantFoundry ${TAG}"
