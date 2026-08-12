@@ -1,0 +1,34 @@
+name: bootstrap-release-tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create"
+        required: true
+        type: string
+      target:
+        description: "Existing commit SHA to tag"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create immutable tag
+        env:
+          TAG: ${{ inputs.tag }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          test "${TAG}" = "v0.1.0-alpha"
+          test "${TARGET}" = "a3e7143645d8069bca9cc72abff26b8cafd2ad8d"
+          git init .
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "${TARGET}"
+          git tag -a "${TAG}" "${TARGET}" -m "QuantFoundry ${TAG}"
+          git push origin "refs/tags/${TAG}"
