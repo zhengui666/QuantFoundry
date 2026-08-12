@@ -348,7 +348,7 @@ if release.get("targetCommitish") != commit:
     # even when the tag itself is already bound to the immutable commit checked
     # by require_tag_commit above. The tag/ref binding is the authoritative
     # release identity; do not reject this UI-compatible draft metadata.
-    return
+    pass
 PY
 }
 
