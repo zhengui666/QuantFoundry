@@ -239,7 +239,7 @@ for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact s
   fi
 done
 
-if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' QF_RELEASE_COMMIT="$commit_sha" "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
+if env -u GITHUB_TOKEN PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' QF_RELEASE_COMMIT="$commit_sha" "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
   printf '%s\n' 'Expected fixture to fail without GITHUB_TOKEN.' >&2
   exit 1
 fi

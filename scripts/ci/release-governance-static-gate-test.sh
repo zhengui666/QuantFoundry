@@ -33,7 +33,7 @@ PY
     printf 'Expected RC %s permission fixture to fail.\n' "$job" >&2
     exit 1
   fi
-  if ! rg -Fq "rc-release $job job must request only contents: read and actions: read for online P0 artifact verification" "$fixture_root/$job-gate.out"; then
+  if ! grep -Fq "rc-release $job job must request only contents: read and actions: read for online P0 artifact verification" "$fixture_root/$job-gate.out"; then
     cat "$fixture_root/$job-gate.out" >&2
     exit 1
   fi
