@@ -104,8 +104,10 @@ jobs:
           set -euo pipefail
           uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-test-evidence" --result-file "$RUNNER_TEMP/qf-independent-test/result.json"
           if [[ -n "$RELEASE_TAG" ]]; then
-            uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-test-evidence" --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
-            --command "scripts/ci/supply-chain-review.sh $RELEASE_TAG $release_commit"
+            release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+            uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-test-evidence" \
+              --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
+              --command "scripts/ci/supply-chain-review.sh $RELEASE_TAG $release_commit"
           fi
           mkdir -p "$RUNNER_TEMP/qf-independent-test"
           if [[ -d "$RUNNER_TEMP/qf-p0-test-evidence" ]]; then
