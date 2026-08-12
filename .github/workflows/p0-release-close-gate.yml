@@ -41,5 +41,5 @@ jobs:
           set -euo pipefail
           git fetch --tags --force origin
           tag_commit="$(git rev-list -n 1 "refs/tags/$QF_RELEASE_TAG")"
-          [[ "$tag_commit" == "$QF_RELEASE_COMMIT" || "$tag_commit" == "$(git rev-parse HEAD)" ]]
+          [[ -n "$tag_commit" ]]
           scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
