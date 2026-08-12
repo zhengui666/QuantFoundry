@@ -193,14 +193,13 @@ class RemoteVerifier:
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
             completed = subprocess.run(
-                ["gh", "api", endpoint, "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(destination)],
+                ["gh", "api", endpoint, "--method", "GET"],
                 env=self.env,
-                text=True,
-                stdout=subprocess.PIPE,
+                stdout=destination.open("wb"),
                 stderr=subprocess.PIPE,
             )
             if completed.returncode:
-                raise RuntimeError(f"gh api download failed for {endpoint}: {completed.stderr.strip() or completed.returncode}")
+                raise RuntimeError(f"gh api download failed for {endpoint}: {completed.stderr.decode(errors='replace').strip() or completed.returncode}")
             try:
                 return destination.read_bytes()
             except OSError as error:
