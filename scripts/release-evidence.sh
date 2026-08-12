@@ -273,6 +273,16 @@ source_files = {
     for path in output.rglob("*")
     if path.is_file() and "release-assets" not in path.relative_to(output).parts and path.name != "SHA256SUMS"
 }
+empty_source_files = {
+    path.relative_to(output).as_posix()
+    for path in output.rglob("*")
+    if path.is_file()
+    and "release-assets" not in path.relative_to(output).parts
+    and path.name != "SHA256SUMS"
+    and path.stat().st_size == 0
+}
+if empty_source_files:
+    raise SystemExit(f"release asset sources must be non-empty: {sorted(empty_source_files)}")
 
 declared_source_files = set(sources) - {"SHA256SUMS"}
 missing = declared_source_files - source_files
