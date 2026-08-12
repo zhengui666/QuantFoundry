@@ -150,7 +150,7 @@ def pytest_sessionfinish() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def configured_test_principals() -> None:
-    from app.main import (
+    from quantfoundry.api.app import (
         AgentConfigRow,
         CostModelVersionRow,
         ResearchPolicyVersionRow,

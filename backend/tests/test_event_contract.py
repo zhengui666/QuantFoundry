@@ -15,16 +15,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.event_contract import (
+from quantfoundry.api.app import Event, SessionLocal, emit
+from quantfoundry.api.sse.stream import durable_event_stream
+from quantfoundry.contracts.events.event_contract import (
     EVENT_TYPES,
     safe_resync_payload,
     validate_event_payload,
     validate_event_type,
     validate_sse_envelope,
 )
-from app.generated_api_models import EventType
-from app.main import Event, SessionLocal, emit
-from app.sse import durable_event_stream
+from quantfoundry.contracts.openapi.generated_api_models import EventType
 
 LEGACY_WORKSPACE_ID = "00000000-0000-4000-8000-000000000777"
 

@@ -21,7 +21,7 @@ from sqlalchemy.dialects import postgresql
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.locator_contract import (
+from quantfoundry.contracts.events.locator import (
     JOB_RESULT_REF_CHECK_SQL,
     LOCATOR_CHECK_SQL,
     NEXT_ACTION_CHECK_SQL,
@@ -29,7 +29,7 @@ from app.locator_contract import (
     POSTGRES_LOCATOR_HELPERS,
     locator_truth_table,
 )
-from app.section14_schema import MANIFEST_PATH, load_manifest
+from quantfoundry.infrastructure.db.schema import MANIFEST_PATH, load_manifest
 from scripts.generate_physical_schema_snapshot import (
     _autoincrement_spec,
     _index_key_spec,
@@ -1242,7 +1242,7 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
         errors.append("document:frozen-manifest-drift")
     orm_table_count: int | None = None
     if orm:
-        from app.main import Base
+        from quantfoundry.api.app import Base
 
         orm_table_count = len(Base.metadata.tables)
         orm_dialect = (

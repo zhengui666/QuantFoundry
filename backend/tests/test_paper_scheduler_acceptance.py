@@ -20,9 +20,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.artifacts import publish_staged, stage_json
-from app.event_contract import validate_event_payload, validate_sse_envelope
-from app.main import (
+from quantfoundry.api.app import (
     ArtifactRow,
     Audit,
     Base,
@@ -32,14 +30,19 @@ from app.main import (
     content_hash,
     new_id,
 )
-from app.queue import (
+from quantfoundry.contracts.events.event_contract import (
+    validate_event_payload,
+    validate_sse_envelope,
+)
+from quantfoundry.infrastructure.artifacts.store import publish_staged, stage_json
+from quantfoundry.infrastructure.jobs.queue import (
     LostLease,
     claim_job,
     complete_job,
     lock_active_lease,
     reap_expired_jobs,
 )
-from scheduler.paper import (
+from quantfoundry.scheduler.paper import (
     InvalidExecutionAssumption,
     PaperScheduler,
     Schedule,
@@ -873,8 +876,8 @@ def test_QF_PAPER_SCH_005_lease_fence_retry_crash_and_unknown_result(
 ) -> None:
     """QF-PAPER-SCH-005: fenced lease takeover and review-required crash recovery."""
 
-    from app.job_effects import apply_job_effect
-    from workers.main import SimulatedWorkerCrash, run_once
+    from quantfoundry.application.jobs.effects import apply_job_effect
+    from quantfoundry.workers.main import SimulatedWorkerCrash, run_once
 
     deployment = _seed_deployment(
         pg18_session_factory(),
@@ -1045,7 +1048,7 @@ def test_QF_PAPER_SCH_006_gates_and_terminal_runs_do_not_rerun(
 ) -> None:
     """QF-PAPER-SCH-006: blocked/complete terminal rows suppress future work."""
 
-    from workers.main import run_once
+    from quantfoundry.workers.main import run_once
 
     now = datetime(2026, 1, 5, 10, 0, tzinfo=UTC)
     cases: list[tuple[str, dict[str, Any], dict[str, Any]]] = [
@@ -1219,7 +1222,7 @@ def test_QF_PAPER_SCH_007_evidence_boundary_migration_and_closed_sse_negative(
     )
     _seed_gate_inputs(pg18_session_factory, deployment, date(2026, 1, 5))
     _prioritize_paper_job(pg18_session_factory, deployment)
-    from workers.main import run_once
+    from quantfoundry.workers.main import run_once
 
     assert run_once(identity="paper-evidence-worker") == 1
     session = pg18_session_factory()

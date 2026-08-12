@@ -38,8 +38,8 @@ from sqlalchemy import (
 from sqlalchemy.exc import DBAPIError
 
 from alembic import command
-from app.event_contract import EVENT_TYPES
-from app.public_ids import is_public_id
+from quantfoundry.contracts.events.event_contract import EVENT_TYPES
+from quantfoundry.domain.value_objects.public_ids import is_public_id
 from scripts import migration_roundtrip_check
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]

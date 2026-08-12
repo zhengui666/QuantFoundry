@@ -20,7 +20,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker
 
 from alembic import command
-from app.main import (
+from quantfoundry.api.app import (
     Actor,
     ApprovalRow,
     Audit,
@@ -40,7 +40,7 @@ from app.main import (
     decide,
     emit,
 )
-from app.queue import (
+from quantfoundry.infrastructure.jobs.queue import (
     LostLease,
     claim_job,
     complete_job,

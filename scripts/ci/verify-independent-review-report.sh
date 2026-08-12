@@ -37,7 +37,7 @@ criteria = [
 scope_paths = [
     "AGENTS.md",
     "PROJECT_BACKGROUND.md",
-    "backend/app/agent_runtime",
+    "backend/src/quantfoundry/agents",
     "backend/workers",
     "docs/Agent技术方案",
     "docs/后端系统技术方案/contracts/tools",

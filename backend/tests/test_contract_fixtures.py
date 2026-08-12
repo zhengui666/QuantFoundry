@@ -8,10 +8,10 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import func
 
-from app.contract_route import CanonicalRoute
-from app.contracts import validated_payload
-from app.main import Event, SessionLocal, app
-from workers.main import cleanup_expired_events
+from quantfoundry.api.app import Event, SessionLocal, app
+from quantfoundry.api.v1.contract_route import CanonicalRoute
+from quantfoundry.contracts.openapi.runtime import validated_payload
+from quantfoundry.workers.main import cleanup_expired_events
 
 
 def test_contract_validation_does_not_manufacture_missing_fields() -> None:

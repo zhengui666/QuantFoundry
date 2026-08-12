@@ -18,8 +18,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from alembic import command
-from app.idempotency import execute
-from app.main import Idempotency, User, Workspace
+from quantfoundry.api.app import Idempotency, User, Workspace
+from quantfoundry.infrastructure.db.idempotency import execute
 
 
 def _problem(status: int, code: str, detail: str | None = None) -> HTTPException:

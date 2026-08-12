@@ -34,8 +34,8 @@ from sqlalchemy import (
 )
 
 from alembic import op
-from app.event_contract import EVENT_OBJECT_TYPES
-from app.locator_contract import (
+from quantfoundry.contracts.events.event_contract import EVENT_OBJECT_TYPES
+from quantfoundry.contracts.events.locator import (
     POSTGRES_LOCATOR_CONTRACT_SHA256,
     POSTGRES_LOCATOR_FUNCTION_SQL,
     POSTGRES_LOCATOR_JSON_FUNCTION_SQL,
@@ -45,9 +45,9 @@ from app.locator_contract import (
     next_action_valid,
     register_sqlite_functions,
 )
-from app.physical_schema import load_physical_metadata
-from app.public_ids import is_public_id
-from app.section14_schema import (
+from quantfoundry.domain.value_objects.public_ids import is_public_id
+from quantfoundry.infrastructure.db.physical_schema import load_physical_metadata
+from quantfoundry.infrastructure.db.schema import (
     JSONTextCompat,
     WorkspaceScopeId,
     canonical_workspace_id,

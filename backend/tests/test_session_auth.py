@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from app.main import (
+from quantfoundry.api.app import (
     DataSource,
     JobRow,
     ResearchPolicyVersionRow,

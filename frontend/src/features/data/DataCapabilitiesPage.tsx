@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api, workspaceQueryKey } from '../../api/client';
-import { DataCapabilityMatrix } from '../../design-system/domain-components';
+import { DataCapabilityMatrix } from '../../domain/components';
 import { Panel, Problem, State } from '../../ui';
 
 export function DataCapabilitiesPage() {

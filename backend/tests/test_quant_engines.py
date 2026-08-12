@@ -15,8 +15,8 @@ import pyarrow.parquet as parquet
 import pytest
 from fastapi.testclient import TestClient
 
-from app.artifacts import ArtifactStoreError, put_json, read_json
-from app.engines import (
+from quantfoundry.api.app import HoldoutExposureRow, JobRow, SessionLocal, app
+from quantfoundry.engines.core import (
     CostModel,
     DatasetBundle,
     ValidationPolicy,
@@ -30,8 +30,12 @@ from app.engines import (
     snapshot_rows,
     validation_checks,
 )
-from app.main import HoldoutExposureRow, JobRow, SessionLocal, app
-from workers.main import run_once
+from quantfoundry.infrastructure.artifacts.store import (
+    ArtifactStoreError,
+    put_json,
+    read_json,
+)
+from quantfoundry.workers.main import run_once
 
 
 def _metadata(root: Path, dataset_id: str) -> None:

@@ -9,8 +9,13 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.local_provider import LocalProviderServer, create_server
-from app.main import ModelProviderConnectionRow, SessionLocal, SetupBindingRow, app
+from quantfoundry.adapters.provider.local import LocalProviderServer, create_server
+from quantfoundry.api.app import (
+    ModelProviderConnectionRow,
+    SessionLocal,
+    SetupBindingRow,
+    app,
+)
 
 OWNER = {"Authorization": "Bearer test"}
 OTHER_OWNER = {"Authorization": "Bearer matrix"}

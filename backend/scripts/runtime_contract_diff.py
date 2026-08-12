@@ -12,7 +12,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from app.main import app  # noqa: E402
+from quantfoundry.api.app import app  # noqa: E402
 
 ROOT = Path(__file__).parents[2]
 canonical = yaml.safe_load(

@@ -17,7 +17,7 @@ from sqlalchemy import MetaData, Table, create_engine, select, text
 from sqlalchemy.engine import Connection
 
 from alembic import op
-from app.public_ids import is_public_id
+from quantfoundry.domain.value_objects.public_ids import is_public_id
 
 revision = "0017_paper_scheduler_state_init"
 down_revision = "0016_section14_schema"

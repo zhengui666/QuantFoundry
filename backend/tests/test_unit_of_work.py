@@ -9,8 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from app.idempotency import execute
-from app.main import (
+from quantfoundry.api.app import (
     Audit,
     Event,
     Idempotency,
@@ -22,6 +21,7 @@ from app.main import (
     emit,
     problem,
 )
+from quantfoundry.infrastructure.db.idempotency import execute
 
 
 def test_success_commits_domain_audit_event_and_replay_result_together() -> None:

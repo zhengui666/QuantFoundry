@@ -12,7 +12,7 @@ if not database_url:
     raise RuntimeError("QF_ALEMBIC_URL or QF_DATABASE_URL is required")
 os.environ.setdefault("QF_DATABASE_URL", database_url)
 
-from app.main import Base  # noqa: E402
+from quantfoundry.api.app import Base  # noqa: E402
 
 config = context.config
 config.set_main_option("sqlalchemy.url", database_url)

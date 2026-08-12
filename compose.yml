@@ -149,7 +149,7 @@ services:
       local-provider:
         condition: service_healthy
         required: false
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "quantfoundry.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
     expose: ["8000"]
     healthcheck:
       test: ["CMD", "python", "/workspace/scripts/api_healthcheck.py"]
@@ -168,7 +168,7 @@ services:
     environment:
       <<: *backend-env
       QF_WORKER_KIND: core
-    command: ["python", "-m", "workers.main"]
+    command: ["python", "-m", "quantfoundry.workers.main"]
     healthcheck:
       test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "worker", "--queue", "core"]
       interval: 15s
@@ -189,7 +189,7 @@ services:
     environment:
       <<: *backend-env
       QF_WORKER_KIND: agent
-    command: ["python", "-m", "workers.main"]
+    command: ["python", "-m", "quantfoundry.workers.main"]
     healthcheck:
       test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "worker", "--queue", "agent"]
       interval: 15s
@@ -206,7 +206,7 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *backend-env
-    command: ["python", "-m", "scheduler.main"]
+    command: ["python", "-m", "quantfoundry.scheduler.main"]
     healthcheck:
       test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "scheduler"]
       interval: 15s

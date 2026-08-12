@@ -14,11 +14,8 @@ from fastapi.testclient import TestClient
 from jsonschema import ValidationError
 from sqlalchemy import select
 
-from app.artifacts import read_parquet
-from app.contracts import canonical_openapi, validate_json_schema
-from app.event_contract import EVENT_TYPES, validate_event_payload
-from app.local_provider import LocalProviderServer, create_server
-from app.main import (
+from quantfoundry.adapters.provider.local import LocalProviderServer, create_server
+from quantfoundry.api.app import (
     AgentConfigRow,
     AgentRunRow,
     ApprovalRow,
@@ -41,7 +38,16 @@ from app.main import (
     job,
     validation_action_capabilities,
 )
-from workers.main import run_agent_once, run_once
+from quantfoundry.contracts.events.event_contract import (
+    EVENT_TYPES,
+    validate_event_payload,
+)
+from quantfoundry.contracts.openapi.runtime import (
+    canonical_openapi,
+    validate_json_schema,
+)
+from quantfoundry.infrastructure.artifacts.store import read_parquet
+from quantfoundry.workers.main import run_agent_once, run_once
 
 SPEC = canonical_openapi()
 AUTH = {"Authorization": "Bearer matrix"}

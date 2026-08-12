@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import i18n from '../i18n';
-import { DomainComponentGallery } from './domain-components.stories';
+import { DomainComponentGallery } from './components.stories';
 
 afterEach(async () => {
   await i18n.changeLanguage('zh-CN');

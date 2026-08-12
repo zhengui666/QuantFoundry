@@ -26,8 +26,8 @@ if "fetch-independent-review-report.sh" not in run_gate:
     errors.append("agent-change gate does not fetch an independent review artifact when no locator is supplied")
 
 ci_script = read("scripts/ci.sh")
-if 'run_backend mypy --explicit-package-bases app workers scheduler' not in ci_script:
-    errors.append("backend mypy must run from backend cwd with explicit package bases")
+if 'run_backend mypy --explicit-package-bases src/quantfoundry app workers scheduler' not in ci_script:
+    errors.append("backend mypy must run from backend cwd with canonical and compatibility package bases")
 if "backend-typecheck|backend-mypy" not in ci_script:
     errors.append("backend typecheck/mypy canonical entrypoint is missing")
 makefile = read("Makefile")
