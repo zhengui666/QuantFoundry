@@ -26,6 +26,7 @@ jobs:
           corepack prepare pnpm@10.32.1 --activate
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend exec playwright install --with-deps chromium
+          scripts/ci/install-shellcheck.sh
       - name: Generate unapproved Linux candidate
         shell: bash
         run: |
