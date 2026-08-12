@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           scripts/ci/release-governance-static-gate.sh
-          scripts/ci/p0-architecture-review.sh
+          bash -x scripts/ci/p0-architecture-review.sh
           actionlint .github/workflows/*.yml
       - name: Verify published release supply-chain evidence
         if: ${{ inputs.release_tag != '' }}
