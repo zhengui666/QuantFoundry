@@ -39,8 +39,17 @@ def main() -> int:
         statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)
     session = SessionLocal()
     try:
-        return 0 if session.execute(statement.limit(1)).scalar_one_or_none() else 1
-    except SQLAlchemyError:
+        heartbeat = session.execute(statement.limit(1)).scalar_one_or_none()
+        if heartbeat is not None:
+            return 0
+        print(
+            f"no recent {args.component} heartbeat"
+            + (f" for queue {args.queue}" if args.queue is not None else ""),
+            file=sys.stderr,
+        )
+        return 1
+    except SQLAlchemyError as error:
+        print(f"heartbeat query failed: {error}", file=sys.stderr)
         return 1
     finally:
         session.close()

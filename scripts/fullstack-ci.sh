@@ -48,6 +48,15 @@ cleanup() {
       --env-file "$environment_file" ps --all >&2 || true
     docker compose --project-name "$project_name" --profile local \
       --env-file "$environment_file" logs --no-color --tail 300 >&2 || true
+    for service in api worker agent-worker scheduler; do
+      docker compose --project-name "$project_name" --profile local \
+        --env-file "$environment_file" ps --quiet "$service" \
+        | xargs -r docker inspect --format '{{.Name}} {{json .State.Health}}' >&2 || true
+    done
+  fi
+  if [[ "$status" != 0 && "${QF_FULLSTACK_KEEP_FAILED:-0}" == "1" ]]; then
+    printf 'Preserving failed full-stack Compose project: %s\n' "$project_name" >&2
+    exit "$status"
   fi
   docker compose --project-name "$project_name" --profile local \
     --env-file "$environment_file" down --volumes --remove-orphans >/dev/null 2>&1 || true
