@@ -78,12 +78,25 @@ def get(path, media_type=accept):
     with urllib.request.urlopen(request) as response:
         return response.read()
 
-index = json.loads(get(f"manifests/{subject_digest}").decode("utf-8"))
-descriptors = index.get("manifests", [])
+def descriptors_for_referrers():
+    image = json.loads(get(f"manifests/{subject_digest}").decode("utf-8"))
+    descriptors = image.get("manifests", [])
+    if descriptors:
+        return descriptors
+    try:
+        referrers = json.loads(get(f"referrers/{subject_digest}").decode("utf-8"))
+    except Exception:
+        return []
+    return referrers.get("manifests", [])
+
+descriptors = descriptors_for_referrers()
 attestations = [
     item for item in descriptors
-    if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
-    and item.get("annotations", {}).get("vnd.docker.reference.digest") == subject_digest
+    if (
+        item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
+        and item.get("annotations", {}).get("vnd.docker.reference.digest") == subject_digest
+    )
+    or item.get("artifactType") == "application/vnd.in-toto+json"
 ]
 if not attestations:
     raise SystemExit("published image has no BuildKit attestation manifest bound to its digest")
