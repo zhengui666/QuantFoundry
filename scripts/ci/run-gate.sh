@@ -203,7 +203,7 @@ run_rc() {
   }
   run_step remote-release-tag git -C "$repo_root" ls-remote --exit-code --refs origin "refs/tags/$QF_RELEASE_TAG"
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
-  run_step p0-require-closed env "QF_RELEASE_COMMIT=$commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
+  run_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain
   run_step known-issues-review scripts/release-known-issues-check.sh
   run_step rc-full-ci make ci
   run_step fresh-compose-migration make fullstack

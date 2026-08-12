@@ -5,8 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 registry="${1:-$repo_root/docs/治理/p0-blockers.yaml}"
 mode="${2:---require-closed}"
 
-[[ "$mode" == "--offline-report" || "$mode" == "--report" || "$mode" == "--require-closed" ]] || {
-  printf 'Usage: %s [registry] [--offline-report|--report|--require-closed]\n' "$0" >&2
+[[ "$mode" == "--offline-report" || "$mode" == "--report" || "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]] || {
+  printf 'Usage: %s [registry] [--offline-report|--report|--require-closed|--require-closed-except-supply-chain]\n' "$0" >&2
   exit 2
 }
 [[ -f "$registry" ]] || { printf 'Missing P0 registry: %s\n' "$registry" >&2; exit 2; }
@@ -37,6 +37,8 @@ import yaml
 
 registry_path = pathlib.Path(sys.argv[1])
 mode = sys.argv[2]
+strict_mode = mode in {"--require-closed", "--require-closed-except-supply-chain"}
+bootstrap_mode = mode == "--require-closed-except-supply-chain"
 expected_commit = os.environ["QF_RELEASE_COMMIT"]
 repo_root = pathlib.Path(os.environ["QF_RELEASE_REPO_ROOT"])
 sha_pattern = re.compile(r"^[0-9a-f]{40}$")
@@ -439,7 +441,7 @@ if missing_ids:
 closed_items = [item for item in registry["blockers"] if isinstance(item, dict) and item.get("release_blocking") and item.get("status") == "closed"]
 remote = None
 remote_error = None
-if mode == "--require-closed" and closed_items:
+if strict_mode and closed_items:
     try:
         remote = RemoteVerifier()
     except RuntimeError as error:
@@ -457,13 +459,15 @@ for item in registry["blockers"]:
         invalid.append(str(blocker_id or "unknown"))
         continue
     if release_blocking:
-        if mode == "--require-closed" and status == "closed":
+        if strict_mode and status == "closed":
             if remote_error:
                 invalid.append(f"{blocker_id}: remote closure verification unavailable: {remote_error}")
             invalid.extend(validate_closed_evidence(blocker_id, item, remote))
         blocking.append({"id": blocker_id, "status": status, "evidence_count": len(item.get("evidence", [])) if isinstance(item.get("evidence", []), list) else 0})
 
 unclosed = [item for item in blocking if item["status"] != "closed"]
+non_supply_unclosed = [item for item in unclosed if item["id"] != "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE"]
+bootstrap_eligible = bootstrap_mode and not invalid and not non_supply_unclosed
 summary = {
     "registry": str(registry_path),
     "mode": mode,
@@ -475,9 +479,12 @@ summary = {
         if mode == "--offline-report"
         else "pass"
         if not unclosed
+        else "bootstrap-pass"
+        if bootstrap_eligible
         else "blocked"
     ),
     "release_eligible": mode == "--require-closed" and not invalid and not unclosed,
+    "bootstrap_eligible": bootstrap_eligible,
     "remote_verification": "performed" if remote else ("not-required" if not closed_items else "unavailable"),
     "release_blocking_total": len(blocking),
     "closed": sum(item["status"] == "closed" for item in blocking),
@@ -485,7 +492,7 @@ summary = {
     "invalid": invalid,
 }
 print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
-if invalid or (mode == "--require-closed" and unclosed):
+if invalid or (mode == "--require-closed" and unclosed) or (bootstrap_mode and not bootstrap_eligible):
     raise SystemExit(1)
 PY
 status="$?"

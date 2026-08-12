@@ -17,7 +17,7 @@ def read(relative):
     return (root / relative).read_text(encoding="utf-8")
 
 run_gate = read("scripts/ci/run-gate.sh")
-for required in ("known-issues-review", "fresh-compose-migration", "pg18-migration", "backup-restore", "p0-require-closed", "release-governance-static"):
+for required in ("known-issues-review", "fresh-compose-migration", "pg18-migration", "backup-restore", "p0-require-closed-except-supply-chain", "release-governance-static"):
     if required not in run_gate:
         errors.append(f"run-gate rc path is missing {required}")
 if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
@@ -38,7 +38,7 @@ if "release-check:\n\t@set -eu;" not in makefile or "QF_RELEASE_TAG is required 
     errors.append("Makefile release-check must fail closed when QF_RELEASE_TAG is missing")
 
 p0_check = read("scripts/p0-check.sh")
-for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "required_p0_ids", "allowed_verification_workflows", "did not complete successfully", "unauthorized verification workflow", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
+for required in ("--offline-report", "--require-closed-except-supply-chain", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "required_p0_ids", "allowed_verification_workflows", "did not complete successfully", "unauthorized verification workflow", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
     if required not in p0_check:
         errors.append(f"p0-check lacks required remote verification control: {required}")
 

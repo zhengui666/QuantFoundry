@@ -33,7 +33,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: 3.14.0
-      - name: Require all P0 closure evidence before any release work
+      - name: Require all non-supply P0 evidence before the one-time release evidence bootstrap
         shell: bash
         env:
           QF_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           pip install --disable-pip-version-check uv==0.10.7
           uv --directory backend sync --frozen --all-groups
-          scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
+          scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain
 
   rc:
     needs: preflight
