@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
-from app import generated_api_models as generated
+from quantfoundry.contracts.openapi import generated_api_models as generated
 
 SetupCompleteRequest = generated.SetupCompleteRequest
 SetupProviderConnectionValidationRequest = (
