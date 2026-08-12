@@ -316,7 +316,7 @@ def main() -> int:
     )
 
     _alembic(args.database_url, "downgrade", "0015_langgraph_checkpoint")
-    roles_downgraded = _agent_roles(args.database_url, "role")
+    roles_downgraded = _agent_roles(args.database_url, "role_key")
     if roles_downgraded != roles_before:
         raise RuntimeError(
             "agent_configs role mapping changed during downgrade: "
