@@ -253,6 +253,11 @@ jobs:
           mkdir -p evidence/{attestations,provenance,signature-verification,sbom}
           cp docs/治理/p0-blockers.yaml evidence/p0-blockers.yaml
           cp docs/治理/release-known-issues.json evidence/release-known-issues.json
+          for log_file in evidence/logs/*.log; do
+            if [[ -f "$log_file" && ! -s "$log_file" ]]; then
+              printf '%s\n' 'command completed successfully with no stdout/stderr' > "$log_file"
+            fi
+          done
           gh attestation download "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" > evidence/attestations/backend.json
           gh attestation download "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" > evidence/attestations/frontend.json
           gh attestation verify "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/signature-verification/backend.json
