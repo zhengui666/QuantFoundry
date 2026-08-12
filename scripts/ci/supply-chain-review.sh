@@ -83,7 +83,8 @@ if manifest.get("tag") != expected_tag or manifest.get("commit") != expected_com
 if manifest.get("status") != "complete":
     raise SystemExit("release manifest is not complete")
 inventory = manifest.get("release_assets")
-actual = sorted(path.name for path in root.iterdir() if path.is_file())
+metadata_files = {"release.json", "tag.json"}
+actual = sorted(path.name for path in root.iterdir() if path.is_file() and path.name not in metadata_files)
 if not isinstance(inventory, list) or sorted(item.get("name") for item in inventory) != actual:
     raise SystemExit("release assets do not match the manifest inventory")
 required_sources = {
