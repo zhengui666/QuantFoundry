@@ -106,9 +106,9 @@ jobs:
             --command "scripts/ci/p0-architecture-review.sh" \
             --command "actionlint .github/workflows/*.yml"
           if [[ -n "${{ inputs.release_tag }}" ]]; then
+            release_commit="$(git rev-parse "refs/tags/${{ inputs.release_tag }}^{commit}")"
             uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
-            release_commit="$(git rev-parse "refs/tags/${{ inputs.release_tag }}^{commit}")"
               --command "scripts/ci/supply-chain-review.sh ${{ inputs.release_tag }} $release_commit"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
