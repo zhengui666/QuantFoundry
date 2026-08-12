@@ -2,6 +2,11 @@ name: independent-agent-test
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional published release tag to verify supply-chain evidence"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -80,11 +85,24 @@ jobs:
         run: |
           set -euo pipefail
           scripts/ci/run-gate.sh main-full "$QF_CI_REPORT_DIR"
+      - name: Verify published release supply-chain evidence
+        if: ${{ inputs.release_tag != '' }}
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          scripts/ci/supply-chain-review.sh "$RELEASE_TAG" "$GITHUB_SHA"
       - name: Produce P0 test evidence reports
         shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-test-evidence" --result-file "$RUNNER_TEMP/qf-independent-test/result.json"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-test-evidence" --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE --command "scripts/ci/supply-chain-review.sh $RELEASE_TAG $GITHUB_SHA"
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: p0-test-evidence-${{ github.run_id }}
