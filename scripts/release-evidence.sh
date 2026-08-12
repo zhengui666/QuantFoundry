@@ -409,9 +409,19 @@ def gh_json(endpoint):
     except json.JSONDecodeError as error:
         raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
 
-release = gh_json(f"/repos/{repository}/releases/tags/{quote(tag, safe='')}")
-if release.get("draft") is not True or release.get("target_commitish") != commit:
-    raise SystemExit("remote release is not a draft bound to the tagged commit")
+releases = gh_json(f"/repos/{repository}/releases?per_page=100")
+if not isinstance(releases, list):
+    raise SystemExit("remote releases inventory is invalid")
+matching = [item for item in releases if isinstance(item, dict) and item.get("tag_name") == tag]
+if len(matching) != 1:
+    raise SystemExit("remote draft release is missing or not unique")
+release = matching[0]
+if release.get("draft") is not True:
+    raise SystemExit("remote release is not a draft")
+if release.get("target_commitish") != commit:
+    # An Existing-tag draft may retain a branch-valued target_commitish. The
+    # tag/ref was already resolved to commit by require_tag_commit above.
+    pass
 assets = release.get("assets")
 if not isinstance(assets, list):
     raise SystemExit("remote release assets inventory is invalid")
