@@ -105,6 +105,7 @@ jobs:
             uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-test-evidence" --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE --command "scripts/ci/supply-chain-review.sh $RELEASE_TAG $GITHUB_SHA"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: p0-test-evidence-${{ github.run_id }}
           path: ${{ runner.temp }}/qf-p0-test-evidence
