@@ -117,6 +117,19 @@ e2e_report = pathlib.Path(environment_file).with_name("playwright-report.json")
 if e2e_report.is_file():
     playwright = json.loads(e2e_report.read_text(encoding="utf-8"))
     failed_tests: list[dict[str, object]] = []
+    error_categories: dict[str, int] = {}
+
+    def classify(message: object) -> str:
+        value = message if isinstance(message, str) else ""
+        if "Executable doesn't exist" in value or "browserType.launch" in value:
+            return "browser-launch"
+        if "ERR_CONNECTION_REFUSED" in value or "ECONNREFUSED" in value:
+            return "connection-refused"
+        if "Timeout" in value or "timeout" in value:
+            return "timeout"
+        if "snapshot" in value.lower():
+            return "visual-snapshot"
+        return "assertion-or-runtime"
 
     def collect(suite: dict[str, object], ancestors: list[str]) -> None:
         suite_title = suite.get("title")
@@ -138,6 +151,10 @@ if e2e_report.is_file():
                         "status": statuses[-1] if statuses else "not-run",
                     }
                 )
+                for result in results:
+                    if isinstance(result, dict) and result.get("status") != "passed":
+                        category = classify(result.get("error", {}).get("message") if isinstance(result.get("error"), dict) else None)
+                        error_categories[category] = error_categories.get(category, 0) + 1
         for child in suite.get("suites", []):
             if isinstance(child, dict):
                 collect(child, lineage)
@@ -145,7 +162,10 @@ if e2e_report.is_file():
     for suite in playwright.get("suites", []):
         if isinstance(suite, dict):
             collect(suite, [])
-    diagnostics["playwright"] = {"failed_tests": failed_tests}
+    diagnostics["playwright"] = {
+        "failed_tests": failed_tests,
+        "error_category_counts": error_categories,
+    }
 path = pathlib.Path(output)
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
