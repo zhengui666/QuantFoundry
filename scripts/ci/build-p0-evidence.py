@@ -60,26 +60,40 @@ def read_commands(options: argparse.Namespace) -> list[dict[str, Any]]:
         return commands
     if not options.command:
         raise SystemExit("at least one verified command is required")
-    return [{"command": value, "result": "pass", "exit_code": 0} for value in options.command]
+    return [
+        {"command": value, "result": "pass", "exit_code": 0}
+        for value in options.command
+    ]
 
 
 def main() -> None:
     options = args()
-    if len(options.commit_sha) != 40 or any(char not in "0123456789abcdef" for char in options.commit_sha):
+    if len(options.commit_sha) != 40 or any(
+        char not in "0123456789abcdef" for char in options.commit_sha
+    ):
         raise SystemExit("commit_sha must be a full lowercase Git SHA")
     repository = os.environ.get("GITHUB_REPOSITORY")
     run_id = os.environ.get("GITHUB_RUN_ID")
     if not repository or not run_id or not run_id.isdigit() or int(run_id) < 1:
         raise SystemExit("GITHUB_REPOSITORY and GITHUB_RUN_ID are required")
-    registry_path = pathlib.Path(__file__).resolve().parents[2] / "docs/治理/p0-blockers.yaml"
+    registry_path = (
+        pathlib.Path(__file__).resolve().parents[2] / "docs/治理/p0-blockers.yaml"
+    )
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in registry["blockers"]}
-    blocker_ids = options.blocker or list(TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS)
+    blocker_ids = options.blocker or list(
+        TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS
+    )
     allowed = set(TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS)
     if not blocker_ids or any(value not in allowed for value in blocker_ids):
         raise SystemExit("requested blocker is not assigned to this evidence role")
     commands = read_commands(options)
-    timestamp = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    timestamp = (
+        dt.datetime.now(dt.UTC)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
     run_uri = f"https://github.com/{repository}/actions/runs/{run_id}"
     options.output_dir.mkdir(parents=True, exist_ok=True)
     content_type = CONTENT_TYPES[options.role]
@@ -105,7 +119,12 @@ def main() -> None:
             },
         }
         destination = options.output_dir / f"{blocker_id}.json"
-        payload = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+        payload = (
+            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True).encode(
+                "utf-8"
+            )
+            + b"\n"
+        )
         destination.write_bytes(payload)
 
 
