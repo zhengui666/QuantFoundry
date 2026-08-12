@@ -51,7 +51,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          scripts/ci/supply-chain-review.sh "$RELEASE_TAG" "$GITHUB_SHA"
+          release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          scripts/ci/supply-chain-review.sh "$RELEASE_TAG" "$release_commit"
       - name: Produce commit-bound independent review report
         shell: bash
         run: |
@@ -107,7 +108,8 @@ jobs:
           if [[ -n "${{ inputs.release_tag }}" ]]; then
             uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
-              --command "scripts/ci/supply-chain-review.sh ${{ inputs.release_tag }} $GITHUB_SHA"
+            release_commit="$(git rev-parse "refs/tags/${{ inputs.release_tag }}^{commit}")"
+              --command "scripts/ci/supply-chain-review.sh ${{ inputs.release_tag }} $release_commit"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
