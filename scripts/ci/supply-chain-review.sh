@@ -22,8 +22,6 @@ import os
 import pathlib
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 
 release_path, tag_path, work_dir, expected_tag, expected_commit, expected_repository = sys.argv[1:]
 release = json.loads(pathlib.Path(release_path).read_text(encoding="utf-8"))
@@ -49,35 +47,21 @@ for asset in assets:
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not token:
         raise SystemExit("GITHUB_TOKEN or GH_TOKEN is required to download release assets")
-    request = urllib.request.Request(
-        f"https://api.github.com/repos/{expected_repository}/releases/assets/{asset_id}",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, request, _file, _code, _msg, _headers, _newurl):
-            return None
-
-    try:
-        opener = urllib.request.build_opener(NoRedirect)
-        try:
-            response = opener.open(request)
-        except urllib.error.HTTPError as error:
-            if error.code not in {301, 302, 303, 307, 308}:
-                raise
-            location = error.headers.get("Location")
-            if not location:
-                raise SystemExit("Release asset redirect did not include a Location header")
-            response = urllib.request.urlopen(location)
-        with response, output.open("wb") as asset_file:
-            asset_file.write(response.read())
-    except Exception as error:
-        raise SystemExit(f"cannot download release asset {name}: {error}") from error
-
+    output = pathlib.Path(work_dir) / name
+    gh_env = os.environ.copy()
+    gh_env["GH_TOKEN"] = token
+    with output.open("wb") as asset_file:
+        result = subprocess.run(
+            [
+                "gh", "api", f"repos/{expected_repository}/releases/assets/{asset_id}", "--method", "GET",
+            ],
+            env=gh_env,
+            stdout=asset_file,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    if result.returncode:
+        raise SystemExit(f"cannot download release asset {name}: {result.stderr.strip() or result.returncode}")
 if len(names) != len(set(names)):
     raise SystemExit("release asset names are not unique")
 required = {"release-manifest.json", "SHA256SUMS"}
