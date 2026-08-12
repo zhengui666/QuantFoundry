@@ -92,7 +92,7 @@ printf '%s\n' \
   '  if [[ "${!index}" == --output ]]; then next=$((index + 1)); output="${!next}"; fi' \
   'done' \
   'if [[ "$endpoint" =~ /actions/artifacts/([0-9]+)/zip$ ]]; then' \
-  '  cp "$QF_MOCK_ARTIFACT_DIR/artifact-${BASH_REMATCH[1]}.zip" "$output"' \
+  '  if [[ -n "$output" ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-${BASH_REMATCH[1]}.zip" "$output"; else cat "$QF_MOCK_ARTIFACT_DIR/artifact-${BASH_REMATCH[1]}.zip"; fi' \
   '  exit 0' \
   'fi' \
   'if [[ "$endpoint" =~ /releases/assets/204$ ]]; then if [[ -n "$output" ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip" "$output"; else cat "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip"; fi; exit 0; fi' \
