@@ -153,7 +153,15 @@ if e2e_report.is_file():
                 )
                 for result in results:
                     if isinstance(result, dict) and result.get("status") != "passed":
-                        category = classify(result.get("error", {}).get("message") if isinstance(result.get("error"), dict) else None)
+                        errors = result.get("errors")
+                        messages = [
+                            error.get("message")
+                            for error in errors
+                            if isinstance(error, dict)
+                        ] if isinstance(errors, list) else []
+                        if not messages and isinstance(result.get("error"), dict):
+                            messages = [result["error"].get("message")]
+                        category = classify(messages[0] if messages else None)
                         error_categories[category] = error_categories.get(category, 0) + 1
         for child in suite.get("suites", []):
             if isinstance(child, dict):
