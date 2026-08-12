@@ -910,6 +910,9 @@ blockers:
     checksums, P0 and known-issue snapshots, test reports, SBOM, provenance, attestation,
     and signature verification as GitHub Release assets.
   verification:
+  - Independent Test Agent executes the full main gate and validates the published tag's
+    release manifest, GHCR image digests, checksums, SBOM, provenance, attestations,
+    signature verification, and evidence completeness.
   - Independent Review Agent validates tag, repository visibility, GHCR digest, provenance,
     and evidence completeness.
   status: blocked
