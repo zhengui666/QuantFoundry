@@ -35,13 +35,14 @@ jobs:
         run: |
           set -euo pipefail
           scripts/ci/release-governance-static-gate.sh
+          scripts/ci/p0-architecture-review.sh
           actionlint .github/workflows/*.yml
       - name: Produce commit-bound independent review report
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p review-artifact
-          python3 - "$GITHUB_SHA" "$GITHUB_RUN_ID" review-artifact/independent-review-report.json <<'PY'
+          mkdir -p "$RUNNER_TEMP/qf-p0-review-evidence"
+          python3 - "$GITHUB_SHA" "$GITHUB_RUN_ID" "$RUNNER_TEMP/qf-p0-review-evidence/independent-review-report.json" <<'PY'
           import hashlib
           import json
           import pathlib
@@ -49,14 +50,10 @@ jobs:
           import sys
 
           commit, run_id, output = sys.argv[1:]
-          criteria = [
-              "Agent/governance change conforms to canonical contracts and fail-closed CI policy.",
-              "Independent review commands completed successfully on the reviewed commit.",
-          ]
           reviewed_paths = [
               "AGENTS.md",
               "PROJECT_BACKGROUND.md",
-              "backend/src/quantfoundry/agents",
+              "backend/src/quantfoundry",
               "backend/workers",
               "docs/Agent技术方案",
               "docs/后端系统技术方案/contracts/tools",
@@ -74,19 +71,27 @@ jobs:
               "github_run_id": int(run_id),
               "verifier_role": "Independent Review Agent",
               "result": "approved",
-              "criteria": criteria,
+              "criteria": [
+                  "Agent/governance change conforms to canonical contracts and fail-closed CI policy.",
+                  "Independent review commands completed successfully on the reviewed commit.",
+              ],
               "reviewed_paths": reviewed_paths,
               "review_scope_sha256": hashlib.sha256(scope).hexdigest(),
               "commands": [
                   {"command": "scripts/ci/release-governance-static-gate.sh", "result": "pass", "exit_code": 0},
+                  {"command": "scripts/ci/p0-architecture-review.sh", "result": "pass", "exit_code": 0},
                   {"command": "actionlint .github/workflows/*.yml", "result": "pass", "exit_code": 0},
               ],
           }
           pathlib.Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
+          uv --directory backend run --frozen python scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
+            --command "scripts/ci/release-governance-static-gate.sh" \
+            --command "scripts/ci/p0-architecture-review.sh" \
+            --command "actionlint .github/workflows/*.yml"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: independent-agent-review-${{ github.run_id }}
-          path: review-artifact/independent-review-report.json
+          path: ${{ runner.temp }}/qf-p0-review-evidence
           if-no-files-found: error
           retention-days: 14

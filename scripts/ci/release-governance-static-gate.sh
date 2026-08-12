@@ -97,7 +97,7 @@ if not re.search(r"(?m)^permissions:\n  contents: read\n  actions: read$", agent
 independent_review = read(".github/workflows/independent-agent-review.yml")
 if "workflow_dispatch:" not in independent_review or "independent-agent-review-${{ github.run_id }}" not in independent_review:
     errors.append("independent-agent-review workflow must produce a dispatch-only run-bound artifact")
-for required in ("review_scope_sha256", "Independent Review Agent", "criteria", "commands", "actions/upload-artifact"):
+for required in ("build-p0-evidence.py", "Independent Review Agent", "qf-p0-review-evidence", "commands", "actions/upload-artifact"):
     if required not in independent_review:
         errors.append(f"independent-agent-review workflow lacks {required}")
 

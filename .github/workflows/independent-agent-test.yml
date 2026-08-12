@@ -80,34 +80,14 @@ jobs:
         run: |
           set -euo pipefail
           scripts/ci/run-gate.sh main-full "$QF_CI_REPORT_DIR"
-      - name: Produce independent test execution report
-        if: always()
+      - name: Produce P0 test evidence reports
         shell: bash
         run: |
           set -euo pipefail
-          python3 - "${{ runner.temp }}/qf-independent-test/result.json" "${{ runner.temp }}/qf-independent-test/independent-test-execution.json" <<'PY'
-          import json
-          import pathlib
-          import sys
-          source, destination = map(pathlib.Path, sys.argv[1:])
-          result = json.loads(source.read_text(encoding="utf-8"))
-          report = {
-              "schema_version": "1.0.0",
-              "content_type": "application/vnd.quantfoundry.independent-test-execution+json;version=1",
-              "commit_sha": result["commit"],
-              "github_run_id": int("${{ github.run_id }}"),
-              "verifier_role": "Independent Test Agent",
-              "result": result["result"],
-              "gate": result["gate"],
-              "commands": result["steps"],
-              "p0_registry_snapshot": "docs/治理/p0-blockers.yaml",
-          }
-          destination.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-          PY
+          uv --directory backend run --frozen python scripts/ci/build-p0-evidence.py test "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-test-evidence" --result-file "$RUNNER_TEMP/qf-independent-test/result.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
         with:
-          name: independent-agent-test-${{ github.run_id }}
-          path: ${{ runner.temp }}/qf-independent-test
+          name: p0-test-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/qf-p0-test-evidence
           if-no-files-found: error
           retention-days: 14
