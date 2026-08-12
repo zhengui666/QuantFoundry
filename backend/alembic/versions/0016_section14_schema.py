@@ -1050,6 +1050,17 @@ def _legacy_event_sequence_map(
     return {key: offset for offset, key in enumerate(sorted(keys), start=1)}
 
 
+def _normalize_paper_deployment_statuses(
+    rows: list[dict[str, Any]], *, target_is_current: bool
+) -> None:
+    """Translate the retired STOPPED spelling across the 0016 boundary."""
+    source_status = "STOPPED" if target_is_current else "DISABLED"
+    target_status = "DISABLED" if target_is_current else "STOPPED"
+    for row in rows:
+        if row.get("status") == source_status:
+            row["status"] = target_status
+
+
 def _restore_all_tables(
     bind: Any,
     metadata: MetaData,
@@ -1548,6 +1559,9 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
     )
     if target_is_current and not roundtrip_preexisting:
         _backfill_closed_storage(restore_rows)
+    _normalize_paper_deployment_statuses(
+        restore_rows.get("paper_deployments", []), target_is_current=target_is_current
+    )
 
     def metadata_for(path: Path) -> MetaData:
         return load_physical_metadata(

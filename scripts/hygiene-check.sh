@@ -12,10 +12,10 @@ if ! /usr/bin/grep -Eq '^license = "AGPL-3\.0-only"$' "$repo_root/backend/pyproj
   exit 1
 fi
 
-if rg --hidden --glob '!.git/**' --glob '!.env.example' --glob '!**/*.lock' \
-  --glob '!docs/**' --glob '!**/fixtures/**' \
-  '(?i)(github_pat_[a-z0-9_]{20,}|ghp_[a-z0-9]{30,}|xox[baprs]-[a-z0-9-]{20,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)' \
-  "$repo_root"; then
+if git -C "$repo_root" grep -n -I -E -i \
+  'github_pat_[a-z0-9_]{20,}|ghp_[a-z0-9]{30,}|xox[baprs]-[a-z0-9-]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' \
+  -- . ':(exclude).env.example' ':(exclude)docs/**' \
+  ':(exclude)**/*.lock' ':(exclude)**/fixtures/**'; then
   printf '%s\n' 'Potential committed secret detected.' >&2
   exit 1
 fi

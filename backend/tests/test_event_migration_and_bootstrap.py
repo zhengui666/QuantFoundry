@@ -1526,6 +1526,21 @@ def test_section14_downgrade_upgrade_preserves_every_table_and_content(
     engine.dispose()
 
 
+def test_section14_paper_deployment_status_boundary_is_bidirectional() -> None:
+    migration = runpy.run_path(
+        str(BACKEND_ROOT / "alembic/versions/0016_section14_schema.py")
+    )
+    normalize = migration["_normalize_paper_deployment_statuses"]
+
+    current_rows = [{"status": "STOPPED"}, {"status": "ACTIVE"}]
+    normalize(current_rows, target_is_current=True)
+    assert current_rows == [{"status": "DISABLED"}, {"status": "ACTIVE"}]
+
+    previous_rows = [{"status": "DISABLED"}, {"status": "ACTIVE"}]
+    normalize(previous_rows, target_is_current=False)
+    assert previous_rows == [{"status": "STOPPED"}, {"status": "ACTIVE"}]
+
+
 def test_section14_agent_config_multi_role_mapping_is_lossless(
     tmp_path: Path,
 ) -> None:
