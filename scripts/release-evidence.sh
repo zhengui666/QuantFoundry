@@ -438,7 +438,7 @@ def download(name):
         destination = pathlib.Path(directory) / "asset"
         with destination.open("wb") as destination_file:
             completed = subprocess.run(
-                ["gh", "api", f"/repos/{repository}/releases/assets/{by_name[name]['id']}", "--method", "GET", "-H", "Accept: application/octet-stream"],
+                ["gh", "api", f"/repos/{repository}/releases/assets/{by_name[name]['id']}", "--method", "GET", "-H", "Accept: application/octet-stream", "--allow-escape-sequences"],
                 env=env, stdout=destination_file, stderr=subprocess.PIPE,
             )
         if completed.returncode:
