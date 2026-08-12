@@ -55,7 +55,7 @@ jobs:
             find . -type f -name '*-linux.png' -exec cp --parents '{}' "$RUNNER_TEMP/qf-linux-snapshots" \;
           )
           test -n "$(find "$RUNNER_TEMP/qf-linux-snapshots" -type f -name '*-linux.png' -print -quit)"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: visual-baseline-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/qf-linux-snapshots
@@ -143,7 +143,7 @@ jobs:
         run: |
           set -euo pipefail
           scripts/ci/run-gate.sh pr-fast "$QF_CI_REPORT_DIR"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: pr-fast-report-${{ github.run_id }}-${{ github.run_attempt }}
