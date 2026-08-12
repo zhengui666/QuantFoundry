@@ -389,12 +389,13 @@ def download(name):
         raise SystemExit(f"remote release is missing required asset: {name}")
     with tempfile.TemporaryDirectory(prefix="qf-release-asset-") as directory:
         destination = pathlib.Path(directory) / "asset"
-        completed = subprocess.run(
-            ["gh", "api", f"/repos/{repository}/releases/assets/{by_name[name]['id']}", "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(destination)],
-            env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
+        with destination.open("wb") as destination_file:
+            completed = subprocess.run(
+                ["gh", "api", f"/repos/{repository}/releases/assets/{by_name[name]['id']}", "--method", "GET"],
+                env=env, stdout=destination_file, stderr=subprocess.PIPE,
+            )
         if completed.returncode:
-            raise SystemExit(f"cannot download remote release asset {name}: {completed.stderr.strip() or completed.returncode}")
+            raise SystemExit(f"cannot download remote release asset {name}: {completed.stderr.decode(errors='replace').strip() or completed.returncode}")
         return destination.read_bytes()
 
 remote_manifest = download("release-manifest.json")
