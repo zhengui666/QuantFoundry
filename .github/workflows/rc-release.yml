@@ -217,9 +217,20 @@ jobs:
           subject-name: ${{ steps.image.outputs.prefix }}/frontend
           subject-digest: ${{ steps.frontend.outputs.digest }}
           push-to-registry: true
+      - id: rc-artifact
+        name: Resolve latest RC evidence artifact for this workflow run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" --jq '.artifacts | map(select(.expired == false and (.name | startswith("rc-report-" + env.GITHUB_RUN_ID + "-")))) | sort_by(.created_at) | last.id')"
+          test -n "$artifact_id" && test "$artifact_id" != "null"
+          printf 'id=%s
+' "$artifact_id" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: rc-report-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ steps.rc-artifact.outputs.id }}
           path: evidence
       - name: Collect immutable supply-chain and release evidence
         shell: bash
