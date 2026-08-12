@@ -72,7 +72,9 @@ require_runtime_identity() {
 
 backend_format() {
   run_backend ruff format --check app workers scheduler tests alembic
-  run_backend ruff format --check "$repo_root/scripts"
+  # Ruff 0.16.x's default py314 formatter emits invalid unparenthesized
+  # multiple-exception syntax; keep script formatting on the valid py313 form.
+  run_backend ruff format --check --target-version py313 "$repo_root/scripts"
 }
 
 frontend_format() {
