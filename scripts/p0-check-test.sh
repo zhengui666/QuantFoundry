@@ -7,7 +7,7 @@ mock_dir="$fixture_dir/mock-bin"
 trap 'rm -rf "$fixture_dir"' EXIT
 mkdir -p "$mock_dir"
 
-commit_sha='0123456789abcdef0123456789abcdef01234567'
+commit_sha="$(git -C "$repo_root" rev-parse HEAD)"
 criterion='Independent criterion is satisfied.'
 export QF_MOCK_COMMIT="$commit_sha"
 export QF_MOCK_ARTIFACT_DIR="$fixture_dir"
