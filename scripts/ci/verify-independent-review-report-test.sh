@@ -27,7 +27,7 @@ criteria = [
     "Independent review commands completed successfully on the reviewed commit.",
 ]
 scope_paths = [
-    "AGENTS.md", "PROJECT_BACKGROUND.md", "backend/src/quantfoundry/agents", "backend/workers",
+    "AGENTS.md", "PROJECT_BACKGROUND.md", "backend/src/quantfoundry", "backend/workers",
     "docs/Agent技术方案", "docs/后端系统技术方案/contracts/tools", "docs/治理",
     ".github/workflows", "scripts/ci", "scripts/release-evidence.sh", "scripts/release-check.sh",
 ]
