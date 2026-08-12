@@ -83,7 +83,7 @@ printf '%s\n' \
   'done' \
   'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"event\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\"}\\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml@refs/heads/main}"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\\\"expired\\\":false,\\\"workflow_run\\\":{\\\"id\\\":100}}\\n"; exit 0; fi' \
-  'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then if [[ -n "$output" ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; else cat "$QF_REVIEW_MOCK_ARCHIVE"; fi; exit 0; fi' \
   'exit 1' > "$mock_gh"
 chmod +x "$mock_gh"
 
