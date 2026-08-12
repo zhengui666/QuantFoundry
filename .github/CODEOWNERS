@@ -1,7 +1,0 @@
-# Replace these placeholders with GitHub teams or handles before enabling required review.
-# Example: * @quantfoundry/maintainers
-* @quantfoundry-maintainers
-
-/.github/ @quantfoundry-maintainers
-/docs/ @quantfoundry-maintainers
-/SECURITY.md @quantfoundry-maintainers

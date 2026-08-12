@@ -34,7 +34,7 @@ describe('public-ID repository fixture scanner', () => {
         'backend',
         'docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md',
         'docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md',
-        'docs/PRD/V1.0.0',
+        'docs/PRD/V1.0.0.md',
         'docs/UI设计方案/QuantFoundry_UI_Design_V1.0.0.md',
         'docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md',
         'docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md',

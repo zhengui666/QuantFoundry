@@ -106,6 +106,7 @@ def test_request_models_enforce_required_enum_pattern_and_additional_properties(
             },
         ),
         (
+            # Invalid public-ID fixture: contract validation must reject this legacy prefix.
             "/api/v1/data/datasets/DSSET-valid/validate",
             auth | {"Idempotency-Key": "test-api-key-unavailable"},
             {"check_profile": "NOT_CANONICAL"},
