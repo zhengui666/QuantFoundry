@@ -91,6 +91,9 @@ jobs:
         if: ${{ inputs.release_tag != '' }}
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
