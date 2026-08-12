@@ -242,6 +242,20 @@ fi
 printf 'Full-stack seed ready: factor=%s snapshot=%s cost=%s validation_policy=%s\n' \
   "$QF_FULLSTACK_FACTOR_ID" "$QF_FULLSTACK_SNAPSHOT_ID" \
   "$QF_FULLSTACK_COST_MODEL_ID" "$QF_FULLSTACK_VALIDATION_POLICY_ID"
-phase="frontend-ci"
-pnpm --dir "$repo_root/frontend" run ci
+run_frontend_step() {
+  local step="$1"
+  phase="frontend-${step}"
+  pnpm --dir "$repo_root/frontend" run "$step"
+}
+
+run_frontend_step codegen:check
+run_frontend_step public-id:check
+run_frontend_step format:check
+run_frontend_step lint
+run_frontend_step typecheck
+run_frontend_step test
+run_frontend_step test:e2e
+run_frontend_step build
+run_frontend_step bundle:check
+run_frontend_step storybook:build
 printf '%s\n' 'Full-stack frontend CI passed with all six QF_FULLSTACK_* values.'
