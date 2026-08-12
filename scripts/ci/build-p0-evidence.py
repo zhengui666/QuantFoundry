@@ -71,7 +71,7 @@ def main() -> None:
     run_id = os.environ.get("GITHUB_RUN_ID")
     if not repository or not run_id or not run_id.isdigit() or int(run_id) < 1:
         raise SystemExit("GITHUB_REPOSITORY and GITHUB_RUN_ID are required")
-    registry_path = pathlib.Path("docs/治理/p0-blockers.yaml")
+    registry_path = pathlib.Path(__file__).resolve().parents[2] / "docs/治理/p0-blockers.yaml"
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in registry["blockers"]}
     blocker_ids = options.blocker or list(TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS)
