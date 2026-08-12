@@ -93,7 +93,7 @@ def main() -> None:
         TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS
     )
     allowed = set(TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS)
-    if options.role == "review":
+    if options.role in {"test", "review"}:
         allowed.add(SUPPLY_BLOCKER)
     if not blocker_ids or any(value not in allowed for value in blocker_ids):
         raise SystemExit("requested blocker is not assigned to this evidence role")
