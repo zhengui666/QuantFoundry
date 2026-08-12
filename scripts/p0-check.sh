@@ -129,7 +129,7 @@ def validate_report_metadata(prefix, record, role, run_id, errors):
     return report
 
 
-def validate_attestation(prefix, record, run_id, uri, report_sha256, errors):
+def validate_attestation(prefix, record, run_id, report_sha256, repository, errors):
     attestation = record.get("attestation")
     required_keys = {"provider", "issuer", "repository", "run_id", "subject_uri", "subject_sha256"}
     if not isinstance(attestation, dict) or set(attestation) != required_keys:
@@ -143,8 +143,9 @@ def validate_attestation(prefix, record, run_id, uri, report_sha256, errors):
         errors.append(f"{prefix}.attestation.repository must be an owner/repository value")
     if attestation.get("run_id") != run_id:
         errors.append(f"{prefix}.attestation.run_id must match build_id")
-    if attestation.get("subject_uri") != uri:
-        errors.append(f"{prefix}.attestation.subject_uri must match artifact_uri")
+    run_uri = f"https://github.com/{repository}/actions/runs/{run_id}"
+    if attestation.get("subject_uri") != run_uri:
+        errors.append(f"{prefix}.attestation.subject_uri must match the stable GitHub Actions run URI")
     if attestation.get("subject_sha256") != report_sha256:
         errors.append(f"{prefix}.attestation.subject_sha256 must match report.sha256")
     return attestation
@@ -298,8 +299,9 @@ def validate_embedded_report(prefix, report, record, role, run_id, remote, error
         errors.append(f"{prefix}.embedded_report.closure_criteria does not match registry")
     if report.get("commands") != record.get("commands"):
         errors.append(f"{prefix}.embedded_report.commands does not match registry")
-    if report.get("artifact") != {"uri": record.get("artifact_uri")}:
-        errors.append(f"{prefix}.embedded_report.artifact does not match registry")
+    run_uri = f"https://github.com/{remote.repository}/actions/runs/{run_id}"
+    if report.get("artifact") != {"run_uri": run_uri}:
+        errors.append(f"{prefix}.embedded_report.artifact does not match the stable run URI")
     embedded_attestation = {key: value for key, value in record["attestation"].items() if key != "subject_sha256"}
     if report.get("attestation") != embedded_attestation:
         errors.append(f"{prefix}.embedded_report.attestation does not match registry")
@@ -354,7 +356,9 @@ def validate_closed_evidence(blocker_id, item, remote):
         if not isinstance(artifact_sha256, str) or not sha256_pattern.fullmatch(artifact_sha256):
             errors.append(f"{prefix}.artifact_sha256 must be a lowercase SHA-256")
         report = validate_report_metadata(prefix, record, role, run_id, errors)
-        attestation = validate_attestation(prefix, record, run_id, uri, report["sha256"] if report else None, errors)
+        attestation = validate_attestation(
+            prefix, record, run_id, report["sha256"] if report else None, remote.repository if remote else "", errors
+        )
         record_criteria = record.get("closure_criteria")
         if not isinstance(record_criteria, list) or not record_criteria:
             errors.append(f"{prefix}.closure_criteria must cover one or more canonical criteria")
