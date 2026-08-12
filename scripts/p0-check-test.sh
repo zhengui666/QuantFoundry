@@ -32,13 +32,14 @@ def create(role, run_id, artifact_id, report_commit=commit, release_asset=False)
         if release_asset
         else f"https://github.com/acme/quantfoundry/actions/runs/{run_id}/artifacts/{artifact_id}"
     )
+    run_uri = f"https://github.com/acme/quantfoundry/actions/runs/{run_id}"
     commands = [{"command": "make test" if role.endswith("Test Agent") else "make review", "result": "pass", "exit_code": 0}]
     attestation = {
         "provider": "github-actions",
         "issuer": "https://token.actions.githubusercontent.com",
         "repository": "acme/quantfoundry",
         "run_id": run_id,
-        "subject_uri": uri,
+        "subject_uri": run_uri,
     }
     report = {
         "schema_version": "1.0.0",
@@ -49,7 +50,7 @@ def create(role, run_id, artifact_id, report_commit=commit, release_asset=False)
         "verified_at_utc": "2026-08-11T00:00:00Z",
         "closure_criteria": [criterion],
         "commands": commands,
-        "artifact": {"uri": uri},
+        "artifact": {"run_uri": run_uri},
         "attestation": attestation,
     }
     payload = json.dumps(report, sort_keys=True, separators=(",", ":")).encode()
@@ -61,6 +62,7 @@ def create(role, run_id, artifact_id, report_commit=commit, release_asset=False)
         "run_id": run_id,
         "artifact_id": artifact_id,
         "uri": uri,
+        "run_uri": run_uri,
         "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "report_sha256": hashlib.sha256(payload).hexdigest(),
         "content_type": content_types[role],
@@ -124,7 +126,7 @@ def record(item):
         "issuer": "https://token.actions.githubusercontent.com",
         "repository": "acme/quantfoundry",
         "run_id": item["run_id"],
-        "subject_uri": item["uri"],
+        "subject_uri": item["run_uri"],
         "subject_sha256": item["report_sha256"],
     }
     return {
