@@ -195,6 +195,93 @@ def test_openai_connection_validation_calls_provider_and_encrypts_at_rest(
     session.close()
 
 
+def test_remote_codex_catalog_and_validation_use_codex_transport(
+    monkeypatch,
+    request: pytest.FixtureRequest,
+) -> None:
+    credential = "remote-codex-secret-never-persist-plaintext"
+    provider = _start_provider(
+        monkeypatch,
+        request,
+        api_key=credential,
+        model_name="codex-model",
+    )
+    host, port = provider.server_address
+    monkeypatch.setenv("QF_CODEX_BASE_URL", f"http://{host}:{port}/v1")
+    monkeypatch.setenv("QF_CODEX_MODELS", "codex-model")
+    monkeypatch.setenv("QF_CODEX_DISPLAY_NAME", "Remote Codex test")
+    monkeypatch.delenv("QF_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("QF_OPENAI_MODELS", raising=False)
+    catalog = TestClient(app).get("/api/v1/setup/capabilities", headers=OWNER)
+    assert catalog.status_code == 200
+    ai_providers = [
+        provider
+        for provider in catalog.json()["providers"]
+        if provider["kind"] == "AI" and provider["provider_id"] != "TEST_AI"
+    ]
+    assert ai_providers == [
+        {
+            "provider_id": "REMOTE_CODEX",
+            "display_name": "Remote Codex test",
+            "kind": "AI",
+            "connection_test_supported": True,
+            "models": [
+                {"model_name": "codex-model", "connection_test_supported": True}
+            ],
+            "data_capabilities": [],
+        }
+    ]
+    response = TestClient(app).post(
+        "/api/v1/setup/provider-connections/validate",
+        headers=OWNER | _key("remote-codex"),
+        json={
+            "provider_id": "REMOTE_CODEX",
+            "kind": "AI",
+            "model_name": "codex-model",
+            "credential": credential,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["state"] == "SUCCESS"
+    assert provider.request_log == [
+        {"method": "GET", "path": "/v1/models", "authorized": True}
+    ]
+
+
+def test_remote_codex_agent_config_projects_singleton_and_rejects_override(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QF_AGENT_PROVIDER", "remote-codex")
+    monkeypatch.setenv("QF_CODEX_BASE_URL", "https://codex.example/v1")
+    monkeypatch.setenv("QF_CODEX_MODEL", "codex-model")
+    client = TestClient(app)
+    current = client.get("/api/v1/agents/RESEARCH_DIRECTOR/config", headers=OWNER)
+    assert current.status_code == 200
+    assert current.json()["model_provider"] == "remote-codex"
+    assert current.json()["model_name"] == "codex-model"
+    rejected = client.put(
+        "/api/v1/agents/RESEARCH_DIRECTOR/config",
+        headers=OWNER | {"If-Match": current.headers["etag"]},
+        json={"model_name": "second-model"},
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["code"] == "RESOURCE_CONFLICT"
+    accepted = client.put(
+        "/api/v1/agents/RESEARCH_DIRECTOR/config",
+        headers=OWNER | {"If-Match": current.headers["etag"]},
+        json={"enabled": False, "model_provider": "openai-compatible"},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["model_provider"] == "remote-codex"
+    assert accepted.json()["model_name"] == "codex-model"
+    restored = client.put(
+        "/api/v1/agents/RESEARCH_DIRECTOR/config",
+        headers=OWNER | {"If-Match": accepted.headers["etag"]},
+        json={"enabled": True},
+    )
+    assert restored.status_code == 200
+
+
 def test_provider_failure_has_no_connection_ref_or_persisted_credential(
     monkeypatch,
     request: pytest.FixtureRequest,

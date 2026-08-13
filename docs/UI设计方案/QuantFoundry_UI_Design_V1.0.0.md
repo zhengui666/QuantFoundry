@@ -6,10 +6,11 @@
 **对应 PRD：** `/QuantFoundry/docs/PRD/V1.0.0.md`
 **设计阶段：** MVP / First Usable Product
 **默认语言：** 简体中文
-**目标终端：** Desktop Web
-**目标用户：** Single-user / Owner / CIO
-**文档状态：** Final V1.0
-**日期：** 2026-08-10
+**目标终端：** Responsive Web（390px+）；不开发原生 App
+**目标用户：** Single-system / Single-user / Owner / CIO
+**文档状态：** Final V1.0 + UI Interaction Redesign Amendment
+**日期：** 2026-08-13
+**交互重设计 Brief：** `/QuantFoundry/docs/UI设计方案/QuantFoundry_UI_Interaction_Redesign_Brief_V1.0.0.md`
 
 ---
 
@@ -25,7 +26,7 @@
 - Quant / AI / Evidence / Validation 的视觉语义；
 - 长任务、审批、错误、只读与版本化交互；
 - 图表与表格规范；
-- P00–P22 页面布局；
+- P-1、P00–P22 页面布局；
 - 可访问性、键盘操作、内容文案；
 - UI 验收标准。
 
@@ -35,18 +36,38 @@
 
 > **UI 必须让用户一眼分清“AI 的解释”和“系统算出的事实”，并且任何重要结论都能沿 Evidence → Experiment → Tool Call → Dataset 追溯。**
 
+## 0.1 UI Interaction Redesign 规范优先级
+
+自 2026-08-13 起，本文件与 `QuantFoundry_UI_Interaction_Redesign_Brief_V1.0.0.md` 共同构成 UI 事实源。本次 Amendment 明确替换旧规则：
+
+| 旧规则 | 生效替代规则 |
+|---|---|
+| Desktop-only、`<1180px` 阻断 | Responsive Web 390px+；按 390 / 768 / 1180 / 1600 渐进布局 |
+| Header `User` | `Session / Lock`；无用户、成员、角色、workspace UI |
+| 无独立 Login | 新增 P-1 `/login`，仅通用密钥登录 |
+| Settings 只描述少量 policy/system 表单 | Settings 是系统全部配置的唯一写入口 |
+| Setup/Data/Agents 各自形成配置入口 | 复用 Settings contract/component 或 deep-link 到 Settings |
+| Inter-first / system-first 字体 | 自托管 IBM Plex Sans / Mono + Noto Sans CJK SC |
+| WCAG 2.1 AA 方向 | WCAG 2.2 AA |
+| 仅 1180/1280/1440 screenshot regression | 390/768/1180/1280/1440/1600 Playwright + 人工视觉复核 |
+| Authenticated workspace / Owner 隔离 UI | Single-system session；相关旧条款全部 superseded |
+
+本次是文档阶段。Login、Access Keys、Database 与 Configuration 的 API 名称、字段、错误与状态必须等待 PRD、后端和 canonical OpenAPI machine rewrite；UI 不得自行发明 machine contract，也不得在该门禁完成前驱动代码实现。
+
 ---
 
 # 1. 设计目标
 
 QuantFoundry 不是交易终端，也不是 AI 聊天应用。
 
-V1 的界面要同时实现四个目标：
+V1 的界面要同时实现六个目标：
 
 1. **像专业研究工作台，而不是券商行情软件。**
 2. **让量化初学者可以理解，但不牺牲研究严谨性。**
 3. **让 AI 自动工作具有可见性，但不展示隐藏 Chain-of-Thought。**
 4. **让版本、证据、审批和风险状态具有比“漂亮收益率”更高的视觉优先级。**
+5. **仅通过通用密钥进入单一系统，不出现用户、成员、角色或 workspace 心智。**
+6. **从 Settings 完成系统全部配置，且任何配置不写配置文件或 browser storage。**
 
 核心体验关键词：
 
@@ -70,6 +91,9 @@ Chat-first product structure
 Leaderboard-first strategy discovery
 Over-animated agent avatars
 Fake confidence gauges
+Generic SaaS card soup
+Purple-blue gradient branding
+Inter-first template typography
 ```
 
 ---
@@ -112,7 +136,7 @@ Validation 独立验证
 
 ## 3.1 视觉定位
 
-采用 **“Research Console”** 风格：
+采用 **“Evidence Foundry”** 风格：
 
 - 中性浅色背景；
 - 高信息密度；
@@ -121,6 +145,8 @@ Validation 独立验证
 - 清晰边界、分组、编号和 Provenance；
 - 图表克制、颜色具有稳定语义；
 - AI 使用单独的辅助色，而不是占据所有界面。
+- 使用 section rail、编号、ledger、timeline、definition list 与 provenance stamp 建立产品识别；
+- Card 仅用于独立对象、Gate、Approval、Empty/Error，不作为所有 section 的默认外壳。
 
 V1 默认 **Light Theme**。
 
@@ -162,19 +188,13 @@ Logo 只负责识别，不承担“AI 感”。
 支持：
 
 ```text
-Minimum supported desktop width: 1180px
-Preferred: 1280–1920px
+Minimum supported web width: 390px
+Single-column: 390–1179px
+Multi-column workbench: 1180px+
+Preferred wide research canvas: 1280–1920px
 ```
 
-V1 不做移动端适配。
-
-小于 1180px：
-
-显示阻断式提示：
-
-> QuantFoundry V1 is optimized for desktop research workflows.
-
-不尝试把复杂研究页面压成移动布局。
+V1 做 Responsive Web，不开发原生 App。390–767px 使用渐进披露；768–1179px 使用单栏与 Sheet/Drawer；1180px+ 使用高密度多栏。复杂图表与表格允许在明确的组件 viewport 内滚动，不允许整页非预期横向滚动。
 
 ## 4.2 Global Shell
 
@@ -237,20 +257,22 @@ Spacing 基于 4px primitive，主要间距：
 
 ```css
 font-family:
-  Inter,
+  "IBM Plex Sans",
+  "Noto Sans CJK SC",
   -apple-system,
   BlinkMacSystemFont,
-  "Segoe UI",
   "PingFang SC",
   "Microsoft YaHei",
-  "Noto Sans CJK SC",
   sans-serif;
 ```
+
+IBM Plex Sans、IBM Plex Mono 与 Noto Sans CJK SC 必须自托管、按需 subset，并纳入字体加载与布局稳定性 QA；禁止依赖 Google Fonts 或其他字体 CDN。`Inter-first`、`Arial-first` 与仅使用 system font 的模板化字体方案均不允许。
 
 数字、ID、Hash、代码、参数：
 
 ```css
 font-family:
+  "IBM Plex Mono",
   "SFMono-Regular",
   Consolas,
   "Liberation Mono",
@@ -284,14 +306,14 @@ font-family:
 
 ```text
 Neutral 0     #FFFFFF
-Neutral 25    #FCFCFD
-Neutral 50    #F7F8FA
-Neutral 100   #EEF1F4
-Neutral 200   #DDE2E7
-Neutral 300   #C8CFD8
-Neutral 500   #687386
-Neutral 700   #344054
-Neutral 900   #111827
+Neutral 25    #FAFBFA
+Neutral 50    #F4F6F5
+Neutral 100   #EDF1EF
+Neutral 200   #CDD6D1
+Neutral 300   #B8C3BD
+Neutral 500   #68776F
+Neutral 700   #52615A
+Neutral 900   #17201C
 ```
 
 用途：
@@ -310,9 +332,9 @@ Text tertiary       Neutral 500
 ```text
 Primary 50   #EFF6FF
 Primary 100  #DBEAFE
-Primary 500  #3B82F6
-Primary 600  #2563EB
-Primary 700  #1D4ED8
+Primary 500  #3569E8
+Primary 600  #2557D6
+Primary 700  #1F46AA
 ```
 
 Primary 仅用于：
@@ -327,8 +349,8 @@ Primary 仅用于：
 ```text
 AI 50   #F5F3FF
 AI 100  #EDE9FE
-AI 500  #7C3AED
-AI 700  #5B21B6
+AI 500  #6553C7
+AI 700  #4C3DA0
 ```
 
 仅用于：
@@ -339,6 +361,8 @@ AI 700  #5B21B6
 - Agent activity focus。
 
 AI 紫色不等于“成功”。
+
+全局禁止紫蓝渐变、发光、glassmorphism 或将 AI violet 当品牌大背景。AI 色只能作为 interpretation 的 semantic accent。
 
 ## 6.4 Validation / System States
 
@@ -384,12 +408,12 @@ V1 采用低 Elevation。
 Radius XS   4px
 Radius S    6px
 Radius M    8px
-Radius L    12px
+Radius L    10px
 ```
 
-大多数工作台 Card：`8px`。
+大多数工作台 Card：`6px`；只有独立对象、Gate、Approval、Empty/Error 使用 Card。
 
-Modal / Drawer：`12px`。
+Modal / Drawer：`10px`。
 
 Shadow：
 
@@ -398,6 +422,8 @@ Shadow：
 - Hover 不通过浮起 8px 表达。
 
 Data-heavy UI 优先通过 border 和 background 分组。
+
+页面不得为每个 section 默认添加圆角 Surface；优先使用 section rail、divider、table、ledger、definition list 和 timeline，防止 card soup。
 
 ---
 
@@ -1050,36 +1076,46 @@ Large     720px
 Sidebar 顺序保持 PRD：
 
 ```text
+RESEARCH
 Overview
 Research
 Factors
 Strategies
-Portfolio
+
+VALIDATE & DECIDE
 Validation
+Portfolio
+Approvals
 Paper
 Reviews
+
+OPERATIONS
 Data
 Agents
 Activity
+
 Settings
 ```
 
 ## 22.1 Sidebar Grouping
 
-视觉上分三组，但不增加新层级：
+视觉上分三组，Settings 固定在 Sidebar 底部；分组不增加新层级：
 
 ```text
-WORK
+RESEARCH
 Overview
 Research
 Factors
 Strategies
-Portfolio
+
+VALIDATE & DECIDE
 Validation
+Portfolio
+Approvals
 Paper
 Reviews
 
-SYSTEM
+OPERATIONS
 Data
 Agents
 Activity
@@ -1118,11 +1154,11 @@ Badge 只表示：
 ```text
 Breadcrumb / current object
 Global Search / ⌘K
-+ New Research
+Context primary action
 Approvals
 Notifications
 System Health
-User
+Session / Lock
 ```
 
 在对象详情页，Breadcrumb 示例：
@@ -1133,7 +1169,9 @@ Research / RSCH-01ARZ3NDEKTSV4RRFFQ69G5FAV / Quality + Momentum
 
 Header 固定。
 
-`+ New Research` 是全局 Primary，但进入强任务页时允许降为 Secondary，避免与当前页面关键动作抢层级。
+Overview/Research 中 `+ New Research` 可作为 context primary；其他强任务页必须让位于当前页面主动作。
+
+Header 禁止 User、avatar、workspace selector、member switcher 或 role switcher。Session / Lock 仅提供当前 session 状态、锁定/退出和诊断；不得制造多用户身份心智。
 
 ---
 
@@ -1340,9 +1378,57 @@ Code            abc123
 
 ---
 
+# 28A. Page P-1 — Login
+
+Route：`/login`。
+
+Login 是进入单一 QuantFoundry 实例的唯一认证界面，只支持通用密钥：
+
+```text
+QuantFoundry
+Instance / health summary
+
+通用密钥
+[••••••••••••] [显示/隐藏]
+[登录]
+
+诊断信息
+```
+
+禁止：
+
+```text
+username / email
+signup / invite
+forgot password
+social login
+user / member / role
+workspace selector
+```
+
+通用密钥只存在于当前 form memory，通过 server-generated auth contract 换取 HttpOnly session；提交完成立即清空。Raw secret 不进入 URL、持久 DOM、日志、analytics、error detail、截图或 browser storage。
+
+必须设计并验收：
+
+```text
+IDLE
+SUBMITTING
+INVALID
+RATE_LIMITED
+NETWORK_ERROR
+SESSION_EXPIRED
+SYSTEM_DEGRADED
+```
+
+错误不得泄漏密钥是否存在、内部 ID 或认证实现。Session 失效后回 `/login`；成功重新认证可恢复原 route，但 secret draft 必须清除。
+
+Login 在 390 / 768 / 1440px 均完整可用，支持 paste/password manager、键盘操作、Accessible Authentication 与清晰 focus。
+
+---
+
 # 29. Page P00 — Setup
 
-目标：5 步完成必要配置，不把安装体验变成运维控制台。
+目标：登录后以 5 步完成必要配置，不把安装体验变成运维控制台。Setup 只复用 Settings 的 server-generated configuration registry、组件和 mutation；不得建立独立字段清单、配置文件或第二配置事实源。
 
 ## 29.1 Layout
 
@@ -1361,7 +1447,7 @@ Code            abc123
 
 居中 720–800px form column。
 
-左侧不显示主 Sidebar，避免 setup 期间误导航。
+左侧不显示主 Sidebar，避免 setup 期间误导航。已完成 Setup 后，后续修改一律进入 Settings。
 
 ## 29.2 Capability Communication
 
@@ -1369,9 +1455,9 @@ Data Provider 步骤采用 capability table，而不是只显示“Connected”�
 
 连接成功但能力不足：success connection + warning capability 可以同时存在。
 
-AI/Data Provider 与 Model 下拉内容、连接状态、validation error 和 Continue eligibility 均显示 server truth。credential 只在当前表单内存中存在；Test Connection 为服务端写入式 validation，成功后界面仅显示 masked connection reference。`SetupStatus.ai_connection_id` 是 required nullable：仅 validated + active + unexpired + owner-bound + AI-kind 时显示已验证选择。Reload 后 non-null ref 恢复该选择；null 时回到 AI Provider step，显示“AI connection 需重新验证”，并清除任何旧成功视觉，不从 boolean/name/storage 恢复。
+AI/Data Provider 与 Model 下拉内容、连接状态、validation error 和 Continue eligibility 均显示 server truth。credential 只在当前表单内存中存在；Test Connection 为服务端写入式 validation，成功后界面仅显示 masked connection reference。有效连接条件、字段与状态只能来自更新后的 canonical generated contract；旧 `owner-bound/workspace` 条件不再生效。Reload 只按 server truth 恢复；无有效 ref 时显示“连接需重新验证”，并清除旧成功视觉，不从 boolean/name/URL/browser storage 恢复。
 
-Research/Risk Policy 与 Cost Model 也只使用 required nullable `research_policy_id/risk_policy_id/cost_model_id` 及对应 active boolean；有效态唯一是 ACTIVE + current Owner/workspace + exact `RESEARCH_POLICY/RISK_POLICY/COST_MODEL` kind，DRAFT/RETIRED 均显示需重新确认，状态视觉不引入其他时间维度。Reload 严格渲染 server `fallback_step`：`AI_PROVIDER` 回 Step 2；`RESEARCH_DEFAULTS` 回 Step 4；`RESEARCH_CONSTITUTION` 回 Step 5；null 不自动显示 Setup completed。若多项失效，固定按 AI → Cost → Research/Risk precedence 显示最早恢复点，不暴露 cross-owner/不存在对象差异。
+Research/Risk Policy 与 Cost Model 只使用 canonical generated ID/ref、状态与 active eligibility；旧 `Owner/workspace` 约束不再生效。Reload 严格渲染 server-generated fallback；null 不自动显示 Setup completed。若多项失效，按 machine contract 指定的 precedence 显示最早恢复点，不由 UI 猜测。
 
 ## 29.3 Constitution
 
@@ -1383,7 +1469,7 @@ Research Constitution 使用只读 checked rows：
 
 不要伪装成可 toggle checkbox。
 
-Step 5 的 active policy/cost identity 完全来自本次 `SetupStatus` refs；不得显示或提交 local guess。Finish 只以 exact `research_policy_id`、`risk_policy_id`、`cost_model_id` 组装 `SetupCompleteRequest`；任一 null 时保持 disabled 并显示对应 fallback 原因。成功后仅在 generated `SettingsDetail` 校验通过、三 ref non-null 且等于提交值，并且 required `ETag` 精确为 `W/"{settings_id}:{revision}"` 时进入完成态。同一 intent replay 必须呈现同一 body/revision/ETag；ETag 缺失、格式错误或与 body identity 不一致时显示可见 contract error、保持未确认状态并 refetch SetupStatus，不 optimistic completion、不生成/修正 ETag。
+Step 5 的 active policy/cost identity 完全来自 fresh server-generated Setup/Configuration response；不得显示或提交 local guess。Finish request、required refs、ETag 与 replay 语义必须由更新后的 canonical OpenAPI 生成；当前文档不继续冻结旧 request shape。任一 required value 缺失时保持 disabled 并显示 server reason。缺 header、malformed tag 或 identity mismatch 时显示 contract error、保持未确认并 refetch server truth；不 optimistic completion、不生成/修正 ETag。
 
 ---
 
@@ -2078,6 +2164,8 @@ Recommendation  AI recommendation + human action
 
 # 43. Page P19 — Data Center
 
+Data Center 是 data capability、quality、snapshot 与 connection runtime state 的运营观察面，不是配置写入口。任何 `Configure/Edit Provider` 动作必须 deep-link 到 Settings 对应 category，并复用同一 server-generated configuration contract。
+
 ## 43.1 Providers
 
 Provider Card 首先展示 **capabilities**，其次才是 provider branding。
@@ -2123,7 +2211,7 @@ Used By
 
 # 44. Page P20 — Agent Center
 
-R2 Agent Center 是配置与 admission 状态页面，不是 Agent “角色扮演大厅”；运行聚合与权限工具矩阵尚未进入当前契约。
+R2 Agent Center 是 admission/runtime 状态页面，不是 Agent “角色扮演大厅”，也不是配置写入口；运行聚合与权限工具矩阵尚未进入当前契约。`Open Config` 必须 deep-link 到 Settings / Agents & Runtime，并复用唯一 configuration contract。
 
 Agent Card：
 
@@ -2136,10 +2224,10 @@ Runtime Profile
 Timeout / Step / Tool-call Overrides
 Revision
 
-[Open Config] [Disable]
+[Open Config in Settings]
 ```
 
-R2 只渲染 `AgentConfigList` 与单 role `AgentConfig`/ETag。Current Run、Runs Today、Last Run、Success/Error Count、Allowed Tools、Runs history 与 Test Agent 全部标注 `FUTURE_STAGED`，不渲染假数据、不发无契约请求；Test Agent affordance 必须 disabled/隐藏。
+`Model Provider / Model` 是从 Settings / AI 继承的 singleton effective projection，在 Agent Card 与 Agents 分类均只读。R2 只渲染 canonical generated admission/runtime projection；enable/disable、runtime、limit 写操作在 Settings / Agents 完成，Provider/Model 只能在 Settings / AI 修改。Current Run、Runs Today、Last Run、Success/Error Count、Allowed Tools、Runs history 与 Test Agent 在无 machine contract 时不渲染假数据、不发请求。
 
 不显示头像、性格、情绪状态。
 
@@ -2194,9 +2282,58 @@ Audit Event 不提供 Delete / Edit。
 
 # 46. Page P22 — Settings
 
-使用左侧二级 nav + 内容表单。
+Settings 是系统全部配置的唯一写入口。使用左侧二级 nav + 内容表单；390–1179px 将二级 nav 变为 Select/Sheet，表单改为单栏。
 
-页面宽度建议 `960px`。
+二级导航：
+
+```text
+Overview
+Access Keys
+Database
+AI
+Data
+Agents
+Research
+Policy
+Risk
+Cost
+Jobs
+Scheduler
+Storage
+Notifications
+Appearance
+System
+```
+
+AI 覆盖 provider/model；Data 覆盖 provider/source；Agents 覆盖 runtime/admission；Appearance 覆盖 language/timezone/theme；System 覆盖 backup/diagnostics。分类名称与 route slug 固定为跨层方案 §7.2 的 16 个 exact key；server-generated configuration registry 必须返回相同 closed set，并提供具体字段、validation、capability 与 action。
+
+Server-generated configuration registry 是“系统内所有可以配置的东西”的唯一字段全集。UI 只渲染 generated field/group/validation/capability/dependency/action contract，不手写第二份字段清单，不写配置文件，不从 URL、environment display、localStorage 或 sessionStorage 恢复配置。
+
+宽屏建议：
+
+```text
+Secondary nav       240px
+Main form           680–760px
+Context/status rail 240–280px（空间允许时）
+```
+
+Settings Overview 必须汇总：
+
+```text
+Authentication / Access Keys
+Database
+AI Provider
+Data Provider
+Agent Runtime
+Research / Risk / Cost policy
+Jobs / Scheduler
+Storage
+System health
+```
+
+每项显示 ACTIVE / UNCONFIGURED / DEGRADED / NEEDS_ACTION 等 server truth、影响与下一动作，不做只有绿色 `Connected` 的状态墙。
+
+持久配置与 UI preference 均由 server/database readback。未提交 draft 只存在内存。Secret 使用 write-only `SecretInput`，读取只显示 masked metadata/fingerprint；不得回显 raw secret。
 
 Versioned Policy 的 UI 必须与普通 Save 区分：
 
@@ -2211,7 +2348,47 @@ RP-01ARZ3NDEKTSV4RRFFQ69G5FAV · ACTIVE
 
 Risk Policy / Cost Model 同理。
 
-System 页危险操作 `Restore` 进入 Danger Modal。
+普通非版本化配置使用 sticky apply bar，并显示 unsaved、validation、dependency impact 与 server revision。Stale/conflict 必须 refetch + review，不覆盖。
+
+## 46.1 Access Keys
+
+多个通用密钥等权，不包含 role、scope、Owner 或 workspace。列表显示：
+
+```text
+Label
+Fingerprint
+Status
+Created
+Last used
+Last rotated
+```
+
+若 machine contract 支持 expiration 再显示 expiration。Raw secret 不回显。生命周期操作统一为 create/add、rename label、rotate、revoke、expire，状态只允许 `ACTIVE | REVOKED | EXPIRED`；`REVOKED` 与 `EXPIRED` 不可恢复，且没有可逆暂停/恢复状态。必须防止撤销最后一个 `ACTIVE` 密钥，且设置 expiration 时不得形成零个有效密钥。
+
+## 46.2 Database
+
+Database 配置使用 `ACTIVE` 与 `CANDIDATE` 双状态：
+
+```text
+Edit candidate
+→ Validate
+→ Test connection
+→ Show capability / warning
+→ Confirm dependency and reconnect impact
+→ Activate
+→ Read back active config and runtime health
+```
+
+Test failure、stale、CSRF/contract failure 或 apply failure 均不得覆盖 active connection。Password/secret/DSN credential 只在当前 form memory，server 仅返回 masked metadata。
+
+## 46.3 唯一写入口
+
+- Setup 复用 Settings registry/component/mutation；
+- Data Center 只显示 runtime state，编辑 deep-link 到 Settings；
+- Agent Center 只显示 admission/runtime state，编辑 deep-link 到 Settings；
+- 其他页面不得复制配置 form 或维护第二配置 cache。
+
+System 页危险操作 `Restore` 进入 Danger Modal；重启、重连或恢复影响必须由 server contract 明确，不由 UI 猜测。
 
 ---
 
@@ -2294,7 +2471,7 @@ DateTime        2026-08-10 14:12:32
 
 # 49. Accessibility
 
-最低要求：WCAG 2.1 AA 方向。
+最低要求：WCAG 2.2 AA。
 
 包括：
 
@@ -2309,6 +2486,11 @@ DateTime        2026-08-10 14:12:32
 - ESC 关闭非危险 Drawer/Modal；
 - 危险确认 Modal 的 ESC 只表示 cancel；
 - prefers-reduced-motion 支持。
+- Focus Not Obscured；sticky header/footer 不遮挡当前 focus；
+- Target Size (Minimum)；
+- Accessible Authentication；Login 允许 paste/password manager，不要求记忆或转写通用密钥；
+- Secret show/hide 有 accessible name 与状态；
+- 200% zoom、长中文/英文与 390px layout 不丢动作或状态。
 
 ---
 
@@ -2416,7 +2598,7 @@ Scheduler            Healthy
 
 # 54. Responsive / Density Boundaries
 
-V1 是 Desktop-only，但要适配不同桌面宽度。
+V1 是 Responsive Web（390px+），不开发原生 App。不同宽度不是等比例缩小，而是重排、渐进披露和 Overlay 转换。
 
 ## ≥ 1600
 
@@ -2433,14 +2615,29 @@ V1 是 Desktop-only，但要适配不同桌面宽度。
 
 ## 1180–1279
 
-- Sidebar collapsed 默认；
-- 主体单栏优先；
+- Sidebar expanded/collapsed 由有效空间决定；
+- 主体保留多栏或主次栏；
 - Wide tables 横向滚动；
 - 不压缩至不可读的 3-column 卡片。
 
-## <1180
+## 768–1179
 
-不支持。
+- Sidebar 变 Sheet；
+- 页面主体单栏；
+- Inspector 变 Drawer；
+- 主动作使用 sticky action bar；
+- Chart/Table 在明确 viewport 内横滚或简化；
+- 不阻断业务页面。
+
+## 390–767
+
+- 单栏 + Progressive Disclosure；
+- 二级 nav 变 Select/Sheet；
+- CTA 全宽；
+- Table 优先转 Card/DefinitionList，确需表格时只在组件内横滚；
+- Login、Settings、Access Keys、Database、Health、Diagnostics 必须完整可用；
+- Research/Validation 保留 identity、state、needs action、summary，复杂图表/inspector 延后展开；
+- 页面不得出现非预期横向滚动。
 
 ---
 
@@ -2468,6 +2665,7 @@ Breadcrumb
 Tabs
 CommandPalette
 SecondaryNav
+SessionIndicator
 ```
 
 ## Actions
@@ -2491,8 +2689,28 @@ DateRange
 RadioGroup
 Toggle
 CredentialInput
+SecretInput
 FieldHelp
 CapabilityIndicator
+```
+
+## Authentication / Configuration
+
+```text
+LoginKeyForm
+AccessKeyTable
+ConfigurationOverview
+SettingsSearch
+ConfigurationSection
+ConfigSourceBadge
+ConnectionEditor
+ConnectionStatus
+TestConnectionAction
+CandidateVsActiveDiff
+DependencyImpact
+StickyApplyBar
+RestartRequiredBanner
+ConfigurationConflict
 ```
 
 ## Data Display
@@ -2579,25 +2797,30 @@ SensitivityHeatmap
 
 ```text
 00 Cover
-01 Foundations
-02 Components
-03 Domain Components
-04 Patterns
-05 P00 Setup
-06 P01 Overview
-07 P02-P05 Research
-08 P06-P07 Factors
-09 P08-P09 Strategies
-10 P10-P11 Validation
-11 P12-P13 Portfolio
-12 P14-P15 Approval & Memo
-13 P16-P18 Paper & Review
-14 P19 Data
-15 P20 Agents
-16 P21 Activity
-17 P22 Settings
-18 States & Errors
-19 Prototype — Golden Flow
+01 Reference Research
+02 Design Brief
+03 Foundations
+04 Components
+05 Domain Components
+06 Patterns
+07 P-1 Login
+08 P00 Setup
+09 P01 Overview
+10 P02-P05 Research
+11 P06-P07 Factors
+12 P08-P09 Strategies
+13 P10-P11 Validation
+14 P12-P13 Portfolio
+15 P14-P15 Approval & Memo
+16 P16-P18 Paper & Review
+17 P19 Data
+18 P20 Agents
+19 P21 Activity
+20 P22 Settings
+21 States & Errors
+22 Responsive 390 / 768 / 1180 / 1440 / 1600
+23 Prototype — Golden Flow
+24 Visual QA
 ```
 
 不要按“Screen 1 / Screen 2 / Final final 2”管理。
@@ -2606,7 +2829,27 @@ SensitivityHeatmap
 
 # 57. Golden Flow Prototype
 
-首个高保真 Prototype 应只打通一条关键路径：
+首批高保真 Prototype 必须覆盖认证/配置和研究两类路径。
+
+认证/配置路径：
+
+```text
+Login
+↓
+Setup / Configuration Overview
+↓
+Access Keys
+↓
+Database Candidate
+↓
+Test
+↓
+Activate
+↓
+Runtime Health readback
+```
+
+研究路径：
 
 ```text
 Overview
@@ -2632,12 +2875,15 @@ Investment Memo
 
 优先验证：
 
-1. 用户能否区分 AI / system facts；
-2. 用户能否理解当前 Research 在做什么；
-3. Evidence 是否足够可追；
-4. Freeze / Holdout / Approval 是否足够明确；
-5. Validation FAIL 是否不会被误解为系统错误；
-6. Paper 是否不会被误解为 Live。
+1. Login 是否只出现通用密钥且无 secret 泄漏；
+2. Settings 是否是唯一写配置入口；
+3. Database test 失败是否保持 active connection；
+4. 用户能否区分 AI / system facts；
+5. 用户能否理解当前 Research 在做什么；
+6. Evidence 是否足够可追；
+7. Freeze / Holdout / Approval 是否足够明确；
+8. Validation FAIL 是否不会被误解为系统错误；
+9. Paper 是否不会被误解为 Live。
 
 ---
 
@@ -2683,43 +2929,27 @@ Investment Memo
 
 ## 58.6 SSE refresh / contract mismatch
 
-UI 只消费 canonical generated 31-member `EventType`；`SseEnvelope`、`EventPayload`、`EventWaitingOn` 均为 closed schema，waiting-on 只接受 `{type:'JOB',job_id}`。事件是刷新通知，不是页面对象 truth。
+UI 只消费 canonical generated event/envelope/locator contract。事件只作为刷新通知，REST/configuration readback 才是页面对象 truth；event type、branch、schema version、waiting-on shape 与 refresh target 不在 UI 文档维护固定数量或第二份 allowlist。
 
-UI 同时必须通过 generated 21-branch locator + 31 EventType→branch pair rules 后才刷新。当前 14 个 producer branch 与 synthesized `event_stream` 只是 writer 目录；其他正式 branch 仍不允许自由 string。`strategy_version` 需要 exact STRAT ID + non-null version/revision，adapter 不得补 null/current；`settings=SETTINGS-DEFAULT`、`provider_connection=lowercase UUIDv4`、`agent_config=六个 canonical role`、`event_stream=EVT- event ID` 均需 `version=null` + non-null revision。未知/mismatch/缺字段时不显示 event content，立即走同 `system.resync_required` 的安全 refetch。
+未知、mismatch、缺字段、extra field 或受保护 payload 泄漏时，整条 event 不显示、不 toast、不写 cache；页面保留当前内容并显示低干扰 `Re-synchronizing`，只 refetch 相关 active query。若偏差持续，升级为 `Client update required` degraded state 并停止无界重连；route、Tab、scroll、dialog/form draft 与 immutable cache 不丢失。
 
-| P0 surface | event family → refresh target |
-|---|---|
-| P00 Setup | `setup.completed`, `data.provider.updated`, `data.capability.updated`, `data.quality.updated` → Setup status/capabilities |
-| P01 Overview | 与 Overview projection 有关的所有 known event → Overview；`system.health.updated` 同时刷新 health |
-| P04 Research Workspace | `research.created`, `research.updated`, `research.conclusion.created`, `experiment.created`, `experiment.updated`, `factor.updated`, related `agent.run.updated` → Research list/detail |
-| P05 Experiment Detail | `experiment.created`, `experiment.updated` → active Experiment detail + owning Research；只显示 REST detail 收敛结果 |
-| P09 Strategy Detail | `strategy.created`, `strategy.updated` → current/resolved version；保持 resolved-version URL |
-| P11 Validation Detail | `validation.created`, `validation.updated`, `validation.holdout.updated` → Validation/Holdout gate；LOCKED 不请求 result |
-| P14 Approvals | `approval.created`, `approval.updated` → list/detail |
-| P15 Memo | `memo.created`, `memo.updated` → memo detail；Paper request 仍 disabled/future-staged |
-| Agent/Job trace | `agent.run.updated`, `tool.call.updated`, `job.updated` 仅刷新已 active、ID 已知的 detail；不得枚举 current run |
+Login、Access Keys、Database 与 Configuration 的 event family/locator 必须等待 canonical OpenAPI machine rewrite 后由 codegen 接入；当前不得沿用旧固定 member/branch 数量，也不得发明新 event name。
 
-未知 future event type、大小写漂移、`schema_version != 1`、任一 extra field、非法 waiting-on 或 Holdout result/metric/chart/raw payload 泄漏时，整条 event 不显示、不 toast、不写 cache；页面保留当前内容并出现低干扰 `Re-synchronizing` banner，通过 `system.resync_required` recovery 只 refetch 相关 active query。若版本偏差持续，banner 升级为 `Client update required` degraded state 并停止无界重连；route、Tab、scroll、dialog/form draft、immutable cache 不丢失。Paper/Review/Notification 是已知 allowlist member但对应 execution 仍属 future-staged，只刷新现有 Overview，不出现新 CTA 或隐式请求。
+## 58.7 Single-system session isolation
 
-## 58.7 Authenticated workspace isolation
+QuantFoundry 只有一个系统、一个固定 human principal `OWNER` 与一个权限层；不存在可管理的 user/member account、human role/RBAC、tenant 或 workspace 产品能力。六个 Agent Role 是非人类运行角色；后端可保留唯一 internal singleton `workspace_id` 作为 namespace，但 UI 不显示、选择、切换或提交它。所有旧 authenticated-workspace、cross-workspace 与 workspace-local config UI 规则均由本节 supersede。
 
-所有业务页面、列表、Detail/Modal、ETag mutation、Activity、Agent trace 与 Artifact link 都只渲染 authenticated workspace 的 server response。高熵 global-unique public ID 只是 locator，不是授权或分享凭据；复制其他 workspace 的有效 deep link 与输入随机不存在 ID 必须得到同一 `Not found`/`404 RESOURCE_NOT_FOUND` 表示，不出现“存在但无权”、对象标题、revision/ETag、Owner/workspace、列表计数或可区分 loading timing。
+通用密钥只用于建立 HttpOnly session。Frontend 使用成功认证后生成的内存 `sessionEpoch` 隔离 query/mutation/SSE/cursor/dedupe state；session 失效或重新认证时先 cancel old requests、关闭 SSE、清理旧 epoch cache/event state，再启动新 session。`sessionEpoch` 不发送到 API，不作为资源授权输入。
 
-UI 不提供 body/query/header workspace override，也不从 public ID 猜 workspace。认证 scope 变化时，先断开旧 SSE、丢弃其 workspace-scoped cursor/dedupe/query cache，再为新 scope bootstrap；不可短暂显示旧 workspace 内容。SSE `sequence`、Activity/Audit `sequence` 与 hash-chain 状态只在当前 workspace 内解释，不把合法 gap 显示为跨 workspace 全局缺失。
+所有配置、Artifact、Agent trace、Audit、Snapshot 与业务对象只消费 server-authorized response；不显示/构造 `storage_key`、physical path、secret、signed URL 或未授权 child ref。Idempotency、ETag、CSRF、session 与 resource scope 全部由更新后的 canonical generated contract定义，UI 不维护第二份 scope tuple、lease 或 retention 数字。
 
-Agent Center 的相同 role card 是 workspace-local config；revision/ETag 仅约束当前 workspace + role。跨 workspace stale ETag 不得显示成可合并版本。Run/Tool/Job/checkpoint link 仅在已持有且当前 workspace 可解析时打开，不能枚举或通过错误文案暴露其他 workspace lineage。
-
-Artifact UI 只消费经 server 授权的 artifact ref/export response，不显示/构造 `storage_key`，不以 `sha256` 生成下载地址或复用 signed URL。两个 workspace 内容 hash 相同也必须保持 metadata、URL、credential、文件名/size 等表示完全隔离。
-
-Snapshot partition 没有独立 workspace locator；UI 只能从已授权 Snapshot projection 显示 partition/artifact 摘要。不提供 partition-ID route、搜索、独立 loading/error 存在性提示或直接下载链接；父 Snapshot 不可见时整个 child 表示不可见，禁止通过 partition ID/hash/artifact ref 泄漏跨 workspace 存在性。
-
-Idempotency key 仅在一次用户 intent/network retry 内稳定；server identity 精确为 `(workspace_id, actor_id, uppercase method, normalized route template, key)`。`IDEMPOTENCY_IN_PROGRESS` 显示已在处理并只打开 server 返回的同 scope ref；成功 replay 不重复 toast；conflict 不自动 retry。UI 不把相同 key 当跨 actor/workspace/route 的全局 operation ID，不以本地计时器覆盖 server 的 60 秒 lease/7-day retention，也不在页面暴露 lease owner/内部记录。
+Settings、Provider、Policy、Agent config 与 Access Key 的 identity 均由 server-generated configuration registry/response 提供。Frontend 不生成全局 identity，不通过 public ID、fingerprint 或配置 label 猜测对象。
 
 ## 58.8 Public semantic ID rendering
 
 所有资源 ID 直接消费 generated canonical field，不在 UI 用短序号或历史 alias 替换。合法格式仅为该资源 prefix + uppercase Crockford ULID 或 lowercase UUIDv4；Memo 显示 `MEMO-01ARZ3NDEKTSV4RRFFQ69G5FAV`，Holdout exposure 显示 `HOLD-01ARZ3NDEKTSV4RRFFQ69G5FAV`。视觉上可中间省略，但 copy、deep link、accessible name、tooltip 与请求值必须保留完整 exact ID，禁止 trim、case-fold、补零、修正 prefix 或截断。
 
-Route/deep link 的 ID 未通过 generated runtime schema 时显示统一 `Invalid link`/Not Found 状态且不发资源请求；不得尝试 lowercase/uppercase normalization 后重试。合法但其他 workspace 的 ID 仍按 §58.7 同质 404，语法有效不表示已授权。
+Route/deep link 的 ID 未通过 generated runtime schema 时显示统一 `Invalid link`/Not Found 状态且不发资源请求；不得尝试 lowercase/uppercase normalization 后重试。语法有效不表示 server 已授权。
 
 Generic ObjectRef 只在 `type` 与 ID prefix 一致时渲染跳转；mismatch 整个 ref fail closed，显示可见 contract error，不猜测 type、不从 prefix 自动改写 response。`DSSET-` lowercase UUIDv4 的完整 42 字符必须可复制与 round-trip，不得被 input、table cell、URL helper 或 analytics 截断。
 
@@ -2744,6 +2974,14 @@ QuantFoundry V1 明确禁止：
 13. **Spinner-only long jobs**。
 14. **“Something went wrong” everywhere**。
 15. **Use current constituents for historical study without PIT warning** 的 UI 默许。
+16. **Card soup / equal three-column cards**：连续 section 不得默认使用等权圆角 Card。
+17. **Purple-blue gradient / glow branding**。
+18. **Inter-first / default-font template**。
+19. **Desktop shrink as mobile**：390/768 必须重排和渐进披露。
+20. **Duplicate configuration forms**：Setup/Data/Agents 不得建立 Settings 之外的写入口。
+21. **Config-file guidance**：UI 不展示或引导编辑配置文件。
+22. **Secret echo/storage**：密钥、密码、DSN credential 不回显、不写 browser storage。
+23. **Multi-user remnants**：User/avatar/member/role/workspace selector 均禁止。
 
 ---
 
@@ -2804,6 +3042,11 @@ UI 方案不预先绑定 React/Vue、Tailwind/CSS Modules 或具体 chart librar
 ```text
 Foundations
 App Shell
+Login
+Setup / Configuration Overview
+Access Keys
+Database
+Settings
 Overview
 New Research
 Research Workspace
@@ -2831,9 +3074,7 @@ Dark theme
 ## UI P2
 
 ```text
-Mobile
 Live broker UI
-Multi-user permissions
 Multi-asset specialized views
 Options / intraday visualization
 ```
@@ -2874,4 +3115,4 @@ UI 完成的判断标准是：
 - Failure / Contradicting Evidence 被视为有效研究结果；
 - 不以单一 Sharpe 或收益排行塑造产品心智。
 
-当前未发现与 `AGENTS.md` 或 PRD V1.0.0 的实质冲突。
+本次 UI Amendment 已明确删除多用户/workspace UI、增加通用密钥 Login、全量 Settings 与 Responsive Web。其 machine contract 尚未在本文中定义；PRD、后端、canonical OpenAPI 与测试方案完成联动前，状态为“文档方向已建立、实现门禁未通过”，不得宣称可开发或已验收。

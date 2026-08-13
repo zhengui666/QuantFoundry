@@ -9,9 +9,8 @@ import os
 import sys
 
 import httpx
-from bootstrap_owner import EMAIL_PATTERN, provision
-
 from app.bootstrap import seed_local
+from bootstrap_owner import EMAIL_PATTERN, provision
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,11 +57,18 @@ def main() -> int:
     }:
         print("Local bootstrap is allowed only in local/development.", file=sys.stderr)
         return 1
-    provider_key = os.getenv("QF_LOCAL_PROVIDER_API_KEY", "")
+    remote_codex = bool(os.getenv("QF_CODEX_BASE_URL"))
+    provider_key = (
+        os.getenv("QF_CODEX_API_KEY", "")
+        if remote_codex
+        else os.getenv("QF_LOCAL_PROVIDER_API_KEY", "")
+    )
     data_credential = os.getenv("QF_LOCAL_DATA_CREDENTIAL", "")
     if len(provider_key) < 20 or len(data_credential) < 20:
-        print("Local provider credentials are missing or too short.", file=sys.stderr)
+        print("Provider/data credentials are missing or too short.", file=sys.stderr)
         return 1
+    provider_id = "REMOTE_CODEX" if remote_codex else "OPENAI_COMPATIBLE"
+    model_name = os.getenv("QF_CODEX_MODEL", "qf-local-v1")
 
     owner_id, workspace_id, session_token = provision(
         args.email, args.workspace_name, args.ttl_hours
@@ -85,9 +91,9 @@ def main() -> int:
                 expected=200,
                 headers={**auth, "Idempotency-Key": f"{key_prefix}-ai"},
                 payload={
-                    "provider_id": "OPENAI_COMPATIBLE",
+                    "provider_id": provider_id,
                     "kind": "AI",
-                    "model_name": "qf-local-v1",
+                    "model_name": model_name,
                     "credential": provider_key,
                 },
             )
