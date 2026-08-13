@@ -207,6 +207,9 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                 "path": self.path,
                 "authorized": True,
                 "model": request["model"],
+                "runtime": self.headers.get("X-QF-Codex-Runtime"),
+                "instance": self.headers.get("X-QF-Codex-Instance"),
+                "invocation": self.headers.get("X-QF-Codex-Invocation"),
             }
         )
         if self.server.failure_statuses:

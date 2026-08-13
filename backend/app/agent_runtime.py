@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, TypedDict
+from urllib.parse import urlsplit
 
 import httpx
 import psycopg
@@ -115,8 +116,97 @@ class DeterministicModel:
         return {"type": "conclude", "summary": "Research run initialized"}
 
 
-class OpenAICompatibleModel:
-    """Configured production adapter with an explicit credential source."""
+CODEX_RUNTIME_KEY = "CODEX-DEFAULT"
+
+
+@dataclass(frozen=True)
+class CodexRuntimeConfig:
+    """One logical remote Codex runtime shared by every runtime Role."""
+
+    runtime_key: str
+    remote_instance_id: str
+    url: str
+    api_key: str
+    model_name: str
+    timeout_seconds: int
+    max_attempts: int
+
+    @classmethod
+    def from_environment(
+        cls,
+        *,
+        model_name: str,
+        timeout_seconds: int,
+        api_key: str | None = None,
+    ) -> CodexRuntimeConfig:
+        runtime_key = os.getenv("QF_CODEX_RUNTIME_ID", CODEX_RUNTIME_KEY)
+        if runtime_key != CODEX_RUNTIME_KEY:
+            raise AgentRuntimeError("only CODEX-DEFAULT remote runtime is supported")
+        base_url_value = (
+            os.getenv("QF_CODEX_BASE_URL") or os.getenv("QF_OPENAI_BASE_URL") or ""
+        )
+        base_url = base_url_value.rstrip("/")
+        resolved_api_key = (
+            api_key
+            or os.getenv("QF_CODEX_API_KEY")
+            or os.getenv("QF_OPENAI_API_KEY", "")
+        )
+        resolved_model = os.getenv("QF_CODEX_MODEL") or model_name
+        if not base_url or not resolved_api_key or not resolved_model:
+            raise AgentRuntimeError("Remote Codex runtime credentials are absent")
+        try:
+            parsed_url = urlsplit(base_url)
+        except ValueError as error:
+            raise AgentRuntimeError("Remote Codex endpoint is invalid") from error
+        if (
+            parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.netloc
+            or parsed_url.username is not None
+            or parsed_url.password is not None
+            or parsed_url.query
+            or parsed_url.fragment
+        ):
+            raise AgentRuntimeError("Remote Codex endpoint is invalid")
+        try:
+            max_attempts = max(
+                1,
+                min(
+                    5,
+                    int(
+                        os.getenv(
+                            "QF_CODEX_MAX_ATTEMPTS",
+                            os.getenv("QF_AGENT_PROVIDER_MAX_ATTEMPTS", "3"),
+                        )
+                    ),
+                ),
+            )
+        except ValueError as error:
+            raise AgentRuntimeError(
+                "Remote Codex retry configuration is invalid"
+            ) from error
+        remote_instance_id = (
+            os.getenv("QF_CODEX_REMOTE_INSTANCE_ID") or CODEX_RUNTIME_KEY
+        )
+        if not remote_instance_id.strip():
+            raise AgentRuntimeError("Remote Codex instance identity is absent")
+        endpoint = (
+            base_url
+            if base_url.endswith("/chat/completions")
+            else f"{base_url}/chat/completions"
+        )
+        return cls(
+            runtime_key=runtime_key,
+            remote_instance_id=remote_instance_id,
+            url=endpoint,
+            api_key=resolved_api_key,
+            model_name=resolved_model,
+            timeout_seconds=timeout_seconds,
+            max_attempts=max_attempts,
+        )
+
+
+class RemoteCodexModel:
+    """Remote Codex adapter; all Roles resolve to the same logical runtime."""
 
     def __init__(
         self,
@@ -125,26 +215,42 @@ class OpenAICompatibleModel:
         timeout_seconds: int,
         api_key: str | None = None,
     ):
-        base_url = os.getenv("QF_OPENAI_BASE_URL", "").rstrip("/")
-        api_key = api_key if api_key is not None else os.getenv("QF_OPENAI_API_KEY", "")
-        if not base_url or not api_key:
-            raise AgentRuntimeError("OpenAI-compatible provider credentials are absent")
-        self.url = f"{base_url}/chat/completions"
-        self.api_key = api_key
-        self.model_name = model_name
-        self.timeout_seconds = timeout_seconds
+        self.runtime = CodexRuntimeConfig.from_environment(
+            model_name=model_name,
+            timeout_seconds=timeout_seconds,
+            api_key=api_key,
+        )
+
+    @staticmethod
+    def _invocation_id(checkpoint: dict[str, Any]) -> str:
+        context = checkpoint.get("context")
+        context = context if isinstance(context, dict) else {}
+        run_id = str(context.get("agent_run_id") or "unknown-run")
+        action_index = checkpoint.get("model_action_index", 0)
+        digest = hashlib.sha256(
+            f"{CODEX_RUNTIME_KEY}:{run_id}:{action_index}".encode()
+        ).hexdigest()
+        return f"codex-{digest}"
 
     def next_action(self, checkpoint: dict[str, Any]) -> dict[str, Any]:
+        invocation_id = self._invocation_id(checkpoint)
         request = {
-            "model": self.model_name,
+            "model": self.runtime.model_name,
             "temperature": 0,
             "response_format": {"type": "json_object"},
+            "metadata": {
+                "qf_runtime_key": self.runtime.runtime_key,
+                "qf_remote_instance_id": self.runtime.remote_instance_id,
+                "qf_invocation_id": invocation_id,
+            },
             "messages": [
                 {
                     "role": "system",
                     "content": (
-                        "Return one JSON object: either {type:'tool',name,arguments} "
-                        "or {type:'conclude',summary}. Never request holdout data."
+                        "You are the QuantFoundry remote Codex runtime. Return one JSON "
+                        "object: either {type:'tool',name,arguments} or "
+                        "{type:'conclude',summary}. Never request holdout data. "
+                        "Tools are intents only; the server authorizes and executes them."
                     ),
                 },
                 {
@@ -153,18 +259,31 @@ class OpenAICompatibleModel:
                 },
             ],
         }
-        attempts = max(1, min(5, int(os.getenv("QF_AGENT_PROVIDER_MAX_ATTEMPTS", "3"))))
+        attempts = self.runtime.max_attempts
         last_error: Exception | None = None
         for _attempt in range(attempts):
             try:
                 response = httpx.post(
-                    self.url,
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    self.runtime.url,
+                    headers={
+                        "Authorization": f"Bearer {self.runtime.api_key}",
+                        "X-QF-Codex-Runtime": self.runtime.runtime_key,
+                        "X-QF-Codex-Instance": self.runtime.remote_instance_id,
+                        "X-QF-Codex-Invocation": invocation_id,
+                    },
                     json=request,
-                    timeout=self.timeout_seconds,
+                    timeout=self.runtime.timeout_seconds,
                 )
                 response.raise_for_status()
                 payload = response.json()
+                response_instance = response.headers.get("X-QF-Codex-Instance")
+                if (
+                    response_instance
+                    and response_instance != self.runtime.remote_instance_id
+                ):
+                    raise AgentRuntimeError(
+                        "Remote Codex instance identity changed during invocation"
+                    )
                 content = payload["choices"][0]["message"]["content"]
                 action = json.loads(content)
                 break
@@ -178,11 +297,26 @@ class OpenAICompatibleModel:
                 last_error = error
         else:
             raise AgentRuntimeError(
-                f"OpenAI-compatible provider failed after {attempts} attempts"
+                f"Remote Codex failed after {self.runtime.max_attempts} attempts"
             ) from last_error
         if not isinstance(action, dict):
-            raise AgentRuntimeError("model action is not a JSON object")
+            raise AgentRuntimeError("Remote Codex action is not a JSON object")
+        usage = payload.get("usage") if isinstance(payload, dict) else None
+        if isinstance(usage, dict):
+            action.setdefault(
+                "input_tokens",
+                usage.get("prompt_tokens", usage.get("input_tokens", 0)),
+            )
+            action.setdefault(
+                "output_tokens",
+                usage.get("completion_tokens", usage.get("output_tokens", 0)),
+            )
         return action
+
+
+# Compatibility name for existing test harnesses. Runtime construction always
+# returns RemoteCodexModel and therefore cannot select another provider.
+OpenAICompatibleModel = RemoteCodexModel
 
 
 class LocalDeterministicModel(DeterministicModel):
@@ -205,12 +339,12 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
     if expires_at is not None and expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
     if (
-        connection.provider_id != "OPENAI_COMPATIBLE"
+        connection.provider_id not in {"OPENAI_COMPATIBLE", "REMOTE_CODEX"}
         or connection.kind != "AI"
         or connection.validation_state != "SUCCESS"
         or connection.status != "ACTIVE"
         or (expires_at is not None and expires_at <= datetime.now(UTC))
-        or connection.model_name != config.model_name
+        or connection.model_name != (os.getenv("QF_CODEX_MODEL") or config.model_name)
     ):
         return None
     aad = credential_aad(
@@ -231,11 +365,22 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
 
 
 def configured_model(config: AgentConfigRow, session: Session | None = None) -> Model:
-    if config.model_provider == "openai-compatible":
+    remote_mode = os.getenv("QF_AGENT_PROVIDER", "").lower() in {
+        "openai-compatible",
+        "remote-codex",
+    } or bool(os.getenv("QF_CODEX_BASE_URL"))
+    if remote_mode and config.model_provider not in {
+        "openai-compatible",
+        "remote-codex",
+    }:
+        raise AgentRuntimeError(
+            "agent config provider is incompatible with the Remote Codex runtime"
+        )
+    if config.model_provider in {"openai-compatible", "remote-codex"}:
         api_key = (
             _active_setup_api_key(session, config) if session is not None else None
         )
-        return OpenAICompatibleModel(
+        return RemoteCodexModel(
             model_name=config.model_name,
             timeout_seconds=config.tool_timeout_seconds,
             api_key=api_key,

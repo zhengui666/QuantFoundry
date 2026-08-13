@@ -9,14 +9,14 @@
 **对应后端：** `/QuantFoundry/docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md`
 **项目治理：** `/QuantFoundry/AGENTS.md`
 **产品阶段：** MVP / First Usable Product
-**部署模式：** Single-user / Self-hosted
+**部署模式：** Single-human-principal / Self-hosted
 **默认语言：** 简体中文
-**文档状态：** Final V1.0
-**Canonical HTTP Contract Stage：** `P0_EXECUTABLE`
-**Canonical HTTP Contract Revision：** `P0_EXECUTABLE_R2`
-**Canonical Operation Count：** `45`
-**Canonical Error Count：** `65`
-**日期：** 2026-08-10
+**文档状态：** Final V1.0 + UX-001 D0 target amendment；D1 machine contract/schema pending
+**Canonical HTTP Contract Stage（current baseline）：** `P0_EXECUTABLE`
+**Canonical HTTP Contract Revision（current baseline）：** `P0_EXECUTABLE_R2`
+**Canonical Operation Count（current baseline）：** `45`
+**Canonical Error Count（current baseline）：** `65`
+**日期：** 2026-08-13
 **正式路径：** `/QuantFoundry/docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md`
 
 ---
@@ -768,6 +768,24 @@ bounded retry
 - 记录 fallback reason；
 - 记录 actual model；
 - 不改变 Tool Policy。
+
+## 7.6 Remote Codex singleton adapter
+
+本实现阶段将 V1 的模型执行器固定为 `RemoteCodexModel`，由 `AgentModel`/`Model` 边界适配远程 Codex。LangGraph 仍只管理 graph、checkpoint、interrupt、resume 和 handoff。
+
+```text
+runtime key = CODEX-DEFAULT
+logical remote instance count = 1
+all runtime roles -> same remote instance identity
+```
+
+`agent_configs.model_provider` / `model_name` 在 Remote Codex 模式下仅作兼容性投影；Runtime 不允许据此选择第二个 Provider、Model 或 Codex instance。写入接口只接受与 singleton projection 一致的 legacy alias/no-op 值，其他 Provider/Model mutation 以 `RESOURCE_CONFLICT` 拒绝。历史不兼容配置不得静默转换，Runtime 必须 fail closed。Remote Codex endpoint、credential 和 model 由部署/Setup 的唯一 AI connection 解析。
+
+Runtime 构造前必须校验：runtime key 为 `CODEX-DEFAULT`、remote instance 非空、endpoint 为无凭据的 `http/https` URL、model 非空、retry 在受限范围内。校验失败返回 `AGENT_MODEL_UNAVAILABLE`，不得创建 Agent Run 或 checkpoint side effect。
+
+当前 transport 使用受 server-side credential 保护的 JSON structured response over the configured remote endpoint；协议字段必须绑定 `agent_run_id`、`context_sha256`、`invocation_id`、`remote_instance_id` 和 role。原始远程 payload 不进入普通日志、checkpoint 或 Domain truth。
+
+重试使用同一 `invocation_id`；未知副作用不盲重试。Remote Codex 不可用时只允许 bounded retry、`AGENT_MODEL_UNAVAILABLE` / `AGENT_RETRY_EXHAUSTED`、`FAILED` 或 `WAITING_USER`，不得静默切回 LangGraph 内置 Agent 或其他 Provider。
 
 ---
 
@@ -4539,6 +4557,174 @@ Agent V1 技术实现完成必须满足：
 而是：
 
 > **Agent 能否在长期运行、工具失败、模型错误、数据限制、研究诱惑和多重测试压力下，仍持续遵守 QuantFoundry 的研究纪律与权限边界。**
+
+---
+
+# 93. UX-001 — 单 Owner 数据库配置的 Agent Runtime 目标规范
+
+## 93.1 规范状态与 D1 禁码门禁
+
+| 属性 | 冻结值 |
+|---|---|
+| Change ID | `UX-001` |
+| 目标状态 | `TARGET_NORMATIVE` |
+| 当前阶段 | `D0_DOCS_ONLY` |
+| 机器契约/schema 阶段 | `D1_REQUIRED_BEFORE_CODE` |
+| Agent 实现、migration、fixture、eval 变更 | `BLOCKED` until D1 complete |
+
+本节是 Backend §41 `UX-001` 在 Agent Runtime 的联动 target normative。与本文既有 per-role provider/model 可写、deployment/Setup 连接解析、多 workspace 授权或 current bearer owner 叙述冲突时，本节决定 UX-001 目标；既有叙述只是 current baseline。
+
+`D0_DOCS_ONLY` 不代表 canonical OpenAPI、AgentConfig schema、Agent Run persistence、Bootstrap Control DB 或 runtime 已经支持本节。在 PRD/UI/Frontend/Backend/Agent/Test 联动、canonical OpenAPI revision、Bootstrap/Domain schema、migration、generated models 和机器门禁完成 D1 之前，不得开始 Agent 配置、model adapter、checkpoint、resume 或 Tool envelope 代码变更。
+
+> 本文顶部的 canonical `45 operations / 65 errors`、本文既有 AgentConfig/AgentRun 字段与 Backend `63 tables / 953 columns` 都只是 UX-001 之前的 current baseline。D1 必须从修订后的 machine sources 生成新计数与字段，不得手填数字或把 target 字段直接塞入旧 manifest 伪造一致。
+
+## 93.2 身份与配置事实源
+
+Agent Runtime 看到的人类主体永远是固定 `OWNER`。多个 general access key 只是登录 credential，不得产生不同 user、role、workspace、Tool Policy、Holdout access 或 Approval authority。Agent admission 不得从 request 中接受 `user_id/owner_id/role/workspace_id`；internal namespace 由 installation singleton context 固定提供。
+
+所有可变 Agent 运行配置只能来自 Bootstrap Control DB 的 active immutable configuration revision。以下来源一律禁止：
+
+```text
+YAML/TOML/JSON/.env
+ordinary environment variable
+CLI override
+working-directory file
+remote/unpinned config service
+legacy app_settings/agent_configs fallback
+prompt-supplied runtime option
+model-supplied configuration
+```
+
+OS keychain、TPM 或 external secret injection 中的 root key 是不可配置的 cryptographic root-of-trust，不是 Agent config。Agent graph、prompt、checkpoint、Tool input/output、Model request 与 normal telemetry 均不得看到 root key、pepper、Domain DB password、general key、Owner session、CSRF token 或 provider credential。
+
+## 93.3 Remote Codex singleton 与可变 Role 配置
+
+UX-001 继续冻结：
+
+```text
+runtime identity = CODEX-DEFAULT
+logical Remote Codex instance count = 1
+all six runtime roles use the same active installation AI connection
+```
+
+Remote Codex endpoint、model 和 credential 由 active installation-level AI connection revision 解析。`model_provider` / `model_name` 在 Role read model 中只是 actual singleton projection，不得在 Role mutation 中写入。D1 canonical `AgentConfigUpdate` 必须删除这两个可写字段；D0 期间不得以 current OpenAPI 仍接受字段为理由实现第二 Provider/Model 选择器。
+
+Role 可配置边界仅包含：
+
+```text
+enabled
+runtime_profile
+tool_timeout_seconds
+max_steps_override
+max_tool_calls_override
+```
+
+这些值必须受 closed catalog schema、safe range、hard policy 上限、global `If-Match` 与 Audit 约束。它们不得扩展 Tool allowlist、Approval/Capital authority、Holdout access、Risk authority、graph topology 或 prompt/tool-policy manifest。
+
+## 93.4 Effective Configuration Snapshot
+
+### 93.4.1 Admission 原子捕获
+
+每个新 root/child Agent Run 必须在创建任何 Run row、checkpoint、model invocation 或 Tool Call 之前，在同一 admission decision 中获取并验证：
+
+```text
+effective_configuration_revision
+effective_configuration_sha256
+agent_configuration_revision
+agent_role_key
+enabled
+AI connection id + revision
+remote runtime identity = CODEX-DEFAULT
+resolved model projection
+runtime_profile
+tool_timeout_seconds
+resolved max_steps
+resolved max_tool_calls
+prompt manifest version + sha256
+Tool registry version + sha256
+Tool Policy version + sha256
+Research/Risk/Cost policy refs
+security epoch
+```
+
+这个 snapshot 必须是 closed、canonical-hashed、可审计的 server-built object。Run persistence 至少保存上述的稳定 locator/revision/hash 与已解析的非密运行值；secret 仅由 server-side credential broker 根据 connection ref 在调用时解析到受控内存，不写 Run/checkpoint。
+
+任一 ref 缺失、catalog/schema 不匹配、consumer 未 ACK、connection 非 ACTIVE、security epoch 失效、Tool registry exact-set 失败 或 Role disabled，必须在 Run/checkpoint/model/Tool 产生前 fail closed。
+
+### 93.4.2 Run/Resume pinning
+
+普通 configuration activation/rollback 只影响新 Agent Run。已开始 Run 与其 child/handoff/resume 必须继续使用原 effective snapshot，不得：
+
+- 在 graph node 之间读“latest config”；
+- 在 resume 时将 runtime profile、budget、model/connection 或 Tool Policy 静默换成 active revision；
+- 因 rollback 而把旧 revision ID 覆写为新 ID；
+- 从 checkpoint 缺失字段猜测 current configuration。
+
+resume 先验证持久化 snapshot hash、manifest/tool hashes、connection ref 可用性与 current security epoch。非安全配置已变化时可继续原 snapshot；如果 credential/key/session 被 `SECURITY_IMMEDIATE` revoke、root key 不可用或 connection 已被安全禁用，Run 必须在下一 model/Tool 边界 fail closed，进入 `FAILED|WAITING_USER|CANCELLED` 中符合 owning workflow 的状态，不得使用已缓存 secret 继续。
+
+## 93.5 Apply mode 与 Agent Worker consumer ACK
+
+Agent Worker 是 `configuration_consumer_states` 的 required consumer，必须针对 desired revision 执行 schema/hash、Role config、singleton connection、credential broker、runtime profile、Tool registry exact-set 与 graph/manifest compatibility 验证，再写 applied revision + ACK。
+
+| Apply mode | Agent Runtime 语义 |
+|---|---|
+| `LIVE_NEW_WORK` | 旧 Run 保持 snapshot；新 Run 只在 Agent Worker ACK 新 revision 后 admission |
+| `DRAIN_RELOAD` | 停止新 root/child admission；安全收口/park 现有 Run；reload/ACK 后恢复 |
+| `RESTART_REQUIRED` | 持久化 staged revision；进程重启、完整验证与 ACK 前不接收新 Run |
+| `SECURITY_IMMEDIATE` | 立即关闭新 admission；旧 Run 在下一安全边界重验证并 fail closed |
+
+ACK 必须绑定 consumer instance、configuration revision/hash、build/commit、applied_at 和 error。不得因为 Agent Worker 进程存活、旧 Run 可 resume 或 Remote Codex endpoint 可 ping 就假报 revision 已应用。required ACK 未收敛时整体 readiness 不得为 `READY`。
+
+Domain DB connection switch 使用 `DRAIN_RELOAD`：Agent Worker 必须先停 admission，确保 checkpoint/Tool/Job 处于可证明安全的 fence，再重建 Domain/checkpoint connections、执行 canary、校验 singleton namespace 与原 Run snapshot、最后 ACK。切换失败后只能回到 Control DB 记录的 last-known-good connection，不得从 environment/file/CLI 重建连接。
+
+## 93.6 Tool Contract 永久边界
+
+UX-001 不改变 `contracts/tools/v1-p0.yaml` 的 exact 13-entry `name@version` set、input/output schema、allowed roles、side-effect 或 execution mode。以下能力永远不是 Runtime Agent Tool：
+
+```text
+login/logout/session
+general key create/rotate/revoke/expire
+configuration read/write/validate/apply/rollback
+Domain DB candidate validate/activate/LKG recovery
+root key/pepper access
+consumer ACK submission
+Tool registry mutation/replacement
+```
+
+runtime configuration 可调整 Role 是否 enabled、profile、timeout 与只能收紧的 budget，但不得以任何值替换 canonical Tool registry path/hash，不得允许 extra/missing/renamed/version-substituted Tool，也不得把配置页的“全部可配置项”解释为 Tool Policy 可配置。
+
+effective configuration refs 属于 Tool Call 外层 runtime/audit/provenance envelope，不得为了记录 config revision 修改 13 个 Tool 的 domain input/output schema。如 D1 需变更 outer envelope，必须先修订 Backend/OpenAPI/Agent generated contract，`v1-p0.yaml` 继续保持 exact 13。
+
+## 93.7 Audit、可观测与失败语义
+
+Agent config candidate/activation/rollback、Role enable/disable、Agent Worker ACK/failure、connection drain/reconnect/canary/LKG recovery、Run snapshot capture/security invalidation 必须记录：
+
+```text
+fixed OWNER or SYSTEM actor
+configuration revision + hash
+agent configuration revision
+connection revision
+consumer instance/build
+Agent Run locator when applicable
+before/after hash
+stable reason/error code
+```
+
+Audit/log/event 不得记录 general key/session/CSRF/root key/pepper、DSN password、provider credential、ciphertext/nonce、full prompt 或 raw Remote Codex payload。Domain DB 不可用时，control-plane change 写 Bootstrap Audit；Domain DB 恢复后只补写 hash/sequence anchor，不伪造原始 Agent Domain transaction。
+
+建议的 target stable failure classes 必须在 D1 canonical error enum 中一次冻结，不得在 D0 局部追加 runtime-only string。至少要区分：configuration invalid/not-applied、bootstrap locked、database disconnected/switch failed、connection unavailable、security epoch revoked、Agent disabled/model unavailable。所有失败都必须在产生新 Run/model/Tool side effect 前 fail closed，或在未知 side effect 时进入人工 review，不得静默使用 old/latest/default config。
+
+## 93.8 D1 完成条件
+
+Agent 代码工作包只能在以下证据同时存在后启动：
+
+1. canonical OpenAPI 已定义 cookie session、CSRF、closed config schema、AgentConfig target mutation 与 target errors；
+2. Bootstrap Control DB 与 Domain PostgreSQL target schema/migration 已冻结；
+3. Agent Run effective snapshot 字段、outer Tool Call/provenance refs 与 checkpoint compatibility 已有 generated contract；
+4. Remote Codex singleton projection、credential broker 与 consumer ACK 协议已冻结；
+5. exact table/column/operation/schema/error 数由生成器重算且 diff=0；
+6. Tool contract 仍是 exact 13-entry，config/auth/database 禁止 Tool 集已进入机器负测；
+7. Test Plan §51 的 auth/config/bootstrap/DB chaos/Agent pinning/no-fallback 门禁已转化为可执行 acceptance matrix。
 
 ---
 

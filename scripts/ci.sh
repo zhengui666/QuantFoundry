@@ -137,8 +137,24 @@ backend_pg18_full() {
       -u QF_AGENT_PROVIDER \
       -u QF_AGENT_MODEL \
       -u QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER \
+      -u QF_CODEX_RUNTIME_ID \
+      -u QF_CODEX_REMOTE_INSTANCE_ID \
+      -u QF_CODEX_BASE_URL \
+      -u QF_CODEX_API_KEY \
+      -u QF_CODEX_MODEL \
+      -u QF_CODEX_MODELS \
+      -u QF_CODEX_DISPLAY_NAME \
+      -u QF_CODEX_MAX_ATTEMPTS \
       -u QF_AGENT_CHECKPOINT_URL \
       -u QF_AGENT_CHECKPOINT_SQLITE \
+      -u QF_CODEX_RUNTIME_ID \
+      -u QF_CODEX_REMOTE_INSTANCE_ID \
+      -u QF_CODEX_BASE_URL \
+      -u QF_CODEX_API_KEY \
+      -u QF_CODEX_MODEL \
+      -u QF_CODEX_MODELS \
+      -u QF_CODEX_DISPLAY_NAME \
+      -u QF_CODEX_MAX_ATTEMPTS \
       -u QF_OPENAI_BASE_URL \
       -u QF_OPENAI_API_KEY \
       -u QF_OPENAI_MODELS \

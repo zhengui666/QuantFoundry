@@ -1,8 +1,9 @@
 # QuantFoundry Repository Governance
 
 **治理版本：** Final V1.0
-**日期：** 2026-08-11
-**适用范围：** QuantFoundry repository；仅 Paper、Single-user / Self-hosted；不包含实盘资金执行。
+**日期：** 2026-08-13
+**适用范围：** QuantFoundry repository；仅 Paper、Single-human-principal / Self-hosted；不包含实盘资金执行。
+**当前阶段：** 文档阶段 / 目标规范；D1 machine contract rewrite、实现与独立验收尚未完成。
 
 ## 1. 目的与权威关系
 
@@ -39,7 +40,7 @@
 
 `release_blocking: true` 的 P0 条目无豁免：仅当 `closure_criteria` 全部满足、`verification` 已由独立角色执行且 `evidence` 完整可追溯时，状态才可从 `open` 或 `blocked` 变为 `closed`。不接受口头确认、局部绿灯、重试掩盖失败或未归档证据。
 
-P0 registry 是受锁定的 release 控制面：其 `blockers` 必须且只能包含以下八个唯一 ID，且每项均为 `release_blocking: true`：`P0-PRODUCT-PAPER-DAILY-SCHEDULER`、`P0-CONTRACT-OPENAPI-45`、`P0-CONTRACT-TOOLS-13`、`P0-SCHEMA-ALEMBIC-AUTHORITY`、`P0-ARCHITECTURE-TARGET-LAYERS`、`P0-SECURITY-RESEARCH-INTEGRITY`、`P0-CI-REPRODUCIBILITY`、`P0-SUPPLY-CHAIN-RELEASE-EVIDENCE`。ID 缺失、重复、未知、flag 改写、空 registry 或未知 status 均为 fail-closed schema error；只允许 `open`、`blocked` 与 `closed` status。
+P0 registry 是受锁定的 release 控制面：其 `blockers` 必须且只能包含以下八个唯一 ID，且每项均为 `release_blocking: true`：`P0-PRODUCT-PAPER-DAILY-SCHEDULER`、`P0-CONTRACT-OPENAPI-45`、`P0-CONTRACT-TOOLS-13`、`P0-SCHEMA-ALEMBIC-AUTHORITY`、`P0-ARCHITECTURE-TARGET-LAYERS`、`P0-SECURITY-RESEARCH-INTEGRITY`、`P0-CI-REPRODUCIBILITY`、`P0-SUPPLY-CHAIN-RELEASE-EVIDENCE`。ID 缺失、重复、未知、flag 改写、空 registry 或未知 status 均为 fail-closed schema error；只允许 `open`、`blocked` 与 `closed` status。`P0-CONTRACT-OPENAPI-45` 是为 registry 稳定性保留的既有 ID：D1 之前其中的 `45` 指当前 canonical baseline；D1 提交目标 breaking revision 后，该 ID 不得被解释为目标 operation count，目标 exact count 只能来自同一 D1 change set 内更新后的 canonical OpenAPI 与同步事实源。
 
 闭合 evidence 的每条记录必须绑定当前 release commit、独立 Test/Review 角色、GitHub Actions run identity 和一个可验证的 GitHub Actions artifact 或 GitHub Release asset。证据对象必须是 ZIP，内含声明路径的 JSON evidence report；registry 记录和内嵌 report 均须包含相同的 commit、run id、角色、canonical closure criteria、已成功的验证命令和对象 URI。registry 的 `artifact_sha256` 绑定整个远端 ZIP；registry `report.sha256` 与其 GitHub Actions attestation `subject_sha256` 绑定解包后 report 内容。内嵌 report 的 attestation 元数据必须匹配 registry 的 provider、issuer、repository、run id 和 subject URI；它不得内嵌自身 digest。Test report 的 content type 固定为 `application/vnd.quantfoundry.p0-test-evidence+json;version=1`，Review report 固定为 `application/vnd.quantfoundry.p0-review-evidence+json;version=1`；两类 evidence 必须来自不同的 GitHub Actions run。在线 `p0-check --require-closed`（online mode）必须以 `GITHUB_TOKEN`/`gh api` 解包并验证 report，验证 run 的 `head_sha`、artifact/release asset 的存在性与 SHA-256、report 全部身份字段和 attestation 元数据；网络、token、远端对象、ZIP/report、校验信息或 attestation 元数据缺失或不可验证时一律失败。`--require-closed` 在任何 release-blocking P0 未闭合时必须非零退出。`p0-check --offline-report`（兼容别名 `--report`）只作 registry schema/local report 生成，必须在 schema 有效时返回 0，即使存在未闭合 P0；它绝不执行远端 closure verification、不能用于 release、将 blocker 闭合或替代独立 evidence。GHCR digest 可作为 release supply-chain evidence，但不能单独充当可关闭 P0 的 evidence report。
 
@@ -53,7 +54,23 @@ schema 的权威是声明式 SQLAlchemy metadata 与 Alembic migration。manifes
 
 Paper daily scheduler 的 P0 可执行边界为 PRD §52.1–§52.3、Backend §23.4–§23.4.1 和 Test Plan §27.1：不新增 HTTP API；UTC 持久化/比较、deployment-local trading date、绑定 calendar 或 `WEEKDAY_ONLY`、单独 workspace-scoped `paper_scheduler_states` suppression truth、resume watermark、单日 bounded catch-up、natural-key idempotency、lease/retry/crash fail-closed 和 atomic evidence commit 均为实现前置事实源。声明式 SQLAlchemy model + Alembic revision 是该表的唯一 authority；manifest/physical snapshot/generated model 是派生物。evidence boundary is split and non-bypassable: state initialize/pause/disable/resume creates no Job and no Artifact, and atomically writes append-only `audit_events.summary.paper_scheduler_state_evidence.v1` with `detail_artifact_id=NULL`; execution decisions alone create immutable `paper_scheduler_evidence.v1` Artifact, whose non-null `job_id` must resolve to the `PAPER_DAILY_RUN` execution Job and whose Audit links it through `detail_artifact_id`. Empty/arbitrary Artifact cannot satisfy state or execution evidence. State SSE is only existing closed `paper.updated` (or independently legal `job.updated`) and exposes no detail; no suppression/watermark/lease/attempt/calendar/evidence field may enter `EventPayload`. 迁移不得猜测存量 suppression history；未初始化或歧义 deployment 必须阻断 scheduler readiness。当前 canonical HTTP stage/revision 不包含 Paper operation，不得以该 future-staged HTTP 边界跳过 scheduler core 的 P0 实现或独立验证。
 
-外部兼容范围固定为：canonical OpenAPI 的 45 operations、13 个 Tool contract、以及现有 `/api/v1` URL 与 wire semantics。兼容性变更必须先更新相应 canonical contract、上下游正式文档和迁移/弃用策略；不得以实现或 fixture 创造平行契约。
+当前外部兼容 baseline 固定为：canonical OpenAPI 的 45 operations、13 个 Tool contract、以及现有 `/api/v1` URL 与 wire semantics。该 45-operation baseline 只在 D1 machine contract rewrite 提交前继续生效；它不是本轮 singleton access、Bootstrap Control DB、Settings-only write control plane 的目标契约声明。任何现有实现、fixture 或测试在 D1 前仍不得偏离当前 canonical contract。
+
+### 4.1 Single-human-principal 与数据库配置目标边界
+
+目标产品仅有一个固定 human principal，不存在 email/password、user list、invite、RBAC 或 workspace create/list/switch。多个等权通用密钥只用于换取短期 HttpOnly session；密钥明文只在生成时展示一次，数据库仅持久化 verifier，支持 create、label、rotate、revoke、expire，且禁止撤销最后一个有效密钥。一个内部 singleton namespace 可继续作为数据归属、审计、幂等与迁移兼容字段，但它不是用户、租户或 workspace 产品能力，客户端永远不能选择或提供第二个 namespace。
+
+`Settings` 是普通配置的唯一写入口。全部可变配置值只能进入固定嵌入式 Bootstrap Control DB 或 Domain PostgreSQL；YAML、TOML、JSON、`.env`、环境变量与命令行参数不得作为普通配置来源或 fallback。Bootstrap Control DB 负责在 Domain DB 不可用时仍可完成通用密钥验证、session、配置读取/写入及 Domain DB 恢复，并保存加密后的 Domain PostgreSQL connection。加密 root 只能通过 OS keychain、TPM 或 external secret injection 提供；它是不可消除的 root-of-trust，不属于普通配置，也不得退化为仓库或部署配置文件。
+
+前端目标方向为 `Evidence Foundry`，响应式 Web 必须从 390px 起可用；原生移动 App 不在范围内。该目标必须通过正式 UI、前端与测试事实源进一步字段化和验收，不得仅凭本治理声明开始实现或宣称达标。
+
+### 4.2 D1 machine contract rewrite 前置门禁
+
+本轮目标必然影响认证、session、通用密钥、配置目录/写入、Domain DB 双阶段连接、schema 和测试矩阵。当前 canonical OpenAPI、schema 与测试 exact counts 尚未更新，因此 **D1 machine contract rewrite 是任何相关代码、migration、fixture、generated client 或测试变更的前置 blocker**。
+
+D1 必须在一个可审查的文档优先 change set 中同步完成：canonical OpenAPI breaking revision、目标 exact operation count、schema authority/Alembic 迁移设计、认证与配置错误语义、generated consumer 影响、正式测试矩阵、迁移/弃用策略、受影响专项事实源及本文件/registry 的 count 与 closure criteria。目标 count 未由 canonical machine source 产生前，任何文档、实现、fixture 或测试均不得猜测、预填或伪造新 count。D1 不得保留 legacy user auth 与通用密钥 auth 的长期双轨，也不得创建平行 OpenAPI/schema。
+
+D1 完成前，本轮只允许文档阶段的目标规范更新；当前 45-operation contract 仍是现状验证 baseline，但不得被误用为目标功能已可实现的依据。D1 完成后，release closure 必须依据更新后的 canonical exact contract 与独立验证，而不是依据 ID 名称中的历史数字。
 
 ## 5. Agent 编排与独立复核
 

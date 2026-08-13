@@ -146,6 +146,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
 
   test('executes 11 canonical mutations against real server truth under continuous SSE', async ({
     page,
+    request,
   }) => {
     test.setTimeout(10 * 60_000);
     const mutations: Array<{
@@ -276,7 +277,11 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     await expect
       .poll(() => mutations.find((mutation) => mutation.path === '/api/v1/validations')?.body)
       .toEqual(expect.objectContaining(canonicalEngineFixtures.strictValidation));
-    await page.getByRole('link', { name: /Open validation VAL-/ }).click();
+    const validationLink = page.getByRole('link', { name: /Open validation VAL-/ });
+    const validationText = (await validationLink.textContent()) ?? '';
+    const validationId = validationText.match(/VAL-[^ ]+/)?.[0];
+    if (!validationId) throw new Error('Validation link did not expose a canonical validation ID.');
+    await validationLink.click();
     await expect(page.getByLabel('Approval reason')).toBeVisible({ timeout: 120_000 });
     await page.getByLabel('Approval reason').fill('One controlled exposure.');
     await executeCapability(page, 'request_holdout_approval');
@@ -285,6 +290,26 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     await expect(page.getByText('APPROVED')).toBeVisible();
     await page.getByRole('link', { name: /Open validation VAL-/ }).click();
     await executeCapability(page, 'run_holdout');
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(
+            new URL(`/api/v1/validations/${validationId}`, applicationUrl!).href,
+            { headers: apiHeaders() },
+          );
+          if (response.status() !== 200) return null;
+          const body = (await response.json()) as { holdout_state?: string };
+          return body.holdout_state ?? null;
+        },
+        { timeout: 120_000 },
+      )
+      .toBe('EXPOSED');
+    await sseProbe.waitForFrame(
+      ({ event }) =>
+        event.event_type === 'validation.holdout.updated' &&
+        event.object_id === validationId &&
+        event.payload.status === 'COMPLETED',
+    );
 
     await page.getByRole('link', { name: /备忘录|Memo/ }).click();
     await page.getByLabel('Strategy ID').fill(strategyId);

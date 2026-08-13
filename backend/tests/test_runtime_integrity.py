@@ -25,6 +25,7 @@ from app.agent_runtime import (
     AgentRuntimeError,
     AgentStep,
     OpenAICompatibleModel,
+    RemoteCodexModel,
     ToolPolicyDenied,
     advance_agent_run,
 )
@@ -1861,6 +1862,8 @@ def test_openai_compatible_adapter_retries_real_http_and_sends_bearer(
     assert model.next_action({"safe": "context"}) == {
         "type": "conclude",
         "summary": "provider ok",
+        "input_tokens": 1,
+        "output_tokens": 1,
     }
     posts = [entry for entry in provider.request_log if entry["method"] == "POST"]
     assert len(posts) == 2
@@ -1871,6 +1874,59 @@ def test_openai_compatible_adapter_retries_real_http_and_sends_bearer(
     monkeypatch.delenv("QF_OPENAI_API_KEY")
     with pytest.raises(AgentRuntimeError, match="credentials are absent"):
         OpenAICompatibleModel(model_name="provider-model", timeout_seconds=7)
+
+
+def test_remote_codex_binds_singleton_identity_and_stable_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+    local_provider: LocalProviderHarness,
+) -> None:
+    monkeypatch.setenv("QF_CODEX_RUNTIME_ID", "CODEX-DEFAULT")
+    monkeypatch.setenv("QF_CODEX_REMOTE_INSTANCE_ID", "remote-codex-test")
+    monkeypatch.delenv("QF_CODEX_MODEL", raising=False)
+    provider = local_provider.start([{"type": "conclude", "summary": "codex ok"}])
+    model = RemoteCodexModel(model_name="codex-model", timeout_seconds=7)
+    checkpoint = {
+        "model_action_index": 2,
+        "context": {
+            "agent_run_id": "ARUN-550e8400-e29b-41d4-a716-446655440000",
+            "role": "RESEARCH_DIRECTOR",
+        },
+    }
+
+    assert model.next_action(checkpoint) == {
+        "type": "conclude",
+        "summary": "codex ok",
+        "input_tokens": 1,
+        "output_tokens": 1,
+    }
+    model.next_action(checkpoint)
+    posts = [entry for entry in provider.request_log if entry["method"] == "POST"]
+    assert len(posts) == 2
+    assert {entry["runtime"] for entry in posts} == {"CODEX-DEFAULT"}
+    assert {entry["instance"] for entry in posts} == {"remote-codex-test"}
+    assert len({entry["invocation"] for entry in posts}) == 1
+
+    monkeypatch.setenv("QF_CODEX_RUNTIME_ID", "CODEX-SECOND")
+    with pytest.raises(AgentRuntimeError, match="only CODEX-DEFAULT"):
+        RemoteCodexModel(model_name="codex-model", timeout_seconds=7)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "ftp://codex.example/v1",
+        "https://user:password@codex.example/v1",
+        "https://codex.example/v1?token=secret",
+    ],
+)
+def test_remote_codex_rejects_unsafe_endpoint_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+) -> None:
+    monkeypatch.setenv("QF_CODEX_BASE_URL", base_url)
+    monkeypatch.setenv("QF_CODEX_API_KEY", "codex-runtime-credential")
+    with pytest.raises(AgentRuntimeError, match="endpoint is invalid"):
+        RemoteCodexModel(model_name="codex-model", timeout_seconds=7)
 
 
 def test_failed_real_tool_rolls_back_then_persists_independent_evidence(

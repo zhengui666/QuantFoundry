@@ -7,11 +7,11 @@
 **对应 UI：** `/QuantFoundry/docs/UI设计方案/QuantFoundry_UI_Design_V1.0.0.md`
 **项目治理：** `/QuantFoundry/AGENTS.md`
 **产品阶段：** MVP / First Usable Product
-**目标终端：** Desktop Web
-**部署模式：** Single-user / Self-hosted
+**目标终端：** Responsive Web（390px+）；不开发原生 App
+**部署模式：** Single-system / Single-user / Self-hosted
 **默认语言：** 简体中文
-**文档状态：** Final V1.0（后端共建契约已冻结）
-**日期：** 2026-08-10
+**文档状态：** Final V1.0 + UI Interaction Redesign Amendment；Auth/Configuration OpenAPI rewrite pending
+**日期：** 2026-08-13
 **正式目标路径：** `/QuantFoundry/docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md`
 **OpenAPI canonical 路径：** `/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml`
 
@@ -21,7 +21,7 @@
 
 ## 0.1 后端共建冻结结论
 
-原第 82 节的 OpenAPI、ActionCapability、SSE/replay、Job progress、provenance、canonical error、idempotency、Approval stale、ETag/revision、Overview、ChartAggregate 与 Data Capability 均已冻结；本文件为其唯一前端事实源。Holdout locked response 不含结果点/指标，safety mutation 不得 optimistic success，SSE 仅通知、detail API 为对象事实源，前端不得自行计算 lifecycle 权限。
+原第 82 节对研究、Validation、Holdout、Approval、SSE、provenance 等既有业务契约继续作为当前事实输入；但旧 bearer、多 workspace、Owner、配置入口与 desktop-only 条款已被本次 Amendment supersede。Login、Access Keys、Database 与全量 Configuration 仍需 PRD、后端与 canonical OpenAPI machine rewrite，当前不得虚构 operation、DTO、error enum 或 operation count，也不得据此开始代码实现。
 
 本文定义 QuantFoundry V1 前端实现的技术基线，解决 UI 设计方案留给前端技术方案确定的以下事项：
 
@@ -53,6 +53,23 @@
 - Quant Engine 计算逻辑。
 
 这些内容仍以 `AGENTS.md` 和 PRD 为准。
+
+## 0.2 UI Interaction Redesign Supersession
+
+自 2026-08-13 起，下表替换本文所有冲突旧述；后文保留的历史 contract 描述不得反向恢复旧模型：
+
+| 旧述 | 生效规则 |
+|---|---|
+| Desktop-only / `<1180` unsupported | Responsive Web 390px+；390/768/1180/1600 渐进布局 |
+| Global bearer token | 通用密钥仅用于登录并换取 HttpOnly session；cookie + CSRF 由 generated contract 定义 |
+| `workspace_id` / Owner / `authScopeKey` | Single-system；内存 `sessionEpoch` 仅隔离客户端会话 cache，不发送给 API |
+| localStorage 保存 sidebar/locale | 所有持久配置与 preference 由 server/database；browser storage 不存配置 |
+| Setup/Data/Agents 自有配置 | Settings 是唯一写配置入口；其他 surface 复用或 deep-link |
+| Inter/default font | 自托管 IBM Plex Sans / Mono + Noto Sans CJK SC |
+| WCAG 2.1 AA | WCAG 2.2 AA |
+| 仅桌面 screenshot regression | Playwright 390/768/1180/1280/1440/1600 + 人工视觉复核 |
+
+所有 REST/SSE/Auth/Configuration 调用仍必须经 canonical OpenAPI codegen。machine rewrite 完成前，Frontend 不得手写暂定 endpoint、method、header 名、schema、error code 或 fixture。
 
 ---
 
@@ -194,7 +211,7 @@ Holdout 未解锁时：
 | DOM Test | Testing Library | 语义交互 |
 | Network Mock | MSW | browser / test 共用 |
 | E2E | Playwright | Golden Flow |
-| Accessibility | axe-core + Playwright + semantic assertions | WCAG 2.1 AA 方向 |
+| Accessibility | axe-core + Playwright + semantic assertions | WCAG 2.2 AA |
 | Component Workshop | Storybook 10.x | Domain components / states |
 | Icons | Lucide React 或单一等价线性 icon set | 不混用 |
 
@@ -214,7 +231,7 @@ AG Grid Enterprise
 Material UI / Ant Design 作为视觉基线
 Client-side database
 Offline-first / PWA
-Mobile responsive framework
+Native mobile app framework
 ```
 
 这些不是“永远禁止”，而是 V1 没有足够收益。
@@ -226,10 +243,11 @@ Mobile responsive framework
 QuantFoundry V1 是：
 
 ```text
-Single-user
+Single-system / Single-user
 Self-hosted
-Authenticated research app
-Desktop-only
+Common-key authenticated research app
+Responsive Web 390px+
+No native App
 No SEO requirement
 Data-heavy
 Long-running async jobs
@@ -544,6 +562,22 @@ InlineAlert
 EmptyState
 ErrorState
 Skeleton
+LoginKeyForm
+SessionIndicator
+AccessKeyTable
+SecretInput
+ConfigurationOverview
+SettingsSearch
+ConfigurationSection
+ConfigSourceBadge
+ConnectionEditor
+ConnectionStatus
+TestConnectionAction
+CandidateVsActiveDiff
+DependencyImpact
+StickyApplyBar
+RestartRequiredBanner
+ConfigurationConflict
 ```
 
 页面禁止直接拼：
@@ -553,6 +587,8 @@ Skeleton
 ```
 
 来伪造重复 UI 模式。
+
+页面不得连续使用等权三列 Card 或为每个 section 默认包裹圆角 Surface。优先复用 table、ledger、timeline、definition list、section rail 与 domain component。
 
 ---
 
@@ -596,6 +632,10 @@ src/design-system/tokens/
   --qf-locked: #475569;
 }
 ```
+
+`typography.css` 必须声明自托管 IBM Plex Sans、IBM Plex Mono 与 Noto Sans CJK SC，并控制 preload/subset/fallback；不得从 Google Fonts/CDN 加载，不得以 Inter-first 或纯 system font 作为品牌基线。
+
+Evidence Foundry seed palette 以 UI 文档为唯一视觉来源；紫蓝渐变、glow 与 raw color utility 禁止进入业务页面。
 
 ## 8.2 Semantic First
 
@@ -733,6 +773,7 @@ allowedActions
 ## 11.1 Route Groups
 
 ```text
+/login                     LoginShell
 /setup                     SetupShell
 
 /_app                      MainAppShell
@@ -758,7 +799,10 @@ allowedActions
   /agents
   /activity
   /settings
+  /settings/$category
 ```
+
+`$category` 只能解析跨层方案 §7.2 冻结的 16 个 exact key，且 server-generated configuration registry 必须返回同一 closed set；未知值进入 Settings Overview/Not Found。Frontend 只从 generated contract 生成该 set，不手写平行 enum。Login 成功后按 server session truth 进入原 route 或 Setup/Overview；不得出现 human user/workspace selector。
 
 ## 11.2 Route Search Params
 
@@ -857,18 +901,19 @@ TanStack Query 是唯一主要 server state cache。
 统一 key：
 
 ```text
-['research', researchId]
-['research', 'list', filters]
-['experiments', experimentId]
-['strategy', strategyId, version]
-['validation', validationId]
-['paper', paperId]
-['jobs', jobId]
-['approvals', filters]
-['system-health']
+[sessionEpoch, 'research', researchId]
+[sessionEpoch, 'research', 'list', filters]
+[sessionEpoch, 'experiments', experimentId]
+[sessionEpoch, 'strategy', strategyId, version]
+[sessionEpoch, 'validation', validationId]
+[sessionEpoch, 'paper', paperId]
+[sessionEpoch, 'jobs', jobId]
+[sessionEpoch, 'approvals', filters]
+[sessionEpoch, 'configuration', category]
+[sessionEpoch, 'system-health']
 ```
 
-禁止页面手写随机字符串 key。
+`sessionEpoch` 是每次成功认证建立的内存 epoch，只用于客户端 cache partition，不发送到 API。session 失效/重建时清除旧 epoch query/mutation/SSE/cursor/dedupe state。禁止页面手写随机字符串 key。
 
 ## 13.2 默认 Query 行为
 
@@ -924,17 +969,19 @@ V1 不引入 Redux/Zustand 作为默认依赖。
 允许的全局 UI state 极少：
 
 ```text
-sidebar collapsed
+session epoch / authenticated presentation state
+sidebar open/collapsed（当前内存）
 command palette open
 ask drawer state
-locale
+configuration draft（当前内存）
 ```
 
 其中：
 
-- sidebar preference 可 localStorage；
-- palette / drawer 不持久化；
-- locale 以后端 user setting 为事实来源，localStorage 仅 bootstrap fallback。
+- palette / drawer / sidebar 不持久化；
+- locale、appearance、density 等 preference 以后端/database configuration 为唯一事实来源；
+- 配置 draft 和 secret 只在 form memory；reload 丢弃未提交值；
+- localStorage/sessionStorage/IndexedDB 不保存任何配置、preference、通用密钥、session 或 server truth。
 
 ---
 
@@ -956,7 +1003,7 @@ GET /api/v1/openapi.json
 
 CI 必须验证 committed schema 与 runtime schema 一致。
 
-当前 executable contract `stage=P0_EXECUTABLE`、`revision=P0_EXECUTABLE_R2`、`operation count=45`。未进入该 OpenAPI 的 full-V1 narrative endpoint 仍属 future-staged，不得用于 codegen、fixture、client 封装或 runtime contract test。
+当前 committed schema 仍可约束未受本次 Amendment 影响的研究域。Login、Access Keys、Database 与 Configuration 需下一次 canonical machine rewrite；在 rewrite 完成前不得记录暂定 operation count，不得用于 codegen、fixture、client 封装或 runtime contract test。
 
 前端生成：
 
@@ -976,7 +1023,7 @@ openapi-fetch
 
 ### 15.0.1 Single canonical wire boundary
 
-所有 REST operation MUST 经由 committed canonical OpenAPI generated operation client，或由同一 canonical OpenAPI 生成的 typed operation map；这是唯一允许定义 path、method、request/response schema 与 operation header semantics 的 frontend wire boundary。业务 feature、hooks、MSW fixture 与 error handling 不得并行手写 URL/path、HTTP method、`Authorization`、`If-Match`、`Idempotency-Key` 或 DTO 的第二事实源。该边界保留 canonical `/api/v1` base、fetch-based SSE 的 `Authorization`/`Last-Event-ID`、ETag/`If-Match` 与 idempotency semantics；不要求页面重构。CI 必须包含 codegen drift gate 与 contract-boundary test：扫描/执行断言只允许 generated client/operation map 发 REST 请求，并验证 SSE、ETag 与 Idempotency headers 仍按 canonical operation contract 传递。
+所有 REST/SSE/Auth/Configuration operation MUST 经由 committed canonical OpenAPI generated operation client，或由同一 canonical OpenAPI 生成的 typed operation map；这是唯一允许定义 path、method、request/response schema、cookie/CSRF、ETag、idempotency 与 event header semantics 的 frontend wire boundary。业务 feature、hooks、MSW fixture 与 error handling 不得并行手写 URL、method、header、cookie 名、CSRF token 名或 DTO 的第二事实源。CI 必须包含 codegen drift gate 与 contract-boundary test。
 
 ### 15.1 Base
 
@@ -1030,32 +1077,29 @@ ETag: "<sha256>"
 
 此类 query 可长期 cache。
 
-### 15.5 Bearer auth consumption
+### 15.5 Common-key login / HttpOnly session
 
-OpenAPI 全局安全要求是：
+通用密钥是唯一登录凭证，但不是前端长期持有或附加到每个请求的 bearer：
 
-```http
-Authorization: Bearer <token>
-```
+- `/login` 表单只接受通用密钥；不存在 username/email/social login、human-role 或 workspace selector；
+- raw key 只在当前 form memory，通过 server-generated auth operation 提交一次，完成后立即清空；
+- 认证成功由 server 建立 `HttpOnly + Secure + SameSite` session；Frontend 不读取、复制或持久化 session cookie；
+- 所有 state-changing request 使用 canonical generated CSRF contract；cookie 名、CSRF token/header、rotation/expiry 由下一版 OpenAPI 定义，本文不发明；
+- raw key/session/CSRF 不进入 URL、analytics、error detail、日志、DOM 持久区、截图或 browser storage；
+- 401 清理 session presentation、旧 `sessionEpoch` cache/SSE 并进入 `/login`；403/domain gate 保留 session，不误导重新登录；
+- Cookie 与 SSE/reconnect 的 exact transport 由 canonical machine contract 生成，不手写降级 query token。
 
-- 除 OpenAPI 明确 `security: []` 的 `GET /api/v1/system/health` 外，所有 `/api/v1` operation 均附带 bearer；`/setup/*` 也必须认证；
-- token 只能由统一 auth bootstrap/client interceptor 提供，只发送到同源 `/api/v1`，不得进入 URL、analytics、error detail、日志或持久 browser storage；
-- SSE 使用支持 request header 与流式解析的 fetch-based client，附带 bearer 和 `Last-Event-ID`；不得因原生 `EventSource` 不能设置 header 而把 token 放进 query string；
-- `401 + UNAUTHENTICATED` 表示凭证缺失/无效：清理内存 auth state，进入重新认证流程，不把当前动作显示为权限拒绝；
-- `403 + PERMISSION_DENIED` 或 holdout-specific 403 表示身份已认证但 actor/policy/gate 禁止：保留会话，展示稳定 reason/action，不重试登录；
-- 401/403 都不得 blind retry，诊断保留 `request_id`。
+旧 Global Bearer/`Authorization: Bearer` 条款由本节明确 supersede；machine rewrite 完成前不实现临时兼容层。
 
-### 15.6 Authenticated workspace scope
+### 15.6 Single-system session scope
 
-Bearer resolution 在 server 产生 trusted `workspace_id`；frontend 不发送、覆盖或从 public ID 推断 workspace。任何 body/query/custom header/localStorage 的 `workspace_id` 都不是授权输入。所有 resource detail/list/mutation、404 probe、ETag/If-Match、lock、Artifact、Agent Run/Tool/Job trace 与 SSE 都由 server 以 `(workspace_id, public/internal resource ID)` 双 scope。
+系统存在一个固定逻辑 human principal `OWNER`，但不存在可管理的 user/member account、human role/RBAC、tenant 或 workspace switch。六个 Agent Role 仍是非人类运行角色。后端可保留唯一 internal singleton `workspace_id` 作为 namespace，但 Frontend 不展示、选择、切换、缓存或提交它。本文所有旧 authenticated workspace、cross-workspace、workspace-local config 与 `authScopeKey` 规则均 superseded。
 
-Public semantic ID 高熵且 global unique，但只是 locator，不是 capability。其他 workspace 的有效 ID 与随机不存在 ID 均按同一 `404 RESOURCE_NOT_FOUND` UI 路径处理；禁止用 403 差异、timing、error context、ETag/revision、list count 或 speculative prefetch 判断存在性。
+每次成功认证创建新的内存 `sessionEpoch`。TanStack Query、mutation、SSE cursor/dedupe 均以该 epoch 为客户端 root namespace；它不发送到 API，也不是授权输入。session 失效或重建时先 cancel old requests、关闭 SSE、清除旧 epoch cache/event state，再 bootstrap 新 session。
 
-TanStack Query 的所有 server-state key 必须带 auth bootstrap 提供的 opaque `authScopeKey` root namespace；它只用于客户端 cache partition，不发送到 API。若无法从受信 session metadata 稳定派生，则每次成功 auth bootstrap 创建新的内存 scope epoch。auth scope 变化时必须先 cancel old requests、关闭 SSE、清除旧 scope query/mutation/event cursor/dedupe state，再启动新 scope；禁止仅以 public ID 共享 cache。未提交 local form draft 只能在明确属于同一 auth scope 时保留。
+自然键、配置 identity、Access Key fingerprint、Policy/Agent/Provider ref、Approval subject、lineage、checkpoint、Job dependency 与 Artifact/Provenance ref 只跟随 server-authorized generated response。Frontend 不从 ID 拼请求、不构造 physical path/storage key、不维护第二份 scope tuple。
 
-自然键/版本键由 server 在 workspace 内解析；frontend 不生成全局 settings/provider/policy/version/role identity。Agent config query key 至少是 `[authScopeKey, 'agentConfig', role]`，相同 role 的 ETag/revision 不能跨 scope 复用。Approval subject、lineage、checkpoint、Job dependency、Artifact/Provenance ref 均只跟随已授权 response，不从 ID 拼接额外请求；`checkpoint_thread_id` 绝不能作为独立 deep-link/resume key，Agent resume/handoff 必须先由 server 用 `(workspace_id,agent_run_id)` 解析。
-
-`snapshot_partitions` 不含 `workspace_id`，是只能通过 immutable `snapshot_id` 父链继承 scope 的 child。Frontend 不定义 partition detail/list route、query key 或独立 resolver；partition/artifact 只能从已通过 `[authScopeKey,'snapshot',snapshotId]` 授权的 Snapshot server projection 消费。父 query 404/未授权时不得以 child ID、hash 或 artifact ref 发起 fallback probe。
+Snapshot partition 等 child 仅从已授权 parent projection 消费，不建立独立 fallback probe。所有 resource authorization、session、CSRF、idempotency 与 ETag scope 必须由更新后的 canonical OpenAPI 定义。
 
 ---
 
@@ -1082,7 +1126,7 @@ Exact suffix grammar：uppercase canonical Crockford ULID `[0-7][0-9A-HJKMNP-TV-
 
 TanStack Router param/deep-link 在进入 loader/queryFn 前使用对应 operation generated validator：非法 ID 显示 Invalid Link/Not Found、记录安全诊断且零 API request，不能 normalization 后重试。HTTP/SSE/fixture 中 public ID 或 generic `ObjectRef` 未通过 generated runtime validator 时，整份 response/event fail closed，不写 query cache、route、toast 或 analytics；`ObjectRef.type` 与 prefix 必须匹配，禁止由 prefix 猜/改 type。
 
-合法 ID 的 query key 使用 `[authScopeKey, resourceType, exactValidatedId, ...]`；public ID 语法不替代 authenticated workspace 双 scope。auth scope 变化仍按 §15.6 清旧 cache/SSE，不能因 global uniqueness 在 workspace 间共享 query。
+合法 ID 的 query key 使用 `[sessionEpoch, resourceType, exactValidatedId, ...]`。session 变化按 §15.6 清旧 cache/SSE；public ID 语法不替代 server authorization。
 
 ---
 
@@ -1103,13 +1147,13 @@ type ApiProblem = components['schemas']['ApiProblem']
 type CanonicalErrorCode = components['schemas']['CanonicalErrorCode']
 ```
 
-当前 canonical OpenAPI 的 `CanonicalErrorCode` 含 65 项；数量仅用于 contract drift gate，不在本文复制枚举。R2 新增 `CONNECTION_VALIDATION_EXPIRED`、`CONNECTION_KIND_MISMATCH`；新增、删除或重命名 error code 必须先改 canonical OpenAPI，再由 codegen 传播。
+`CanonicalErrorCode` 的成员与数量仅由 validation-time canonical OpenAPI 计算，本文不复制固定数量或枚举。新增、删除或重命名 error code 必须先改 canonical OpenAPI，再由 codegen 传播。
 
 **前端逻辑只能基于 `status + code`。** 禁止解析 `detail` 文案。
 
 ### 17.1 UI mapping 穷尽性
 
-所有 65 项 generated code 必须进入编译期穷尽映射：
+所有 generated code 必须进入编译期穷尽映射：
 
 ```ts
 const errorPresentation = {
@@ -1124,7 +1168,7 @@ CI 必须在 codegen 后执行 typecheck；OpenAPI 新增 code 而 UI 未映射�
 前端重点处理：
 
 ```text
-401  missing / invalid bearer credential
+401  missing / invalid session; re-authentication required
 403  permission / locked protected result
 409  lifecycle conflict / approval stale / idempotency conflict
 412  revision mismatch
@@ -1152,28 +1196,16 @@ Key：
 - 因 network retry 不重新生成；
 - 用户重新修改表单/重新发起 intent 才生成新 key。
 
-Server retention：
-
-```text
-7 days
-```
-
-Server identity 精确为：
-
-```text
-(workspace_id, actor_id, uppercase HTTP method, normalized route template, key)
-```
-
-`workspace_id/actor_id` 只来自 auth context，route 是 canonical operation template；frontend 只提供 opaque key，不发送 scope。首次 record 持有 60 秒 `PROCESSING` lease；只有 server lease holder 可续租/写 terminal response。lease 到期后是否 takeover 由 server 在事务内锁定精确五元记录并检查 side-effect/Job evidence 决定；frontend 不把本地 60 秒 timer 当成“可安全重新执行”。
+Server retention、identity、processing lease 与 takeover 只由更新后的 canonical generated contract 定义。旧 workspace/actor 五元 scope 与固定 duration 由 §0.2/§15.6 supersede；frontend 只提供 generated request 所需 opaque key，不发送或猜测 scope，不以本地 timer 判断可安全重试。
 
 前端行为：
 
 - `IDEMPOTENCY_IN_PROGRESS` → 打开 existing job/resource（若 context 返回）；
 - same key replay success → 当作原请求成功，不 duplicate toast；
 - `IDEMPOTENCY_CONFLICT` → 不自动 retry，重新产生新的 user intent/key。
-- 同一五元 + 同 canonical request hash 才可 replay；同一五元 + 不同 hash 必须 conflict；
-- 同 key 在不同 authenticated workspace、actor 或 normalized route 中不碰撞、不可互相观察；客户端不得利用 key 查询另一个 scope；
-- record 统一保留 7 days；expired record 也不能由客户端假设原 side effect 不存在。
+- same intent/hash replay 与 conflict 只按 generated contract 解释；
+- 客户端不得利用 key 探测其他 operation 或 session；
+- record expired 时也不能由客户端假设原 side effect 不存在。
 
 ### 18.2 If-Match
 
@@ -1273,19 +1305,19 @@ type EventType = components['schemas']['EventType']
 // SseEnvelopeSchema.payload === EventPayloadSchema; unknown fields fail closed.
 ```
 
-Canonical event contract 的 7 个 schema source 是 `info.x-quantfoundry-event-object-type`、`info.x-quantfoundry-event-object-id`、`info.x-quantfoundry-event-object-pair-rules`、`EventType`、`EventWaitingOn`、`EventPayload`、`SseEnvelope`；codegen/runtime compiler 是 frontend type、validator 与 fixture 的唯一来源。不在前端手写 locator union/pair map、event union、重复 DTO 或 `z.record(...)` fallback。`EventType` 是 31-member 精确小写 allowlist；任何未知 future member、大小写漂移、`schema_version != 1`、envelope/payload/waiting-on extra field 或 waiting-on shape 错误均 fail closed：丢弃整条 event，不 merge/cache/toast，记录 contract/version-skew telemetry，并在本地进入与 `system.resync_required` 相同的 query-level invalidation/refetch recovery。若 mismatch 持续，显示 contract-incompatible/degraded 状态，停止无界 reconnect loop；不得重挂 App、清 route 或清未提交 draft。
+Canonical event schemas、pair rules、`EventType`、`EventWaitingOn`、`EventPayload` 与 `SseEnvelope` 只来自 codegen/runtime compiler；Frontend 不记录固定 schema/member 数量，不手写 locator union/pair map、event union、重复 DTO 或 permissive fallback。任何 unknown/mismatch/extra field/waiting-on shape 错误均 fail closed：丢弃整条 event，不 merge/cache/toast，记录 contract/version-skew telemetry，并执行 query-level invalidation/refetch recovery。若 mismatch 持续，显示 contract-incompatible/degraded 状态并停止无界 reconnect loop；不得重挂 App、清 route 或清未提交 draft。
 
 `validation.holdout.updated` 只允许状态/曝光 metadata；任何 Holdout result value、metric、chart point、credential、raw tool/model payload，即使尝试嵌入允许的通知字段，也必须视为泄漏并 fail closed，且不得写入 cache、DOM、a11y tree、telemetry detail。`EventPayload` 只是 notification；对象 detail endpoint 始终是 server truth。
 
 ### 20.1 Replay
 
 ```text
-server replay retention: 7 days
-delivery: at-least-once
-cursor: monotonically increasing sequence per authenticated workspace
+server replay retention: canonical generated contract
+delivery: canonical generated contract
+cursor: current session sequence
 ```
 
-SSE auth handshake 冻结 server-trusted workspace；客户端 cursor/dedupe identity 是 `(authScopeKey, sequence)`，`Last-Event-ID` 只能来自当前 auth scope。切换/重建 auth scope 必须关闭旧连接并清掉旧 cursor，不能把 sequence 当跨 workspace global cursor。server replay/event 只可属于当前 workspace；若 event/ref 与 scope 不一致，整条 fail closed、清理连接并进入安全重新认证/resync，不以 public global-unique ID 放宽检查。
+SSE handshake 使用 HttpOnly session 与 canonical CSRF/session transport。客户端 cursor/dedupe identity 是 `(sessionEpoch, sequence)`；切换/重建 session 必须关闭旧连接并清掉旧 cursor。event/ref 未通过 generated validator 时整条 fail closed并进入安全 resync，不以 public ID 放宽检查。
 
 Client：
 
@@ -1371,9 +1403,9 @@ settings provider_connection agent_config event_stream
 
 `strategy_version` 必须保留 exact STRAT aggregate ID、`object_version>=1`、`object_revision>=1`；SSE adapter 不得将 version 填 null、删除，也不得用 current/max 猜测。`settings` 只接受 `SETTINGS-DEFAULT`，`provider_connection` 只接受 lowercase UUIDv4，`agent_config` 只接受 generated 六角色 enum，`event_stream` 使用当前 envelope `EVT-` ID；四个 special branch 均要求 `object_version=null` 且 `object_revision>=1`。EventType→branch mismatch、type/ID mismatch、unknown branch、缺 version/revision 或非 canonical UUID 整条 fail closed，不生成 query key，执行与 `system.resync_required` 相同的 scoped refetch。
 
-### 20.4 31-member allowlist → P0 query-key routing
+### 20.4 Generated allowlist → P0 query-key routing
 
-事件路由表使用 `satisfies Record<EventType, QueryInvalidationRule>` 建立 compile-time exhaustiveness；31 个 key 来自 generated `EventType`，下表只是 invalidation 行为，不是第二套 event enum。`object_id/object_version/object_revision` 先经 envelope schema 校验；只命中已存在且与当前 Owner/workspace/route 对齐的 active query。无法安全定位时只刷新 `overview`/当前页面 server truth，不构造任意 query key。
+事件路由表使用 generated `EventType` 建立 compile-time exhaustiveness；本文不冻结 member 数量。`object_id/object_version/object_revision` 先经 envelope schema 校验，只命中当前 `sessionEpoch` 下已存在且与 route 对齐的 active query。无法安全定位时只刷新 `overview`/当前页面 server truth，不构造任意 query key。
 
 | generated `EventType` member | active query keys / P0 surface |
 |---|---|
@@ -1398,9 +1430,9 @@ settings provider_connection agent_config event_stream
 | `system.health.updated` | `systemHealth`、`overview` |
 | `system.resync_required` | 上表与当前 route 相交的全部 active mutable query；保留 immutable cache、App、route、scroll、Tab、draft |
 
-`experiment.created` 与 `experiment.updated` 必须分别覆盖“Research 列表/Workspace 出现新 child”和“Experiment Detail/Research Workspace 收敛到新 revision”；二者都不得把 event payload 当 Experiment detail merge。Paper/Review/Notification 是已知 allowlist member，但其 R2 页面请求仍受 45-operation 契约限制；收到事件不代表可调用 future endpoint。
+`experiment.created` 与 `experiment.updated` 必须分别覆盖“Research 列表/Workspace 出现新 child”和“Experiment Detail/Research Workspace 收敛到新 revision”；二者都不得把 event payload 当 Experiment detail merge。Paper/Review/Notification 是否可用只由 validation-time canonical operation set 决定；收到事件不代表可调用 future endpoint。
 
-`domain_events.sequence` 与 dedupe set 只在 authenticated workspace partition 内单调。相同 sequence 可合法出现在不同 workspace，不能因此 suppress 新 scope event；其他 workspace event/event ref 不得进入 query invalidation、notification、telemetry detail 或 Overview aggregation。
+`domain_events.sequence` 与 dedupe set 只在当前 `sessionEpoch` 内解释；新 session 不复用旧 cursor/dedupe。invalid event/ref 不得进入 query invalidation、notification、telemetry detail 或 Overview aggregation。
 
 # 21. JobProgress（冻结版）
 
@@ -1787,6 +1819,7 @@ hidden_thoughts
 AppRoot
 ├── Sidebar
 ├── GlobalHeader
+│   └── SessionIndicator / Lock
 ├── RouteOutlet
 ├── GlobalOverlayRoot
 │   ├── CommandPalette
@@ -1812,33 +1845,25 @@ header fixed/sticky
 自定义 UI breakpoints：
 
 ```text
-<1180    unsupported
-1180–1279 compact desktop
-1280–1599 standard
->=1600   wide
+390–767   compact single-column / progressive disclosure
+768–1179  single-column / Sheet + Drawer
+1180–1599 multi-column workbench
+>=1600    wide workbench + optional persistent inspector
 ```
 
-不直接套 Tailwind 默认 mobile-first breakpoint 语义。
+不直接套 Tailwind 默认语义；使用 QuantFoundry semantic breakpoint utilities。390/768 需要真实重排，不是 desktop scale-down。
 
 ---
 
-# 32. Unsupported Width
+# 32. Responsive Surface Contract
 
-`<1180px`：
+QuantFoundry 支持 390px+ Responsive Web，不开发原生 App：
 
-渲染阻断页：
-
-```text
-QuantFoundry V1 is optimized for desktop research workflows.
-Minimum supported width: 1180px.
-```
-
-仍允许：
-
-- logout；
-- system diagnostic copy。
-
-不尝试响应式压成 mobile。
+- Login、Settings、Access Keys、Database、Health、Diagnostics 在 390px 完整可用；
+- 768–1179px Sidebar 变 Sheet、页面单栏、Inspector 变 Drawer、主动作 sticky；
+- Research/Validation 窄屏保留 identity/state/needs action/summary，复杂图表和 inspector 渐进披露；
+- Wide Table/Chart 仅允许组件内部显式滚动；页面不得非预期横向滚动；
+- 390px 以下可显示最小宽度提示，但不得影响 390px 验收边界。
 
 ---
 
@@ -1888,7 +1913,7 @@ Advanced JSON viewer、PDF preview 等延迟加载。
 
 # 35. Page P00 — Setup 实现
 
-Setup 使用独立 `SetupShell`，不加载主 Sidebar。
+Setup 使用独立 `SetupShell`，不加载主 Sidebar；字段、状态、validation、capability 与 mutation 必须复用 Settings 的 server-generated configuration registry/client/component，不形成第二配置事实源。
 
 状态：
 
@@ -1899,15 +1924,11 @@ connection test result
 capability result
 ```
 
-五步和其 Continue/Finish eligibility 一律读取 `GET /setup/status`；Provider/Model option 读取 `GET /setup/capabilities`。只消费 generated closed `SetupStatus`。`ai_connection_id` 仍要求 validated + active + unexpired + current Owner + `kind=AI`。
+五步、Continue/Finish eligibility、Provider/Model options、active refs 与 fallback 全部只消费下一版 canonical generated contract。旧 `Owner/workspace`、固定 request shape、固定 fallback precedence 与 endpoint 描述均由本节 supersede；machine rewrite 完成前不实现、不补临时 DTO。
 
-三个 policy/cost ref 的唯一有效条件是 `status=ACTIVE` + current Owner/workspace + exact `RESEARCH_POLICY/RISK_POLICY/COST_MODEL` kind，DRAFT/RETIRED 均为对应 boolean=false + ref null。Reload 不从 name、boolean、default、URL 或 storage 合成 ref。
+Reload 只从 server/database readback 恢复已提交配置；不从 name、boolean、default、URL、environment display 或 browser storage 合成 ref。null/invalid ref 清除旧 success state并显示 server reason；不暴露 internal identity。
 
-路由恢复只 switch generated `fallback_step`，precedence 固定 `AI_PROVIDER > RESEARCH_DEFAULTS > RESEARCH_CONSTITUTION > null`；null 不等于 completed。`completed=true` 只接受 `owner_session_ready=true`、AI/policy/cost 四组 ready + non-null refs 与 fallback null。null/invalid ref 清除旧 success state，返回 server 指定 Step 并显示 generic revalidation explanation，不暴露 internal UUID、policy content 或 cross-owner existence。AI/Data credential 仍仅进入 form memory，server validation 后立即清除。
-
-Step 5 和 `completeSetup` mutation 必须从同一 fresh `SetupStatus` snapshot 读取 exact non-empty `research_policy_id`、`risk_policy_id`、`cost_model_id`，连同 `ai_connection_id` 提交 generated `SetupCompleteRequest`。任一 ref null 时禁止发送；mutation 不接受 `portfolio_policy_id`、显示名映射、last-known ref 或 optimistic completion。
-
-200 只能按 generated closed `SettingsDetail` 解码；三 ref 均 required non-null，逐项断言 `response == request == persisted binding`，不重解析 latest。Response header `ETag` required，先校验 canonical weak-tag pattern，再精确比较 `ETag === W/"${body.settings_id}:${body.revision}"`；同一 Idempotency-Key 的 successful replay 必须得到完全相同 body/settings_id/revision/ETag。缺 header、malformed tag 或 header-body mismatch 均视为 contract failure：不写入 completed/settings cache、不生成修复 tag、不 blind retry mutation；保留 intent/key、显示错误并以 GET SetupStatus refetch server truth。
+Finish mutation 从同一 fresh generated snapshot 读取 required refs；任一 required value 缺失时禁止发送。Response、ETag、idempotency、CSRF 与 identity assertions 以更新后的 generated contract 为准；缺失/mismatch 时显示 contract failure、保留未确认状态并 refetch，不 optimistic completion。
 
 Credential：
 
@@ -1916,6 +1937,8 @@ Credential：
 - submit 后立即清空；
 - 后端返回 masked identifier，不返回 secret；
 - error log 不附带 input value。
+
+Setup 完成后，后续变更只能在 Settings；Data Center 与 Agent Center 仅 deep-link，不复制 form。
 
 Constitution：
 
@@ -2270,64 +2293,87 @@ Raw JSON：
 - JSON viewer lazy load；
 - sensitive fields 已由后端 redaction，前端不能承担 secret redaction 的唯一责任。
 
-Audit list/sequence 与 tamper-evident hash chain 都是 current authenticated workspace partition。frontend 只对当前 scope 的相邻 `sequence`/hash link 展示连续性，不把多个 workspace 合成全局时间线，也不通过 public event ID、sequence gap、Agent/Tool filter 或 deep link 探测其他 scope。
+Audit list/sequence 与 tamper-evident hash chain 只在当前 server-authorized session projection 中解释。Frontend 只对当前 `sessionEpoch` response 的相邻 `sequence`/hash link 展示连续性，不通过 public event ID、sequence gap、Agent/Tool filter 或 deep link 探测未授权对象。
 
 ---
 
 # 45. Settings
 
-Versioned policy：
+Settings 是系统全部配置的唯一写入口。Server-generated configuration registry 是 category、field、schema、validation、capability、dependency、secret metadata 与 action 的唯一事实源。
+
+Category：
 
 ```text
-Research Policy
-Risk Policy
-Cost Model
+Overview
+Access Keys
+Database
+AI
+Data
+Agents
+Research
+Policy
+Risk
+Cost
+Jobs
+Scheduler
+Storage
+Notifications
+Appearance
+System
 ```
+
+AI 覆盖 provider/model；Data 覆盖 provider/source；Agents 覆盖 runtime/admission；Appearance 覆盖 language/timezone/theme；System 覆盖 backup/diagnostics。分类名与 route slug 是跨层方案 §7.2 的 16 个 exact key；server-generated registry 必须精确匹配该 closed set，并提供字段、validation、capability 与 action。
+
+Frontend 不维护第二份字段/enum，不写配置文件，不读取配置文件，不把 localStorage/sessionStorage/IndexedDB 当配置源。所有持久配置与 UI preference 必须 submit 后由 server/database readback 收敛；draft/secret 只在 form memory。
+
+Setup 复用同一 registry/client/component；Data Center 和 Agent Center 只显示 runtime/admission state，并 deep-link 到 Settings。其他页面不得复制配置 form。
 
 统一组件：
 
 ```text
-<VersionedSettingsPanel />
+ConfigurationOverview
+SettingsSearch
+ConfigurationSection
+SecretInput
+ConnectionEditor
+CandidateVsActiveDiff
+DependencyImpact
+StickyApplyBar
+ConfigurationConflict
+VersionedSettingsPanel
 ```
 
-当前 active version read-only。
+Research Policy、Risk Policy、Cost Model 的 active version read-only；变更使用 `Create New Version`，不是普通 Save。非版本化配置使用 sticky apply bar；stale/conflict 必须 refetch + review，不覆盖。
 
-新版本使用：
+## 45.1 Access Keys（P0）
+
+多个通用密钥等权，不含 role/scope/Owner/workspace。列表只消费 generated projection，显示 label、fingerprint、status、created、last used、last rotated；raw secret 不回显。若 machine contract 支持 expiration 才显示 expiration。
+
+Create/add、rename、rotate、revoke、expire 全部使用 generated mutation、ETag/idempotency/CSRF。状态只允许 `ACTIVE | REVOKED | EXPIRED`；`REVOKED` 与 `EXPIRED` 不可恢复，且没有可逆暂停/恢复状态。必须阻止撤销最后一个 `ACTIVE` 密钥，且设置 expiration 时不得形成零个有效密钥。Login key 和新 secret 只存在 form memory，提交结束立即清空。
+
+## 45.2 Database（P0）
+
+Database 使用 `ACTIVE` 与 `CANDIDATE` 两份 server state：
 
 ```text
-Create New Version
+edit candidate
+→ validate
+→ server test
+→ capability/warning result
+→ confirm reconnect/dependency impact
+→ activate
+→ active config + runtime health readback
 ```
 
-不是普通 Save。
+Test failure、stale、CSRF/contract failure 或 activate failure 不得覆盖 active connection。Password/DSN credential write-only；response、logs、telemetry、DOM 与 screenshot 仅允许 masked metadata。
 
-General 等非版本化个人设置才使用 `Save Changes`。
+## 45.3 Agent Config / Disable（P0）
 
-## 45.1 Agent Config / Disable（P0）
+Agent 配置只通过 Settings 与更新后的 canonical OpenAPI。旧固定 endpoint、`workspace_id`、`authScopeKey` 和 workspace-local ETag 条款由本节 supersede；machine rewrite 前不手写 client/fixture。
 
-P0 只使用 canonical OpenAPI 已提交的：
+展示仍必须区分 disabled 对未来 admission、已有 durable/checkpointed run、required role waiting state 与 re-enable 的不同影响；exact state/reason 只消费 generated contract。Agent config 不得编辑 hard tool allowlist、approval authority、holdout access 或 risk authority。
 
-```http
-GET /api/v1/agents
-GET /api/v1/agents/{role}/config
-PUT /api/v1/agents/{role}/config
-If-Match: W/"agent:{role}:{revision}"
-```
-
-`Disable`/`Enable` 不是独立权限 mutation；UI 将其映射为 `AgentConfigUpdate.enabled=false|true`，与其他 config 字段统一走 PUT。提交前读取最新 `AgentConfig.revision`/ETag，成功后保存 response ETag 并 refetch；缺失 If-Match 为 `428 PRECONDITION_REQUIRED`，stale 为 `412 REVISION_MISMATCH`，均不得覆盖或自动重放用户意图。
-
-Agent config identity 是 server-side `(workspace_id, role_key)`；frontend query/cache/ETag scope 使用 `[authScopeKey, role]`。同名 role 在不同 workspace 的 config、revision、ETag 与 admission state 完全独立；auth scope change 后不得携带旧 ETag PUT、合并表单或显示 stale row。当前 workspace 不存在该 role 时，无论其他 workspace 是否存在都返回同质 404；当前 workspace 存在时，If-Match 只比较本 workspace config，412 不得包含 foreign revision/config/action capability。
-
-展示必须区分：
-
-- `enabled=false` 立即阻止该 role 的新 run admission，新建失败显示 `AGENT_DISABLED`；
-- config commit 不立即取消或改写已经 durable/checkpointed 的 run；已运行 model/tool 可完成，Agent runtime 在后续 safe checkpoint 才停止继续推进；
-- required role 被禁用时 workflow 不得显示“已跳过成功”，而应显示 `WAITING_USER / AGENT_DISABLED`；
-- `enabled=true` 只恢复未来 admission，不自动 resume、重建或篡改既有 checkpoint/run；
-- R2 Agent Center 只展示 `AgentConfigList`/单 role `AgentConfig` 的 `enabled`、model/runtime/limits、revision/action capabilities 与 ETag；不展示或推断 active run/checkpoint。
-
-Agent config 不得编辑 hard tool allowlist、approval authority、holdout access 或 risk authority；这些仍由 versioned server policy/code 强制。
-
-Agent Center enriched Current Run、Runs Today、Last Run、Success/Error Count、Allowed Tools、Runs history 与 Test Agent 均为 `FUTURE_STAGED`。当前无对应 list/resolver/test operation，禁止 client wrapper、query、prefetch、MSW success fixture 或占位统计。其他页面仅在已经持有 canonical `agent_run_id` 时才可调用 `getAgentRun`；这不构成 Agent Center enrichment。
+无 generated contract 的 Agent Center enrichment 禁止 client wrapper、query、prefetch、MSW success fixture 或占位统计。
 
 ---
 
@@ -2361,7 +2407,7 @@ Shortcut descriptor 同时供：
 
 # 47. Accessibility
 
-目标 WCAG 2.1 AA 方向。
+目标 WCAG 2.2 AA。
 
 实现要求：
 
@@ -2380,6 +2426,11 @@ Shortcut descriptor 同时供：
 - `prefers-reduced-motion`；
 - chart textual fallback；
 - focus ring 不被 outline:none 消除。
+- Focus Not Obscured；sticky header/action bar 不遮挡 focus；
+- Target Size (Minimum)；
+- Accessible Authentication；Login 支持 paste/password manager，不要求记忆或转写密钥；
+- Secret show/hide 有 accessible name/state；
+- 200% zoom、390px、长中文/英文不丢状态或主动作。
 
 ---
 
@@ -2424,7 +2475,7 @@ RUNNING
 
 服务端时间全部 ISO 8601 UTC。
 
-前端按用户 Setting timezone 显示。
+前端按 server/database Setting timezone 显示；系统没有独立 user profile。
 
 禁止在 API 传本地模糊时间字符串。
 
@@ -2595,14 +2646,14 @@ https://quantfoundry.local/
 
 收益：
 
-- bearer 仅发送到同源 `/api/v1`，减少 token 泄漏与 CORS 面；
+- HttpOnly session cookie 与 generated CSRF contract 限定同源，减少凭证泄漏与 CORS 面；
 - SSE 简单；
 - CSP 简单；
 - 减少 CORS 配置面。
 
 ## 54.2 Credential
 
-用户 bearer token 与 provider credential 分离。bearer 仅驻留统一 auth runtime memory，并遵循第 15.5 节；provider API key/secret 永不进入普通前端读取路径。
+通用登录密钥、HttpOnly session、CSRF 与 provider credential 分离。Frontend 只在 Login form memory 短暂持有通用密钥，不能读取 HttpOnly session；CSRF 的 exact transport 只消费 generated contract。Provider/API/Database secret 只进入专用 write-only form，不进入普通读取路径。
 
 API key / provider secret：
 
@@ -2642,29 +2693,24 @@ form-action 'self'
 
 V1 不从 Google Fonts CDN 加载。
 
-## 54.5 Artifact workspace isolation
+## 54.5 Artifact single-session isolation
 
-Artifact metadata/read/export 只跟随当前 auth scope 的 canonical API response。Frontend 永不直接访问 Artifact filesystem，不接受/展示 `storage_key`，不以 `artifact_id` 或 `sha256` 拼对象路径、signed URL 或 dedupe key。相同 content hash 可存在于多个 workspace；query cache key 必须包含 `authScopeKey`，URL/Blob/object URL 不得跨 scope 复用。
+Artifact metadata/read/export 只跟随当前 `sessionEpoch` 下 server-authorized canonical response。Frontend 永不直接访问 Artifact filesystem，不接受/展示 `storage_key`，不以 `artifact_id` 或 `sha256` 拼对象路径、signed URL 或 dedupe key。session 失效时清理 URL/Blob/object URL 与相关 query cache。
 
-任何 artifact deep link、download/export ref、Provenance/Tool output ref 都由 server 先按 `(workspace_id, artifact_id|storage_key)` 授权；跨 scope 与不存在使用同质 404。error/telemetry/DOM/browser storage 不得包含另一 workspace 的 metadata、storage key、signed URL、credential、encryption material 或 physical dedupe identity。
+任何 artifact deep link、download/export ref、Provenance/Tool output ref 都先由 server 授权。error/telemetry/DOM/browser storage 不得包含 storage key、signed URL、credential、encryption material 或 physical identity。
 
 ---
 
 # 55. Browser Storage Policy
 
-允许 localStorage：
+localStorage、sessionStorage 与 IndexedDB 不允许保存任何系统配置、UI preference、session、credential 或 server truth。禁止：
 
 ```text
-sidebar preference
-non-sensitive UX preference
-bootstrap locale fallback
-```
-
-禁止：
-
-```text
+common login key
 API key
-access token
+database/provider secret
+session / CSRF
+sidebar / locale / appearance configuration
 Research result source of truth
 Approval state
 Holdout result
@@ -2672,7 +2718,7 @@ Strategy mutable draft after submit
 Paper state
 ```
 
-Auth 优先 HttpOnly secure cookie。
+所有持久设置从 server/database readback；未提交 draft 只在内存。Auth 使用 server-managed HttpOnly secure session cookie。
 
 ---
 
@@ -2782,6 +2828,8 @@ conflict
 
 Storybook 与 tests 共用 handlers。
 
+Login、Access Keys、Database 与 Configuration handlers 必须等待 canonical OpenAPI machine rewrite 并从 generated schema 建立；不得先造 success fixture 或暂定 error code。
+
 ---
 
 # 59. Storybook
@@ -2798,7 +2846,18 @@ empty
 error
 disabled reason
 narrow desktop
+390 / 768 responsive
 keyboard focus
+reduced motion
+```
+
+新增 P0 stories：
+
+```text
+LoginKeyForm: idle / submitting / invalid / rate-limited / network / expired
+AccessKeyTable: empty / one / many / revoke confirm / last-key guard / stale
+Database: unconfigured / testing / failed / validated candidate / active / degraded
+ConfigurationSection: loading / draft / applying / active / conflict / restart-required
 ```
 
 特殊组件：
@@ -2843,7 +2902,11 @@ Playwright + axe-core。
 必须覆盖：
 
 ```text
+Login
 Setup
+Settings Overview
+Access Keys
+Database
 Overview
 Research Workspace
 Strategy Detail
@@ -2869,6 +2932,14 @@ Activity
 P0 E2E：
 
 ```text
+Login
+→ Setup / Configuration Overview
+→ Access Keys add/rotate/revoke guard
+→ Database candidate
+→ Test
+→ Activate
+→ Runtime health readback
+
 Overview
 → New Research
 → Research Workspace
@@ -2880,38 +2951,51 @@ Overview
 → Memo
 ```
 
-上述是 `P0_EXECUTABLE_R2` revision 当前可执行 Golden Flow。`Request Paper Approval → Paper Detail` 属 future-staged extension；不得加入 R2 success fixture/E2E，直至后续 canonical revision 提交相应 operation。R2 另测 P15 disabled affordance 无网络请求。
+研究路径中未受 Amendment 影响的 operation 可继续按现有 canonical contract 验证。Login/Access Keys/Database/Configuration 路径必须等待下一次 canonical OpenAPI machine rewrite；在此之前只保留文档验收场景，不创建临时 success fixture、client 或 E2E 假通过。
 
 使用 deterministic mocked backend 或 dedicated test backend。
 
 必须 assert：
 
-1. AI / Calculated 容器不同；
-2. Evidence → Experiment deep link；
-3. Frozen 后 edit 消失；
-4. Holdout locked 不发 result request；
-5. FAIL 无 override；
-6. Approval modal 显示 object version；
-7. Paper 明示 virtual capital；
-8. reconnect 后 job state 恢复。
+1. Login 只使用通用密钥且 raw secret 不泄漏；
+2. HttpOnly session/CSRF 只按 generated contract；
+3. 撤销最后一个有效密钥被阻止；
+4. Database test/apply failure 不覆盖 active；
+5. Settings 是唯一写配置入口；
+6. AI / Calculated 容器不同；
+7. Evidence → Experiment deep link；
+8. Frozen 后 edit 消失；
+9. Holdout locked 不发 result request；
+10. FAIL 无 override；
+11. Approval modal 显示 object version；
+12. reconnect 后 state 从 server 恢复。
 
 ---
 
 # 62. Visual Regression
 
-对 Design System / P0 页面使用 screenshot regression。
+对 Design System / P0 页面使用 Playwright screenshot regression，并由人工/独立 reviewer 完成视觉复核。Pixel diff 不能独立证明 UI 合格。
 
 重点：
 
 ```text
+390×844
+768×1024
 1440×900
 1280×900
 1180×900
+1600×1000
 ```
 
 不对动态图表 tooltip 全量做 brittle pixel test。
 
 固定 chart dataset 后可测布局与 semantic marker。
+
+必须覆盖：Login；Settings Overview；Access Keys empty/one/many/confirm/error；Database unconfigured/testing/failed/validated/active/degraded；核心 P0 的 zh-CN/en、长内容、focus、reduced-motion。
+
+视觉冻结前还必须归档 3–5 组公开参考 desktop/mobile 截图与 abstraction table。当前未采集资产，因此现阶段不得宣布 design frozen。
+
+人工 review 记录 viewport、route/state、screenshot path、reviewer、result、remaining risk，并检查 5–10 秒理解、card soup、渐变、Inter-first、真实重排、横向滚动、secret 泄漏与参考未复制。
 
 ---
 
@@ -2966,7 +3050,7 @@ ESLint 10 flat config。
 - no raw `fetch` outside `api/`；
 - no `dangerouslySetInnerHTML`；
 - no direct domain hard-coded colors；
-- no direct localStorage outside storage adapter。
+- no configuration、preference、credential、session 或 server truth in localStorage/sessionStorage/IndexedDB。
 
 Prettier exact version。
 
@@ -3103,7 +3187,7 @@ hashed assets    immutable long cache
 
 ---
 
-# 70. Backend / Frontend Contract（已冻结）
+# 70. Backend / Frontend Contract（Auth/Configuration rewrite pending）
 
 ### 70.1 OpenAPI
 
@@ -3111,13 +3195,10 @@ hashed assets    immutable long cache
 OpenAPI 3.1
 /api/v1
 committed schema == runtime schema
-stage = P0_EXECUTABLE
-revision = P0_EXECUTABLE_R2
-operation count = 45
-schema count = 162
+exact stage/revision/count = canonical file at validation time
 ```
 
-Frontend generated client/types/runtime schemas/fixtures 只能覆盖 canonical `P0_EXECUTABLE_R2` revision 的 45 个 operation、162 个 component schema；上述 read model/Search unions、SSE allowlist/closed payload 及嵌套类型只来自 codegen，不得维护第二事实源。full-V1 catalog 其余 endpoint 是明确的 future-staged scope，不得被前端提前实现。
+Frontend generated client/types/runtime schemas/fixtures 只能覆盖 canonical file 当前实际内容；本文不复制 operation/schema/error 数量。Login、Access Keys、Database 与 Configuration 在 machine rewrite 完成前是明确的 blocked scope，不得被前端提前实现。
 
 ### 70.2 Action Capability
 
@@ -3147,13 +3228,11 @@ provenance_id
 ### 70.5 SSE
 
 ```text
-per-authenticated-workspace sequence cursor
-7-day replay
-at-least-once
-system.resync_required
+current-session sequence cursor
+replay/delivery/resync semantics from generated contract
 ```
 
-Cursor/replay/dedupe identity 为 `(authScopeKey, sequence)`；不得跨 workspace 复用。
+Cursor/replay/dedupe identity 为 `(sessionEpoch, sequence)`；新 session 不复用旧 cursor。
 
 ### 70.6 Holdout
 
@@ -3171,12 +3250,10 @@ Cursor/replay/dedupe identity 为 `(authScopeKey, sequence)`；不得跨 workspa
 
 ### 70.8 Idempotency
 
-- exact `(workspace,actor,method,normalized route,key)` scope；
-- 60s PROCESSING lease + evidence-gated takeover；
-- 7-day record；
+- exact scope/lease/retention from generated contract；
 - same key/same hash replay；
 - diff hash conflict；
-- same key 跨 actor/workspace/route 不碰撞。
+- frontend 不发送或猜测 scope。
 
 ### 70.9 Overview
 
@@ -3196,15 +3273,15 @@ Canonical schema + `evaluate`.
 
 ### 70.12 Error
 
-`ApiProblem` + 65 项 `CanonicalErrorCode` 均由 canonical OpenAPI codegen；UI 使用 `Record<CanonicalErrorCode, ErrorPresentation>` 编译期穷尽映射，不维护第二份 enum。
+`ApiProblem` + `CanonicalErrorCode` 均由 canonical OpenAPI codegen；UI 使用 generated enum 做编译期穷尽映射，不在本文复制固定数量或维护第二份 enum。
 
 ### 70.13 Auth
 
-全局 bearer；仅 `/system/health` 匿名。`/setup/*` 保持认证。401 是重新认证边界，403 是已认证 actor/policy/gate 拒绝边界。
+通用密钥只通过 generated login contract 换取 HttpOnly session；state-changing request 使用 generated CSRF contract。401 是重新认证边界，403/domain gate 保留 session。旧全局 bearer 条款失效。
 
 ### 70.14 Agent Config
 
-P0 使用 `GET /agents` + `GET /agents/{role}/config` + `PUT /agents/{role}/config`；mutation 携带 `enabled` + `If-Match`。Disable/Enable 是 admission state，不是 hard permission 修改或现有 checkpoint 删除。
+全部 Settings operation 等待 canonical machine rewrite，Frontend 只消费届时 generated client。Agent admission 的 enabled/disabled state 不修改 hard permission，也不删除现有 checkpoint；通用密钥生命周期仍只遵循第 45.1 节。
 
 ---
 # 71. Frontend 不应该承担的职责
@@ -3222,7 +3299,13 @@ Paper deployment authorization
 Data PIT validation
 Canonical financial metric
 Audit immutability
+Configuration persistence
+Configuration file write/read
+Session authorization
+CSRF policy
 ```
+
+Frontend 只提交 generated configuration mutation 并读取 server/database truth；不得写配置文件、提示用户编辑配置文件、持久化 browser configuration 或把 Settings schema 复制到页面代码。
 
 前端负责让规则“看得见、不可误操作”。
 
@@ -3247,9 +3330,26 @@ Storybook
 MSW
 test harness
 App Shell
+Responsive primitives
+Self-hosted fonts
+Login shell（blocked until Auth OpenAPI rewrite）
+Configuration registry foundation（blocked until Configuration OpenAPI rewrite）
 ```
 
-## Phase 1 — Research Vertical Slice
+## Phase 1 — Authentication / Configuration Vertical Slice
+
+```text
+Login
+Session / Lock
+Setup / Settings Overview
+Access Keys
+Database candidate-test-activate
+Provider / Agent configuration deep-links
+```
+
+本 Phase 必须在 canonical OpenAPI machine rewrite 完成后开始，禁止临时 endpoint/fixture。
+
+## Phase 2 — Research Vertical Slice
 
 ```text
 Overview
@@ -3261,7 +3361,7 @@ Experiment Detail
 Evidence/Provenance
 ```
 
-## Phase 2 — Strategy
+## Phase 3 — Strategy
 
 ```text
 Strategy Library
@@ -3271,7 +3371,7 @@ Version Switcher
 Freeze
 ```
 
-## Phase 3 — Validation / Human Gates
+## Phase 4 — Validation / Human Gates
 
 ```text
 Validation Center
@@ -3281,7 +3381,7 @@ Red Team panel
 Approvals
 ```
 
-## Phase 4 — Decision / Paper
+## Phase 5 — Decision / Paper
 
 ```text
 Portfolio
@@ -3291,13 +3391,12 @@ Paper Detail
 Review
 ```
 
-## Phase 5 — Governance
+## Phase 6 — Governance
 
 ```text
 Data Center
-Agent Center（R2 config-only）
+Agent Center（runtime/admission status only）
 Activity
-Settings
 System Health
 ```
 
@@ -3319,9 +3418,7 @@ advanced agent settings
 
 ```text
 dark theme QA
-mobile
 live broker UI
-multi-user permissions
 multi-asset specialized views
 intraday
 options
@@ -3344,6 +3441,9 @@ options
 - test；
 - no server-state duplication；
 - provenance support 如适用。
+- 390 / 768 / 1180 / 1440 responsive states 如适用；
+- 无 card soup、purple-blue gradient、Inter-first；
+- screenshot regression + 人工视觉复核。
 
 ---
 
@@ -3358,7 +3458,7 @@ options
 5. error；
 6. server truth reconnect；
 7. keyboard 可操作；
-8. 1180 / 1280 / 1440 布局通过；
+8. 390 / 768 / 1180 / 1280 / 1440 / 1600 适用布局通过；
 9. main action hierarchy 符合 UI；
 10. lifecycle 不靠 client 猜；
 11. a11y 自动测试无 Critical；
@@ -3367,6 +3467,19 @@ options
 ---
 
 # 76. V1 Frontend Acceptance Criteria
+
+## 76.0 Authentication / Configuration
+
+- `/login` 只显示通用密钥，无 user/member account、human-role 或 workspace selector；
+- raw key 仅 form memory，换取 HttpOnly session，不进入 browser storage/log/URL/analytics/screenshot；
+- state-changing request 的 cookie/CSRF 只消费 generated contract；
+- session 失效清理旧 `sessionEpoch` query/mutation/SSE/cursor/dedupe state；
+- Access Keys 支持多个等权密钥并防止撤销最后一个有效密钥；
+- Settings registry 覆盖全部可配置项且是唯一写入口；
+- Setup/Data/Agents 复用或 deep-link，不建第二配置源；
+- Database candidate test 失败不覆盖 active；
+- 所有配置 submit 后经 server/database readback；无配置文件/browser storage；
+- Auth/Configuration OpenAPI rewrite 与 generated tests 完成前实现门禁保持关闭。
 
 ## 76.1 AI/System Boundary
 
@@ -3702,66 +3815,59 @@ Immutable audit
 
 # 82. 后端共建契约状态
 
-原 12 项后端共建语义已冻结；可执行 P0 API 以：
+可执行 API 仅以：
 
 ```text
 /QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml
 ```
 
-为唯一 machine-readable 事实源。契约术语固定为 `stage=P0_EXECUTABLE`、`revision=P0_EXECUTABLE_R2`；operation 总数以该文件实际计数为准。未收录的 full-V1 endpoint 为明确的 future-staged scope，不得描述为已可执行。
+为唯一 machine-readable 事实源。operation/schema/error 总数只在验证时从该文件计算，本文不复制固定数量。
 
 当前状态：
 
 ```text
-OpenAPI P0 / revision R2    45 OPERATIONS COMMITTED
-Generated API Types         CANONICAL OPENAPI ONLY
-Bearer Auth                 COMMITTED
-ActionCapability            FROZEN
-SSE Envelope                FROZEN
-SSE Replay                  FROZEN
-Job Progress                FROZEN
-Provenance                  FROZEN
-Canonical Error Codes       65-ENUM CODEGEN
-Idempotency                 FROZEN
-Workspace Double Scope      FROZEN
-Public ID 34-Class Grammar  FROZEN
-Approval Stale              FROZEN
-ETag / Revision             FROZEN
-Overview Read Model         FROZEN
-Chart Aggregate             FROZEN
-Data Capability             FROZEN
-Agent Config GET/PUT ETag   P0 R2 COMMITTED
+Research/Validation existing contract  CANONICAL FILE ONLY
+Generated API Types                  CANONICAL OPENAPI ONLY
+Common-key Login / HttpOnly Session  MACHINE REWRITE REQUIRED
+CSRF                                  MACHINE REWRITE REQUIRED
+Access Keys                           MACHINE REWRITE REQUIRED
+Database candidate/test/activate      MACHINE REWRITE REQUIRED
+Configuration Registry               MACHINE REWRITE REQUIRED
+Single-system session scope           MACHINE REWRITE REQUIRED
+ActionCapability / Holdout / Approval REVALIDATE AFTER REWRITE
+SSE / Job / Provenance / ETag         REVALIDATE AFTER REWRITE
 ```
 
 前端不再使用临时 MSW shape 作为“可自由定义”的 contract。
 
 MSW fixtures 必须由 OpenAPI contract 生成/对齐；不得继续使用历史 Patch shape 或 narrative-only endpoint。
 
-**仍可调整的是非 breaking 实现细节，不是上述语义。**
+Auth/Configuration rewrite、生成类型、contract test 与测试文档联动完成前，Frontend implementation gate 保持关闭；不得以旧 bearer/workspace contract 或临时 MSW shape 继续实现。
 
 ## 82.1 实施、测试与共同 DoD
 
-实现必须清理 `allowed_actions`、客户端 lifecycle permission matrix、客户端 percent/Sharpe/drawdown 计算、hidden holdout points、safety optimistic success、detail-string error parsing、手工 `CanonicalErrorCode` 与重复 DTO；新增 action capability、ETag、idempotency、Problem、bearer auth、SSE sequence/resync、provenance helpers。MSW fixtures 必须覆盖 401/403、65-code UI mapping compile gate、双 workspace public-ID/404/list/cache/ETag isolation、Agent config list/detail/PUT enabled/stale ETag/admission semantics（无 Agent Center current-run discovery）、Reproduce EXACT/CONTROLLED_OVERRIDE/required Location/generated `ExperimentReproduceAccepted`/idempotency five-part scope/lease/retention/lineage/action capability/negative、stale revision、locked Holdout hard-403、per-workspace duplicate/out-of-order/replay/resync SSE、query-level refetch（不重挂 App/不清 draft）、Artifact same-SHA isolation、unknown/known units、能力状态、locked chart marker/null point/downsampling/provenance，并与 45-operation `P0_EXECUTABLE` revision `P0_EXECUTABLE_R2` OpenAPI 对齐。
+实现必须清理旧 bearer、workspace/Owner/`authScopeKey`、browser configuration、重复 Settings form、手工 contract/error enum、客户端 lifecycle permission matrix 与 safety optimistic success。新增 Login/Session/CSRF、Access Keys、Database、Configuration registry、`sessionEpoch`、响应式与视觉 QA 必须全部来自 rewrite 后的 generated contract；在此之前禁止 client、fixture、test success path 或兼容层。
 
-每个 P0 API+UI vertical slice 共同通过：OpenAPI codegen 无 diff、MSW/real contract、ETag/revision、idempotency、canonical error、SSE/REST reconcile、provenance、immutable negative、适用时 Holdout network 与 Approval stale、无 safety optimism、audit deep-link/request_id、async accessibility/keyboard。
+每个 P0 API+UI vertical slice 共同通过：OpenAPI codegen 无 diff、MSW/real contract、cookie/CSRF、ETag/revision、idempotency、canonical error、SSE/REST reconcile、provenance、immutable negative、无 safety optimism、audit deep-link/request_id、WCAG 2.2、390/768/1180/1440 screenshot 与人工视觉复核。
 
 # 83. 最终前端定义
 
 QuantFoundry V1 前端不是一个“把后端 JSON 画出来”的后台管理界面。
 
-它承担三个核心职责：
+它承担四个核心职责：
 
 ```text
 1. 把研究事实、AI 解释、Evidence、Policy 分层表达；
 2. 把长生命周期研究工作恢复成稳定、可追溯的 Server Truth；
 3. 把 Human Approval / Holdout / Frozen / Paper 等系统围栏变成无法误解的交互。
+4. 通过单一 Settings 把全部配置安全地写回 server/database，并以通用密钥 session 保持单系统边界。
 ```
 
 前端的成功标准不是动画流畅或组件数量。
 
 而是：
 
-> **用户可以在一个数据密集型桌面工作台中，始终清楚区分“谁说的、谁算的、依据是什么、当前是什么版本、哪一步在运行、什么被锁定、什么需要自己批准”，并且刷新、断线、异步任务、历史版本都不会破坏这种事实一致性。**
+> **用户可以在 390px+ Responsive Web 中安全登录、完成配置并使用数据密集型研究工作台，始终清楚区分“谁说的、谁算的、依据是什么、当前是什么版本、哪一步在运行、什么被锁定、什么需要自己批准”，且刷新、断线、异步任务、历史版本都不会破坏事实一致性。**
 
 ---
 

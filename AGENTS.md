@@ -17,11 +17,14 @@
 >     │   └── V1.0.0.md
 >     ├── 治理
 >     │   ├── QuantFoundry_Repository_Governance_V1.0.0.md
->     │   └── p0-blockers.yaml
+>     │   ├── QuantFoundry_Remote_Codex_Agent_Replacement_Plan_V1.0.0.md  # 远程单实例 Codex 替换方案；已完成仓库实现，保留真实远端门禁
+>     │   ├── QuantFoundry_User_Interaction_Optimization_Plan_V1.0.0.md  # UX-001 单用户、通用密钥、DB-only 配置与 UI/UX 跨层方案
+>     │   ├── p0-blockers.yaml
 >     │   ├── release-known-issues.json
 >     │   └── release-evidence-manifest.template.json
 >     ├── UI设计方案
->     │   └── QuantFoundry_UI_Design_V1.0.0.md
+>     │   ├── QuantFoundry_UI_Design_V1.0.0.md
+>     │   └── QuantFoundry_UI_Interaction_Redesign_Brief_V1.0.0.md  # Evidence Foundry 设计研究、响应式与视觉验收门禁
 >     ├── 前端技术方案
 >     │   ├── QuantFoundry_Frontend_Technical_Design_V1.0.0.md
 >     │   └── QuantFoundry_Frontend_Technical_Design_V1.0.0_Backend_CoBuild_Patch.md  # 已完整合并；historical archive
@@ -47,10 +50,13 @@
 > | `PROJECT_BACKGROUND.md`                                      | 项目级背景、文件库治理入口与总体边界     |
 > | `docs/PRD/V1.0.0.md`                                         | Final V1.0；产品需求、业务流程、页面/功能、验收口径 |
 > | `docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md`      | 事实源、变更顺序、P0 no-waiver、Agent 编排、兼容与发布语义 |
+> | `docs/治理/QuantFoundry_Remote_Codex_Agent_Replacement_Plan_V1.0.0.md` | 远程单实例 Codex 替换 LangGraph 内置 Agent 的跨层实施方案、当前状态与剩余门禁；不替代 Final V1 事实源 |
+> | `docs/治理/QuantFoundry_User_Interaction_Optimization_Plan_V1.0.0.md` | UX-001 跨层目标、认证与配置控制面、数据库自举、迁移、分阶段与发布门禁 |
 > | `docs/治理/p0-blockers.yaml`                                  | P0 发布阻断项的机器可读 registry；仅有 closure evidence 才可关闭 |
 > | `docs/治理/release-known-issues.json`                         | committed release known-issue registry；P0 path 未解决 S1 阻断发布 |
 > | `docs/治理/release-evidence-manifest.template.json`           | release evidence manifest 的 committed schema/template |
 > | `docs/UI设计方案/QuantFoundry_UI_Design_V1.0.0.md`           | UI、交互、视觉与页面状态                 |
+> | `docs/UI设计方案/QuantFoundry_UI_Interaction_Redesign_Brief_V1.0.0.md` | Evidence Foundry 设计方向、参考研究、信息架构、响应式、可访问性与视觉 QA 门禁 |
 > | `docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md` | 前端架构、模块、状态、路由、工程约束     |
 > | `docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0_Backend_CoBuild_Patch.md` | 已完整合并的 historical archive；不再生效，不是竞争事实源 |
 > | `docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md` | 后端架构、领域模型、数据、接口与系统约束 |
@@ -114,14 +120,20 @@
 >
 > ## 3. 开发 Agent 编排策略
 >
+> ### 3.0 启用条件与适用范围
+>
+> 以用户当前对话的**首条用户消息**为唯一判定输入：仅当该消息以精确且大小写敏感的 `LEGION` 开头时，本节第 3.1–3.5 的多 Agent 编排**MUST**启用。
+>
+> 首条用户消息不满足上述条件时，多 Agent 编排不强制启用，任务按正常运行方式处理；第 1 节、第 2 节及其他已生效的治理、安全、文档事实源与发布门禁要求仍然全部适用。不得以非首条消息、大小写变体、前置空白或其他前缀触发本节的强制编排。
+>
 > ### 3.1 总体模型
 >
-> QuantFoundry 的开发工作采用 **1 个主 Agent + 一组子 Agent** 的团队编排模式。
+> 在第 3.0 节条件满足时，QuantFoundry 的开发工作采用 **1 个主 Agent + 一组子 Agent** 的团队编排模式。
 >
 > - **主 Agent 模型：`gpt-5.6-sol xhigh`**
 > - **子 Agent 模型：`gpt-5.6-terra medium`**
 >
-> 主 Agent 负责 hold 整个开发团队；所有具体工程工作由主 Agent 拆分并委派给一个或多个子 Agent。
+> 在该条件下，主 Agent 负责 hold 整个开发团队；所有具体工程工作由主 Agent 拆分并委派给一个或多个子 Agent。
 >
 > ### 3.2 主 Agent：仅负责编排
 >

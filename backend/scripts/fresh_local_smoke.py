@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from alembic.config import Config
@@ -264,12 +264,15 @@ def main() -> None:
     os.environ.setdefault("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER", "1")
     os.environ.setdefault("QF_LOCAL_DATA_CREDENTIAL", secrets.token_urlsafe(32))
     os.environ.setdefault("QF_LOCAL_PROVIDER_API_KEY", secrets.token_urlsafe(32))
-    # This smoke owns an in-process OpenAI-compatible provider.  Do not inherit
+    # This smoke owns an in-process Remote Codex transport.  Do not inherit
     # a test runner's model/provider selection: that would validate a different
     # workflow while still writing into the fresh database under test.
-    os.environ["QF_AGENT_PROVIDER"] = "openai-compatible"
+    os.environ["QF_AGENT_PROVIDER"] = "remote-codex"
     os.environ["QF_AGENT_MODEL"] = "qf-local-v1"
-    os.environ["QF_OPENAI_MODELS"] = "qf-local-v1"
+    os.environ["QF_CODEX_RUNTIME_ID"] = "CODEX-DEFAULT"
+    os.environ["QF_CODEX_REMOTE_INSTANCE_ID"] = "CODEX-DEFAULT"
+    os.environ["QF_CODEX_MODEL"] = "qf-local-v1"
+    os.environ["QF_CODEX_MODELS"] = "qf-local-v1"
     os.environ.setdefault("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "local-smoke-v1")
     os.environ.setdefault(
         "QF_CREDENTIAL_ENCRYPTION_KEY",
@@ -286,7 +289,7 @@ def main() -> None:
     provider_thread = threading.Thread(target=provider.serve_forever, daemon=True)
     provider_thread.start()
     provider_url = f"http://127.0.0.1:{provider.server_address[1]}/v1"
-    os.environ["QF_OPENAI_BASE_URL"] = provider_url
+    os.environ["QF_CODEX_BASE_URL"] = provider_url
     try:
         health = httpx.get(
             f"http://127.0.0.1:{provider.server_address[1]}/healthz", timeout=2
@@ -345,7 +348,9 @@ def main() -> None:
                 .filter_by(workspace_id="local-workspace", status="ACTIVE")
                 .all()
             )
-            by_family = {row.policy_family: row for row in research_rows}
+            by_family: dict[str, ResearchPolicyVersionRow] = {
+                cast(str, row.policy_family): row for row in research_rows
+            }
             if set(by_family) != {"research", "validation"}:
                 raise RuntimeError("local research policy kinds are not exact")
             for family, result_key in (
@@ -388,7 +393,7 @@ def main() -> None:
                     "/api/v1/setup/provider-connections/validate",
                     headers={**headers, "Idempotency-Key": _key("ai")},
                     json={
-                        "provider_id": "OPENAI_COMPATIBLE",
+                        "provider_id": "REMOTE_CODEX",
                         "kind": "AI",
                         "model_name": "qf-local-v1",
                         "credential": os.environ["QF_LOCAL_PROVIDER_API_KEY"],
@@ -483,10 +488,12 @@ def main() -> None:
                 .filter_by(research_id=research["research_id"])
                 .one()
             )
-            experiment_detail = json.loads(experiment.detail)
+            experiment_detail = json.loads(cast(str, experiment.detail))
             research_row = session.get(ResearchRow, research["research_id"])
             analyze = next(call for call in calls if call.tool_name == "analyze_factor")
             child = session.get(JobRow, analyze.job_id)
+            if child is None:
+                raise RuntimeError("fresh local analyze_factor child job disappeared")
             resume = (
                 session.query(JobRow)
                 .filter_by(job_type="AGENT_RESUME", workspace_id="local-workspace")
@@ -531,7 +538,7 @@ def main() -> None:
                 raise RuntimeError("fresh local Experiment evidence is incomplete")
             if research_row is None:
                 raise RuntimeError("fresh local Research disappeared")
-            research_detail = json.loads(research_row.detail)
+            research_detail = json.loads(cast(str, research_row.detail))
             linked_experiments = research_detail["experiments"]["items"]
             if (
                 research_row.status != "COMPLETED"

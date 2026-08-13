@@ -1,7 +1,6 @@
-# Replace these placeholders with GitHub teams or handles before enabling required review.
-# Example: * @quantfoundry/maintainers
-* @quantfoundry-maintainers
+# Repository owner resolved through the GitHub API: @zhengui666.
+* @zhengui666
 
-/.github/ @quantfoundry-maintainers
-/docs/ @quantfoundry-maintainers
-/SECURITY.md @quantfoundry-maintainers
+/.github/ @zhengui666
+/docs/ @zhengui666
+/SECURITY.md @zhengui666

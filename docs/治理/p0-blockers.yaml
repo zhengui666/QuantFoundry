@@ -46,18 +46,21 @@ blockers:
     release_blocking: true
     evidence: []
   - id: P0-CONTRACT-OPENAPI-45
-    title: Canonical OpenAPI 45-operation and /api/v1 wire compatibility
+    title: Current 45-operation baseline and D1 target breaking OpenAPI revision are canonical and exact
     source:
       - docs/后端系统技术方案/contracts/openapi-v1.yaml
       - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#1812-openapi
+      - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
+      - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#42-d1-machine-contract-rewrite-前置门禁
     owner_role: API / Contract Agent
     closure_criteria:
-      - Runtime OpenAPI diff against the committed canonical schema is zero.
-      - All 45 operations preserve canonical /api/v1 URL and wire semantics.
-      - Generated consumers and negative contract tests pass without parallel schema definitions.
+      - Before D1 is committed, runtime and generated consumers have zero diff from the current canonical 45-operation baseline; no target login, key/session, Settings-only write, Bootstrap Control DB, or Domain DB recovery operation is invented in code, fixture, or test.
+      - D1 atomically commits the target breaking canonical OpenAPI revision, its machine-derived exact operation set/count, Problem Details, migration/deprecation policy, generated-consumer impact, and synchronized formal facts; no document or implementation guesses or pre-fills the target count.
+      - After D1, runtime OpenAPI and all generated consumers have zero diff from the D1 canonical schema, with singleton access, recovery, configuration and negative authorization/secret semantics independently verified and no parallel schema or long-lived legacy-auth path.
     verification:
-      - Independent Test Agent runs committed-versus-runtime contract, auth, and Problem Details matrices.
-    status: open
+      - Independent Test Agent runs pre-D1 current-baseline and post-D1 target committed-versus-runtime contract, auth/session/key/configuration/recovery, Problem Details, generated-consumer, removed-legacy-surface, and unknown-field negative matrices as applicable to the reviewed commit.
+      - Independent Review Agent verifies that the target exact count is machine-derived from the D1 canonical source and that governance, generated consumers and formal test facts bind the same revision.
+    status: blocked
     release_blocking: true
     evidence: []
   - id: P0-CONTRACT-TOOLS-13
@@ -81,14 +84,19 @@ blockers:
     source:
       - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#150-schema-authority-and-manifest
       - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#34-migration-and-schema-gates
+      - docs/PRD/V1.0.0.md#78-singleton-access--db-configuration-migration
+      - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
     owner_role: Database Agent
     closure_criteria:
       - Declarative models and Alembic revisions generate the expected physical schema.
       - Manifest and physical snapshots are regenerated derived verification artifacts, with zero exact schema/constraint diff.
       - PG18 populated roundtrip and rollback/upgrade gates preserve required content and constraints.
+      - D1 defines and the authoritative schema implements the fixed embedded Bootstrap Control DB ownership for access-key verifiers, sessions, the configuration catalog/values/revisions, encrypted Domain PostgreSQL connection candidates/active binding, and recovery state without inventing an uncommitted schema count.
+      - Migration enforces exactly one human principal and one internal singleton namespace, fails closed on multi-principal/namespace input, preserves domain lineage/audit, migrates ordinary configuration to its declared Bootstrap/Domain DB authority, and removes all ordinary file/env/CLI fallback.
     verification:
-      - Independent Test Agent records Alembic, schema-diff, and populated-roundtrip evidence.
-    status: open
+      - Independent Test Agent records Alembic, exact schema diff, populated PG18 roundtrip/rollback, Bootstrap recovery, Domain DB candidate-test-activate, singleton-conflict, configuration coverage and no-file/env/CLI-fallback evidence.
+      - Independent Review Agent verifies declarative/Alembic authority for the D1 target and that no parallel hand-maintained schema or silent multi-namespace merge exists.
+    status: blocked
     release_blocking: true
     evidence: []
   - id: P0-ARCHITECTURE-TARGET-LAYERS
@@ -97,10 +105,14 @@ blockers:
       - docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md
       - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md
       - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#4-architecture-and-compatibility-boundaries
+      - docs/PRD/V1.0.0.md#39-页面-p22--settings
+      - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
     owner_role: Architecture / Implementation Agent
     closure_criteria:
       - Backend conforms to the documented backend/src/quantfoundry layering.
       - Frontend conforms to the documented app/routes/features/domain/design-system layering.
+      - Bootstrap Control DB remains available for singleton authentication and restricted recovery when Domain PostgreSQL is unavailable; Settings is the only configuration write surface and all other product pages are read-only summaries, checks, business actions, or deep links.
+      - Evidence Foundry design-system, responsive Web 390+ and complete state/a11y boundaries are implemented without a parallel legacy user/workspace/configuration UI.
       - Independent review finds no P0 boundary bypasses.
     verification:
       - Independent Review Agent provides a path-level conformance report.
@@ -111,15 +123,22 @@ blockers:
     title: Security and research-integrity guards cannot be bypassed
     source:
       - docs/PRD/V1.0.0.md
+      - docs/PRD/V1.0.0.md#591-access-key-与-session-安全
+      - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
       - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#24-security
     owner_role: Security Agent
     closure_criteria:
       - Authorization, Holdout, frozen-state, approval, risk, audit, and secret-isolation negative cases pass.
+      - Exactly one fixed human principal is reachable; email/password, user list, invite, RBAC, workspace create/list/switch, non-singleton namespace selection and legacy-auth dual paths are absent or fail closed.
+      - Multiple equal general keys only exchange for revocable short-lived HttpOnly sessions; plaintext is returned once on create/rotate, only a verifier is stored, revoke/expire kills derived sessions, and the last effective key cannot be invalidated.
+      - Bootstrap Control DB authentication and restricted recovery remain available during Domain DB outage, while all domain operations fail closed and Domain connection candidate/test/activate never exposes secrets or overwrites last-known-good on failure.
+      - All ordinary mutable configuration is database-authoritative through Settings only; provider/domain secrets are encrypted and write-only, general-key plaintext is absent from storage/log/audit/event/backup/browser state, and the external root-of-trust is not treated as ordinary configuration.
       - No live-capital execution capability is exposed.
       - Critical security findings are resolved with regression evidence.
     verification:
-      - Independent Test Agent executes the documented security and negative E2E suites.
-    status: open
+      - Independent Test Agent executes the documented singleton-access, key lifecycle/session revocation/last-key, removed legacy surface, secret leakage, Bootstrap recovery/Domain fail-closed, Settings-only write, no-file/env/CLI fallback, approval/frozen/risk and negative E2E suites.
+      - Independent Review Agent verifies root-of-trust boundaries, verifier-only key storage, encrypted Domain connection storage, singleton namespace invariants and no hidden second configuration or authentication truth.
+    status: blocked
     release_blocking: true
     evidence: []
   - id: P0-CI-REPRODUCIBILITY
