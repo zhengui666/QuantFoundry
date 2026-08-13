@@ -1769,6 +1769,22 @@ DEFAULT_AGENT_PROVIDER = os.getenv("QF_AGENT_PROVIDER", "unconfigured")
 DEFAULT_AGENT_MODEL = os.getenv("QF_AGENT_MODEL", "unconfigured")
 
 
+def remote_codex_mode() -> bool:
+    return os.getenv("QF_AGENT_PROVIDER", DEFAULT_AGENT_PROVIDER).lower() in {
+        "openai-compatible",
+        "remote-codex",
+    } or bool(os.getenv("QF_CODEX_BASE_URL"))
+
+
+def remote_codex_projection() -> tuple[str, str]:
+    return (
+        "remote-codex",
+        os.getenv("QF_CODEX_MODEL")
+        or os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL)
+        or "unconfigured",
+    )
+
+
 def require_engine(engine_key: str, engine_version: str, expected_key: str) -> None:
     if engine_key != expected_key or ENGINE_VERSIONS.get(engine_key) != engine_version:
         raise problem(
@@ -3168,20 +3184,28 @@ def setup_provider_catalog() -> list[dict[str, Any]]:
                 "data_capabilities": [local_data_capability()],
             }
         )
-    base_url = os.getenv("QF_OPENAI_BASE_URL", "").rstrip("/")
+    codex_base_url = os.getenv("QF_CODEX_BASE_URL", "").rstrip("/")
+    legacy_base_url = os.getenv("QF_OPENAI_BASE_URL", "").rstrip("/")
+    base_url = codex_base_url or legacy_base_url
+    provider_id = "REMOTE_CODEX" if codex_base_url else "OPENAI_COMPATIBLE"
+    if codex_base_url:
+        model_source = os.getenv("QF_CODEX_MODELS") or os.getenv("QF_CODEX_MODEL")
+    else:
+        model_source = os.getenv("QF_OPENAI_MODELS")
     model_names = list(
         dict.fromkeys(
-            name.strip()
-            for name in os.getenv("QF_OPENAI_MODELS", "").split(",")
-            if name.strip()
+            name.strip() for name in (model_source or "").split(",") if name.strip()
         )
     )
     if base_url and model_names and encryption_is_configured():
         providers.append(
             {
-                "provider_id": "OPENAI_COMPATIBLE",
+                "provider_id": provider_id,
                 "display_name": os.getenv(
-                    "QF_OPENAI_DISPLAY_NAME", "OpenAI-compatible provider"
+                    "QF_CODEX_DISPLAY_NAME"
+                    if codex_base_url
+                    else "QF_OPENAI_DISPLAY_NAME",
+                    "Remote Codex" if codex_base_url else "OpenAI-compatible provider",
                 ),
                 "kind": "AI",
                 "connection_test_supported": True,
@@ -3235,9 +3259,12 @@ def _validate_provider_credential(
             and len(configured_credential) >= 20
             and hmac.compare_digest(credential, configured_credential)
         )
-    if provider_id != "OPENAI_COMPATIBLE":
+    if provider_id not in {"OPENAI_COMPATIBLE", "REMOTE_CODEX"}:
         return False
-    base_url = os.getenv("QF_OPENAI_BASE_URL", "").rstrip("/")
+    base_url = os.getenv(
+        "QF_CODEX_BASE_URL" if provider_id == "REMOTE_CODEX" else "QF_OPENAI_BASE_URL",
+        "",
+    ).rstrip("/")
     try:
         timeout = max(
             1.0,
@@ -3905,13 +3932,18 @@ def start_research(
         cfg = s.get(AgentConfigRow, (actor.workspace_id, "RESEARCH_DIRECTOR"))
         now = datetime.now(UTC)
         if cfg is None:
+            model_provider, model_name = (
+                remote_codex_projection()
+                if remote_codex_mode()
+                else (DEFAULT_AGENT_PROVIDER, DEFAULT_AGENT_MODEL)
+            )
             cfg = AgentConfigRow(
                 workspace_id=actor.workspace_id,
                 role="RESEARCH_DIRECTOR",
                 enabled=True,
                 revision=1,
-                model_provider=DEFAULT_AGENT_PROVIDER,
-                model_name=DEFAULT_AGENT_MODEL,
+                model_provider=model_provider,
+                model_name=model_name,
                 runtime_profile="DEFAULT",
                 tool_timeout_seconds=30,
                 created_at=now,
@@ -3922,6 +3954,11 @@ def start_research(
         if not cfg.enabled:
             raise problem(409, "AGENT_DISABLED")
         run_id = new_id("ARUN")
+        run_model_provider, run_model_name = (
+            remote_codex_projection()
+            if remote_codex_mode()
+            else (cfg.model_provider, cfg.model_name)
+        )
         s.add(
             AgentRunRow(
                 id=run_id,
@@ -3937,8 +3974,8 @@ def start_research(
                 objective="Start research",
                 context_sha256=hashlib.sha256(research_id.encode()).hexdigest(),
                 created_at=now,
-                model_provider=cfg.model_provider,
-                model_name=cfg.model_name,
+                model_provider=run_model_provider,
+                model_name=run_model_name,
                 agent_version="1.0",
             )
         )
@@ -5650,11 +5687,16 @@ def agents(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
 
 def default_agent_config(role: str):
     now = datetime.now(UTC)
+    model_provider, model_name = (
+        remote_codex_projection()
+        if remote_codex_mode()
+        else (DEFAULT_AGENT_PROVIDER, DEFAULT_AGENT_MODEL)
+    )
     return SimpleNamespace(
         role=role,
         enabled=True,
-        model_provider=DEFAULT_AGENT_PROVIDER,
-        model_name=DEFAULT_AGENT_MODEL,
+        model_provider=model_provider,
+        model_name=model_name,
         runtime_profile="DEFAULT",
         tool_timeout_seconds=30,
         max_steps_override=None,
@@ -5666,11 +5708,14 @@ def default_agent_config(role: str):
 
 
 def agent_config_payload(row):
+    model_provider, model_name = row.model_provider, row.model_name
+    if remote_codex_mode():
+        model_provider, model_name = remote_codex_projection()
     return {
         "role_key": row.role,
         "enabled": row.enabled,
-        "model_provider": row.model_provider,
-        "model_name": row.model_name,
+        "model_provider": model_provider,
+        "model_name": model_name,
         "runtime_profile": row.runtime_profile,
         "tool_timeout_seconds": row.tool_timeout_seconds,
         "max_steps_override": row.max_steps_override,
@@ -5719,6 +5764,25 @@ def agent_config(
         raise problem(404, "RESOURCE_NOT_FOUND")
     if not if_match:
         raise problem(428, "PRECONDITION_REQUIRED")
+    if remote_codex_mode():
+        projected_provider, projected_model = remote_codex_projection()
+        requested_provider = payload.get("model_provider")
+        requested_model = payload.get("model_name")
+        if requested_provider is not None and requested_provider not in {
+            projected_provider,
+            "openai-compatible",
+        }:
+            raise problem(
+                409,
+                "RESOURCE_CONFLICT",
+                "Remote Codex provider is fixed for every Agent Role",
+            )
+        if requested_model is not None and requested_model != projected_model:
+            raise problem(
+                409,
+                "RESOURCE_CONFLICT",
+                "Remote Codex model is fixed for every Agent Role",
+            )
     row = s.get(AgentConfigRow, (actor.workspace_id, role)) or AgentConfigRow(
         workspace_id=actor.workspace_id,
         role=role,
@@ -5735,8 +5799,11 @@ def agent_config(
     if if_match != f'W/"agent:{role}:{row.revision}"':
         raise problem(412, "REVISION_MISMATCH")
     row.enabled = payload.get("enabled", row.enabled)
-    row.model_provider = payload.get("model_provider", row.model_provider)
-    row.model_name = payload.get("model_name", row.model_name)
+    if remote_codex_mode():
+        row.model_provider, row.model_name = remote_codex_projection()
+    else:
+        row.model_provider = payload.get("model_provider", row.model_provider)
+        row.model_name = payload.get("model_name", row.model_name)
     row.runtime_profile = payload.get("runtime_profile", row.runtime_profile)
     row.tool_timeout_seconds = payload.get(
         "tool_timeout_seconds", row.tool_timeout_seconds
