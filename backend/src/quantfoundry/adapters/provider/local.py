@@ -201,14 +201,26 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
         if not isinstance(request, dict) or not isinstance(request.get("model"), str):
             self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"})
             return
-        self.server.request_log.append(
-            {
-                "method": "POST",
-                "path": self.path,
-                "authorized": True,
-                "model": request["model"],
-            }
-        )
+        request_log = {
+            "method": "POST",
+            "path": self.path,
+            "authorized": True,
+            "model": request["model"],
+        }
+        remote_headers = {
+            "runtime": self.headers.get("X-QF-Codex-Runtime"),
+            "instance": self.headers.get("X-QF-Codex-Instance"),
+            "invocation": self.headers.get("X-QF-Codex-Invocation"),
+        }
+        if any(value is not None for value in remote_headers.values()):
+            request_log.update(
+                {
+                    key: value
+                    for key, value in remote_headers.items()
+                    if value is not None
+                }
+            )
+        self.server.request_log.append(request_log)
         if self.server.failure_statuses:
             failure_status = self.server.failure_statuses.pop(0)
             self._json(

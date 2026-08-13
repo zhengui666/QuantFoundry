@@ -11,9 +11,9 @@
 **对应 Agent：** `/QuantFoundry/docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md`
 **目标 API Contract：** `/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml`
 **产品阶段：** MVP / First Usable Product
-**部署模式：** Single-user / Self-hosted
-**测试文档状态：** Final V1.0
-**日期：** 2026-08-10
+**部署模式：** Single-human-principal / Self-hosted
+**测试文档状态：** Final V1.0 + UX-001 D0 target amendment；D1 executable matrix pending
+**日期：** 2026-08-13
 **正式路径：** `/QuantFoundry/docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md`
 
 ---
@@ -1402,6 +1402,23 @@ server actor = FactorScientist
 ### TimeoutModel
 模型 timeout → bounded retry → safe failure。
 
+### RemoteCodexSingletonHarness
+
+使用可控远程 HTTP harness 验证：
+
+```text
+six roles resolve the same CODEX-DEFAULT identity
+zero/duplicate runtime fails closed
+Remote Codex endpoint/runtime/model configuration fails closed before Agent admission
+Remote-mode AgentConfig rejects per-role Provider/Model mutation and projects one identity
+request carries agent_run_id/context_sha256/invocation_id
+same invocation_id is used across bounded retry
+malformed instance identity is rejected
+remote outage never falls back to another Provider or LangGraph built-in Agent
+```
+
+真实 Remote Codex evaluation 只在 fake protocol、graph、policy、resume、security 和 contract tests 全部通过后执行；本地 harness 结果不得充当真实远程 Codex 生产证据。
+
 ## 14.5 Holdout Context Leakage
 
 Context Builder 在 locked state：
@@ -2083,7 +2100,9 @@ Pause/Resume concurrent：
 
 # 30. Security Test Matrix
 
-## 30.1 Bearer Authentication / CSRF
+## 30.1 Bearer Authentication / CSRF（current baseline only）
+
+本节只验证 D1 前 committed 45-operation current baseline；它已被 §51 对 UX-001 target supersede。D1 后必须以 general-key login → HttpOnly session + CSRF 的 generated matrix 原位替换，不得同时保留 Bearer 为长期 browser contract。
 
 45-operation matrix 中除 `GET /system/health` 外的 44 个 operation 必须逐项覆盖：
 
@@ -2588,7 +2607,7 @@ Playwright Golden Flow smoke
 
 ### 38.1.1 Boundary and environment gates
 
-Backend gate MUST run the pinned backend environment's `ruff`, `mypy`, and task-targeted unit/contract/integration tests for every changed backend boundary; a broad green suite does not waive a failing targeted boundary test. Frontend gate MUST use Node 24 and run canonical OpenAPI codegen/drift, typecheck, lint, unit, and production build. The frontend contract-boundary suite must prove generated operation client/typed operation map is the only REST wire authority while preserving `/api/v1`, SSE `Authorization`/`Last-Event-ID`, ETag/`If-Match`, and `Idempotency-Key` semantics.
+Backend gate MUST run the pinned backend environment's `ruff`, `mypy`, and task-targeted unit/contract/integration tests for every changed backend boundary; a broad green suite does not waive a failing targeted boundary test. Frontend gate MUST use Node 24 and run canonical OpenAPI codegen/drift, typecheck, lint, unit, and production build. The frontend contract-boundary suite must prove generated operation client/typed operation map is the only REST wire authority while preserving `/api/v1`, ETag/`If-Match`, and `Idempotency-Key` semantics. Before D1 it additionally preserves the current-baseline SSE `Authorization`/`Last-Event-ID` contract; after UX-001 D1 it MUST replace SSE Bearer with the generated HttpOnly-session transport and corresponding CSRF/session rules from §51, while retaining canonical `Last-Event-ID` semantics and forbidding a dual auth path.
 
 Tool-registry negatives must boot against the production canonical authority and separately exercise test-only injection: missing one of the 13 canonical `name@version` entries, extra entry, duplicate/renamed entry, version mismatch, registry schema invalidity, entry schema invalidity, and input/output instance invalidity all fail closed. The suite must also prove ordinary environment overrides cannot replace the canonical production path/hash/authority.
 
@@ -3143,3 +3162,171 @@ Quant Engine 测试负责证明：
 最终，V1 的全栈测试不以“自动化用例数量”衡量，而以：
 
 > **系统是否能够可靠淘汰错误研究，并且在任何异常情况下都不把不可信结果升级为可信事实或资本动作。**
+
+---
+
+# 51. UX-001 — 单 Owner、多通用密钥与 DB-only Configuration 验收门禁
+
+## 51.1 D0/D1 状态与基线计数规则
+
+| 属性 | 冻结值 |
+|---|---|
+| Change ID | `UX-001` |
+| 目标状态 | `TARGET_NORMATIVE` |
+| 当前阶段 | `D0_DOCS_ONLY` |
+| 可执行测试阶段 | `D1_MACHINE_CONTRACT_AND_SCHEMA_REQUIRED` |
+| auth/config/database/Agent 代码实现 | `BLOCKED` until D1 complete |
+
+本节是 Backend §41 与 Agent §93 的测试联动 target normative。D0 只冻结用例、Oracle、证据与发布门禁，不得编写测试代码、fixture、migration 或业务代码来对准尚未修订的 current machine contract。
+
+对 UX-001 目标，本节明确 supersede 本文既有 Bearer-only、optional cookie、authenticated multi-workspace、`>=12 (workspace_id,role_key)` 与 locale-only browser `storageState` 验收语义。这些旧章节只能验证 D1 前 current baseline，不是 target oracle；D1 必须原位替换为 general-key login → HttpOnly session + CSRF、singleton namespace 与 empty browser storage 语义，不保留长期双轨。
+
+以下数字在本文其他章节中均必须解读为 **UX-001 之前的 current baseline**：
+
+```text
+63 PostgreSQL application tables
+953 PostgreSQL columns
+191 CHECKs and the associated exact schema signatures
+45 OpenAPI operations
+162 OpenAPI schemas
+65 canonical errors
+44 Bearer-secured operations
+>=12 distinct (workspace_id, role_key) tuples
+```
+
+D1 必须先修订 canonical OpenAPI、Bootstrap Control DB schema、Domain PostgreSQL schema 和 migration authority，再由生成器重算 exact values。禁止手工猜数、只增量修改 old count、把 Bootstrap 表塞入旧 PostgreSQL 63-table allowlist，或在数量相等时忽略 identity/signature diff。Bootstrap 与 Domain schema 必须各有自己的 exact manifest 和 symmetric diff。
+
+`contracts/tools/v1-p0.yaml` 的 exact 13-entry `name@version` set 不随 UX-001 改变；它是 target 与 current baseline 共同门禁。
+
+## 51.2 单身份与无多用户产品面
+
+| ID | 用例 | 必测 Oracle |
+|---|---|---|
+| `QF-UX001-ID-001` | fixed Owner | 所有 general key/session 均解析为同一 `OWNER`；无第二人类 actor/role |
+| `QF-UX001-ID-002` | no user schema/API | canonical schema、runtime discovery、route map、frontend navigation 中无 users/email/password/OAuth/invite/role-assignment CRUD |
+| `QF-UX001-ID-003` | singleton namespace | 只有一个 internal namespace；无 create/list/switch/delete 能力；request 不能覆盖 namespace |
+| `QF-UX001-ID-004` | actor/workspace spoof | body/query/header/cookie 注入 `user_id/owner_id/role/workspace_id` 被 closed schema 拒绝，无副作用 |
+| `QF-UX001-ID-005` | legacy ambiguity | multiple users、multiple active product workspaces、owner 不明或 cross-owner row 均 quarantine + release fail，不 first-row-wins/merge |
+
+D1 必须删除 current `>=12 (workspace_id,role_key)` 产品门禁，改为 singleton namespace + six exact role configs 的生成基线。新 exact row/tuple floor 由 D1 fixture manifest 生成，D0 不写死数值。
+
+## 51.3 General access key 与 Owner session matrix
+
+| ID | 用例 | 必测 Oracle |
+|---|---|---|
+| `QF-UX001-AUTH-001` | first-install claim | 仅 localhost/one-time claim 可原子创建首 key；无默认 key；重放失败 |
+| `QF-UX001-AUTH-002` | create/one-time reveal | CSPRNG secret 只显示一次；DB/API/log/Audit/browser storage 无明文副本 |
+| `QF-UX001-AUTH-003` | verifier contract | Argon2id + per-key random salt + root-keystore pepper + versioned parameters；constant-time verify；成功 login 可安全 rehash |
+| `QF-UX001-AUTH-004` | multiple keys | 多个 active key 均登录同一 Owner，label/hint/lifecycle 独立，权限完全相同 |
+| `QF-UX001-AUTH-005` | generic login failure | missing/wrong/revoked/expired key 均同质 401 `UNAUTHENTICATED`，无 key enumeration/timing/detail leak |
+| `QF-UX001-AUTH-006` | rate limit | installation-global + source-aware 限流/bounded backoff；success/failure/rate-limit 不泄密 Audit |
+| `QF-UX001-AUTH-007` | rotate/revoke/expire | rotation 先产生 replacement；revoke/expire 不 hard delete；revision/Audit 单调 |
+| `QF-UX001-AUTH-008` | last-key lockout guard | revoke、expire 或重设 expiry 导致 usable key 数为 0 均失败；同事务 replacement 或受控 recovery 才可通过 |
+| `QF-UX001-AUTH-009` | session exchange | raw general key 只用于 login；不作为业务 Bearer；新 Secure/HttpOnly/SameSite cookie session 防 fixation |
+| `QF-UX001-AUTH-010` | cookie/CSRF | mutation 同时验证 cookie、CSRF、Origin/Fetch Metadata、content type；cross-site/replay 无副作用 |
+| `QF-UX001-AUTH-011` | expiry/logout cascade | idle/absolute expiry、logout、auth epoch 均撤销 session；key revoke/expire 撤销该 key 派生的全部 session |
+| `QF-UX001-AUTH-012` | secret sentinel | HTTP/SSE/DOM/storage/log/Audit/checkpoint/trace/Artifact/backup report 中 general key、session、CSRF、pepper occurrence=0 |
+
+Playwright 不得提交携带 auth cookie/token 的 storage-state 文件。authenticated E2E 必须通过受控 login fixture 在运行时建立 session；§20.1 inline state 必须保持 `cookies=[]` 且 `origins=[]`，locale/timezone 只从 server/Control DB fixture 读取。
+
+## 51.4 Closed Configuration Catalog 与 DB-only 门禁
+
+| ID | 用例 | 必测 Oracle |
+|---|---|---|
+| `QF-UX001-CFG-001` | catalog parity | backend consumer keys = Control DB catalog = canonical API schema = UI fields；missing/extra/shadow key 均 fail |
+| `QF-UX001-CFG-002` | closed typed schema | required deletion、unknown field、wrong type/enum/range/dependency 逐项负测；不允许开放 map |
+| `QF-UX001-CFG-003` | secret envelope | AEAD ciphertext/nonce/key_id/AAD 绑定 installation+key+revision+schema；read 只返回 configured/masked metadata |
+| `QF-UX001-CFG-004` | global concurrency | two writers 使用同 active ETag；仅一个 CAS activation 成功，stale 为 412，无 partial value/Audit/Event |
+| `QF-UX001-CFG-005` | atomic change-set | 跨 key dependency 整体 validate/apply；任一失败不改 active pointer、consumer 或 effective runtime |
+| `QF-UX001-CFG-006` | immutable history | revision/value snapshot 不可 UPDATE/DELETE；canonical hash 可复算；Audit before/after hash 匹配 |
+| `QF-UX001-CFG-007` | apply modes | `LIVE_NEW_WORK/DRAIN_RELOAD/RESTART_REQUIRED/SECURITY_IMMEDIATE` 逐项验证 admission、drain、restart、security boundary |
+| `QF-UX001-CFG-008` | consumer ACK | required processes 只对 exact revision/hash/build ACK；missing/error/stale ACK 使 readiness 非 READY |
+| `QF-UX001-CFG-009` | monotonic rollback | rollback 创建新 revision，不倒退 pointer/改历史；重做当前 schema/dependency/ACK |
+| `QF-UX001-CFG-010` | unsafe secret rollback | revoked/expired/undecryptable/incompatible secret 不得随 rollback 激活 |
+| `QF-UX001-CFG-011` | no external override | 修改 config file、ordinary env、CLI flag、cwd file、legacy DB row 均不改 effective config；无 fallback read |
+| `QF-UX001-CFG-012` | hard invariant separation | Tool allowlist、Approval/Holdout/Risk authority、schema/crypto minimums 只读展示，API/UI 不能修改 |
+
+root key provider 是唯一非 DB 自举边界，且不是普通配置。测试只允许 OS keychain/TPM/external secret injection 的显式 harness；root key 不得进入配置文件、Control/Domain DB、fixture snapshot 或测试报告。移除 root key 必须进入 `BOOTSTRAP_LOCKED`，不得从 file/env/CLI/old plaintext fallback。
+
+## 51.5 Bootstrap Control DB 与 Domain DB chaos matrix
+
+| ID | 用例 | 必测 Oracle |
+|---|---|---|
+| `QF-UX001-BOOT-001` | Domain DB unavailable | API 可启动最小 bootstrap/login/database-config surface；业务 API fail closed |
+| `QF-UX001-BOOT-002` | Control DB schema/corruption | wrong schema/hash-chain/corrupt page 阻断 READY；不自动新建空库覆盖 evidence |
+| `QF-UX001-BOOT-003` | root unavailable | `BOOTSTRAP_LOCKED`；不使用空 key、新 key、旧 DSN 或 environment fallback |
+| `QF-UX001-DB-001` | candidate validation | network/TLS/credential/PG version/privilege/schema/migration 任一失败都不切 active pointer |
+| `QF-UX001-DB-002` | drain/fence | 新 mutation/job/Agent admission 停止；in-flight 事务/checkpoint/Tool/Job 在可证安全边界收口 |
+| `QF-UX001-DB-003` | CAS activation race | two candidates 竞争时只一个能切换；stale candidate 不能覆盖 |
+| `QF-UX001-DB-004` | reconnect/canary/ACK | API/worker/agent-worker/scheduler 全部使用同 revision；canary + singleton namespace + schema + consumer ACK 全通过才 ACTIVE |
+| `QF-UX001-DB-005` | crash points | candidate persisted、fence acquired、pointer CAS、partial reconnect、partial ACK 各点 kill/restart 均单调收敛，无双写/随机读 |
+| `QF-UX001-DB-006` | LKG rollback | validation/CAS/canary/ACK 失败恢复 exact last-known-good，重收 ACK；新 revision未收敛前不报 READY |
+| `QF-UX001-DB-007` | empty/existing target | empty DB 仅显式 Owner init；existing DB 必须先过 exact schema/migration/namespace/Audit/Artifact compatibility |
+| `QF-UX001-DB-008` | secret redaction | DSN password/client key/ciphertext/nonce/root locator 在 response/SSE/log/Audit/trace/Agent 中 occurrence=0 |
+| `QF-UX001-DB-009` | backup/restore | Control DB + Domain DB + Artifact + Parquet 一致；root recovery metadata 可验证且无明文 root/key/DSN |
+
+## 51.6 Agent configuration pinning 与 Tool 边界
+
+| ID | 用例 | 必测 Oracle |
+|---|---|---|
+| `QF-UX001-AGENT-001` | singleton Remote Codex | six roles 均映射 `CODEX-DEFAULT`；per-role provider/model mutation 在 target schema 不存在 |
+| `QF-UX001-AGENT-002` | admission snapshot | Run 创建前原子捕获 config/role/connection revision、resolved profile/budgets、manifest/tool-policy hashes |
+| `QF-UX001-AGENT-003` | new-work activation | config N 的在途 Run 保持 N；consumer ACK N+1 后新 Run 使用 N+1 |
+| `QF-UX001-AGENT-004` | crash/resume pinning | resume 使用原 snapshot/hash，不读 latest、不从缺失字段猜测 |
+| `QF-UX001-AGENT-005` | security immediate | credential/key/security epoch revoke 在下一 model/Tool 边界 fail closed，不继续使用 cached secret |
+| `QF-UX001-AGENT-006` | registry authority | exact 13 entries、path/hash/schema/set 全校验；config revision/env/file/remote 不能替换 registry |
+| `QF-UX001-AGENT-007` | forbidden control Tools | auth/key/session/config/database/root-key/consumer-ACK Tool 均 absent；模型请求时 denied + Audit + no side effect |
+| `QF-UX001-AGENT-008` | outer-envelope evidence | Tool domain input/output 保持 exact 13 schemas；effective config refs 只在 runtime/audit/provenance envelope |
+
+## 51.7 Migration 与 no-fallback 释放门禁
+
+D1 必须对 clean install、可证明单 Owner upgrade、含歧义 legacy upgrade、每个中断/restart point 运行以下 matrix：
+
+1. `users/email/role/workspaces.owner_id/session_tokens.actor_id` 按 target schema 删除/转换，领域 row 仍准确绑定 singleton namespace；
+2. 旧 session 全部撤销，不从 email/password/Bearer/provider credential 派生 general key；
+3. legacy Settings/provider/Agent/file/env 配置只在显式 import candidate 中读取，typed validate、encrypt、effective parity、activate、restart verify 全部通过后关闭旧路径；
+4. owner/workspace/config conflict 写 access-restricted quarantine + hash/reason/evidence 并阻断 release，不猜测、合并、删证据或静默选一行；
+5. Bootstrap Control DB manifest、Domain PostgreSQL manifest、canonical OpenAPI/runtime discovery、generated clients/models 各自 symmetric exact diff=0；
+6. 新 exact count/floor 由 committed generated manifest 读取；mutant 回退到 old `63/953/45/65/44/12-tuples` 必须 fail；
+7. rollback 不得恢复 file/env/CLI fallback、不得丢失 Control DB revision/Audit/key lifecycle 或重启已撤销 session。
+
+发布候选环境必须扫描运行时 config reads，只允许 active Control DB catalog 与明确 root-key provider 边界。任一 ordinary env/file/CLI/cwd/legacy-row fallback 命中都阻断发布，不允许 known-issue waiver。
+
+## 51.8 Login/Configuration/Database 视觉、响应式与可访问性门禁
+
+本节只冻结 D1 测试目标；具体 DOM/copy/layout oracle 必须先从已修订 UI/Frontend canonical 文档生成，D0 不得以测试 fixture 反向发明 UI。
+
+- viewport 至少覆盖 390、768、1180、1280、1440、1600 px 及 200% zoom，无页面级水平溢出、遮挡、不可达操作；
+- login、first claim、configuration catalog、key list/create-once/revoke、DB disconnected/candidate validation/apply/LKG recovery、restart required/consumer ACK 均有 Loading/Empty/Error/Success/Locked/Degraded 状态；
+- keyboard-only 可完成 login、保存、验证、创建/revoke key 与 DB recovery；focus order/visible focus/dialog focus return 正确；
+- axe critical/serious = 0；label、description、error association、live region、table/list semantics 正确；
+- secret 默认掩码，one-time reveal 有明确边界；截图/trace/DOM 不保留可复用密钥、session、DSN password；
+- stale ETag、validation fail、partial ACK、restart required、LKG rollback 不得 optimistic 显示已应用/已 READY；
+- 视觉回归必须同时具有 semantic/network/state assertions；不得以截图相似代替认证、加密、并发或 server-truth 证据。
+
+## 51.9 CI、严重度与 Release Evidence
+
+D1 完成后，PR gate 必须在本文 §38.1 基础上增加：
+
+```text
+UX-001 canonical OpenAPI/runtime diff
+Bootstrap Control DB exact schema diff
+Domain PostgreSQL target exact schema diff
+single-Owner/no-user surface scan
+general-key/session/CSRF security suite
+configuration catalog parity + no-external-fallback suite
+DB candidate/switch/LKG chaos suite
+Agent snapshot pinning + exact-13 Tool suite
+UX-001 migration interruption/restart suite
+login/config/database responsive+a11y+visual suite
+```
+
+RC/release evidence 新增：Bootstrap schema revision/hash、Control DB Audit chain verification、active configuration revision/hash、catalog parity report、consumer ACK matrix、encrypted DB connection/LKG validation report、auth/config/DB chaos reports、no-file/env/CLI-fallback scan、Agent pinning report、新 generated exact counts/floors 与可视化/a11y evidence。
+
+严重度冻结：
+
+- 认证绕过、密钥/session/root/DSN 明文泄漏、revoked key 仍可用、伪造 Owner/namespace、配置绕过 hard authority = `S0`；
+- partial config activation、consumer revision 分裂、DB 双写/错库、LKG 无法恢复、migration 错归属、无法从 Domain DB 断开中恢复 = 至少 `S1`；
+- 任一 `S0` 或 UX-001 P0 path 未解决 `S1` 阻断发布，不得以 alpha、单用户、self-hosted 或 known issue 豁免。
+
+D0 完成的定义仅是本节与 Backend/Agent/Tool README 交叉一致；D1 完成的定义是上述机器契约、schema、migration、generated artifacts、所有正负用例和 release evidence 全部落库且通过。在 D1 之前，不得用 current-baseline green suite 宣称 UX-001 完成。

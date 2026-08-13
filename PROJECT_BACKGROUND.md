@@ -2,15 +2,22 @@
 
 **项目：** QuantFoundry V1.0.0
 **阶段：** MVP / First Usable Product
-**部署：** Single-user / Self-hosted
+**部署：** Single-human-principal / Self-hosted
 **状态：** Final V1.0
-**日期：** 2026-08-10
+**日期：** 2026-08-13
+**当前交付阶段：** 文档阶段 / 目标规范；D1 machine contract rewrite、实现与独立验收尚未完成
 
 ## 1. 项目背景与范围
 
 QuantFoundry 是面向系统化量化研究的 Agentic Research Workbench。V1 覆盖从研究问题、数据与实验、因子与策略、验证与 Holdout、组合与备忘录、审批到 Paper Review 的受控研究流程。
 
 V1 的边界：AI 仅提出、解释和编排；确定性工具计算正式数值；研究、验证、风险、审批与数据权限规则不可被 Agent 或客户端绕过；仅支持 Paper，不包含实盘资金执行。
+
+V1 的人机与配置边界固定为：一个不可创建、列举或切换的 human principal；多个等权通用密钥仅用于换取短期 HttpOnly session；一个仅供数据归属兼容的内部 singleton namespace，不构成用户、租户或 workspace 产品能力。系统不存在 email/password、user list、invite、RBAC、workspace create/list/switch 或原生移动 App。
+
+`Settings` 是全部可变配置的唯一写入口。所有普通 mutable value、secret、global revision/active pointer 与 effective selection 只持久化到固定嵌入式 Bootstrap Control DB；Domain PostgreSQL 只保存需要 domain lineage 的 immutable/versioned object content，Control DB 保存其 exact active ref。禁止 YAML/TOML/JSON/`.env`、环境变量、命令行参数作为普通配置来源或 fallback。Bootstrap Control DB 必须在 Domain DB 不可用时继续提供密钥验证、session、配置与 Domain DB 恢复控制面；加密 root 仅可来自 OS keychain、TPM 或 external secret injection，它是不可消除的 root-of-trust，不是普通配置。
+
+前端目标方向为 **Evidence Foundry**：证据优先、克制、可审计、数据密集但可理解；响应式 Web 从 390px 起可用，不建设原生移动 App。以上均为目标规范，不得据此宣称当前实现、canonical OpenAPI、schema 或测试已完成。
 
 本文件不定义业务字段、页面、接口、计算或测试用例；这些内容以各专项事实源为准。
 

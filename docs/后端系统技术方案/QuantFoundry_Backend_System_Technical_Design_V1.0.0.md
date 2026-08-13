@@ -9,9 +9,9 @@
 **对应前端：** `/QuantFoundry/docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md`
 **项目治理：** `/QuantFoundry/AGENTS.md`
 **产品阶段：** MVP / First Usable Product
-**部署模式：** Single-user / Self-hosted
-**文档状态：** Final V1.0
-**日期：** 2026-08-10
+**部署模式：** Single-human-principal / Self-hosted
+**文档状态：** Final V1.0 + UX-001 D0 target amendment；D1 machine contract/schema pending
+**日期：** 2026-08-13
 **正式路径：** `/QuantFoundry/docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md`
 **架构图路径：** `/QuantFoundry/docs/后端系统技术方案/assets/QuantFoundry 后端系统技术架构总览.png`
 
@@ -998,6 +998,25 @@ Request：
   "requested_at": "2026-08-10T08:12:32Z"
 }
 ```
+
+## 10.6 Remote Codex singleton runtime
+
+Agent Worker 的模型执行固定通过 `RemoteCodexModel` 访问一个逻辑远程实例 `CODEX-DEFAULT`。六个 Runtime Role、所有 Agent Run 和所有 Graph node 均共享该 runtime identity；Role 配置不得创建或选择第二个 Provider/Model instance。
+
+```text
+Agent Run
+→ LangGraph StateGraph
+→ RemoteCodexModel
+→ CODEX-DEFAULT
+→ structured action
+→ server-side Tool Policy / Semantic Tool Executor
+```
+
+Remote Codex 不能直接访问 SQL、filesystem、Shell、Python、任意 HTTP 或 approval tool。远程返回的 action 必须在 server-side 经过 schema、workspace、role、policy、idempotency 和 side-effect 校验后才能进入 Tool Runtime。
+
+每次调用必须有稳定的 `invocation_id`，并绑定 `agent_run_id`、`context_sha256`、`remote_instance_id`、adapter/protocol version 和 redacted usage。原始请求/响应不得写入 checkpoint、普通日志或 Domain truth。Remote Codex outage 只允许 bounded retry 和 failed-safe；不得自动 fallback 到 LangGraph 内置 Agent 或其他 Provider。
+
+Remote Codex 模式下，`AgentConfig` 的 provider/model 是 singleton projection，不是 Role 选择器。PUT 仅允许 enabled、runtime profile、timeout 和受限 budget 变更；legacy `openai-compatible` 与当前 singleton 值相同的 no-op 请求可兼容接受，实际变更 Provider/Model 必须返回 `RESOURCE_CONFLICT`。历史不兼容配置在 Agent admission 时返回 `AGENT_MODEL_UNAVAILABLE`。
 
 Response：
 
@@ -4805,12 +4824,296 @@ Chart is visualization, not calculation engine
 1. **具体 AI Provider / model adapter**：由 Setup 支持清单决定，不影响 Agent/Tool contract；
 2. **Strict Backtest adapter 最终实现**：LEAN direct/container 或其他实现需单独技术 spike，不能改变 `ValidationEngine` contract；
 3. **Data provider 实际集合**：capability schema 已固定，provider 本身可替换；
-4. **部署认证入口**：PRD 尚无 Login 页面；单用户 self-host 可以由 protected ingress + owner session 实现，但上线前必须选定；
+4. **部署认证入口（current baseline historical item）**：本项已由 §41 `UX-001` 的单 Owner、多通用密钥与 cookie session 目标规范冻结；在 D1 machine contract 尚未落库前，现有 protected ingress / Bearer 叙述只能用于识别 current baseline，不得作为 UX-001 实现选项；
 5. **Artifact backup medium**：local volume 是 baseline，S3 adapter 为扩展；
 6. **商业发行前第三方库许可审查**：尤其任何非纯 permissive dependency；
 7. **V1 是否让 Research Director 在 Holdout exposure 后看到 raw metrics**：默认本方案禁止 Research Agent raw read，仅允许 Validation summary / Memo 流程获得政策允许的结构化结论；若产品要改变，必须显式修改 Holdout policy，不得在实现中偷偷开放。
 
 这些均不得通过降低 `AGENTS.md` 围栏来“简化”。
+
+---
+
+# 41. UX-001 — 单用户通用密钥与数据库配置目标规范
+
+## 41.1 规范状态、优先级与代码门禁
+
+| 属性 | 冻结值 |
+|---|---|
+| Change ID | `UX-001` |
+| 目标状态 | `TARGET_NORMATIVE` |
+| 当前交付阶段 | `D0_DOCS_ONLY` |
+| 机器契约阶段 | `D1_REQUIRED_BEFORE_CODE` |
+| 代码、migration、fixture、codegen | `BLOCKED` until D1 complete |
+
+本节是 `UX-001` 在身份、认证、配置、数据库自举、Agent 配置消费与运行安全方面的 **target normative**。与本文既有 `users` / email / role、多 workspace 授权、Bearer-only、deployment environment secret 或分散 Settings 叙述冲突时，本节决定 UX-001 的目标语义；既有叙述仅保留为 current baseline 事实，不得继续扩展。
+
+`D0_DOCS_ONLY` 不声称 canonical OpenAPI、PostgreSQL schema、Bootstrap Control DB schema、migration 或 runtime 已实现本节。`D1` 必须先一次性完成：
+
+1. 联动 PRD、UI、Frontend、Backend、Agent 与 Test 有效文档；
+2. 修订 canonical `openapi-v1.yaml` 的 auth/config/database paths、security schemes、closed schemas、events 与 errors；
+3. 冻结 Bootstrap Control DB 与 Domain PostgreSQL 的字段级 schema、constraints、indexes、encryption envelope 与 migration；
+4. 由生成器重算并校验所有 exact table/column/CHECK/operation/schema/error/auth 计数；
+5. 更新 generated models/clients、fixture manifest、contract tests、migration gates 与 release evidence schema。
+
+在上述 D1 门禁全部完成之前，任何 Agent 均 **MUST NOT** 编写或修改 auth、session、Settings、database connection、Agent config consumption 相关代码、migration 或测试实现。
+
+> **Current-baseline count fence:** 本文现有 `63 tables / 953 columns`、其 CHECK/index/FK 计数、OpenAPI `45 operations / 65 errors` 与 Test Plan 的 `44 secured operations / >=12 workspace-role tuples` 都只描述 UX-001 之前的 current baseline。D0 不得把本节的目标逻辑表直接加入旧 manifest 制造假一致，也不得手填新计数；D1 只能从修订后的 canonical machine sources 生成新基线。
+
+## 41.2 单 Owner 与 singleton namespace
+
+UX-001 的产品身份模型只有一个逻辑人类主体：
+
+```text
+human actor = OWNER
+human user count = 1
+user registration/invitation/switching = absent
+RBAC/user-role management = absent
+```
+
+目标 schema 与 API **MUST** 删除 `users`、email login identity、human `role` 字段、`workspaces.owner_id` 以及任何 user list/create/update/delete、invite、password、OAuth 或 role-assignment 语义。审计中的 `SYSTEM|WORKER|AGENT` 仍是执行主体类型，不是可管理的人类用户。
+
+为保留领域 FK、event partition、Artifact ownership 与迁移可证性，Domain PostgreSQL **MUST** 保留且仅保留一个 internal singleton namespace。它不是产品 workspace 能力：
+
+- 不得 create/list/switch/delete；
+- 不得从 path/query/body/header/cookie/key 接受 namespace ID；
+- 所有 Domain repository 从安装级 server context 取得同一 singleton ID；
+- 请求伪造 `user_id/owner_id/role/workspace_id` 必须被 closed schema 拒绝；
+- 旧 cross-workspace non-disclosure 逻辑在 D1 迁移完成前仅用于保护 legacy rows，不得继续作为产品功能。
+
+多个通用密钥都得到完全相同的 `OWNER` 权限与 singleton namespace；密钥之间不得形成用户、角色、租户或对象权限差异。
+
+## 41.3 Bootstrap Control DB 与自举边界
+
+### 41.3.1 唯一配置事实源
+
+所有 bootstrap/connection 配置、普通可变配置、closed catalog、global revision 与 active/LKG pointer 必须存入固定的 **Bootstrap Control DB**。它是产品管理的嵌入式数据库，不是 YAML/TOML/JSON/`.env` 配置文件；其位置和打开方式是不可配置的产品启动不变量。需要 domain lineage 的 immutable/versioned Research/Risk Policy、Cost Model 及其他 domain object 继续以 Domain PostgreSQL 为内容事实源；Control DB active revision 只保存其 exact object/revision binding。每个 catalog entry 必须声明唯一 storage authority，同一 value 不得在两库双写或以任一库作 fallback。
+
+Bootstrap Control DB 至少包含以下逻辑关系；它们是 UX-001 target model，D0 不将其计入现有 63 张 PostgreSQL application table：
+
+| 逻辑关系 | 职责 |
+|---|---|
+| `bootstrap_state` | installation ID、schema version、bootstrap/readiness state、active/LKG pointers |
+| `general_access_keys` | 多通用密钥 verifier 与 lifecycle metadata |
+| `owner_sessions` | 短期 Owner session、expiry、revocation、CSRF verifier |
+| `configuration_catalog` | closed typed 配置目录与应用规则 |
+| `configuration_revisions` | immutable candidate/validated/active/failed/rollback revision |
+| `configuration_values` | revision 内 typed value 或 encrypted value |
+| `active_configuration` | singleton global CAS pointer、active revision、last-known-good revision |
+| `configuration_consumer_states` | 各进程 desired/applied revision、ACK、error、heartbeat |
+| `domain_database_connection_revisions` | 加密 Domain PostgreSQL candidate/active/LKG connection |
+| `bootstrap_audit_events` | auth/config/database 的 append-only、hash-chained bootstrap audit |
+
+Domain PostgreSQL 继续是业务事实源，但不得成为“如何连接 Domain PostgreSQL”的唯一事实源。否则必然出现“先连接才能读连接配置”的自举悖论。API 必须在 Domain DB 不可用时仍可启动最小 bootstrap/auth/config surface，允许 Owner 验证通用密钥、查看不泄密的失败状态、验证新数据库 candidate 并恢复连接；业务 API 保持 fail closed。
+
+### 41.3.2 Root key 唯一例外
+
+AEAD root key / pepper 只能来自 OS keychain、TPM 或经授权的 external secret injection。它是 cryptographic root-of-trust，不是普通系统配置，不得：
+
+- 写入配置文件、Control DB、Domain DB、log、Audit、Artifact 或 API response；
+- 通过普通 environment/CLI 配置覆盖或 fallback；
+- 被 Agent prompt/checkpoint、Semantic Tool、frontend 或 provider payload 读取。
+
+若 root key 不可用，系统进入 `BOOTSTRAP_LOCKED`，不得以新 key、空密码、旧明文 DSN 或环境 fallback 猜测恢复。root key 恢复必须是独立的运维仪式并产生可验证 evidence。
+
+### 41.3.3 DB-only 无 fallback 规则
+
+除上述 root-of-trust 外，所有 effective configuration selection 只能从 active Control DB revision 读取；若 catalog entry 的内容权威是 Domain PostgreSQL 中的 immutable/versioned object，则必须再按 active revision 保存的 exact object/revision ref 解析，不得读 latest/default 或第二份可变副本。生产运行时 **MUST NOT** 存在以下任一行为：
+
+```text
+configuration file value
+environment value
+CLI flag value
+working-directory override
+legacy app_settings fallback
+compiled default used after active configuration exists
+remote/unpinned configuration source
+```
+
+进程启动可以使用编译期 safe bootstrap defaults 来打开 Control DB，但这些值不是可配置项、不得覆盖 active revision，也不得伪装成用户设置。旧 file/env 只允许在显式、一次性、可审计的 D1 import migration 中读取；完成 typed validation、secret encryption、effective parity 与 restart verification 后必须关闭读路径，不得 silent fallback。
+
+## 41.4 多通用密钥与 Owner session
+
+### 41.4.1 密钥格式、哈希与存储
+
+通用密钥是 authentication credential，不是用户记录、API 对象授权 token 或长期 browser session。默认生成格式必须包含可公开查找的 `key_id` 与至少 256-bit CSPRNG secret；原始 secret 只在 create/rotate 成功后显示一次。
+
+`general_access_keys` 必须保存：
+
+```text
+key_id
+label
+verifier_phc
+hash_algorithm = ARGON2ID
+hash_parameters_version
+per_key_random_salt
+pepper_key_id
+masked_hint
+status = ACTIVE | REVOKED | EXPIRED
+expires_at
+created_at
+last_used_at
+revoked_at
+revision
+```
+
+验证必须使用 versioned Argon2id、per-key random salt、root-keystore pepper 与 constant-time comparison。成功登录可以在同一安全事务中升级过时 hash parameters；不得存储可解密的原始通用密钥、raw lookup hash 或可恢复 hint。
+
+### 41.4.2 Lifecycle 与防锁死
+
+- 允许多个 `ACTIVE` 密钥，但所有密钥都映射到同一 `OWNER`；
+- rotation 必须先创建并一次显示 replacement，再显式 revoke 旧 key；
+- revoke/expire 不做 hard delete，必须保留 verifier metadata 与 Audit；
+- 默认禁止 revoke、expire 或重设 `expires_at` 而使 active+unexpired key 数变为 `0`；必须先在同一事务建立 replacement，只有受控 local recovery ceremony 才可突破；
+- revoke/expire 必须立即撤销由该 key 派生的全部 Owner sessions；
+- failed login 返回同质 `UNAUTHENTICATED`，不得区分 missing/revoked/expired/wrong secret；
+- 登录必须有 installation-global 与 source-aware rate limit、bounded backoff 与不泄密 Audit。
+
+### 41.4.3 Cookie session 与 CSRF
+
+browser 认证流程冻结为：
+
+```text
+general key
+→ public login exchange
+→ random opaque owner session
+→ Secure + HttpOnly + SameSite cookie
+→ server-side session lookup
+```
+
+原始通用密钥不得作为每个业务请求的 Bearer token，不得进入 localStorage/sessionStorage、URL、SSE cursor、log 或 Playwright storage-state。`owner_sessions` 只保存高熵 session token 的 SHA-256 verifier、source `key_id`、issued/last-seen、idle/absolute expiry、revocation reason、auth epoch 与 CSRF verifier；明文 session token 只在 HttpOnly cookie 中存在。
+
+所有 state-changing browser request 必须同时验证 session cookie、CSRF token、Origin/Fetch Metadata 与 content type。login 成功必须轮换 session ID 防止 fixation；logout、key revoke、session expiry、auth epoch 变化后必须 fail closed。D1 canonical OpenAPI 至少要建模 login、current session、logout、key metadata/create/rotate/revoke，并冻结 cookie security scheme 与 CSRF header；D0 不预先伪造 operation count。
+
+## 41.5 Closed Configuration Catalog
+
+### 41.5.1 完整性与可配置边界
+
+每个可变运行项都必须在 `configuration_catalog` 中有唯一 closed definition，并由配置页可见、可验证、可修改或以明确的不可编辑原因展示。catalog entry 至少包含：
+
+```text
+key
+group
+value_schema + schema_version
+scope = INSTALLATION
+sensitivity = PUBLIC | MASKED | SECRET
+apply_mode = LIVE_NEW_WORK | DRAIN_RELOAD | RESTART_REQUIRED | SECURITY_IMMEDIATE
+consumers
+validator
+dependencies
+safe_range
+default_for_first_materialization
+introduced/deprecated version
+```
+
+以下属于 server/code 强制不变量，不是可配置项：canonical OpenAPI/Tool schema、Semantic Tool exact allowlist、Agent hard role permission、Approval authority、Holdout isolation、Risk/Validation authority、DB schema constraints、cryptographic minimums 与配置 safe-range 下限。配置页可只读展示它们的 version/health，但不得伪装成可编辑字段。
+
+Release gate 必须证明：
+
+```text
+declared configurable consumer keys
+== Control DB catalog keys
+== canonical API configuration schema keys
+== configuration UI field keys
+```
+
+任一 missing/extra/shadow key、未登记 environment read 或手写 frontend-only setting 都是发布阻断。
+
+### 41.5.2 Typed value、密文与快照
+
+`configuration_values` 必须与 catalog schema 逐项验证。`SECRET` 值使用带 `key_id`、nonce、AAD 与 ciphertext 的 AEAD envelope；AAD 必须绑定 installation、config key、revision 与 schema version。read API 只能返回 `configured`、`masked_hint`、`last_rotated_at` 等不可恢复投影；secret update 是 write-only，不传回旧值。
+
+每个 `configuration_revision` 是 immutable closed snapshot/change-set，必须绑定 base revision、catalog version、canonical hash、validation result、actor session、created/activated timestamp。所有跨 key 依赖必须在 candidate validation 中整体成功，不得逐行 partial apply。
+
+### 41.5.3 并发、激活、热更新与回滚
+
+- 配置写入使用 active revision 的 global `If-Match`；stale base 返回 `REVISION_MISMATCH`；
+- 同一时刻最多一个 activation 持有 installation-global fence；
+- `LIVE_NEW_WORK` 只影响新 request/job/Agent Run，已经捕获 snapshot 的工作不中途换值；
+- `DRAIN_RELOAD` 先关闭新 admission，等待或安全收口在途工作，再切换；
+- `RESTART_REQUIRED` 只可 staged，required consumers 全部重启并 ACK 前不得宣称 fully applied；
+- `SECURITY_IMMEDIATE` 用于 key/credential/session revoke，从下一安全边界立即拒绝旧权限；
+- 每个 consumer 必须在 `configuration_consumer_states` 写入 desired/applied revision、ACK/error 和 heartbeat；所有 required ACK 未收敛前 readiness 不得为 `READY`；
+- rollback 不得把 active pointer 倒退或覆盖历史；它必须以旧 snapshot 为源创建新的单调 revision，重做当前 schema/dependency/secret 验证；
+- 已 revoke/expired、无法解密或已不兼容的 secret 不得随 rollback 重新激活。
+
+配置变更、验证失败、activation、consumer ACK/failure 与 rollback 都必须写 bootstrap Audit；Audit 只记录 key set、before/after hash、masked summary、revision、session/key locator 和结果，不记录明文 secret。
+
+## 41.6 Domain PostgreSQL connection 变更协议
+
+Domain DB connection 是 Control DB 配置，不得存入目标 Domain DB 作为唯一拷贝。host/port/database/TLS/pool 等非密字段也必须进入 typed revision；username/password/client key 等使用 AEAD envelope。任何 connection 变更都必须按以下顺序执行：
+
+```text
+create candidate against current global If-Match
+→ closed field/dependency validation
+→ network + TLS + credential + PostgreSQL version validation
+→ required privilege + schema/migration compatibility validation
+→ enter maintenance and stop new domain mutations/jobs/Agent admissions
+→ drain or safely fence in-flight consumers
+→ CAS active connection pointer in Control DB
+→ reconnect canary and required consumer ACK
+→ commit ACTIVE + new last-known-good pointer
+```
+
+任一 validation、CAS、reconnect、canary 或 ACK 失败必须保留 candidate/evidence，恢复到前一 last-known-good connection，重新收集 required consumer ACK，并保持业务 API fail closed。不得在新旧两个 DB 之间双写、随机读、以旧连接假报新 revision 已应用，或在失败后从 file/env/CLI 重建 DSN。
+
+新目标 DB 若为空库，初始化必须是显式 Owner action；若为已有 QuantFoundry DB，必须在切换前通过 exact schema、migration history、singleton namespace、Audit chain、Artifact/Parquet manifest 与 data compatibility 检查。candidate validation 不得隐式执行 destructive migration。
+
+## 41.7 Agent、Tool、Audit、Event 与 Backup 边界
+
+### Agent / Remote Codex
+
+Remote Codex 仍只有一个 `CODEX-DEFAULT` runtime identity。endpoint/model/credential 来自 active installation-level AI connection；per-role `model_provider/model_name` 在 target contract 中是 read-only projection，不是可变 Role 选择器。D1 必须从 `AgentConfigUpdate` 删除这两个可写字段，并为 Agent Run 冻结：
+
+```text
+effective_configuration_revision
+agent_configuration_revision
+AI connection id + revision
+resolved runtime profile/timeout/budgets
+prompt manifest hash
+Tool registry/policy hash
+```
+
+新 Run 只在 admission 时原子捕获 snapshot；普通 resume 继续使用原 snapshot。只有 `SECURITY_IMMEDIATE` 的 credential/key revoke 可在下一 Tool/model 安全边界强制停止旧 Run。
+
+### Semantic Tool
+
+`contracts/tools/v1-p0.yaml` 仍是 exact 13-entry canonical authority。auth、general key、session、configuration、database validation/switch/rollback 都是 Owner HTTP/Domain control-plane action，永远不是 Agent Semantic Tool。runtime config 可调整执行限额，但不得替换 registry path/hash、增删 Tool、改变 allowed roles/side effects 或绕过 startup exact-set check。
+
+### Audit / Event
+
+key create/rotate/revoke/expire、login success/failure/rate-limit、session revoke、config candidate/validate/activate/fail/rollback、DB candidate/switch/LKG recovery 必须审计。Domain DB 可用时，bootstrap Audit 的 hash/sequence anchor 必须关联到 Domain Audit；Domain DB 不可用时，bootstrap Audit 独立 append-only 且待恢复后补 anchor，不得伪造原始 Domain transaction 已发生。
+
+D1 必须决定 closed config/auth notification EventType 与 locator；D0 不得将它们塞入现有 31-member EventType 或复用不匹配 locator。任何 event/SSE 都不得携带 key hint、session token、DSN、credential、ciphertext、nonce、pepper/root key locator 或 validation raw detail。
+
+### Backup / Restore
+
+backup 边界必须扩展为 Control DB + Domain PostgreSQL + Artifact + Parquet 的一致恢复点，包含 catalog/revision/active/LKG pointers、consumer state、key verifier/session policy、encrypted DB connections、bootstrap Audit hash chain 与 root-key recovery metadata。backup 不得包含明文 general key/session/DSN/root key。restore 必须先验证 root-key 可用性、Control DB chain、connection decrypt、Domain reconnect/schema、active config hash 与 consumer ACK，再开放业务 API。
+
+## 41.8 D1 schema/migration 与 readiness 必要条件
+
+D1 迁移必须先停写并盘点 legacy identity/config：
+
+1. 只有能被权威 evidence 证明为单 Owner + singleton namespace 的安装可自动迁移；
+2. multiple users、multiple active product workspaces、owner 不明、cross-owner rows 或冲突 settings 必须 quarantine 并阻断发布，不得 first-row-wins、merge 或猜测；
+3. 旧 session 全部撤销；不得从 email、password hash、Bearer token 或 provider credential 派生新 general key；
+4. 首个 general key 只能通过 localhost/one-time installation claim 创建，不得提供默认 key；
+5. legacy file/env config import 按 §41.3.3 显式迁移并在验证后彻底关闭旧读路径；
+6. Domain tables 中 `users`、`workspaces.owner_id`、`session_tokens.actor_id`、`app_settings`、`agent_configs` 的去留/转换必须在字段级 target schema 中一次冻结，不得先写 migration 后补文档；
+7. 新 exact counts 必须由 Bootstrap schema manifest + Domain schema manifest + canonical OpenAPI 各自生成；不得把两类 DB 表合并成旧 `63` 计数。
+
+目标 readiness 至少有：
+
+```text
+BOOTSTRAP_LOCKED
+DATABASE_DISCONNECTED
+CONFIG_VALIDATING
+CONFIG_APPLYING
+RESTART_REQUIRED
+DEGRADED
+READY
+```
+
+`READY` 只在 root key、Control DB schema/Audit、active config hash、Domain DB connection/schema、singleton namespace、required consumer ACK、Tool registry exact set 全部成功时成立。UI 友好、某个进程存活、旧连接仍能查询或 current-baseline tests green 都不能代替 UX-001 readiness proof。
 
 ---
 
