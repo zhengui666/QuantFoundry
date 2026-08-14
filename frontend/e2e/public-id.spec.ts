@@ -57,6 +57,7 @@ test('QF-PID six routes accept both forms and reject every applicable 003..011 c
       await expect
         .poll(() => resourceRequests.slice(before).some((requestPath) => requestPath.includes(id)))
         .toBe(true);
+      await page.waitForLoadState('networkidle');
     }
     for (const invalid of publicIdNegativeCases(type)) {
       const before = resourceRequests.length;
