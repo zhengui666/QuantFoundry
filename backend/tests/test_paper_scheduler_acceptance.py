@@ -20,9 +20,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.artifacts import publish_staged, stage_json
-from app.event_contract import validate_event_payload, validate_sse_envelope
-from app.main import (
+from quantfoundry.api.app import (
     ArtifactRow,
     Audit,
     Base,
@@ -32,14 +30,19 @@ from app.main import (
     content_hash,
     new_id,
 )
-from app.queue import (
+from quantfoundry.contracts.events.event_contract import (
+    validate_event_payload,
+    validate_sse_envelope,
+)
+from quantfoundry.infrastructure.artifacts.store import publish_staged, stage_json
+from quantfoundry.infrastructure.jobs.queue import (
     LostLease,
     claim_job,
     complete_job,
     lock_active_lease,
     reap_expired_jobs,
 )
-from scheduler.paper import (
+from quantfoundry.scheduler.paper import (
     InvalidExecutionAssumption,
     PaperScheduler,
     Schedule,
@@ -629,6 +632,17 @@ def test_QF_PAPER_SCH_001_timezone_due_time_and_state_fail_closed(
         )
         session.commit()
         assert _discover(pg18_session_factory, missing_state, after) == 0
+        PaperScheduler().transition_state(
+            session,
+            workspace_id=missing_state["workspace_id"],
+            paper_id=missing_state["deployment_id"],
+            to_state="ACTIVE",
+            now=missing_state["watermark"],
+            actor_id="system",
+            reason_code="SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+            initialization=True,
+        )
+        session.commit()
         mismatch = _seed_deployment(
             session, uuid.uuid4().hex[:10], watermark=datetime(2026, 1, 8, tzinfo=UTC)
         )
@@ -638,6 +652,11 @@ def test_QF_PAPER_SCH_001_timezone_due_time_and_state_fail_closed(
         )
         session.commit()
         assert _discover(pg18_session_factory, mismatch, after) == 0
+        session.execute(
+            text("UPDATE paper_deployments SET status='ACTIVE' WHERE id=:id"),
+            {"id": mismatch["deployment_id"]},
+        )
+        session.commit()
         with pytest.raises(InvalidExecutionAssumption):
             PaperScheduler()._candidate(  # noqa: SLF001 - acceptance of fail-closed boundary
                 session,
@@ -860,8 +879,8 @@ def test_QF_PAPER_SCH_005_lease_fence_retry_crash_and_unknown_result(
 ) -> None:
     """QF-PAPER-SCH-005: fenced lease takeover and review-required crash recovery."""
 
-    from app.job_effects import apply_job_effect
-    from workers.main import SimulatedWorkerCrash, run_once
+    from quantfoundry.application.jobs.effects import apply_job_effect
+    from quantfoundry.workers.main import SimulatedWorkerCrash, run_once
 
     deployment = _seed_deployment(
         pg18_session_factory(),
@@ -1032,7 +1051,7 @@ def test_QF_PAPER_SCH_006_gates_and_terminal_runs_do_not_rerun(
 ) -> None:
     """QF-PAPER-SCH-006: blocked/complete terminal rows suppress future work."""
 
-    from workers.main import run_once
+    from quantfoundry.workers.main import run_once
 
     now = datetime(2026, 1, 5, 10, 0, tzinfo=UTC)
     cases: list[tuple[str, dict[str, Any], dict[str, Any]]] = [
@@ -1173,8 +1192,26 @@ def test_QF_PAPER_SCH_007_evidence_boundary_migration_and_closed_sse_negative(
         assert state_audits
         for audit in state_audits:
             summary = json.loads(str(audit.payload))
-            assert set(summary) == EXPECTED_STATE_KEYS
+            assert set(summary) == {"paper_scheduler_state_evidence.v1"}
+            assert set(summary["paper_scheduler_state_evidence.v1"]) == (
+                EXPECTED_STATE_KEYS
+            )
             assert audit.detail_artifact_id is None
+            transition_id = summary["paper_scheduler_state_evidence.v1"][
+                "state_transition_id"
+            ]
+            matching_events = (
+                session.execute(
+                    select(Event).where(
+                        Event.workspace_id == deployment["workspace_id"],
+                        Event.event_id == transition_id,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(matching_events) == 1
+            assert matching_events[0].event_type == "paper.updated"
         assert _count(session, "jobs", deployment["workspace_id"]) == 0
         assert _count(session, "artifacts", deployment["workspace_id"]) == 0
     finally:
@@ -1188,7 +1225,7 @@ def test_QF_PAPER_SCH_007_evidence_boundary_migration_and_closed_sse_negative(
     )
     _seed_gate_inputs(pg18_session_factory, deployment, date(2026, 1, 5))
     _prioritize_paper_job(pg18_session_factory, deployment)
-    from workers.main import run_once
+    from quantfoundry.workers.main import run_once
 
     assert run_once(identity="paper-evidence-worker") == 1
     session = pg18_session_factory()
@@ -1233,7 +1270,7 @@ def test_QF_PAPER_SCH_007_evidence_boundary_migration_and_closed_sse_negative(
         assert events
         for event in events:
             payload = json.loads(str(event.payload))
-            assert set(payload) <= {"state", "status"}
+            assert set(payload) == {"status"}
             assert "resume_watermark_utc" not in payload
     finally:
         session.close()
@@ -1259,7 +1296,6 @@ def test_QF_PAPER_SCH_007_evidence_boundary_migration_and_closed_sse_negative(
                 "agent_run_id": None,
                 "tool_call_id": None,
                 "payload": {
-                    "state": "ACTIVE",
                     "status": "ACTIVE",
                     "paper_scheduler_evidence": "forbidden",
                 },

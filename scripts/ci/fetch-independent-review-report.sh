@@ -63,16 +63,16 @@ if not isinstance(artifact, dict):
 artifact_id = artifact["id"]
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as directory:
     archive_path = pathlib.Path(directory) / "review.zip"
-    completed = subprocess.run(
-        [
-            "gh", "api", f"/repos/{repository}/actions/artifacts/{artifact_id}/zip", "--method", "GET",
-            "-H", "Accept: application/octet-stream", "--output", str(archive_path),
-        ],
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    with archive_path.open("wb") as archive_file:
+        completed = subprocess.run(
+            [
+                "gh", "api", f"/repos/{repository}/actions/artifacts/{artifact_id}/zip", "--method", "GET",
+            ],
+            env=env,
+            stdout=archive_file,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
     if completed.returncode:
         raise SystemExit(f"cannot download independent review artifact: {completed.stderr.strip() or completed.returncode}")
     archive = archive_path.read_bytes()

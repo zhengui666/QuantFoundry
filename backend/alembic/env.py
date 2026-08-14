@@ -14,7 +14,7 @@ os.environ.setdefault("QF_DATABASE_URL", database_url)
 _previous_alembic_running = os.environ.get("QF_ALEMBIC_RUNNING")
 os.environ["QF_ALEMBIC_RUNNING"] = "1"
 
-from app.main import Base  # noqa: E402
+from quantfoundry.api.app import Base  # noqa: E402
 
 config = context.config
 config.set_main_option("sqlalchemy.url", database_url)

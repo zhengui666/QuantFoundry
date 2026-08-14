@@ -1062,6 +1062,8 @@ Adapter upgrade 若结果变化：
 - 若语义改变，必须 version/ADR；
 - 再更新 baseline。
 
+首次公开基线的 Linux visual snapshot 必须通过 `.github/workflows/visual-baseline-bootstrap.yml` 生成候选 artifact；候选 artifact 绑定 workflow run 与 commit，只能由人工审阅后提交到 `frontend/e2e/**-linux.png`。`main-full-gate` 只消费已提交 baseline，正常 PR 只允许使用可信 Git ancestor 生成的 baseline；任何被测 revision 自生成并自动批准的 snapshot 都不是有效证据。
+
 ## 10.4 Fast vs Strict Backtest
 
 V1 若 Fast Simulation 与 Strict Validation 使用不同 engine：
@@ -1786,14 +1788,17 @@ Visual diff 不能替代 semantic test。
 
 ## 20.1 Playwright storage-state 凭据边界
 
-Playwright harness 必须使用 inline、deterministic 且完全不含凭据或配置的 `storageState` 对象；禁止提交或依赖 browser storage-state 文件（包括 `frontend/e2e/storage-state.json`）。该对象必须等价于：
+Playwright harness 必须使用 inline、deterministic 且不含凭据的 `storageState` 对象；禁止提交或依赖 browser storage-state 文件（包括 `frontend/e2e/storage-state.json`）。该对象只能包含：
 
 ```text
 cookies: []
-origins: []
+origins:
+  - origin: http://127.0.0.1:5173
+    localStorage:
+      - qf.server-settings.locale = '{"language":"en","timezone":"UTC"}' (JSON string; equivalent to `JSON.stringify({ language: 'en', timezone: 'UTC' })`)
 ```
 
-该 inline state 不得包含 general key、cookie、bearer/session/refresh/CSRF token、locale/timezone/appearance、provider credential、signed URL 或任何 server truth。需要 locale/timezone 的用例必须在受控的 server/Control DB fixture 中设置；需要认证的用例必须在运行时通过通用密钥 login fixture 建立 HttpOnly session。HTTP/SSE 的 cookie/session/CSRF/`Last-Event-ID`、ETag/`If-Match` 与 `Idempotency-Key` 语义只按 D1 canonical contract 验证，不保留 SSE Bearer oracle。
+该 inline state 不得包含 bearer/session/refresh/CSRF token、provider credential、signed URL 或其他可认证/授权的 browser storage。它只用于确定性 locale/timezone bootstrap；HTTP `/api/v1`、SSE `Authorization`/`Last-Event-ID`、ETag/`If-Match` 与 `Idempotency-Key` semantics 不得因该 harness 设置而改变。任何需要持久化 browser storage-state 的测试必须改为 inline deterministic state，否则属于测试治理失败。
 
 ---
 

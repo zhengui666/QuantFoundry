@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target="${1:?target required}"
 ci_tmp="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-ci.XXXXXX")"
+export PYTHONPATH="$repo_root/backend/src:$repo_root/backend${PYTHONPATH:+:$PYTHONPATH}"
 
 cleanup_ci_tmp() {
   case "$ci_tmp" in
@@ -71,8 +72,10 @@ require_runtime_identity() {
 }
 
 backend_format() {
-  run_backend ruff format --check app workers scheduler tests alembic
-  run_backend ruff format --check "$repo_root/scripts"
+  # Ruff 0.16.x's default py314 formatter emits invalid unparenthesized
+  # multiple-exception syntax; enforce the valid py313 form everywhere.
+  run_backend ruff format --check --target-version py313 src/quantfoundry app workers scheduler tests alembic
+  run_backend ruff format --check --target-version py313 "$repo_root/scripts"
 }
 
 frontend_format() {
@@ -81,13 +84,13 @@ frontend_format() {
 
 backend_lint() {
   require_file backend/pyproject.toml
-  run_backend ruff check app workers scheduler tests alembic
+  run_backend ruff check src/quantfoundry app workers scheduler tests alembic
   run_backend ruff check "$repo_root/scripts"
 }
 
 backend_typecheck() {
   require_file backend/pyproject.toml
-  run_backend mypy --explicit-package-bases app workers scheduler
+  run_backend mypy --explicit-package-bases src/quantfoundry app workers scheduler
 }
 
 frontend_static() {
@@ -238,7 +241,7 @@ tool_check() {
 }
 
 build_all() {
-  run_backend python -m compileall -q app workers scheduler
+  run_backend python -m compileall -q src/quantfoundry app workers scheduler
   run_frontend build
 }
 
@@ -246,6 +249,7 @@ case "$target" in
   format) backend_format; frontend_format ;;
   lint) backend_lint; run_frontend lint ;;
   typecheck) backend_typecheck; run_frontend typecheck ;;
+  backend-format) backend_format ;;
   backend-lint) backend_lint ;;
   backend-typecheck|backend-mypy) backend_typecheck ;;
   migration) migration_check ;;

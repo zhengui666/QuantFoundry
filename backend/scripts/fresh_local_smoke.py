@@ -23,6 +23,9 @@ from fastapi.testclient import TestClient
 from alembic import command
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = BACKEND_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
@@ -97,7 +100,7 @@ def _drive_worker_turns(
 def _workflow_observation(
     session_factory: Callable[[], Any], research_id: str, workspace_id: str
 ) -> WorkflowObservation:
-    from app.main import (
+    from quantfoundry.api.app import (
         AgentRunRow,
         ExperimentRow,
         JobDependencyRow,
@@ -282,7 +285,7 @@ def main() -> None:
     for directory in ("artifacts", "data", "datasets", "cost-models", "policies"):
         (root / directory).mkdir(mode=0o750, exist_ok=True)
 
-    from app.local_provider import create_server
+    from quantfoundry.adapters.provider.local import create_server
 
     provider = create_server(
         "127.0.0.1", 0, api_key=os.environ["QF_LOCAL_PROVIDER_API_KEY"]
@@ -302,9 +305,9 @@ def main() -> None:
         )
         command.upgrade(config, "head")
 
-        from app.bootstrap import seed_local
         from app.control_plane import issue_access_key
-        from app.main import (
+        from app.main import app
+        from quantfoundry.api.app import (
             AgentRunRow,
             ArtifactRow,
             CostModelVersionRow,
@@ -316,10 +319,10 @@ def main() -> None:
             RiskPolicyVersionRow,
             SessionLocal,
             ToolCallRow,
-            app,
             content_hash,
         )
-        from workers.main import run_agent_once, run_once
+        from quantfoundry.bootstrap.local import seed_local
+        from quantfoundry.workers.main import run_agent_once, run_once
 
         session_token = secrets.token_urlsafe(32)
         seeded = seed_local(

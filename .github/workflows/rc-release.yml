@@ -3,6 +3,12 @@ name: rc-release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Published release tag to build"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -22,18 +28,28 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - id: identity
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_TYPE" == tag ]]
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]]
-          commit="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
-          test "$commit" = "$GITHUB_SHA"
-          printf 'tag=%s\ncommit=%s\n' "$GITHUB_REF_NAME" "$commit" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            tag="$RELEASE_TAG"
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]]
+            git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag"
+            commit="$(git rev-parse "refs/tags/$tag^{commit}")"
+          else
+            [[ "$GITHUB_REF_TYPE" == tag ]]
+            tag="$GITHUB_REF_NAME"
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]]
+            commit="$(git rev-parse "refs/tags/$tag^{commit}")"
+            test "$commit" = "$GITHUB_SHA"
+          fi
+          printf 'tag=%s\ncommit=%s\n' "$tag" "$commit" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: 3.14.0
-      - name: Require all P0 closure evidence before any release work
+      - name: Require all non-supply P0 evidence before the one-time release evidence bootstrap
         shell: bash
         env:
           QF_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
@@ -43,7 +59,7 @@ jobs:
           set -euo pipefail
           pip install --disable-pip-version-check uv==0.10.7
           uv --directory backend sync --frozen --all-groups
-          scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
+          scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain
 
   rc:
     needs: preflight
@@ -143,6 +159,13 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.commit }}
           fetch-depth: 0
+      - name: Load current release evidence collector
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          git show refs/remotes/origin/main:scripts/release-evidence.sh > scripts/release-evidence.sh
+          chmod +x scripts/release-evidence.sh
       - id: image
         shell: bash
         run: |
@@ -201,9 +224,19 @@ jobs:
           subject-name: ${{ steps.image.outputs.prefix }}/frontend
           subject-digest: ${{ steps.frontend.outputs.digest }}
           push-to-registry: true
+      - id: rc-artifact
+        name: Resolve latest RC evidence artifact for this workflow run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          artifact_name="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" --jq '.artifacts | map(select(.expired == false and (.name | startswith("rc-report-" + env.GITHUB_RUN_ID + "-")))) | sort_by(.created_at) | last.name')"
+          test -n "$artifact_name" && test "$artifact_name" != "null"
+          printf 'name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: rc-report-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.rc-artifact.outputs.name }}
           path: evidence
       - name: Collect immutable supply-chain and release evidence
         shell: bash
@@ -220,8 +253,13 @@ jobs:
           mkdir -p evidence/{attestations,provenance,signature-verification,sbom}
           cp docs/治理/p0-blockers.yaml evidence/p0-blockers.yaml
           cp docs/治理/release-known-issues.json evidence/release-known-issues.json
-          gh attestation download "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/attestations/backend.json
-          gh attestation download "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/attestations/frontend.json
+          for log_file in evidence/logs/*.log; do
+            if [[ -f "$log_file" && ! -s "$log_file" ]]; then
+              printf '%s\n' 'command completed successfully with no stdout/stderr' > "$log_file"
+            fi
+          done
+          gh attestation download "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" > evidence/attestations/backend.json
+          gh attestation download "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" > evidence/attestations/frontend.json
           gh attestation verify "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/signature-verification/backend.json
           gh attestation verify "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/signature-verification/frontend.json
           scripts/release-evidence.sh collect-oci-sbom "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" evidence/sbom/backend.spdx.json

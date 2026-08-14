@@ -3,8 +3,8 @@ from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from app.contracts import canonical_openapi, validated_payload
-from app.main import app, problem_payload
+from quantfoundry.api.app import app, problem_payload
+from quantfoundry.contracts.openapi.runtime import canonical_openapi, validated_payload
 
 SPEC = canonical_openapi()
 ERROR_CODES = SPEC["components"]["schemas"]["CanonicalErrorCode"]["enum"]

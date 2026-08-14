@@ -37,7 +37,7 @@ criteria = [
 scope_paths = [
     "AGENTS.md",
     "PROJECT_BACKGROUND.md",
-    "backend/app/agent_runtime",
+    "backend/src/quantfoundry",
     "backend/workers",
     "docs/Agent技术方案",
     "docs/后端系统技术方案/contracts/tools",
@@ -110,7 +110,14 @@ if artifact.get("expired") or artifact.get("workflow_run", {}).get("id") != run_
     raise SystemExit("independent review report artifact is missing, expired, or not bound to its run")
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-") as directory:
     output = pathlib.Path(directory) / "report.zip"
-    result = subprocess.run(["gh", "api", f"/repos/{repository}/actions/artifacts/{artifact_id}/zip", "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(output)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    with output.open("wb") as archive_file:
+        result = subprocess.run(
+            ["gh", "api", f"/repos/{repository}/actions/artifacts/{artifact_id}/zip", "--method", "GET"],
+            env=env,
+            stdout=archive_file,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
     if result.returncode:
         raise SystemExit(f"cannot download independent review artifact: {result.stderr.strip() or result.returncode}")
     archive = output.read_bytes()

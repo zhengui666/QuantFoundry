@@ -21,7 +21,7 @@ import {
   VersionBadge,
   VersionSwitcher,
   type DomainViewState,
-} from './domain-components';
+} from './components';
 
 const capability = (action: string, allowed = true): Schema<'ActionCapability'> => ({
   action,

@@ -10,9 +10,9 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:5173',
     browserName: 'chromium',
-    // Product default remains zh-CN. CI seeds an explicit persisted server Settings
-    // projection so role/text assertions cannot depend on a host/browser locale.
-    storageState: './e2e/storage-state.json',
+    // Locale is a server Control-DB projection; browser storage is never auth
+    // or configuration truth.
+    storageState: { cookies: [], origins: [] },
     locale: 'en-US',
     timezoneId: 'UTC',
   },

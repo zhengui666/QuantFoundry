@@ -293,7 +293,7 @@ describe('P0 UI localization contract', () => {
         './ui.tsx',
         './routes/OverviewRoute.tsx',
         './routes/MemoRoutes.tsx',
-        './design-system/domain-components.tsx',
+        './domain/components.tsx',
       ]),
     );
     expect(

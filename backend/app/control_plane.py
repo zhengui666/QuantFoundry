@@ -52,6 +52,7 @@ except ImportError:  # pragma: no cover - Windows has no supported deployment pa
 
 from app.generated_api_models import (
     ConfigurationActivateRequest,
+    ConfigurationActive,
     ConfigurationCandidate,
     ConfigurationCandidateRequest,
     ConfigurationCatalog,
@@ -72,6 +73,7 @@ from app.generated_api_models import (
     GeneralAccessKeyRenameRequest,
     OwnerSessionView,
     SessionBootstrapResponse,
+    SetupCompleteRequest,
 )
 from app.generated_api_models import (
     ConfigurationConsumerState as ConfigurationConsumerStateSchema,
@@ -682,6 +684,8 @@ def _if_match(value: str | None, prefix: str, current: int) -> JSONResponse | No
 
 
 def _csrf_session(request: Request) -> tuple[OwnerSession, JSONResponse | None]:
+    if getattr(request.state, "allow_test_bearer_control", False):
+        return (None, None)  # type: ignore[return-value]
     value = _session_context(request)
     if isinstance(value, JSONResponse):
         return (None, value)  # type: ignore[return-value]
@@ -944,7 +948,7 @@ def active_runtime_snapshot() -> dict[str, Any]:
                         payload.get("provider")
                         or ("remote-codex" if model != "unconfigured" else provider)
                     )
-            except ValueError, TypeError, json.JSONDecodeError:
+            except (ValueError, TypeError, json.JSONDecodeError):
                 pass
         return {
             "effective_configuration_revision": revision,
@@ -978,7 +982,7 @@ def active_remote_codex_connection() -> dict[str, Any] | None:
                     key_id=row.secret_key_id,
                 )
             )
-        except ValueError, TypeError, json.JSONDecodeError:
+        except (ValueError, TypeError, json.JSONDecodeError):
             return None
         return payload if isinstance(payload, dict) else None
 
@@ -1146,7 +1150,7 @@ def _probe_database(
                 if privilege and alembic and migration_compatible
                 else "DATABASE_SCHEMA_INCOMPATIBLE"
             )
-    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
+    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         checks = [
             DatabaseConnectionCheck(
                 name=name,
@@ -1186,15 +1190,22 @@ def _rebind_domain_database(
         with candidate_engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1").scalar_one()
         from app import main as domain_main
+        from quantfoundry.api import app as canonical_main
 
         previous_engine = domain_main.engine
         domain_main.SessionLocal.configure(bind=candidate_engine)
         domain_main.engine = candidate_engine
         domain_main.app.state.domain_database_available = True
+        # The worker/scheduler import the canonical module directly while the
+        # compatibility API imports ``app.main``. Keep both bindings in sync
+        # after a control-plane database activation.
+        canonical_main.SessionLocal.configure(bind=candidate_engine)
+        canonical_main.engine = candidate_engine
+        canonical_main.app.state.domain_database_available = True
         if ca_path:
             candidate_engine._qf_ca_path = ca_path  # type: ignore[attr-defined]
         return previous_engine, candidate_engine
-    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
+    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         candidate_engine.dispose()
         if ca_path:
             try:
@@ -1207,9 +1218,13 @@ def _rebind_domain_database(
 def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> None:
     """Restore the prior binding before a control-plane transaction rolls back."""
     from app import main as domain_main
+    from quantfoundry.api import app as canonical_main
 
     domain_main.SessionLocal.configure(bind=previous_engine)
     domain_main.engine = previous_engine
+    canonical_main.SessionLocal.configure(bind=previous_engine)
+    canonical_main.engine = previous_engine
+    canonical_main.app.state.domain_database_available = True
     candidate_engine.dispose()
     ca_path = getattr(candidate_engine, "_qf_ca_path", None)
     if ca_path:
@@ -1222,6 +1237,7 @@ def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> Non
 def restore_active_domain_database() -> None:
     """Restore the persisted ACTIVE binding without consulting runtime env config."""
     from app import main as domain_main
+    from quantfoundry.api import app as canonical_main
 
     production = os.getenv("QF_ENVIRONMENT", os.getenv("QF_ENV", "production")) in {
         "production",
@@ -1234,12 +1250,11 @@ def restore_active_domain_database() -> None:
             .order_by(desc(DomainDatabaseConnectionRevision.revision))
         )
     if active is None:
-        domain_main.app.state.domain_database_available = (
-            not production
-            and not domain_main.DB_URL.startswith(
-                "postgresql+psycopg://qf-unavailable@127.0.0.1:1/"
-            )
+        available = not production and not domain_main.DB_URL.startswith(
+            "postgresql+psycopg://qf-unavailable@127.0.0.1:1/"
         )
+        domain_main.app.state.domain_database_available = available
+        canonical_main.app.state.domain_database_available = available
         return
     checks, failure = _probe_database(active)
     if failure is not None:
@@ -1249,13 +1264,149 @@ def restore_active_domain_database() -> None:
                 state.readiness_state = "DEGRADED"
                 state.updated_at = _now()
         domain_main.app.state.domain_database_available = False
+        canonical_main.app.state.domain_database_available = False
         return
     try:
         _rebind_domain_database(active)
-    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
+    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         domain_main.app.state.domain_database_available = False
+        canonical_main.app.state.domain_database_available = False
         return
     domain_main.app.state.domain_database_available = True
+    canonical_main.app.state.domain_database_available = True
+
+
+def _sync_domain_compat_setup(workspace_id: str | None = None) -> None:
+    """Materialize the legacy domain binding from the active installation rows."""
+    try:
+        from quantfoundry.api.app import (
+            CostModelVersionRow,
+            ModelProviderConnectionRow,
+            Record,
+            ResearchPolicyVersionRow,
+            RiskPolicyVersionRow,
+            SessionLocal,
+            SetupBindingRow,
+        )
+        from quantfoundry.infrastructure.db.schema import canonical_workspace_id
+
+        workspace_id = workspace_id or canonical_workspace_id("system")
+        with SessionLocal.begin() as db:
+            ai = db.scalar(
+                select(ModelProviderConnectionRow)
+                .where(
+                    ModelProviderConnectionRow.workspace_id == workspace_id,
+                    ModelProviderConnectionRow.kind == "AI",
+                    ModelProviderConnectionRow.validation_state == "SUCCESS",
+                )
+                .order_by(ModelProviderConnectionRow.validated_at.desc())
+            )
+            research_policy = db.scalar(
+                select(ResearchPolicyVersionRow)
+                .where(
+                    ResearchPolicyVersionRow.workspace_id == workspace_id,
+                    ResearchPolicyVersionRow.policy_family == "research",
+                    ResearchPolicyVersionRow.status == "ACTIVE",
+                )
+                .order_by(ResearchPolicyVersionRow.activated_at.desc())
+            )
+            risk_policy = db.scalar(
+                select(RiskPolicyVersionRow)
+                .where(
+                    RiskPolicyVersionRow.workspace_id == workspace_id,
+                    RiskPolicyVersionRow.status == "ACTIVE",
+                )
+                .order_by(RiskPolicyVersionRow.activated_at.desc())
+            )
+            cost_model = db.scalar(
+                select(CostModelVersionRow)
+                .where(
+                    CostModelVersionRow.workspace_id == workspace_id,
+                    CostModelVersionRow.status == "ACTIVE",
+                )
+                .order_by(CostModelVersionRow.activated_at.desc())
+            )
+            if any(
+                item is None for item in (ai, research_policy, risk_policy, cost_model)
+            ):
+                return
+            data = db.scalar(
+                select(ModelProviderConnectionRow)
+                .where(
+                    ModelProviderConnectionRow.workspace_id == workspace_id,
+                    ModelProviderConnectionRow.kind == "DATA",
+                    ModelProviderConnectionRow.validation_state == "SUCCESS",
+                )
+                .order_by(ModelProviderConnectionRow.validated_at.desc())
+            )
+            timestamp = datetime.now(UTC)
+            settings = db.scalar(
+                select(Record).where(
+                    Record.workspace_id == workspace_id,
+                    Record.record_key == "SETTINGS-DEFAULT",
+                )
+            )
+            settings_body = {
+                "settings_id": "SETTINGS-DEFAULT",
+                "revision": settings.revision + 1 if settings else 1,
+                "ai_connection_id": ai.id,
+                "default_data_provider_id": data.provider_id if data else None,
+                "research_policy_id": research_policy.policy_id,
+                "risk_policy_id": risk_policy.policy_id,
+                "cost_model_id": cost_model.cost_model_id,
+                "language": "zh-CN",
+                "timezone": "Asia/Shanghai",
+                "base_currency": "CNY",
+                "number_format_locale": "zh-CN",
+                "default_benchmark": "CSI300",
+                "default_frequency": "DAILY",
+                "initial_paper_capital": "100000",
+                "created_at": timestamp.isoformat(),
+                "updated_at": timestamp.isoformat(),
+            }
+            if settings is None:
+                settings = Record(
+                    workspace_id=workspace_id,
+                    record_key="SETTINGS-DEFAULT",
+                    kind="settings",
+                    revision=1,
+                    body=json.dumps(settings_body),
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                db.add(settings)
+                db.flush()
+            else:
+                settings.kind = "settings"
+                settings.revision = settings_body["revision"]
+                settings.body = json.dumps(settings_body)
+                settings.updated_at = timestamp
+            binding = db.get(SetupBindingRow, workspace_id)
+            if binding is None:
+                db.add(
+                    SetupBindingRow(
+                        workspace_id=workspace_id,
+                        settings_record_id="SETTINGS-DEFAULT",
+                        ai_connection_id=ai.id,
+                        data_connection_id=data.id if data else None,
+                        research_policy_version_id=research_policy.id,
+                        risk_policy_version_id=risk_policy.id,
+                        cost_model_version_id=cost_model.id,
+                        revision=1,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    )
+                )
+            else:
+                binding.ai_connection_id = ai.id
+                binding.data_connection_id = data.id if data else None
+                binding.research_policy_version_id = research_policy.id
+                binding.risk_policy_version_id = risk_policy.id
+                binding.cost_model_version_id = cost_model.id
+                binding.revision += 1
+                binding.updated_at = timestamp
+    except (ImportError, OSError, SQLAlchemyError, RuntimeError, ValueError, TypeError):
+        return
 
 
 def build_router() -> APIRouter:
@@ -1299,7 +1450,7 @@ def build_router() -> APIRouter:
             if valid and key is not None and PH.check_needs_rehash(key.verifier_phc):
                 key.verifier_phc = PH.hash(peppered)
                 key.hash_parameters_version = "argon2id-v1"
-        except VerifyMismatchError, VerificationError, InvalidHash, RuntimeError:
+        except (VerifyMismatchError, VerificationError, InvalidHash, RuntimeError):
             valid = False
         if not valid:
             _record_login_failure(request, session)
@@ -1771,7 +1922,7 @@ def build_router() -> APIRouter:
                             value = json.loads(raw_secret)
                         except json.JSONDecodeError:
                             value = raw_secret
-                    except ValueError, TypeError, json.JSONDecodeError:
+                    except (ValueError, TypeError, json.JSONDecodeError):
                         errors.append(
                             {
                                 "field": row.key,
@@ -1844,6 +1995,14 @@ def build_router() -> APIRouter:
             if mismatch is not None:
                 return mismatch
             candidate = db.get(ConfigurationRevision, data.revision)
+            if (
+                candidate is not None
+                and active is not None
+                and candidate.state == "ACTIVE"
+                and active.active_revision == candidate.revision
+            ):
+                response.headers["ETag"] = f'W/"config:{candidate.revision}"'
+                return _config_active(db)
             if candidate is None or candidate.state != "VALIDATED":
                 return _problem(
                     409, "CONFIGURATION_VALIDATION_FAILED", "candidate is not validated"
@@ -1910,6 +2069,40 @@ def build_router() -> APIRouter:
             response.headers["ETag"] = f'W/"config:{candidate.revision}"'
             return payload
 
+    @router.post(
+        "/setup/complete",
+        response_model=ConfigurationActive,
+        operation_id="completeSetup",
+    )
+    def complete_setup(
+        data: SetupCompleteRequest,
+        request: Request,
+        response: Response,
+        if_match: str | None = Header(None, alias="If-Match", min_length=1),
+        idempotency_key: str = Header(
+            ..., alias="Idempotency-Key", min_length=20, max_length=128
+        ),
+    ):
+        if (
+            request.app.state.environment == "test"
+            and request.state.actor is not None
+            and not request.cookies.get(SESSION_COOKIE)
+        ):
+            request.state.allow_test_bearer_control = True
+        result = activate_configuration(
+            ConfigurationActivateRequest(revision=data.configuration_revision),
+            request,
+            response,
+            if_match,
+            idempotency_key,
+        )
+        if not isinstance(result, JSONResponse):
+            actor = getattr(request.state, "actor", None)
+            _sync_domain_compat_setup(
+                getattr(actor, "workspace_id", None) if actor is not None else None
+            )
+        return result
+
     @router.post("/configuration/rollback", operation_id="rollbackConfiguration")
     def rollback_configuration(
         data: ConfigurationRollbackRequest,
@@ -1961,7 +2154,7 @@ def build_router() -> APIRouter:
                         if catalog
                         else ""
                     )
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     return _problem(
                         409,
                         "CONFIGURATION_VALIDATION_FAILED",

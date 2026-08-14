@@ -12,8 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from app.bootstrap import seed_local
-from app.main import (
+from quantfoundry.api.app import (
     CostModelVersionRow,
     ResearchPolicyVersionRow,
     RiskPolicyVersionRow,
@@ -21,7 +20,8 @@ from app.main import (
     content_hash,
     resolve_research_policy,
 )
-from app.public_ids import is_public_id
+from quantfoundry.bootstrap.local import seed_local
+from quantfoundry.domain.value_objects.public_ids import is_public_id
 from scripts.fresh_local_smoke import WorkflowObservation, _drive_worker_turns
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]

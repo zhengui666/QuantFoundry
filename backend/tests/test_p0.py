@@ -3,8 +3,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app.contracts import now
-from app.main import (
+from quantfoundry.api.app import (
     ResearchRow,
     SessionLocal,
     StrategyRow,
@@ -12,6 +11,7 @@ from app.main import (
     ValidationRow,
     app,
 )
+from quantfoundry.contracts.openapi.runtime import now
 
 c = TestClient(app)
 H = {"Authorization": "Bearer test"}

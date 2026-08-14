@@ -198,7 +198,7 @@ def _index_key_spec(expression: Any) -> dict[str, Any]:
 
 
 def snapshot(metadata: MetaData) -> dict[str, Any]:
-    from app.locator_contract import (
+    from quantfoundry.contracts.events.locator import (
         POSTGRES_LOCATOR_CONTRACT_SHA256,
         POSTGRES_LOCATOR_HELPERS,
         locator_truth_table,
@@ -304,7 +304,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.orm:
-        from app.main import Base
+        from quantfoundry.api.app import Base
 
         metadata = Base.metadata
     else:

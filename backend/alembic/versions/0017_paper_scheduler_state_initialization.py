@@ -17,6 +17,7 @@ from sqlalchemy import MetaData, Table, create_engine, select, text
 from sqlalchemy.engine import Connection
 
 from alembic import op
+from quantfoundry.domain.value_objects.public_ids import is_public_id
 
 revision = "0017_paper_scheduler_state_init"
 down_revision = "0016_section14_schema"
@@ -322,9 +323,8 @@ def _validate_evidence(
     bind: Connection,
     audit_events: Table,
     domain_events: Table,
+    event_stream_watermarks: Table,
     deployment: Mapping[str, Any],
-    baseline: Mapping[str, Any],
-    target: str,
 ) -> None:
     audits = (
         bind.execute(
@@ -348,9 +348,6 @@ def _validate_evidence(
     if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
         _block("ambiguous scheduler initialization evidence", deployment)
 
-    watermark = _utc_timestamp(
-        bind, baseline["resume_watermark_utc"], "resume_watermark_utc"
-    )
     effective = _utc_timestamp(bind, evidence["effective_at_utc"], "effective_at_utc")
     initialization = _utc_timestamp(
         bind, evidence["initialization_utc"], "initialization_utc"
@@ -358,24 +355,27 @@ def _validate_evidence(
     evidence_watermark = _utc_timestamp(
         bind, evidence["resume_watermark_utc"], "resume_watermark_utc"
     )
-    expected_suppressed = baseline["suppressed_since_utc"]
     evidence_suppressed = evidence["suppressed_since_utc"]
-    if expected_suppressed is None:
-        suppressed_matches = evidence_suppressed is None
-    else:
-        suppressed_matches = evidence_suppressed is not None and _utc_timestamp(
-            bind, expected_suppressed, "suppressed_since_utc"
-        ) == _utc_timestamp(bind, evidence_suppressed, "suppressed_since_utc")
-
     valid = (
-        evidence["state_transition_id"] not in (None, "")
+        isinstance(evidence["state_transition_id"], str)
+        and is_public_id("domain_event", evidence["state_transition_id"])
         and str(evidence["workspace_id"]) == str(deployment["workspace_id"])
         and evidence["paper_id"] == deployment["paper_id"]
         and evidence["from_state"] is None
-        and evidence["to_state"] == target
-        and effective == initialization == watermark == evidence_watermark
-        and suppressed_matches
-        and evidence["revision"] == baseline["revision"]
+        and evidence["to_state"] in _STATUS_MAP.values()
+        and effective == initialization == evidence_watermark
+        and (
+            (evidence["to_state"] == "ACTIVE" and evidence_suppressed is None)
+            or (
+                evidence["to_state"] != "ACTIVE"
+                and evidence_suppressed is not None
+                and _utc_timestamp(bind, evidence_suppressed, "suppressed_since_utc")
+                == effective
+            )
+        )
+        and isinstance(evidence["revision"], int)
+        and not isinstance(evidence["revision"], bool)
+        and evidence["revision"] >= 1
         and evidence["reason_code"] == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY"
     )
     if not valid:
@@ -389,33 +389,48 @@ def _validate_evidence(
     )
     event_filters = [
         domain_events.c.workspace_id == deployment["workspace_id"],
+        domain_events.c.event_id == evidence["state_transition_id"],
         domain_events.c.event_type == "paper.updated",
         domain_events.c.object_type == "paper",
         domain_events.c.object_id == deployment["paper_id"],
     ]
     events = bind.execute(select(domain_events).where(*event_filters)).mappings().all()
-    if len(events) != 1:
-        _block(
-            "missing or ambiguous scheduler initialization paper.updated event",
-            deployment,
+    audit_sequence = audits[0]["sequence"]
+    retention = (
+        bind.execute(
+            select(event_stream_watermarks).where(
+                event_stream_watermarks.c.workspace_id == deployment["workspace_id"]
+            )
         )
+        .mappings()
+        .one_or_none()
+    )
+    expired_canonical_event = (
+        len(events) == 0
+        and isinstance(audit_sequence, int)
+        and not isinstance(audit_sequence, bool)
+        and retention is not None
+        and isinstance(retention["expired_through_sequence"], int)
+        and not isinstance(retention["expired_through_sequence"], bool)
+        and retention["expired_through_sequence"] >= audit_sequence
+    )
+    if expired_canonical_event:
+        return
+    if len(events) != 1:
+        _block("ambiguous scheduler initialization paper.updated event", deployment)
     event = events[0]
     payload = event["payload"]
     event_instant = _utc_timestamp(bind, event["occurred_at"], "event occurred_at")
     closed = (
         isinstance(payload, Mapping)
         and set(payload) == {"status"}
-        and payload["status"] == target
-        and event.get("actor_id") == "alembic:0017"
+        and payload["status"] == evidence["to_state"]
+        and event.get("actor_id") == evidence["actor"]["id"]
         and event.get("object_version") is None
-        and event.get("object_revision") == baseline["revision"]
-        and event.get("revision") == baseline["revision"]
-        and event.get("request_id") is None
-        and event.get("correlation_id") is None
-        and event.get("causation_id") is None
-        and event.get("job_id") is None
-        and event.get("agent_run_id") is None
-        and event.get("tool_call_id") is None
+        and isinstance(event.get("object_revision"), int)
+        and not isinstance(event.get("object_revision"), bool)
+        and event.get("object_revision") >= 1
+        and event.get("revision") == event.get("object_revision")
         and event.get("schema_version") == 1
         and event_instant == initialization
         and _utc_timestamp(bind, event["expires_at"], "event expires_at")
@@ -482,7 +497,13 @@ def _validate_support_rows(
             and head["revision"] >= 1
         )
     if event is None:
-        watermark_valid = watermark is None
+        watermark_valid = watermark is None or (
+            isinstance(watermark["last_sequence"], int)
+            and not isinstance(watermark["last_sequence"], bool)
+            and isinstance(watermark["expired_through_sequence"], int)
+            and not isinstance(watermark["expired_through_sequence"], bool)
+            and watermark["last_sequence"] == watermark["expired_through_sequence"]
+        )
     else:
         watermark_valid = (
             watermark is not None
@@ -549,7 +570,11 @@ def _validate_baselines(bind: Connection) -> None:
                 "ambiguous scheduler state initialization; readiness blocked", baseline
             )
         _validate_evidence(
-            bind, audit_events, domain_events, dict(deployment), baseline, target
+            bind,
+            audit_events,
+            domain_events,
+            watermarks,
+            dict(deployment),
         )
     for workspace_id in {row["workspace_id"] for row in rows}:
         _validate_support_rows(
@@ -616,8 +641,9 @@ def _insert_baseline(
     state_values = {key: value for key, value in state.items() if key in states.c}
     bind.execute(states.insert().values(**state_values))
 
+    state_transition_id = f"EVT-{uuid.uuid4()}"
     evidence = {
-        "state_transition_id": str(uuid.uuid4()),
+        "state_transition_id": state_transition_id,
         "workspace_id": str(workspace_id),
         "paper_id": paper_id,
         "from_state": None,
@@ -664,7 +690,7 @@ def _insert_baseline(
 
     event = {
         "sequence": _next_sequence(domain_events, bind, workspace_id),
-        "event_id": f"EVT-{uuid.uuid4()}",
+        "event_id": state_transition_id,
         "workspace_id": workspace_id,
         "actor_id": "alembic:0017",
         "event_type": "paper.updated",

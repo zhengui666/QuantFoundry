@@ -17,7 +17,7 @@ def read(relative):
     return (root / relative).read_text(encoding="utf-8")
 
 run_gate = read("scripts/ci/run-gate.sh")
-for required in ("known-issues-review", "fresh-compose-migration", "pg18-migration", "backup-restore", "p0-require-closed", "release-governance-static"):
+for required in ("known-issues-review", "fresh-compose-migration", "pg18-migration", "backup-restore", "p0-require-closed-except-supply-chain", "release-governance-static"):
     if required not in run_gate:
         errors.append(f"run-gate rc path is missing {required}")
 if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
@@ -26,8 +26,8 @@ if "fetch-independent-review-report.sh" not in run_gate:
     errors.append("agent-change gate does not fetch an independent review artifact when no locator is supplied")
 
 ci_script = read("scripts/ci.sh")
-if 'run_backend mypy --explicit-package-bases app workers scheduler' not in ci_script:
-    errors.append("backend mypy must run from backend cwd with explicit package bases")
+if 'run_backend mypy --explicit-package-bases src/quantfoundry app workers scheduler' not in ci_script:
+    errors.append("backend mypy must run from backend cwd with canonical and compatibility package bases")
 if "backend-typecheck|backend-mypy" not in ci_script:
     errors.append("backend typecheck/mypy canonical entrypoint is missing")
 makefile = read("Makefile")
@@ -38,7 +38,7 @@ if "release-check:\n\t@set -eu;" not in makefile or "QF_RELEASE_TAG is required 
     errors.append("Makefile release-check must fail closed when QF_RELEASE_TAG is missing")
 
 p0_check = read("scripts/p0-check.sh")
-for required in ("--offline-report", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "required_p0_ids", "allowed_verification_workflows", "did not complete successfully", "unauthorized verification workflow", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
+for required in ("--offline-report", "--require-closed-except-supply-chain", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "required_p0_ids", "allowed_verification_workflows", "did not complete successfully", "unauthorized verification workflow", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
     if required not in p0_check:
         errors.append(f"p0-check lacks required remote verification control: {required}")
 
@@ -97,7 +97,7 @@ if not re.search(r"(?m)^permissions:\n  contents: read\n  actions: read$", agent
 independent_review = read(".github/workflows/independent-agent-review.yml")
 if "workflow_dispatch:" not in independent_review or "independent-agent-review-${{ github.run_id }}" not in independent_review:
     errors.append("independent-agent-review workflow must produce a dispatch-only run-bound artifact")
-for required in ("review_scope_sha256", "Independent Review Agent", "criteria", "commands", "actions/upload-artifact"):
+for required in ("build-p0-evidence.py", "Independent Review Agent", "qf-p0-review-evidence", "commands", "actions/upload-artifact"):
     if required not in independent_review:
         errors.append(f"independent-agent-review workflow lacks {required}")
 

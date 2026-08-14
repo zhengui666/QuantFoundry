@@ -7,7 +7,7 @@ mock_dir="$fixture_dir/mock-bin"
 trap 'rm -rf "$fixture_dir"' EXIT
 mkdir -p "$mock_dir"
 
-commit_sha='0123456789abcdef0123456789abcdef01234567'
+commit_sha="$(git -C "$repo_root" rev-parse HEAD)"
 criterion='Independent criterion is satisfied.'
 export QF_MOCK_COMMIT="$commit_sha"
 export QF_MOCK_ARTIFACT_DIR="$fixture_dir"
@@ -32,13 +32,14 @@ def create(role, run_id, artifact_id, report_commit=commit, release_asset=False)
         if release_asset
         else f"https://github.com/acme/quantfoundry/actions/runs/{run_id}/artifacts/{artifact_id}"
     )
+    run_uri = f"https://github.com/acme/quantfoundry/actions/runs/{run_id}"
     commands = [{"command": "make test" if role.endswith("Test Agent") else "make review", "result": "pass", "exit_code": 0}]
     attestation = {
         "provider": "github-actions",
         "issuer": "https://token.actions.githubusercontent.com",
         "repository": "acme/quantfoundry",
         "run_id": run_id,
-        "subject_uri": uri,
+        "subject_uri": run_uri,
     }
     report = {
         "schema_version": "1.0.0",
@@ -49,7 +50,7 @@ def create(role, run_id, artifact_id, report_commit=commit, release_asset=False)
         "verified_at_utc": "2026-08-11T00:00:00Z",
         "closure_criteria": [criterion],
         "commands": commands,
-        "artifact": {"uri": uri},
+        "artifact": {"run_uri": run_uri},
         "attestation": attestation,
     }
     payload = json.dumps(report, sort_keys=True, separators=(",", ":")).encode()
@@ -61,6 +62,7 @@ def create(role, run_id, artifact_id, report_commit=commit, release_asset=False)
         "run_id": run_id,
         "artifact_id": artifact_id,
         "uri": uri,
+        "run_uri": run_uri,
         "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "report_sha256": hashlib.sha256(payload).hexdigest(),
         "content_type": content_types[role],
@@ -90,10 +92,10 @@ printf '%s\n' \
   '  if [[ "${!index}" == --output ]]; then next=$((index + 1)); output="${!next}"; fi' \
   'done' \
   'if [[ "$endpoint" =~ /actions/artifacts/([0-9]+)/zip$ ]]; then' \
-  '  cp "$QF_MOCK_ARTIFACT_DIR/artifact-${BASH_REMATCH[1]}.zip" "$output"' \
+  '  if [[ -n "$output" ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-${BASH_REMATCH[1]}.zip" "$output"; else cat "$QF_MOCK_ARTIFACT_DIR/artifact-${BASH_REMATCH[1]}.zip"; fi' \
   '  exit 0' \
   'fi' \
-  'if [[ "$endpoint" =~ /releases/assets/204$ ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip" "$output"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /releases/assets/204$ ]]; then if [[ -n "$output" ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip" "$output"; else cat "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip"; fi; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/runs/[0-9]+$ ]]; then run_path="${QF_MOCK_RUN_PATH:-}"; if [[ -z "$run_path" ]]; then if [[ "$endpoint" == */actions/runs/100 ]]; then run_path=".github/workflows/independent-agent-test.yml@refs/heads/main"; else run_path=".github/workflows/independent-agent-review.yml@refs/heads/main"; fi; fi; printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\"}\\n" "${QF_MOCK_RUN_HEAD:-$QF_MOCK_COMMIT}" "${QF_MOCK_RUN_STATUS:-completed}" "${QF_MOCK_RUN_CONCLUSION:-success}" "$run_path"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/([0-9]+)$ ]]; then' \
   '  case "${BASH_REMATCH[1]}" in 200) run=100 ;; 201|202) run=101 ;; 203) run=100 ;; *) exit 1 ;; esac' \
@@ -124,7 +126,7 @@ def record(item):
         "issuer": "https://token.actions.githubusercontent.com",
         "repository": "acme/quantfoundry",
         "run_id": item["run_id"],
-        "subject_uri": item["uri"],
+        "subject_uri": item["run_uri"],
         "subject_sha256": item["report_sha256"],
     }
     return {
@@ -239,7 +241,7 @@ for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact s
   fi
 done
 
-if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' QF_RELEASE_COMMIT="$commit_sha" "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
+if env -u GITHUB_TOKEN PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' QF_RELEASE_COMMIT="$commit_sha" "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
   printf '%s\n' 'Expected fixture to fail without GITHUB_TOKEN.' >&2
   exit 1
 fi

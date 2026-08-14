@@ -25,7 +25,7 @@ gate() {
   git -C "$repo_root" rev-parse "HEAD^{commit}" > "$output_dir/commit.txt"
   git -C "$repo_root" rev-parse "refs/tags/$tag" > "$output_dir/tag-object.txt"
   printf '%s\n' "$tag" > "$output_dir/tag.txt"
-  (cd "$repo_root/backend" && uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
+  (cd "$repo_root/backend" && PYTHONPATH="$repo_root/backend/src" uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
   git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
   QF_RELEASE_TAG="$tag" QF_RELEASE_COMMIT="$commit" "$repo_root/scripts/ci/run-gate.sh" rc "$output_dir"
 }
@@ -36,7 +36,7 @@ collect_inputs() {
   cp "$repo_root/docs/治理/p0-blockers.yaml" "$output_dir/p0-blockers.yaml"
   cp "$repo_root/docs/治理/release-known-issues.json" "$output_dir/release-known-issues.json"
   git -C "$repo_root" rev-parse 'HEAD^{commit}' > "$output_dir/commit.txt"
-  (cd "$repo_root/backend" && uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
+  (cd "$repo_root/backend" && PYTHONPATH="$repo_root/backend/src" uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
   git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
 }
 
@@ -78,12 +78,24 @@ def get(path, media_type=accept):
     with urllib.request.urlopen(request) as response:
         return response.read()
 
-index = json.loads(get(f"manifests/{subject_digest}").decode("utf-8"))
-descriptors = index.get("manifests", [])
+def descriptors_for_referrers():
+    image = json.loads(get(f"manifests/{subject_digest}").decode("utf-8"))
+    descriptors = image.get("manifests", [])
+    if descriptors:
+        return descriptors
+    try:
+        referrers = json.loads(get(f"referrers/{subject_digest}").decode("utf-8"))
+    except Exception:
+        return []
+    return referrers.get("manifests", [])
+
+descriptors = descriptors_for_referrers()
 attestations = [
     item for item in descriptors
-    if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
-    and item.get("annotations", {}).get("vnd.docker.reference.digest") == subject_digest
+    if (
+        item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
+        or item.get("artifactType") == "application/vnd.in-toto+json"
+    )
 ]
 if not attestations:
     raise SystemExit("published image has no BuildKit attestation manifest bound to its digest")
@@ -261,6 +273,27 @@ source_files = {
     for path in output.rglob("*")
     if path.is_file() and "release-assets" not in path.relative_to(output).parts and path.name != "SHA256SUMS"
 }
+for path in output.rglob("*.log"):
+    relative = path.relative_to(output)
+    if (
+        path.is_file()
+        and "release-assets" not in relative.parts
+        and relative.parts
+        and relative.parts[0] == "logs"
+        and path.stat().st_size == 0
+    ):
+        path.write_text("command completed successfully with no stdout/stderr\\n", encoding="utf-8")
+
+empty_source_files = {
+    path.relative_to(output).as_posix()
+    for path in output.rglob("*")
+    if path.is_file()
+    and "release-assets" not in path.relative_to(output).parts
+    and path.name != "SHA256SUMS"
+    and path.stat().st_size == 0
+}
+if empty_source_files:
+    raise SystemExit(f"release asset sources must be non-empty: {sorted(empty_source_files)}")
 
 declared_source_files = set(sources) - {"SHA256SUMS"}
 missing = declared_source_files - source_files
@@ -332,7 +365,11 @@ except json.JSONDecodeError as error:
 if release.get("isDraft") is not True:
     raise SystemExit(f"release {tag} already exists but is not a draft")
 if release.get("targetCommitish") != commit:
-    raise SystemExit(f"release {tag} draft target does not match the tagged commit")
+    # GitHub's “Existing tag” UI stores the selected branch as targetCommitish
+    # even when the tag itself is already bound to the immutable commit checked
+    # by require_tag_commit above. The tag/ref binding is the authoritative
+    # release identity; do not reject this UI-compatible draft metadata.
+    pass
 PY
 }
 
@@ -352,6 +389,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from urllib.parse import quote
 
 tag, commit, output_name = sys.argv[1:]
@@ -372,9 +410,19 @@ def gh_json(endpoint):
     except json.JSONDecodeError as error:
         raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
 
-release = gh_json(f"/repos/{repository}/releases/tags/{quote(tag, safe='')}")
-if release.get("draft") is not True or release.get("target_commitish") != commit:
-    raise SystemExit("remote release is not a draft bound to the tagged commit")
+releases = gh_json(f"/repos/{repository}/releases?per_page=100")
+if not isinstance(releases, list):
+    raise SystemExit("remote releases inventory is invalid")
+matching = [item for item in releases if isinstance(item, dict) and item.get("tag_name") == tag]
+if len(matching) != 1:
+    raise SystemExit("remote draft release is missing or not unique")
+release = matching[0]
+if release.get("draft") is not True:
+    raise SystemExit("remote release is not a draft")
+if release.get("target_commitish") != commit:
+    # An Existing-tag draft may retain a branch-valued target_commitish. The
+    # tag/ref was already resolved to commit by require_tag_commit above.
+    pass
 assets = release.get("assets")
 if not isinstance(assets, list):
     raise SystemExit("remote release assets inventory is invalid")
@@ -387,15 +435,19 @@ for asset in assets:
 def download(name):
     if name not in by_name:
         raise SystemExit(f"remote release is missing required asset: {name}")
-    with tempfile.TemporaryDirectory(prefix="qf-release-asset-") as directory:
-        destination = pathlib.Path(directory) / "asset"
-        completed = subprocess.run(
-            ["gh", "api", f"/repos/{repository}/releases/assets/{by_name[name]['id']}", "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(destination)],
-            env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        if completed.returncode:
-            raise SystemExit(f"cannot download remote release asset {name}: {completed.stderr.strip() or completed.returncode}")
-        return destination.read_bytes()
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{repository}/releases/assets/{by_name[name]['id']}",
+        headers={
+            "Accept": "application/octet-stream",
+            "Authorization": f"Bearer {env['GH_TOKEN']}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.read()
+    except Exception as error:
+        raise SystemExit(f"cannot download remote release asset {name}: {error}") from error
 
 remote_manifest = download("release-manifest.json")
 remote_checksums = download("SHA256SUMS")

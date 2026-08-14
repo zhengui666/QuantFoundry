@@ -111,6 +111,7 @@ database_created=1
 
 export QF_REQUIRE_PG18=1
 export QF_ENVIRONMENT=test
+export QF_ENV=test
 export QF_ARTIFACT_DIR="$runtime_root/artifacts"
 export QF_DATASET_DIR="$runtime_root/datasets"
 export QF_COST_MODEL_DIR="$runtime_root/cost-models"

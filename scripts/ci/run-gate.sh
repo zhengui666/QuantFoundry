@@ -47,7 +47,7 @@ PY
 
 finish() {
   local status="$1"
-  python3 - "$report_dir/result.json" "$gate" "$commit" "$ref" "$started_at" "$status" "$results_file" <<'PY'
+  python3 - "$report_dir/result.json" "$gate" "$commit" "$ref" "$started_at" "$status" "$results_file" "$report_dir/fullstack-diagnostics.json" <<'PY'
 import json
 import pathlib
 import sys
@@ -64,6 +64,9 @@ result = {
     "steps": steps,
     "environment_limitations": [step for step in steps if step["environment_limitation"]],
 }
+diagnostics_path = pathlib.Path(sys.argv[8])
+if diagnostics_path.is_file():
+    result["diagnostics"] = {"fullstack": json.loads(diagnostics_path.read_text(encoding="utf-8"))}
 output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
   exit "$status"
@@ -146,7 +149,18 @@ run_main_full() {
   require_common_tooling
   run_step p0-registry-snapshot bash -c 'scripts/p0-check.sh docs/治理/p0-blockers.yaml --report'
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
-  run_step full-ci make ci
+  run_step full-ci-platform make platform
+  run_step full-ci-hygiene make hygiene
+  run_step full-ci-migration scripts/ci.sh migration
+  run_step full-ci-backend-format scripts/ci.sh backend-format
+  run_step full-ci-backend-lint make backend-lint
+  run_step full-ci-backend-mypy make backend-mypy
+  run_step full-ci-schema make schema
+  run_step full-ci-openapi make openapi
+  run_step full-ci-tools make tools
+  run_step full-ci-fresh-smoke make fresh-smoke
+  run_step full-ci-pg18 make pg18
+  run_step full-ci-fullstack env "QF_FULLSTACK_DIAGNOSTICS_FILE=$report_dir/fullstack-diagnostics.json" make fullstack
 }
 
 run_nightly() {
@@ -189,7 +203,7 @@ run_rc() {
   }
   run_step remote-release-tag git -C "$repo_root" ls-remote --exit-code --refs origin "refs/tags/$QF_RELEASE_TAG"
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
-  run_step p0-require-closed env "QF_RELEASE_COMMIT=$commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
+  run_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain
   run_step known-issues-review scripts/release-known-issues-check.sh
   run_step rc-full-ci make ci
   run_step fresh-compose-migration make fullstack

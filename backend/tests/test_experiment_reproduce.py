@@ -10,8 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.job_effects import _memo_experiment_evidence
-from app.main import (
+from quantfoundry.api.app import (
     ArtifactRow,
     Audit,
     Event,
@@ -21,7 +20,8 @@ from app.main import (
     SessionLocal,
     app,
 )
-from workers.main import run_once
+from quantfoundry.application.jobs.effects import _memo_experiment_evidence
+from quantfoundry.workers.main import run_once
 
 OWNER = {"Authorization": "Bearer test"}
 VIEWER = {"Authorization": "Bearer viewer"}

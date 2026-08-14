@@ -12,8 +12,8 @@ from jsonschema import ValidationError
 from sqlalchemy import event
 
 from app import main
-from app.agent_runtime import AgentRuntimeError, ToolRegistry
-from app.main import (
+from quantfoundry.agents.runtime.runtime import AgentRuntimeError, ToolRegistry
+from quantfoundry.api.app import (
     AgentRunRow,
     ApprovalRow,
     SessionLocal,

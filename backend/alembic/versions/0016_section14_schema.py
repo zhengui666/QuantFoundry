@@ -19,7 +19,6 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
-    CheckConstraint,
     Date,
     DateTime,
     LargeBinary,
@@ -35,8 +34,8 @@ from sqlalchemy import (
 )
 
 from alembic import op
-from app.event_contract import EVENT_OBJECT_TYPES, EVENT_TYPE_CHECK_SQL
-from app.locator_contract import (
+from quantfoundry.contracts.events.event_contract import EVENT_OBJECT_TYPES
+from quantfoundry.contracts.events.locator import (
     POSTGRES_LOCATOR_CONTRACT_SHA256,
     POSTGRES_LOCATOR_FUNCTION_SQL,
     POSTGRES_LOCATOR_JSON_FUNCTION_SQL,
@@ -46,9 +45,9 @@ from app.locator_contract import (
     next_action_valid,
     register_sqlite_functions,
 )
-from app.physical_schema import load_physical_metadata
-from app.public_ids import is_public_id
-from app.section14_schema import (
+from quantfoundry.domain.value_objects.public_ids import is_public_id
+from quantfoundry.infrastructure.db.physical_schema import load_physical_metadata
+from quantfoundry.infrastructure.db.schema import (
     JSONTextCompat,
     WorkspaceScopeId,
     canonical_workspace_id,
@@ -69,9 +68,6 @@ _DOMAIN_LOCATOR_CHECK_NAME = "ck_domain_events_locator_quartet"
 _DOMAIN_LOCATOR_CHECK_SQL = (
     "qf_event_locator_quartet_valid("
     "object_type, object_id, object_version, object_revision, FALSE)"
-)
-_PAPER_STATUS_CHECK_SQL = (
-    "status IN ('PENDING', 'ACTIVE', 'PAUSED', 'DISABLED', 'FAILED')"
 )
 _POSTGRES_UUIDV7_COMPAT_SQL = """
 CREATE OR REPLACE FUNCTION public.uuidv7()
@@ -205,7 +201,7 @@ def _deterministic_uuid4(namespace: str, value: Any) -> uuid.UUID:
 def _workspace_uuid(value: Any) -> uuid.UUID:
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-    except TypeError, ValueError, AttributeError:
+    except (TypeError, ValueError, AttributeError):
         return _deterministic_uuid4("workspace", value)
 
 
@@ -563,7 +559,7 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
     if isinstance(column_type, Uuid):
         try:
             return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-        except TypeError, ValueError, AttributeError:
+        except (TypeError, ValueError, AttributeError):
             if column.table.name == "records" and column.name == "id":
                 # Python 3.14 provides uuid7; keep a deterministic compatible
                 # fallback for the migration's supported interpreter boundary.
@@ -1052,6 +1048,17 @@ def _legacy_event_sequence_map(
         if row.get("sequence") is not None
     }
     return {key: offset for offset, key in enumerate(sorted(keys), start=1)}
+
+
+def _normalize_paper_deployment_statuses(
+    rows: list[dict[str, Any]], *, target_is_current: bool
+) -> None:
+    """Translate the retired STOPPED spelling across the 0016 boundary."""
+    source_status = "STOPPED" if target_is_current else "DISABLED"
+    target_status = "DISABLED" if target_is_current else "STOPPED"
+    for row in rows:
+        if row.get("status") == source_status:
+            row["status"] = target_status
 
 
 def _restore_all_tables(
@@ -1552,9 +1559,12 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
     )
     if target_is_current and not roundtrip_preexisting:
         _backfill_closed_storage(restore_rows)
+    _normalize_paper_deployment_statuses(
+        restore_rows.get("paper_deployments", []), target_is_current=target_is_current
+    )
 
     def metadata_for(path: Path) -> MetaData:
-        metadata = load_physical_metadata(
+        return load_physical_metadata(
             path,
             include_checks=(bind.dialect.name == "postgresql"),
             include_sqlite_partial_indexes=(bind.dialect.name == "postgresql"),
@@ -1563,37 +1573,6 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
             # compatibility path supplies explicit UUID values instead.
             include_server_defaults=(bind.dialect.name == "postgresql"),
         )
-        if path == PREVIOUS and bind.dialect.name == "postgresql":
-            # Rollback must retain newer closed events. The historical
-            # snapshot predates UX-001 event types, so use the current closed
-            # allowlist for the temporary compatibility schema.
-            table = metadata.tables["domain_events"]
-            constraint = next(
-                item
-                for item in table.constraints
-                if item.name == "domain_events_event_type_check"
-            )
-            table.constraints.remove(constraint)
-            table.append_constraint(
-                CheckConstraint(
-                    EVENT_TYPE_CHECK_SQL,
-                    name="domain_events_event_type_check",
-                )
-            )
-            table = metadata.tables["paper_deployments"]
-            constraint = next(
-                item
-                for item in table.constraints
-                if item.name == "ck_paper_deployments_status_valid"
-            )
-            table.constraints.remove(constraint)
-            table.append_constraint(
-                CheckConstraint(
-                    _PAPER_STATUS_CHECK_SQL,
-                    name="ck_paper_deployments_status_valid",
-                )
-            )
-        return metadata
 
     try:
         _drop_sqlite_guard_triggers()

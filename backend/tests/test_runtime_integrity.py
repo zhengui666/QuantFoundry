@@ -20,7 +20,8 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.agent_runtime import (
+from quantfoundry.adapters.provider.local import LocalProviderServer, create_server
+from quantfoundry.agents.runtime.runtime import (
     REGISTRY,
     AgentRuntimeError,
     AgentStep,
@@ -29,10 +30,7 @@ from app.agent_runtime import (
     ToolPolicyDenied,
     advance_agent_run,
 )
-from app.artifacts import read_json, reap_orphan_artifacts, stage_json
-from app.local_provider import LocalProviderServer, create_server
-from app.locator_contract import register_sqlite_functions
-from app.main import (
+from quantfoundry.api.app import (
     AgentConfigRow,
     AgentRunRow,
     ApprovalRow,
@@ -63,7 +61,14 @@ from app.main import (
     create_provenance,
     job,
 )
-from app.queue import (
+from quantfoundry.api.sse.stream import durable_event_stream
+from quantfoundry.contracts.events.locator import register_sqlite_functions
+from quantfoundry.infrastructure.artifacts.store import (
+    read_json,
+    reap_orphan_artifacts,
+    stage_json,
+)
+from quantfoundry.infrastructure.jobs.queue import (
     JobNotCancellable,
     LostLease,
     claim_job,
@@ -72,10 +77,9 @@ from app.queue import (
     reap_expired_jobs,
     request_cancellation,
 )
-from app.sse import durable_event_stream
-from scheduler.main import probe_artifact_store
-from scheduler.main import run_once as run_scheduler_once
-from workers.main import (
+from quantfoundry.scheduler.main import probe_artifact_store
+from quantfoundry.scheduler.main import run_once as run_scheduler_once
+from quantfoundry.workers.main import (
     SimulatedWorkerCrash,
     cleanup_expired_events,
     run_agent_once,

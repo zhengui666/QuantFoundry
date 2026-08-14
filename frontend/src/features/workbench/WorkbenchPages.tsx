@@ -36,7 +36,7 @@ import {
   Provenance,
   State,
 } from '../../ui';
-import { applyServerSettingsLocale, configurationLocale } from '../../i18n';
+import i18n, { applyServerSettingsLocale, configurationLocale } from '../../i18n';
 import { ServerTime } from '../../format';
 
 function assertNever(value: never): never {
@@ -73,6 +73,7 @@ export function Shell() {
   const [reauthRequired, setReauthRequired] = useState(false);
   const [authScopeKey, setAuthScopeKey] = useState(auth.scope());
   const [sessionReady, setSessionReady] = useState(() => Boolean(auth.get()));
+  const [localeReady, setLocaleReady] = useState(() => !auth.get());
   const isSetup = useRouterState({ select: (state) => state.location.pathname === '/setup' });
   const isLogin = useRouterState({ select: (state) => state.location.pathname === '/login' });
   useEffect(() => {
@@ -83,15 +84,23 @@ export function Shell() {
       .finally(() => setSessionReady(true));
   }, []);
   useEffect(() => {
-    if (!auth.get()) return;
+    if (!auth.get()) {
+      setLocaleReady(true);
+      return;
+    }
+    setLocaleReady(false);
     void api
       .configurationActive()
       .then(({ body }) => {
         const locale = configurationLocale(
           body.values.find((entry) => entry.key === 'appearance.locale')?.value,
         );
-        if (locale) void applyServerSettingsLocale(locale);
+        if (locale)
+          return applyServerSettingsLocale(locale).then(() => {
+            if (i18n.language !== locale.language) return i18n.changeLanguage(locale.language);
+          });
       })
+      .finally(() => setLocaleReady(true))
       .catch(() => undefined);
   }, [authScopeKey]);
   useEffect(() => {
@@ -142,7 +151,7 @@ export function Shell() {
       }),
     [client],
   );
-  if (!sessionReady && !isLogin) return <State kind="loading" />;
+  if ((!sessionReady || !localeReady) && !isLogin) return <State kind="loading" />;
   const navigation = [
     ['/overview', 'nav.overview'],
     ['/research', 'nav.research'],

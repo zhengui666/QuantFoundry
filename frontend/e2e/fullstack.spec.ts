@@ -144,8 +144,11 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     witness.assertReconciled();
     expect(exactReads.length).toBeGreaterThanOrEqual(initialExactReads + 1);
     expect(witness.snapshot().restReadsAfterBaseline).toBeGreaterThanOrEqual(1);
-    await expect(page.getByText('RUNNING', { exact: true })).toBeVisible();
-    await expect(page.getByText(`Job ${accepted.job_id}`)).toBeVisible();
+    // The agent worker may advance the accepted run to WAITING USER before the
+    // browser consumes the causal refetch; both are valid server-authoritative
+    // post-start states.
+    await expect(page.getByText(/RUNNING|WAITING USER|等待用户/).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(`(?:Job|任务) ${accepted.job_id}`))).toBeVisible();
     await probe.stop();
   });
 
@@ -209,37 +212,43 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     );
 
     await executeCapability(page, 'create_research');
-    await page.getByLabel('Title').fill(`Golden flow ${crypto.randomUUID()}`);
-    await page.getByLabel('Research brief').fill('Test quality persistence after canonical costs.');
-    await page.getByRole('button', { name: 'Create research' }).click();
+    await page.getByLabel(/Title|标题/).fill(`Golden flow ${crypto.randomUUID()}`);
+    await page
+      .getByLabel(/Research brief|研究简报/)
+      .fill('Test quality persistence after canonical costs.');
+    await page.getByRole('button', { name: /Create research|新建研究/ }).click();
     const researchLink = page.getByRole('link', { name: /^RSCH-/ }).last();
     const researchId = (await researchLink.textContent())!.trim();
     await sseProbe.waitForFrame(({ event }) => event.object_id === researchId);
     await researchLink.click();
     await executeCapability(page, 'start');
-    await expect(page.getByText(/Research start accepted as job JOB-/)).toBeVisible();
+    await expect(
+      page.getByText(/Research start accepted as job JOB-|研究启动已接受为任务 JOB-/),
+    ).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Experiments' }).click();
+    await page.getByRole('tab', { name: /Experiments|实验/ }).click();
     const experimentLink = page.getByRole('link', { name: /^EXP-/ }).first();
     await expect(experimentLink).toBeVisible({ timeout: 120_000 });
     await experimentLink.click();
-    await page.getByRole('button', { name: 'Reproduce' }).click();
+    await page.getByRole('button', { name: /Reproduce|复现/ }).click();
     await page
-      .getByRole('dialog', { name: 'Confirm experiment reproduction' })
-      .getByRole('button', { name: 'Confirm reproduce' })
+      .getByRole('dialog', { name: /Confirm experiment reproduction|确认复现实验/ })
+      .getByRole('button', { name: /Confirm reproduce|确认复现/ })
       .click();
-    await expect(page.getByText(/Reproduce EXACT accepted as job JOB-/)).toBeVisible();
+    await expect(
+      page.getByText(/Reproduce EXACT accepted as job JOB-|复现 EXACT 已接受为任务 JOB-/),
+    ).toBeVisible();
 
     await page.getByRole('link', { name: /策略|Strategies/ }).click();
-    await page.getByLabel('Research ID').fill(researchId);
-    await page.getByLabel('Strategy name').fill('Golden flow strategy');
-    await page.getByLabel('Thesis').fill('Quality after measured costs.');
-    await page.getByLabel('Symbols, comma separated').fill('SPY');
-    await page.getByLabel('Factor ID').fill(factorId!);
-    await page.getByLabel('Factor version').fill('1');
-    await page.getByLabel('Selection count').fill('20');
-    await page.getByLabel('Cost model ID').fill(costModelId!);
-    await page.getByLabel('Benchmark').fill('SPY');
+    await page.getByLabel(/Research ID|研究 ID/).fill(researchId);
+    await page.getByLabel(/Strategy name|策略名称/).fill('Golden flow strategy');
+    await page.getByLabel(/Thesis|论点/).fill('Quality after measured costs.');
+    await page.getByLabel(/Symbols, comma separated|标的代码，逗号分隔/).fill('SPY');
+    await page.getByLabel(/Factor ID|因子 ID/).fill(factorId!);
+    await page.getByLabel(/Factor version|因子版本/).fill('1');
+    await page.getByLabel(/Selection count|选择数量/).fill('20');
+    await page.getByLabel(/Cost model ID|成本模型 ID/).fill(costModelId!);
+    await page.getByLabel(/Benchmark|基准/).fill('SPY');
     for (const [label, value] of [
       ['Research start', '2010-01-01'],
       ['Research end', '2018-12-31'],
@@ -248,59 +257,76 @@ test.describe('platform-driven full-stack Golden Flow', () => {
       ['Holdout start', '2023-01-01'],
       ['Holdout end', '2025-12-31'],
     ] as const)
-      await page.getByLabel(label).fill(value);
-    await page.getByLabel('Known failure mode').fill('Crowding');
-    await page.getByRole('button', { name: 'Create candidate strategy' }).click();
+      await page
+        .getByLabel(
+          new RegExp(
+            `${label}|${
+              {
+                'Research start': '研究起始日期',
+                'Research end': '研究结束日期',
+                'Validation start': '验证起始日期',
+                'Validation end': '验证结束日期',
+                'Holdout start': 'Holdout 起始日期',
+                'Holdout end': 'Holdout 结束日期',
+              }[label]
+            }`,
+          ),
+        )
+        .fill(value);
+    await page.getByLabel(/Known failure mode|已知失败模式/).fill('Crowding');
+    await page.getByRole('button', { name: /Create candidate strategy|创建候选策略/ }).click();
     const strategyLink = page.getByRole('link', { name: /STRAT-.* v1/ });
     const strategyText = (await strategyLink.textContent())!;
     const strategyId = strategyText.match(/STRAT-[^ ]+/)![0];
     await strategyLink.click();
 
-    await page.getByLabel('Snapshot ID').fill(snapshotId!);
+    await page.getByLabel(/Snapshot ID|快照 ID/).fill(snapshotId!);
     await page
-      .getByLabel('Engine key', { exact: true })
+      .getByLabel(/Engine key|引擎键/, { exact: true })
       .fill(canonicalEngineFixtures.fastBacktest.engine_key);
     await page
-      .getByLabel('Engine version', { exact: true })
+      .getByLabel(/Engine version|引擎版本/, { exact: true })
       .fill(canonicalEngineFixtures.fastBacktest.engine_version);
-    await page.getByLabel('Parameter key').fill('lookback');
-    await page.getByLabel('Parameter value').fill('252');
+    await page.getByLabel(/Parameter key|参数键/).fill('lookback');
+    await page.getByLabel(/Parameter value|参数值/).fill('252');
     await executeCapability(page, 'run_fast_backtest');
-    await expect(page.getByText(/Server job JOB-/)).toBeVisible();
+    await expect(page.getByText(/Server job JOB-|服务端任务 JOB-/)).toBeVisible();
     await expect
       .poll(
         () => mutations.find((mutation) => mutation.path.endsWith('/versions/1/backtests'))?.body,
       )
       .toEqual(expect.objectContaining(canonicalEngineFixtures.fastBacktest));
     await executeCapability(page, 'freeze');
-    await expect(page.getByText(/FROZEN · This version is immutable/)).toBeVisible({
+    await expect(
+      page.getByText(/FROZEN · This version is immutable|已冻结 FROZEN · 此版本不可变/),
+    ).toBeVisible({
       timeout: 120_000,
     });
 
-    await page.getByLabel('Validation policy ID').fill(validationPolicyId!);
+    await page.getByLabel(/Validation policy ID|验证策略 ID/).fill(validationPolicyId!);
     await page
-      .getByLabel('Strict engine key')
+      .getByLabel(/Strict engine key|严格引擎键/)
       .fill(canonicalEngineFixtures.strictValidation.strict_engine_key);
     await page
-      .getByLabel('Strict engine version')
+      .getByLabel(/Strict engine version|严格引擎版本/)
       .fill(canonicalEngineFixtures.strictValidation.strict_engine_version);
-    await page.getByLabel('Test suite version').fill('2026.1');
+    await page.getByLabel(/Test suite version|测试套件版本/).fill('2026.1');
     await executeCapability(page, 'start_validation');
     await expect
       .poll(() => mutations.find((mutation) => mutation.path === '/api/v1/validations')?.body)
       .toEqual(expect.objectContaining(canonicalEngineFixtures.strictValidation));
-    const validationLink = page.getByRole('link', { name: /Open validation VAL-/ });
+    const validationLink = page.getByRole('link', { name: /Open validation VAL-|打开验证 VAL-/ });
     const validationText = (await validationLink.textContent()) ?? '';
     const validationId = validationText.match(/VAL-[^ ]+/)?.[0];
     if (!validationId) throw new Error('Validation link did not expose a canonical validation ID.');
     await validationLink.click();
-    await expect(page.getByLabel('Approval reason')).toBeVisible({ timeout: 120_000 });
-    await page.getByLabel('Approval reason').fill('One controlled exposure.');
+    await expect(page.getByLabel(/Approval reason|审批原因/)).toBeVisible({ timeout: 120_000 });
+    await page.getByLabel(/Approval reason|审批原因/).fill('One controlled exposure.');
     await executeCapability(page, 'request_holdout_approval');
     await page.getByRole('link', { name: /^APR-/ }).click();
     await executeCapability(page, 'approve');
     await expect(page.getByText('APPROVED')).toBeVisible();
-    await page.getByRole('link', { name: /Open validation VAL-/ }).click();
+    await page.getByRole('link', { name: /Open validation VAL-|打开验证 VAL-/ }).click();
     await executeCapability(page, 'run_holdout');
     await expect
       .poll(
@@ -324,10 +350,12 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     );
 
     await page.getByRole('link', { name: /备忘录|Memo/ }).click();
-    await page.getByLabel('Strategy ID').fill(strategyId);
-    await page.getByLabel('Strategy version').fill('1');
-    await page.getByRole('button', { name: 'Generate evidence-bound memo' }).click();
-    const memoLink = page.getByRole('link', { name: /Open memo MEMO-/ });
+    await page.getByLabel(/Strategy ID|策略 ID/).fill(strategyId);
+    await page.getByLabel(/Strategy version|策略版本/).fill('1');
+    await page
+      .getByRole('button', { name: /Generate evidence-bound memo|生成证据绑定备忘录/ })
+      .click();
+    const memoLink = page.getByRole('link', { name: /Open memo MEMO-|打开备忘录 MEMO-/ });
     await expect(memoLink).toBeVisible({
       timeout: 120_000,
     });

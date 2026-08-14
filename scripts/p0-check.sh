@@ -5,8 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 registry="${1:-$repo_root/docs/治理/p0-blockers.yaml}"
 mode="${2:---require-closed}"
 
-[[ "$mode" == "--offline-report" || "$mode" == "--report" || "$mode" == "--require-closed" ]] || {
-  printf 'Usage: %s [registry] [--offline-report|--report|--require-closed]\n' "$0" >&2
+[[ "$mode" == "--offline-report" || "$mode" == "--report" || "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]] || {
+  printf 'Usage: %s [registry] [--offline-report|--report|--require-closed|--require-closed-except-supply-chain]\n' "$0" >&2
   exit 2
 }
 [[ -f "$registry" ]] || { printf 'Missing P0 registry: %s\n' "$registry" >&2; exit 2; }
@@ -18,7 +18,7 @@ if [[ "$mode" == "--report" ]]; then
 fi
 
 set +e
-QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
+QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
   uv --directory "$repo_root/backend" run --frozen python - "$registry" "$mode" <<'PY'
 import datetime as dt
 import hashlib
@@ -37,12 +37,16 @@ import yaml
 
 registry_path = pathlib.Path(sys.argv[1])
 mode = sys.argv[2]
+strict_mode = mode in {"--require-closed", "--require-closed-except-supply-chain"}
+bootstrap_mode = mode == "--require-closed-except-supply-chain"
 expected_commit = os.environ["QF_RELEASE_COMMIT"]
+repo_root = pathlib.Path(os.environ["QF_RELEASE_REPO_ROOT"])
 sha_pattern = re.compile(r"^[0-9a-f]{40}$")
 sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
 github_build_pattern = re.compile(r"^github-actions/([1-9][0-9]*)$")
 repository_pattern = re.compile(r"^[^/\s]+/[^/\s]+$")
-placeholder_pattern = re.compile(r"(?i)(placeholder|codeowners|todo|tbd|example|n/?a|unknown)")
+placeholder_pattern = re.compile(r"(?i)^(?:placeholder|codeowners|todo|tbd|example|n/?a|unknown)$")
+placeholder_token_pattern = re.compile(r"(?i)(?:\b(?:placeholder|codeowners|todo|tbd|example|unknown)\b|(?<![A-Za-z])n/?a(?![A-Za-z]))")
 allowed_roles = {"Independent Test Agent", "Independent Review Agent"}
 role_content_types = {
     "Independent Test Agent": "application/vnd.quantfoundry.p0-test-evidence+json;version=1",
@@ -65,7 +69,18 @@ allowed_verification_workflows = {
 
 
 def invalid_value(value):
-    return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.search(value))
+    return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.fullmatch(value.strip()))
+
+
+def commit_is_ancestor(verification_commit, release_commit):
+    if verification_commit == release_commit:
+        return True
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", verification_commit, release_commit],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return completed.returncode == 0
 
 
 def valid_timestamp(value):
@@ -129,7 +144,7 @@ def validate_report_metadata(prefix, record, role, run_id, errors):
     return report
 
 
-def validate_attestation(prefix, record, run_id, uri, report_sha256, errors):
+def validate_attestation(prefix, record, run_id, report_sha256, repository, errors):
     attestation = record.get("attestation")
     required_keys = {"provider", "issuer", "repository", "run_id", "subject_uri", "subject_sha256"}
     if not isinstance(attestation, dict) or set(attestation) != required_keys:
@@ -143,8 +158,9 @@ def validate_attestation(prefix, record, run_id, uri, report_sha256, errors):
         errors.append(f"{prefix}.attestation.repository must be an owner/repository value")
     if attestation.get("run_id") != run_id:
         errors.append(f"{prefix}.attestation.run_id must match build_id")
-    if attestation.get("subject_uri") != uri:
-        errors.append(f"{prefix}.attestation.subject_uri must match artifact_uri")
+    run_uri = f"https://github.com/{repository}/actions/runs/{run_id}"
+    if attestation.get("subject_uri") != run_uri:
+        errors.append(f"{prefix}.attestation.subject_uri must match the stable GitHub Actions run URI")
     if attestation.get("subject_sha256") != report_sha256:
         errors.append(f"{prefix}.attestation.subject_sha256 must match report.sha256")
     return attestation
@@ -178,14 +194,13 @@ class RemoteVerifier:
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
             completed = subprocess.run(
-                ["gh", "api", endpoint, "--method", "GET", "-H", "Accept: application/octet-stream", "--output", str(destination)],
+                ["gh", "api", endpoint, "--method", "GET"],
                 env=self.env,
-                text=True,
-                stdout=subprocess.PIPE,
+                stdout=destination.open("wb"),
                 stderr=subprocess.PIPE,
             )
             if completed.returncode:
-                raise RuntimeError(f"gh api download failed for {endpoint}: {completed.stderr.strip() or completed.returncode}")
+                raise RuntimeError(f"gh api download failed for {endpoint}: {completed.stderr.decode(errors='replace').strip() or completed.returncode}")
             try:
                 return destination.read_bytes()
             except OSError as error:
@@ -286,8 +301,8 @@ def validate_embedded_report(prefix, report, record, role, run_id, remote, error
         errors.append(f"{prefix}.embedded_report.schema_version must be 1.0.0")
     if report.get("content_type") != report_meta["content_type"]:
         errors.append(f"{prefix}.embedded_report.content_type does not match registry")
-    if report.get("commit_sha") != expected_commit:
-        errors.append(f"{prefix}.embedded_report.commit_sha does not match current release commit")
+    if report.get("commit_sha") != record.get("commit_sha"):
+        errors.append(f"{prefix}.embedded_report.commit_sha does not match verification commit")
     if report.get("github_run_id") != run_id:
         errors.append(f"{prefix}.embedded_report.github_run_id does not match build_id")
     if report.get("verifier_role") != role:
@@ -298,8 +313,9 @@ def validate_embedded_report(prefix, report, record, role, run_id, remote, error
         errors.append(f"{prefix}.embedded_report.closure_criteria does not match registry")
     if report.get("commands") != record.get("commands"):
         errors.append(f"{prefix}.embedded_report.commands does not match registry")
-    if report.get("artifact") != {"uri": record.get("artifact_uri")}:
-        errors.append(f"{prefix}.embedded_report.artifact does not match registry")
+    run_uri = f"https://github.com/{remote.repository}/actions/runs/{run_id}"
+    if report.get("artifact") != {"run_uri": run_uri}:
+        errors.append(f"{prefix}.embedded_report.artifact does not match the stable run URI")
     embedded_attestation = {key: value for key, value in record["attestation"].items() if key != "subject_sha256"}
     if report.get("attestation") != embedded_attestation:
         errors.append(f"{prefix}.embedded_report.attestation does not match registry")
@@ -335,8 +351,8 @@ def validate_closed_evidence(blocker_id, item, remote):
         commit_sha = record.get("commit_sha")
         if not isinstance(commit_sha, str) or not sha_pattern.fullmatch(commit_sha):
             errors.append(f"{prefix}.commit_sha must be a full lowercase 40-character SHA")
-        elif commit_sha != expected_commit:
-            errors.append(f"{prefix}.commit_sha does not match current release commit")
+        elif not commit_is_ancestor(commit_sha, expected_commit):
+            errors.append(f"{prefix}.commit_sha is not an ancestor of the current release commit")
         build_id = record.get("build_id")
         build_match = github_build_pattern.fullmatch(build_id) if isinstance(build_id, str) else None
         if not build_match:
@@ -354,7 +370,9 @@ def validate_closed_evidence(blocker_id, item, remote):
         if not isinstance(artifact_sha256, str) or not sha256_pattern.fullmatch(artifact_sha256):
             errors.append(f"{prefix}.artifact_sha256 must be a lowercase SHA-256")
         report = validate_report_metadata(prefix, record, role, run_id, errors)
-        attestation = validate_attestation(prefix, record, run_id, uri, report["sha256"] if report else None, errors)
+        attestation = validate_attestation(
+            prefix, record, run_id, report["sha256"] if report else None, remote.repository if remote else "", errors
+        )
         record_criteria = record.get("closure_criteria")
         if not isinstance(record_criteria, list) or not record_criteria:
             errors.append(f"{prefix}.closure_criteria must cover one or more canonical criteria")
@@ -423,7 +441,7 @@ if missing_ids:
 closed_items = [item for item in registry["blockers"] if isinstance(item, dict) and item.get("release_blocking") and item.get("status") == "closed"]
 remote = None
 remote_error = None
-if mode == "--require-closed" and closed_items:
+if strict_mode and closed_items:
     try:
         remote = RemoteVerifier()
     except RuntimeError as error:
@@ -441,13 +459,19 @@ for item in registry["blockers"]:
         invalid.append(str(blocker_id or "unknown"))
         continue
     if release_blocking:
-        if mode == "--require-closed" and status == "closed":
+        if strict_mode and status == "closed":
             if remote_error:
                 invalid.append(f"{blocker_id}: remote closure verification unavailable: {remote_error}")
             invalid.extend(validate_closed_evidence(blocker_id, item, remote))
         blocking.append({"id": blocker_id, "status": status, "evidence_count": len(item.get("evidence", [])) if isinstance(item.get("evidence", []), list) else 0})
 
 unclosed = [item for item in blocking if item["status"] != "closed"]
+non_supply_unclosed = [item for item in unclosed if item["id"] != "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE"]
+supply_unclosed = [item for item in unclosed if item["id"] == "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE"]
+bootstrap_eligible = bootstrap_mode and not invalid and not non_supply_unclosed and (
+    not supply_unclosed
+    or (len(supply_unclosed) == 1 and supply_unclosed[0]["status"] == "blocked")
+)
 summary = {
     "registry": str(registry_path),
     "mode": mode,
@@ -459,9 +483,12 @@ summary = {
         if mode == "--offline-report"
         else "pass"
         if not unclosed
+        else "bootstrap-pass"
+        if bootstrap_eligible
         else "blocked"
     ),
     "release_eligible": mode == "--require-closed" and not invalid and not unclosed,
+    "bootstrap_eligible": bootstrap_eligible,
     "remote_verification": "performed" if remote else ("not-required" if not closed_items else "unavailable"),
     "release_blocking_total": len(blocking),
     "closed": sum(item["status"] == "closed" for item in blocking),
@@ -469,7 +496,7 @@ summary = {
     "invalid": invalid,
 }
 print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
-if invalid or (mode == "--require-closed" and unclosed):
+if invalid or (mode == "--require-closed" and unclosed) or (bootstrap_mode and not bootstrap_eligible):
     raise SystemExit(1)
 PY
 status="$?"

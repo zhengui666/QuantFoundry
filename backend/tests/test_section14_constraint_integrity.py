@@ -12,16 +12,16 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
-from app.locator_contract import (
+from quantfoundry.contracts.events.locator import (
     job_result_ref_valid,
     locator_quartet_valid,
     next_action_valid,
     register_sqlite_functions,
 )
-from app.physical_schema import load_physical_metadata
+from quantfoundry.infrastructure.db.physical_schema import load_physical_metadata
 
 try:
-    from app.main import Base
+    from quantfoundry.api.app import Base
 except SyntaxError:
     Base = None
 
@@ -397,7 +397,7 @@ def test_json_locator_surfaces_share_closed_total_boolean_contract() -> None:
 def test_schema_checker_rejects_frozen_helper_contract_mutation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
 ) -> None:
-    from app.section14_schema import load_manifest
+    from quantfoundry.infrastructure.db.schema import load_manifest
     from scripts import schema_manifest_check
 
     value = json.loads(
