@@ -101,6 +101,7 @@ for name in \
 done
 
 general_key="$(QF_ENV_FILE="$environment_file" QF_BOOTSTRAP_KEY_LABEL=fullstack \
+  QF_BOOTSTRAP_DEFER_WORKERS=1 \
   "$repo_root/scripts/bootstrap-local.sh" | tail -n 1)"
 [[ "$general_key" =~ ^qfk_gak_[a-z0-9]{16,32}\.[A-Za-z0-9_-]{43,}$ ]] || {
   printf '%s\n' 'Bootstrap did not return a valid one-time general access key.' >&2
@@ -119,6 +120,10 @@ docker compose --project-name "$project_name" --profile local \
   python /workspace/scripts/fullstack_seed.py \
   --application-url "$application_url" \
   > "$seed_output"
+
+docker compose --project-name "$project_name" --profile local \
+  --env-file "$environment_file" up --build --detach --wait \
+  worker agent-worker scheduler
 
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" up --build --detach --wait frontend

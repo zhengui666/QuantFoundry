@@ -13,9 +13,11 @@ docker compose --profile local --env-file "$environment_file" \
 docker compose --profile local --env-file "$environment_file" run --rm --no-deps api \
   python /workspace/scripts/bootstrap-general-key.py --label "$key_label"
 
-# Workers must start after the first domain binding is activated.  Starting
-# them before bootstrap makes their durable-heartbeat health checks fail closed
-# on a fresh install because the control plane has no ACTIVE binding yet.
-docker compose --profile local --env-file "$environment_file" \
-  up --build --detach --wait \
-  worker agent-worker scheduler
+# Workers must start after the first domain binding is activated.  Full-stack
+# CI activates that binding after this script returns, so it explicitly
+# defers this final start until after its seed step.
+if [[ "${QF_BOOTSTRAP_DEFER_WORKERS:-0}" != 1 ]]; then
+  docker compose --profile local --env-file "$environment_file" \
+    up --build --detach --wait \
+    worker agent-worker scheduler
+fi
