@@ -255,6 +255,7 @@ def main() -> None:
     os.environ.setdefault("QF_GIT_COMMIT", "local-smoke")
     os.environ.setdefault("QF_BUILD_ID", "local-smoke")
     os.environ.setdefault("QF_ARTIFACT_DIR", str(root / "artifacts"))
+    os.environ.setdefault("QF_DATA_ROOT", str(root / "data"))
     os.environ.setdefault("QF_DATASET_DIR", str(root / "datasets"))
     os.environ.setdefault("QF_COST_MODEL_DIR", str(root / "cost-models"))
     os.environ.setdefault("QF_POLICY_DIR", str(root / "policies"))
@@ -278,7 +279,7 @@ def main() -> None:
         "QF_CREDENTIAL_ENCRYPTION_KEY",
         base64.b64encode(secrets.token_bytes(32)).decode(),
     )
-    for directory in ("artifacts", "datasets", "cost-models", "policies"):
+    for directory in ("artifacts", "data", "datasets", "cost-models", "policies"):
         (root / directory).mkdir(mode=0o750, exist_ok=True)
 
     from app.local_provider import create_server
@@ -302,6 +303,7 @@ def main() -> None:
         command.upgrade(config, "head")
 
         from app.bootstrap import seed_local
+        from app.control_plane import issue_access_key
         from app.main import (
             AgentRunRow,
             ArtifactRow,
@@ -321,13 +323,13 @@ def main() -> None:
 
         session_token = secrets.token_urlsafe(32)
         seeded = seed_local(
-            workspace_id="local-workspace",
+            workspace_id="system",
             owner_id="local-owner",
             owner_email="owner@local.invalid",
             session_token=session_token,
         )
         replayed_seed = seed_local(
-            workspace_id="local-workspace",
+            workspace_id="system",
             owner_id="local-owner",
             owner_email="owner@local.invalid",
             session_token=session_token,
@@ -345,7 +347,7 @@ def main() -> None:
         try:
             research_rows = (
                 verification.query(ResearchPolicyVersionRow)
-                .filter_by(workspace_id="local-workspace", status="ACTIVE")
+                .filter_by(workspace_id="system", status="ACTIVE")
                 .all()
             )
             by_family: dict[str, ResearchPolicyVersionRow] = {
@@ -367,7 +369,7 @@ def main() -> None:
             risk = (
                 verification.query(RiskPolicyVersionRow)
                 .filter_by(
-                    workspace_id="local-workspace",
+                    workspace_id="system",
                     policy_id=seeded["risk_policy_id"],
                     status="ACTIVE",
                 )
@@ -376,7 +378,7 @@ def main() -> None:
             cost = (
                 verification.query(CostModelVersionRow)
                 .filter_by(
-                    workspace_id="local-workspace",
+                    workspace_id="system",
                     cost_model_id=seeded["cost_model_id"],
                     status="ACTIVE",
                 )
@@ -386,8 +388,82 @@ def main() -> None:
                 raise RuntimeError("local risk/cost binding is unavailable")
         finally:
             verification.close()
-        headers = {"Authorization": f"Bearer {session_token}"}
+        general_access_key = issue_access_key("fresh-local-smoke")
         with TestClient(app) as client:
+            login = _expect(
+                client.post(
+                    "/api/v1/auth/login",
+                    json={"key": general_access_key},
+                ),
+                200,
+            )
+            csrf_token = str(login["session"]["csrf_token"])
+            headers = {"X-CSRF-Token": csrf_token}
+            active = _expect(client.get("/api/v1/configuration/active"), 200)
+            active_etag = f'W/"config:{active["active_revision"]}"'
+            candidate = _expect(
+                client.put(
+                    "/api/v1/configuration/candidate",
+                    headers={
+                        **headers,
+                        "If-Match": active_etag,
+                        "Idempotency-Key": _key("config-candidate"),
+                    },
+                    json={
+                        "base_revision": active["active_revision"],
+                        "values": [
+                            {
+                                "key": "ai.remote_codex",
+                                "secret": json.dumps(
+                                    {
+                                        "endpoint": provider_url,
+                                        "model": "qf-local-v1",
+                                        "credential": os.environ[
+                                            "QF_LOCAL_PROVIDER_API_KEY"
+                                        ],
+                                        "timeout_seconds": 30,
+                                        "max_retries": 0,
+                                        "concurrency": 1,
+                                    },
+                                    sort_keys=True,
+                                ),
+                            },
+                            {
+                                "key": "agents.runtime",
+                                "value": {
+                                    "enabled": True,
+                                    "runtime_profile": "CODEX-DEFAULT",
+                                    "tool_timeout_seconds": 30,
+                                    "max_steps": 20,
+                                    "max_tool_calls": 50,
+                                },
+                            },
+                        ],
+                    },
+                ),
+                200,
+            )
+            validation = _expect(
+                client.post(
+                    "/api/v1/configuration/candidate/validate",
+                    headers={**headers, "Idempotency-Key": _key("config-validate")},
+                ),
+                200,
+            )
+            if validation.get("status") != "VALID":
+                raise RuntimeError("local Control DB configuration validation failed")
+            active = _expect(
+                client.post(
+                    "/api/v1/configuration/activate",
+                    headers={
+                        **headers,
+                        "If-Match": active_etag,
+                        "Idempotency-Key": _key("config-activate"),
+                    },
+                    json={"revision": candidate["revision"]},
+                ),
+                200,
+            )
             ai = _expect(
                 client.post(
                     "/api/v1/setup/provider-connections/validate",
@@ -418,21 +494,12 @@ def main() -> None:
             _expect(
                 client.post(
                     "/api/v1/setup/complete",
-                    headers={**headers, "Idempotency-Key": _key("setup")},
-                    json={
-                        "language": "en",
-                        "timezone": "UTC",
-                        "base_currency": "USD",
-                        "number_format_locale": "en-US",
-                        "ai_connection_id": ai["connection_id"],
-                        "default_data_provider_id": "LOCAL_DETERMINISTIC_DATA",
-                        "default_benchmark": "LOCAL-BENCHMARK",
-                        "default_frequency": "DAILY",
-                        "initial_paper_capital": "100000",
-                        "research_policy_id": seeded["research_policy_id"],
-                        "risk_policy_id": seeded["risk_policy_id"],
-                        "cost_model_id": seeded["cost_model_id"],
+                    headers={
+                        **headers,
+                        "Idempotency-Key": _key("setup"),
+                        "If-Match": f'W/"config:{active["active_revision"]}"',
                     },
+                    json={"configuration_revision": active["active_revision"]},
                 ),
                 200,
             )
@@ -464,7 +531,7 @@ def main() -> None:
             lambda iteration: run_agent_once(identity=f"fresh-local-agent-{iteration}"),
             lambda iteration: run_once(identity=f"fresh-local-core-{iteration}"),
             lambda: _workflow_observation(
-                SessionLocal, str(research["research_id"]), "local-workspace"
+                SessionLocal, str(research["research_id"]), "system"
             ),
         )
         session = SessionLocal()
@@ -496,7 +563,7 @@ def main() -> None:
                 raise RuntimeError("fresh local analyze_factor child job disappeared")
             resume = (
                 session.query(JobRow)
-                .filter_by(job_type="AGENT_RESUME", workspace_id="local-workspace")
+                .filter_by(job_type="AGENT_RESUME", workspace_id="system")
                 .join(
                     JobDependencyRow,
                     JobDependencyRow.job_id == JobRow.id,
@@ -507,7 +574,7 @@ def main() -> None:
             artifact_id = experiment_detail["artifacts"][0]["artifact"]["id"]
             artifact = (
                 session.query(ArtifactRow)
-                .filter_by(artifact_id=artifact_id, workspace_id="local-workspace")
+                .filter_by(artifact_id=artifact_id, workspace_id="system")
                 .one_or_none()
             )
             if completed is None or completed.status != "COMPLETED":

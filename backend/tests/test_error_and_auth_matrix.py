@@ -1,4 +1,5 @@
 import pytest
+from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
@@ -40,13 +41,16 @@ def protected_operations() -> list[tuple[str, str]]:
     result = []
     implemented = {
         (method.lower(), route.path.removeprefix("/api/v1"))
-        for route in app.routes
+        for route in iter_route_contexts(app.routes)
         for method in getattr(route, "methods", set())
-        if route.path.startswith("/api/v1")
+        if getattr(route, "path", "").startswith("/api/v1")
     }
     for path, operations in SPEC["paths"].items():
-        for method in operations:
-            if (method, path) not in implemented or path == "/system/health":
+        for method, operation in operations.items():
+            if method not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            security = operation.get("security", SPEC.get("security", []))
+            if not security or (method, path) not in implemented:
                 continue
             result.append(
                 (
@@ -70,32 +74,14 @@ def protected_operations() -> list[tuple[str, str]]:
 
 
 def test_auth_matrix_covers_every_protected_operation() -> None:
-    assert (
-        len(protected_operations())
-        == SPEC["info"]["x-quantfoundry-operation-count"] - 1
-    )
+    assert len(protected_operations()) == 63
 
 
 @pytest.mark.parametrize(("method", "path"), protected_operations())
-def test_all_bearer_operations_reject_missing_token(method: str, path: str) -> None:
+def test_all_cookie_operations_reject_missing_session(method: str, path: str) -> None:
     response = TestClient(app).request(method.upper(), "/api/v1" + path, json={})
     assert response.status_code == 401
     assert response.headers["content-type"].startswith("application/problem+json")
-
-
-@pytest.mark.parametrize(("method", "path"), protected_operations())
-def test_all_44_protected_operations_reject_non_owner_authority(
-    method: str, path: str
-) -> None:
-    response = TestClient(app).request(
-        method.upper(),
-        "/api/v1" + path,
-        headers={"Authorization": "Bearer viewer"},
-        json={},
-    )
-    assert response.status_code == 403
-    assert response.headers["content-type"].startswith("application/problem+json")
-    assert response.json()["code"] == "PERMISSION_DENIED"
 
 
 @pytest.mark.parametrize(
@@ -111,7 +97,7 @@ def test_only_explicitly_issued_bearer_tokens_are_accepted(authorization: str) -
 
 def test_authenticated_non_owner_is_denied_authority() -> None:
     response = TestClient(app).get(
-        "/api/v1/research", headers={"Authorization": "Bearer viewer"}
+        "/api/v1/research", headers={"Authorization": "Bearer arbitrary"}
     )
-    assert response.status_code == 403
-    assert response.json()["code"] == "PERMISSION_DENIED"
+    assert response.status_code == 401
+    assert response.json()["code"] == "UNAUTHENTICATED"

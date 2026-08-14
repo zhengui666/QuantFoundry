@@ -51,12 +51,12 @@ blockers:
       - docs/后端系统技术方案/contracts/openapi-v1.yaml
       - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#1812-openapi
       - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
-      - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#42-d1-machine-contract-rewrite-前置门禁
+      - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#42-d1-machine-contract-rewrite已冻结
     owner_role: API / Contract Agent
     closure_criteria:
-      - Before D1 is committed, runtime and generated consumers have zero diff from the current canonical 45-operation baseline; no target login, key/session, Settings-only write, Bootstrap Control DB, or Domain DB recovery operation is invented in code, fixture, or test.
-      - D1 atomically commits the target breaking canonical OpenAPI revision, its machine-derived exact operation set/count, Problem Details, migration/deprecation policy, generated-consumer impact, and synchronized formal facts; no document or implementation guesses or pre-fills the target count.
-      - After D1, runtime OpenAPI and all generated consumers have zero diff from the D1 canonical schema, with singleton access, recovery, configuration and negative authorization/secret semantics independently verified and no parallel schema or long-lived legacy-auth path.
+      - Historical pre-D1 runtime and generated consumers were validated against the canonical 45-operation baseline; that count is no longer the target and remains only for migration comparison.
+      - D1 atomically commits the target breaking canonical OpenAPI revision, its machine-derived exact operation/schema/error counts, configuration catalog, Bootstrap target schema, executable matrix, migration/deprecation policy, generated-consumer impact, and synchronized formal facts; no document or implementation guesses or pre-fills the target count.
+      - D2 must prove runtime OpenAPI and all generated consumers have zero diff from the D1 canonical schema, with singleton access, recovery, configuration and negative authorization/secret semantics independently verified and no parallel schema or long-lived legacy-auth path.
     verification:
       - Independent Test Agent runs pre-D1 current-baseline and post-D1 target committed-versus-runtime contract, auth/session/key/configuration/recovery, Problem Details, generated-consumer, removed-legacy-surface, and unknown-field negative matrices as applicable to the reviewed commit.
       - Independent Review Agent verifies that the target exact count is machine-derived from the D1 canonical source and that governance, generated consumers and formal test facts bind the same revision.

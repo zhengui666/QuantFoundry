@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app import main as domain_main
 from app.main import RuntimeHeartbeat, SessionLocal
 
 
@@ -30,6 +32,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if not domain_main.app.state.domain_database_available:
+        return 0 if os.getenv("QF_ENV", "production") in {"local", "development"} else 1
     threshold = datetime.now(UTC) - timedelta(seconds=args.max_age_seconds)
     statement = select(RuntimeHeartbeat).where(
         RuntimeHeartbeat.component == args.component,

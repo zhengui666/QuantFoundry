@@ -115,6 +115,7 @@ migration_check() {
   require_postgres
   run_backend alembic upgrade head
   run_backend alembic check
+  run_backend python scripts/ux001_domain_preflight.py
 }
 
 backend_test() {

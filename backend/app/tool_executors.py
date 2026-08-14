@@ -217,6 +217,16 @@ def _queue_factor_analysis_experiment(
         if binding is not None
         else None
     )
+    if cost is None:
+        # D1 configuration is installation-scoped; legacy setup bindings are
+        # optional compatibility state. Resolve a single active domain model
+        # when the binding has not been materialized yet.
+        active_costs = (
+            session.query(CostModelVersionRow)
+            .filter_by(workspace_id=run.workspace_id, status="ACTIVE")
+            .all()
+        )
+        cost = active_costs[0] if len(active_costs) == 1 else None
     if (
         factor is None
         or snapshot is None
@@ -452,7 +462,7 @@ def execute_tool(
             "strategy_version_id": version.id,
             "strategy_spec_sha256": version.spec_sha256,
             "cost_model_id": json.loads(cast(str, version.detail))["cost_model_id"],
-            "engine_key": "test-api-key-unavailable",
+            "engine_key": "qf-simulation-v1",
             "engine_version": "1.0.0",
             "parameters": [],
         }

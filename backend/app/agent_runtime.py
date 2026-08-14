@@ -29,8 +29,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts import validated_payload
+from app.control_plane import active_remote_codex_connection, active_runtime_snapshot
 from app.locator_contract import job_result_ref_valid
 from app.main import (
+    TOOL_REGISTRY_SHA256,
     AgentConfigRow,
     AgentRunRow,
     DataSource,
@@ -139,6 +141,11 @@ class CodexRuntimeConfig:
         timeout_seconds: int,
         api_key: str | None = None,
     ) -> CodexRuntimeConfig:
+        environment = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV", "production")
+        if environment in {"production", "staging"}:
+            raise AgentRuntimeError(
+                "environment-based Remote Codex configuration is disabled"
+            )
         runtime_key = os.getenv("QF_CODEX_RUNTIME_ID", CODEX_RUNTIME_KEY)
         if runtime_key != CODEX_RUNTIME_KEY:
             raise AgentRuntimeError("only CODEX-DEFAULT remote runtime is supported")
@@ -204,6 +211,42 @@ class CodexRuntimeConfig:
             max_attempts=max_attempts,
         )
 
+    @classmethod
+    def from_control_configuration(
+        cls, payload: dict[str, Any], *, timeout_seconds: int
+    ) -> CodexRuntimeConfig:
+        base_url = str(payload.get("endpoint", "")).rstrip("/")
+        api_key = str(payload.get("credential", ""))
+        model_name = str(payload.get("model", ""))
+        if not base_url or not api_key or not model_name:
+            raise AgentRuntimeError("Remote Codex configuration is incomplete")
+        parsed_url = urlsplit(base_url)
+        if (
+            parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.netloc
+            or parsed_url.username
+            or parsed_url.password
+            or parsed_url.query
+            or parsed_url.fragment
+        ):
+            raise AgentRuntimeError("Remote Codex endpoint is invalid")
+        max_attempts = max(1, min(8, int(payload.get("max_retries", 3)) + 1))
+        remote_instance_id = str(payload.get("instance_id") or CODEX_RUNTIME_KEY)
+        endpoint = (
+            base_url
+            if base_url.endswith("/chat/completions")
+            else f"{base_url}/chat/completions"
+        )
+        return cls(
+            CODEX_RUNTIME_KEY,
+            remote_instance_id,
+            endpoint,
+            api_key,
+            model_name,
+            timeout_seconds,
+            max_attempts,
+        )
+
 
 class RemoteCodexModel:
     """Remote Codex adapter; all Roles resolve to the same logical runtime."""
@@ -220,6 +263,16 @@ class RemoteCodexModel:
             timeout_seconds=timeout_seconds,
             api_key=api_key,
         )
+
+    @classmethod
+    def from_control_configuration(
+        cls, payload: dict[str, Any], *, timeout_seconds: int
+    ) -> RemoteCodexModel:
+        instance = cls.__new__(cls)
+        instance.runtime = CodexRuntimeConfig.from_control_configuration(
+            payload, timeout_seconds=timeout_seconds
+        )
+        return instance
 
     @staticmethod
     def _invocation_id(checkpoint: dict[str, Any]) -> str:
@@ -365,31 +418,35 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
 
 
 def configured_model(config: AgentConfigRow, session: Session | None = None) -> Model:
-    remote_mode = os.getenv("QF_AGENT_PROVIDER", "").lower() in {
-        "openai-compatible",
-        "remote-codex",
-    } or bool(os.getenv("QF_CODEX_BASE_URL"))
-    if remote_mode and config.model_provider not in {
-        "openai-compatible",
-        "remote-codex",
-    }:
-        raise AgentRuntimeError(
-            "agent config provider is incompatible with the Remote Codex runtime"
+    projection = active_runtime_snapshot()
+    payload = active_remote_codex_connection()
+    # Existing test fixtures may deliberately exercise the legacy
+    # OpenAI-compatible harness. Production is always Control DB-only.
+    legacy_test_harness = (
+        os.getenv("QF_ENV") == "test" and config.model_provider == "openai-compatible"
+    )
+    if (
+        payload is not None
+        and projection["model_name"] != "unconfigured"
+        and not legacy_test_harness
+    ):
+        return RemoteCodexModel.from_control_configuration(
+            payload, timeout_seconds=config.tool_timeout_seconds
         )
-    if config.model_provider in {"openai-compatible", "remote-codex"}:
-        api_key = (
-            _active_setup_api_key(session, config) if session is not None else None
-        )
-        return RemoteCodexModel(
-            model_name=config.model_name,
-            timeout_seconds=config.tool_timeout_seconds,
-            api_key=api_key,
-        )
-    if config.model_provider == "local-deterministic":
-        if os.getenv("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER") != "1":
-            raise AgentRuntimeError("local deterministic provider is disabled")
-        return LocalDeterministicModel()
-    raise AgentRuntimeError("agent model provider is not configured")
+    if os.getenv("QF_ENV") == "test":
+        # Legacy provider harnesses remain test-only; production is Control DB-only.
+        if config.model_provider in {"openai-compatible", "remote-codex"}:
+            api_key = (
+                _active_setup_api_key(session, config) if session is not None else None
+            )
+            return RemoteCodexModel(
+                model_name=config.model_name,
+                timeout_seconds=config.tool_timeout_seconds,
+                api_key=api_key,
+            )
+        if os.getenv("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER") == "1":
+            return LocalDeterministicModel()
+    raise AgentRuntimeError("Remote Codex configuration is not active")
 
 
 @dataclass(frozen=True)
@@ -418,9 +475,11 @@ class AgentGraphState(TypedDict, total=False):
 
 @contextmanager
 def _checkpoint_saver() -> Iterator[BaseCheckpointSaver[str]]:
-    database_url = os.getenv("QF_AGENT_CHECKPOINT_URL") or os.getenv("QF_DATABASE_URL")
-    if not database_url:
-        raise AgentRuntimeError("Agent checkpoint database is not configured")
+    # Rebinding replaces app.main.engine after a Control-DB activation; do not
+    # retain the pre-activation sentinel engine imported by this module.
+    from app import main as domain_main
+
+    database_url = domain_main.engine.url.render_as_string(hide_password=False)
     if database_url.startswith("sqlite"):
         configured = os.getenv("QF_AGENT_CHECKPOINT_SQLITE")
         if configured:
@@ -1406,10 +1465,18 @@ def advance_agent_run(
             True,
             _agent_run_result_ref(row),
         )
-    max_steps = min(DEFAULT_MAX_STEPS, config.max_steps_override or DEFAULT_MAX_STEPS)
+    legacy_unpinned = row.effective_configuration_sha256 == "0" * 64
+    max_steps = min(
+        DEFAULT_MAX_STEPS,
+        (None if legacy_unpinned else row.max_steps)
+        or config.max_steps_override
+        or DEFAULT_MAX_STEPS,
+    )
     max_tools = min(
         DEFAULT_MAX_TOOL_CALLS,
-        config.max_tool_calls_override or DEFAULT_MAX_TOOL_CALLS,
+        (None if legacy_unpinned else row.max_tool_calls)
+        or config.max_tool_calls_override
+        or DEFAULT_MAX_TOOL_CALLS,
     )
     if row.step_count >= max_steps or row.tool_call_count >= max_tools:
         return _finish_run(
@@ -1489,6 +1556,9 @@ def advance_agent_run(
             status="RUNNING",
             input_payload=json.dumps(arguments),
             input_sha256=semantic_hash,
+            effective_configuration_revision=row.effective_configuration_revision,
+            configuration_sha256=row.effective_configuration_sha256,
+            tool_registry_sha256=TOOL_REGISTRY_SHA256,
             semantic_scope=semantic_scope,
             objective=row.objective,
             research_id=row.research_id,
@@ -1700,6 +1770,9 @@ def persist_tool_failure(
     if error.workspace_id != job.workspace_id:
         raise AgentRuntimeError("tool failure crossed a workspace boundary")
     finished = datetime.now(UTC)
+    run = session.execute(
+        select(AgentRunRow).where(AgentRunRow.id == error.agent_run_id)
+    ).scalar_one_or_none()
     session.add(
         ToolCallRow(
             id=error.tool_call_id,
@@ -1710,6 +1783,15 @@ def persist_tool_failure(
             status="ERROR",
             input_payload="{}",
             input_sha256=error.input_sha256,
+            effective_configuration_revision=run.effective_configuration_revision
+            if run
+            else 1,
+            configuration_sha256=run.effective_configuration_sha256
+            if run
+            else "0" * 64,
+            tool_registry_sha256=run.tool_registry_sha256
+            if run
+            else TOOL_REGISTRY_SHA256,
             semantic_scope=error.semantic_scope,
             objective=error.objective,
             research_id=error.research_id,

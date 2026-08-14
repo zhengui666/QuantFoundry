@@ -375,6 +375,8 @@ const agent = {
   enabled: true,
   model_provider: 'openai',
   model_name: 'gpt-test',
+  ai_connection_id: 'CODEX-DEFAULT',
+  ai_connection_revision: 1,
   runtime_profile: 'default',
   tool_timeout_seconds: 60,
   max_steps_override: null,
@@ -397,6 +399,18 @@ async function mockCanonicalApi(
   await page.route('**/api/v1/**', (route: Route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
+    if (path === '/api/v1/auth/session')
+      return route.fulfill({
+        json: {
+          principal: 'OWNER',
+          auth_method: 'GENERAL_ACCESS_KEY',
+          key_id: 'gak_e2e0000000000000',
+          issued_at: '2026-08-10T00:00:00Z',
+          last_seen_at: '2026-08-10T00:00:00Z',
+          expires_at: '2099-01-01T00:00:00Z',
+          csrf_token: 'e2e-csrf-token-0000000000000000000000',
+        },
+      });
     if (path === '/api/v1/events/stream')
       return route.fulfill({ contentType: 'text/event-stream', body: '' });
     if (path === '/api/v1/overview') return route.fulfill({ json: overviewResponse });
@@ -439,12 +453,34 @@ async function mockCanonicalApi(
 }
 
 async function seedChartLocale(page: Page, language: 'en' | 'zh-CN') {
-  await page.addInitScript((selectedLanguage) => {
-    localStorage.setItem(
-      'qf.server-settings.locale',
-      JSON.stringify({ language: selectedLanguage, timezone: 'UTC' }),
-    );
-  }, language);
+  await page.route('**/api/v1/configuration/active', (route) =>
+    route.fulfill({
+      headers: { ETag: 'W/"config:1"' },
+      json: {
+        active_revision: 1,
+        last_known_good_revision: 1,
+        catalog_version: 'UX001_D1_CATALOG_R1',
+        values: [
+          {
+            key: 'appearance.locale',
+            sensitivity: 'PUBLIC',
+            configured: true,
+            value: {
+              language,
+              timezone: 'UTC',
+              number_format_locale: language === 'en' ? 'en-US' : 'zh-CN',
+              theme: 'SYSTEM',
+              density: 'COMFORTABLE',
+            },
+            masked_hint: null,
+          },
+        ],
+        snapshot_sha256: '0'.repeat(64),
+        consumer_states: [],
+        updated_at: '2026-08-10T00:00:00Z',
+      },
+    }),
+  );
 }
 
 async function verifyLocalizedChart(page: Page, language: 'en' | 'zh-CN') {
@@ -498,8 +534,8 @@ for (const [surface, path] of [
     test(`${surface} chart exposes localized ${language} aria, summary, and text table`, async ({
       page,
     }) => {
-      await seedChartLocale(page, language);
       await mockCanonicalApi(page, decimalChart);
+      await seedChartLocale(page, language);
       await page.goto(path);
       await verifyLocalizedChart(page, language);
     });
@@ -523,7 +559,7 @@ for (const width of [1440, 1280, 1180]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-      await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+      await expect(page.getByRole('navigation', { name: /Primary|主导航/ })).toBeVisible();
       if (surface === 'P01' || surface === 'P09')
         await expect(page.locator('.chart canvas')).toBeVisible();
       if (width === 1180)
@@ -555,7 +591,11 @@ for (const state of ['EMPTY', 'LOCKED'] as const) {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/strategies/STRAT-7DM0RSF9KRZZ52QFV79PMX8YBP?version=4&tab=backtests');
     await expect(
-      page.getByText(state === 'EMPTY' ? /No canonical backtest/ : /information boundary/),
+      page.getByText(
+        state === 'EMPTY'
+          ? /No canonical backtest|尚无 canonical 回测/
+          : /information boundary|信息边界/,
+      ),
     ).toBeVisible();
     await expect(page.getByText('1.25', { exact: false })).toHaveCount(0);
     await expect(page.locator('.chart')).toHaveCount(0);

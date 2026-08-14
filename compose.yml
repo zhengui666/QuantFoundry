@@ -5,9 +5,6 @@ x-backend-env: &backend-env
   QF_ENVIRONMENT: ${QF_ENVIRONMENT:?missing QF_ENVIRONMENT}
   QF_GIT_COMMIT: ${QF_GIT_COMMIT:?missing QF_GIT_COMMIT}
   QF_BUILD_ID: ${QF_BUILD_ID:?missing QF_BUILD_ID}
-  QF_DATABASE_URL: postgresql+psycopg://${QF_POSTGRES_USER:?missing QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD:?missing QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB:?missing QF_POSTGRES_DB}
-  QF_ALEMBIC_URL: postgresql+psycopg://${QF_POSTGRES_USER:?missing QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD:?missing QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB:?missing QF_POSTGRES_DB}
-  QF_SKIP_AUTO_CREATE: "1"
   QF_ARTIFACT_ROOT: /var/lib/quantfoundry/artifacts
   QF_ARTIFACT_DIR: /var/lib/quantfoundry/artifacts
   QF_DATA_ROOT: /var/lib/quantfoundry/data
@@ -15,22 +12,6 @@ x-backend-env: &backend-env
   QF_COST_MODEL_DIR: /var/lib/quantfoundry/data/cost-models
   QF_POLICY_DIR: /var/lib/quantfoundry/data/policies
   QF_TOOL_CONTRACT_PATH: /workspace/docs/后端系统技术方案/contracts/tools/v1-p0.yaml
-  QF_AGENT_PROVIDER: ${QF_AGENT_PROVIDER:-unconfigured}
-  QF_AGENT_MODEL: ${QF_AGENT_MODEL:-unconfigured}
-  QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER: ${QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER:-0}
-  QF_CODEX_RUNTIME_ID: ${QF_CODEX_RUNTIME_ID:-CODEX-DEFAULT}
-  QF_CODEX_REMOTE_INSTANCE_ID: ${QF_CODEX_REMOTE_INSTANCE_ID:-CODEX-DEFAULT}
-  QF_CODEX_BASE_URL: ${QF_CODEX_BASE_URL:-}
-  QF_CODEX_API_KEY: ${QF_CODEX_API_KEY:-}
-  QF_CODEX_MODEL: ${QF_CODEX_MODEL:-}
-  QF_CODEX_MODELS: ${QF_CODEX_MODELS:-}
-  QF_CODEX_DISPLAY_NAME: ${QF_CODEX_DISPLAY_NAME:-Remote Codex}
-  QF_CODEX_MAX_ATTEMPTS: ${QF_CODEX_MAX_ATTEMPTS:-3}
-  QF_OPENAI_BASE_URL: ${QF_OPENAI_BASE_URL:-}
-  QF_OPENAI_MODELS: ${QF_OPENAI_MODELS:-}
-  QF_OPENAI_DISPLAY_NAME: ${QF_OPENAI_DISPLAY_NAME:-OpenAI-compatible provider}
-  QF_LOCAL_PROVIDER_API_KEY: ${QF_LOCAL_PROVIDER_API_KEY:-}
-  QF_LOCAL_DATA_CREDENTIAL: ${QF_LOCAL_DATA_CREDENTIAL:-}
   QF_CREDENTIAL_ENCRYPTION_KEY_ID: ${QF_CREDENTIAL_ENCRYPTION_KEY_ID:?missing QF_CREDENTIAL_ENCRYPTION_KEY_ID}
   QF_CREDENTIAL_ENCRYPTION_KEY: ${QF_CREDENTIAL_ENCRYPTION_KEY:?missing QF_CREDENTIAL_ENCRYPTION_KEY}
 
@@ -54,6 +35,11 @@ x-backend-common: &backend-common
   read_only: true
   tmpfs:
     - /tmp:rw,noexec,nosuid,size=64m
+
+x-migration-env: &migration-env
+  QF_DATABASE_URL: postgresql+psycopg://${QF_POSTGRES_USER:?missing QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD:?missing QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB:?missing QF_POSTGRES_DB}
+  QF_ALEMBIC_URL: postgresql+psycopg://${QF_POSTGRES_USER:?missing QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD:?missing QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB:?missing QF_POSTGRES_DB}
+  QF_SKIP_AUTO_CREATE: "1"
 
 services:
   postgres:
@@ -84,11 +70,15 @@ services:
 
   migrate:
     <<: *backend-common
+    environment:
+      <<: [*backend-env, *migration-env]
     restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["sh", "-ec", "alembic upgrade head && alembic check"]
+      storage-init:
+        condition: service_completed_successfully
+    command: ["sh", "-ec", "alembic upgrade head && alembic check && python scripts/ux001_domain_preflight.py && python scripts/migrate_control_db.py"]
 
   storage-init:
     <<: *backend-common
@@ -231,7 +221,7 @@ services:
         QF_BUILD_ID: ${QF_BUILD_ID:?missing QF_BUILD_ID}
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "${QF_HTTP_PORT:-8080}:8080"
     restart: unless-stopped

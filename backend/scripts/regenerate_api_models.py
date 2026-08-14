@@ -328,6 +328,26 @@ def _advertise_validation_schema(
     return source[:config_start] + config + source[config_end:]
 
 
+def _inline_validation_refs(
+    value: Any, schemas: dict[str, dict[str, Any]], stack: frozenset[str] = frozenset()
+) -> Any:
+    if isinstance(value, list):
+        return [_inline_validation_refs(item, schemas, stack) for item in value]
+    if not isinstance(value, dict):
+        return value
+    reference = value.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+        name = reference.rsplit("/", 1)[-1]
+        if name in schemas and name not in stack:
+            return _inline_validation_refs(
+                deepcopy(schemas[name]), schemas, stack | {name}
+            )
+    return {
+        key: _inline_validation_refs(item, schemas, stack)
+        for key, item in value.items()
+    }
+
+
 def _restore_singleton_const_object_ids(
     source: str, schemas: dict[str, dict[str, Any]]
 ) -> str:
@@ -475,9 +495,11 @@ def generate(output: Path = OUTPUT) -> str:
         "from datetime import date\n",
         "from datetime import date\nfrom decimal import Decimal, InvalidOperation\n",
     )
-    source = source.replace(
-        "from typing import Literal",
-        "from typing import Annotated, Literal, cast",
+    source = re.sub(
+        r"from typing import [^\n]+",
+        "from typing import Any, Annotated, Literal, cast",
+        source,
+        count=1,
     ).replace(
         "from pydantic import AnyUrl, AwareDatetime, BaseModel, ConfigDict, Field, RootModel",
         "from jsonschema import Draft202012Validator\n\n"
@@ -524,6 +546,7 @@ def generate(output: Path = OUTPUT) -> str:
                 for keyword in ("allOf", "dependentRequired")
                 if keyword in schema
             }
+            validation_schema = _inline_validation_refs(validation_schema, schemas)
             source = _advertise_validation_schema(source, name, validation_schema)
             source = _inject_validator(
                 source,
@@ -612,6 +635,10 @@ def generate(output: Path = OUTPUT) -> str:
         )
     missing_root_models.extend(
         [
+            "\n\nclass ConfigurationValueWrite(\n"
+            "    RootModel[ConfigurationValueWrite1 | ConfigurationValueWrite2]\n"
+            "):\n"
+            "    root: ConfigurationValueWrite1 | ConfigurationValueWrite2\n",
             "\n\nclass ExperimentSearchDimension(\n"
             "    RootModel[Annotated[ExperimentSearchSetDimension | ExperimentSearchRangeDimension, Field(discriminator='kind')]]\n"
             "):\n"

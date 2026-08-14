@@ -732,7 +732,7 @@ def test_records_and_setup_physical_shapes_are_exact() -> None:
     path = BACKEND_ROOT / "alembic/versions/0016_section14_physical.json"
     value = json.loads(path.read_text(encoding="utf-8"))
     assert value["table_count"] == 63
-    assert value["column_count"] == 953
+    assert value["column_count"] == 967
     assert sum(len(table["checks"]) for table in value["tables"]) == 191
 
     specs = {table["name"]: table for table in value["tables"]}

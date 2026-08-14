@@ -3,7 +3,7 @@
 **治理版本：** Final V1.0
 **日期：** 2026-08-13
 **适用范围：** QuantFoundry repository；仅 Paper、Single-human-principal / Self-hosted；不包含实盘资金执行。
-**当前阶段：** 文档阶段 / 目标规范；D1 machine contract rewrite、实现与独立验收尚未完成。
+**当前阶段：** D3 frontend control-plane slice complete；D1 machine sources、D2 Control DB/Alembic/runtime、D3 cookie session/Settings/responsive targeted gates 已通过；PG/chaos/independent release evidence pending。
 
 ## 1. 目的与权威关系
 
@@ -54,7 +54,7 @@ schema 的权威是声明式 SQLAlchemy metadata 与 Alembic migration。manifes
 
 Paper daily scheduler 的 P0 可执行边界为 PRD §52.1–§52.3、Backend §23.4–§23.4.1 和 Test Plan §27.1：不新增 HTTP API；UTC 持久化/比较、deployment-local trading date、绑定 calendar 或 `WEEKDAY_ONLY`、单独 workspace-scoped `paper_scheduler_states` suppression truth、resume watermark、单日 bounded catch-up、natural-key idempotency、lease/retry/crash fail-closed 和 atomic evidence commit 均为实现前置事实源。声明式 SQLAlchemy model + Alembic revision 是该表的唯一 authority；manifest/physical snapshot/generated model 是派生物。evidence boundary is split and non-bypassable: state initialize/pause/disable/resume creates no Job and no Artifact, and atomically writes append-only `audit_events.summary.paper_scheduler_state_evidence.v1` with `detail_artifact_id=NULL`; execution decisions alone create immutable `paper_scheduler_evidence.v1` Artifact, whose non-null `job_id` must resolve to the `PAPER_DAILY_RUN` execution Job and whose Audit links it through `detail_artifact_id`. Empty/arbitrary Artifact cannot satisfy state or execution evidence. State SSE is only existing closed `paper.updated` (or independently legal `job.updated`) and exposes no detail; no suppression/watermark/lease/attempt/calendar/evidence field may enter `EventPayload`. 迁移不得猜测存量 suppression history；未初始化或歧义 deployment 必须阻断 scheduler readiness。当前 canonical HTTP stage/revision 不包含 Paper operation，不得以该 future-staged HTTP 边界跳过 scheduler core 的 P0 实现或独立验证。
 
-当前外部兼容 baseline 固定为：canonical OpenAPI 的 45 operations、13 个 Tool contract、以及现有 `/api/v1` URL 与 wire semantics。该 45-operation baseline 只在 D1 machine contract rewrite 提交前继续生效；它不是本轮 singleton access、Bootstrap Control DB、Settings-only write control plane 的目标契约声明。任何现有实现、fixture 或测试在 D1 前仍不得偏离当前 canonical contract。
+当前外部兼容 baseline 固定为：D1 前的 45-operation/P0_EXECUTABLE_R2、13 个 Tool contract、以及现有 `/api/v1` URL 与 wire semantics。canonical OpenAPI 目标已切换至 UX001_D1_R1（65 operations / 186 schemas / 75 errors）；旧 45-operation 只作历史迁移/差异输入，不得作为新代码目标。Tool contract 仍为 13 entries，`/api/v1` 前缀保持不变。
 
 ### 4.1 Single-human-principal 与数据库配置目标边界
 
@@ -64,13 +64,13 @@ Paper daily scheduler 的 P0 可执行边界为 PRD §52.1–§52.3、Backend §
 
 前端目标方向为 `Evidence Foundry`，响应式 Web 必须从 390px 起可用；原生移动 App 不在范围内。该目标必须通过正式 UI、前端与测试事实源进一步字段化和验收，不得仅凭本治理声明开始实现或宣称达标。
 
-### 4.2 D1 machine contract rewrite 前置门禁
+### 4.2 D1 machine contract rewrite（已冻结）
 
-本轮目标必然影响认证、session、通用密钥、配置目录/写入、Domain DB 双阶段连接、schema 和测试矩阵。当前 canonical OpenAPI、schema 与测试 exact counts 尚未更新，因此 **D1 machine contract rewrite 是任何相关代码、migration、fixture、generated client 或测试变更的前置 blocker**。
+本轮目标影响认证、session、通用密钥、配置目录/写入、Domain DB 双阶段连接、schema 和测试矩阵。canonical OpenAPI、Bootstrap Control DB target schema、configuration catalog、generated model check 与 executable matrix 已冻结；runtime migration、fixture execution 与 release evidence 转入 D2。
 
-D1 必须在一个可审查的文档优先 change set 中同步完成：canonical OpenAPI breaking revision、目标 exact operation count、schema authority/Alembic 迁移设计、认证与配置错误语义、generated consumer 影响、正式测试矩阵、迁移/弃用策略、受影响专项事实源及本文件/registry 的 count 与 closure criteria。目标 count 未由 canonical machine source 产生前，任何文档、实现、fixture 或测试均不得猜测、预填或伪造新 count。D1 不得保留 legacy user auth 与通用密钥 auth 的长期双轨，也不得创建平行 OpenAPI/schema。
+D1 已在一个可审查的文档优先 change set 中同步冻结：canonical OpenAPI breaking revision、目标 exact operation count、schema authority/Alembic target、认证与配置错误语义、generated consumer 影响、正式测试矩阵、迁移/弃用策略、受影响专项事实源及本文件/registry 的 count 与 closure criteria。目标 count 均由 canonical machine source 产生；D1 不保留 legacy user auth 与通用密钥 auth 的长期双轨，也不创建平行 OpenAPI/schema。
 
-D1 完成前，本轮只允许文档阶段的目标规范更新；当前 45-operation contract 仍是现状验证 baseline，但不得被误用为目标功能已可实现的依据。D1 完成后，release closure 必须依据更新后的 canonical exact contract 与独立验证，而不是依据 ID 名称中的历史数字。
+D1 已完成；当前 45-operation contract 仅是历史验证 baseline。D2 runtime 与 D3 frontend slice 已依据 UX001_D1_R1 落地并通过 canonical diff、Control DB/Alembic、cookie session/Settings、frontend codegen/lint/build 与 targeted gates；release closure 仍需真实 PostgreSQL、chaos、存量迁移与独立 evidence，不得以本地 SQLite 结果替代。
 
 ## 5. Agent 编排与独立复核
 

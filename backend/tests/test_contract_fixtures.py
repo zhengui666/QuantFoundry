@@ -42,22 +42,12 @@ def test_complete_setup_etag_corruption_fails_closed(etag: str | None) -> None:
     invalid_app.router.route_class = CanonicalRoute
     timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     response_body = {
-        "settings_id": "settings:test-workspace",
-        "revision": 1,
-        "language": "zh-CN",
-        "timezone": "Asia/Shanghai",
-        "base_currency": "CNY",
-        "number_format_locale": "zh-CN",
-        "ai_connection_id": "CONN-test",
-        "default_data_provider_id": None,
-        "default_benchmark": "CSI300",
-        "default_frequency": "DAILY",
-        "default_research_start": None,
-        "initial_paper_capital": "100000",
-        "research_policy_id": "RP-00000000-0000-4000-8000-000000000001",
-        "risk_policy_id": "RISK-00000000-0000-4000-8000-000000000002",
-        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-        "created_at": timestamp,
+        "active_revision": 1,
+        "last_known_good_revision": 1,
+        "catalog_version": "UX001_D1_CATALOG_R1",
+        "values": [],
+        "snapshot_sha256": "0" * 64,
+        "consumer_states": [],
         "updated_at": timestamp,
     }
 
@@ -69,17 +59,7 @@ def test_complete_setup_etag_corruption_fails_closed(etag: str | None) -> None:
     response = TestClient(invalid_app).post(
         "/api/v1/setup/complete",
         headers={"Idempotency-Key": "etag-corruption-proof"},
-        json={
-            key: value
-            for key, value in response_body.items()
-            if key
-            not in {
-                "settings_id",
-                "revision",
-                "created_at",
-                "updated_at",
-            }
-        },
+        json={"configuration_revision": 1},
     )
     assert response.status_code == 500
     assert response.json()["code"] == "INTERNAL_ERROR"
@@ -106,7 +86,7 @@ def test_request_models_enforce_required_enum_pattern_and_additional_properties(
             },
         ),
         (
-            "/api/v1/data/datasets/DSSET-valid/validate",
+            "/api/v1/data/datasets/DSSET-valid/validate",  # reject_fixture: noncanonical
             auth | {"Idempotency-Key": "test-api-key-unavailable"},
             {"check_profile": "NOT_CANONICAL"},
         ),

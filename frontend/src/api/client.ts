@@ -2,6 +2,22 @@ import type { components, operations } from './generated';
 import { operationMap, type CanonicalOperationId } from './generated/operation-map';
 import {
   ApiProblemSchema,
+  ConfigurationCandidateRequestSchema,
+  ConfigurationCatalogSchema,
+  ConfigurationActiveSchema,
+  ConfigurationCandidateSchema,
+  ConfigurationValidationResultSchema,
+  DatabaseConnectionCandidateRequestSchema,
+  DatabaseConnectionCandidateSchema,
+  DatabaseConnectionValidationResultSchema,
+  DatabaseConnectionStatusSchema,
+  GeneralAccessKeyCreateRequestSchema,
+  GeneralAccessKeyIssuedSchema,
+  GeneralAccessKeyListSchema,
+  GeneralAccessKeyLoginRequestSchema,
+  GeneralAccessKeyMetadataSchema,
+  OwnerSessionViewSchema,
+  SessionBootstrapResponseSchema,
   AgentConfigListSchema,
   AgentConfigSchema,
   AgentConfigUpdateSchema,
@@ -32,7 +48,6 @@ import {
   ResearchDetailSchema,
   ResearchPageSchema,
   ResearchStartRequestSchema,
-  SettingsDetailSchema,
   SetupCapabilityCatalogSchema,
   SetupCompleteRequestSchema,
   SetupProviderConnectionValidationRequestSchema,
@@ -76,7 +91,7 @@ export function isPublicId<T extends PublicIdType>(type: T, value: string): bool
 }
 
 const eventCursorPrefix = 'qf.sse.cursor:';
-const nextOpaqueScope = (): string => `workspace:${crypto.randomUUID()}`;
+const nextOpaqueScope = (): string => `owner:${crypto.randomUUID()}`;
 // The API module is also imported by Playwright's Node-side test discovery. Cursor
 // persistence is browser-only and must never make that import depend on DOM globals.
 const eventCursorStorage = (): Storage | undefined => {
@@ -102,18 +117,20 @@ const clearStaleEventCursors = (): void => {
 // A browser reload creates a fresh, non-reusable memory epoch. Persisted cursors from the
 // preceding authorization/workspace epoch must never cross that boundary.
 clearStaleEventCursors();
-let bearer = '';
+let sessionMarker = '';
+let csrfToken = '';
 let authScopeKey = nextOpaqueScope();
 const tokenListeners = new Set<() => void>();
 export const auth = {
   get() {
-    return bearer;
+    return sessionMarker;
   },
-  set(token: string) {
-    if (!token && !bearer) return;
+  set(token = 'session') {
+    if (!token && !sessionMarker) return;
     const previousScope = authScopeKey;
     clearEventCursor(previousScope);
-    bearer = token;
+    sessionMarker = token ? 'session' : '';
+    if (!token) csrfToken = '';
     authScopeKey = nextOpaqueScope();
     tokenListeners.forEach((listener) => listener());
   },
@@ -128,6 +145,13 @@ export const auth = {
   },
   scope() {
     return authScopeKey;
+  },
+  csrf() {
+    return csrfToken;
+  },
+  establish(session: Schema<'OwnerSessionView'>) {
+    csrfToken = session.csrf_token;
+    auth.set();
   },
 };
 
@@ -168,7 +192,12 @@ function headersFor(operationId: CanonicalOperationId, init: RequestInit) {
       throw new ContractError(`${header} is not defined by canonical operation ${operationId}.`);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   if (init.body) headers.set('Content-Type', 'application/json');
-  if (operation.authenticated && bearer) headers.set('Authorization', `Bearer ${bearer}`);
+  if (
+    operation.authenticated &&
+    !['GET', 'HEAD', 'OPTIONS'].includes(operation.method) &&
+    csrfToken
+  )
+    headers.set('X-CSRF-Token', csrfToken);
   return headers;
 }
 
@@ -208,10 +237,11 @@ async function request<T>(
     ...init,
     method: operationMap[operationId].method,
     headers: headersFor(operationId, init),
+    credentials: 'include',
   });
   if (!response.ok) return throwProblem(response);
   return {
-    body: (await response.json()) as T,
+    body: (response.status === 204 ? undefined : await response.json()) as T,
     status: response.status,
     etag: response.headers.get('ETag'),
     contentLocation: response.headers.get('Content-Location'),
@@ -228,6 +258,7 @@ async function requestText(
   const response = await fetch(pathFor(operationId, pathParams), {
     method: operationMap[operationId].method,
     headers: headersFor(operationId, init),
+    credentials: 'include',
     signal: signal ?? null,
   });
   if (!response.ok) return throwProblem(response);
@@ -347,6 +378,183 @@ function validateStrategyDetail(
 }
 
 export const api = {
+  login: async (key: string) => {
+    const body = validateInput<Schema<'GeneralAccessKeyLoginRequest'>>(
+      { key },
+      GeneralAccessKeyLoginRequestSchema,
+      'GeneralAccessKeyLogin',
+    );
+    const result = validateResult<Schema<'SessionBootstrapResponse'>>(
+      await request<unknown>('loginWithGeneralAccessKey', { body: JSON.stringify(body) }),
+      SessionBootstrapResponseSchema,
+      'SessionBootstrapResponse',
+    );
+    auth.establish(result.body.session);
+    return result;
+  },
+  session: async (signal?: AbortSignal) => {
+    const result = validateResult<Schema<'OwnerSessionView'>>(
+      await request<unknown>('getCurrentOwnerSession', { signal: signal ?? null }),
+      OwnerSessionViewSchema,
+      'OwnerSessionView',
+    );
+    auth.establish(result.body);
+    return result;
+  },
+  logout: async () => {
+    const result = await request<undefined>('logoutOwnerSession');
+    auth.clear();
+    return result;
+  },
+  accessKeys: async (signal?: AbortSignal) =>
+    validateResult<Schema<'GeneralAccessKeyList'>>(
+      await request<unknown>('listGeneralAccessKeys', { signal: signal ?? null }),
+      GeneralAccessKeyListSchema,
+      'GeneralAccessKeyList',
+    ),
+  createAccessKey: async (body: Schema<'GeneralAccessKeyCreateRequest'>) => {
+    const canonicalBody = validateInput<Schema<'GeneralAccessKeyCreateRequest'>>(
+      body,
+      GeneralAccessKeyCreateRequestSchema,
+      'GeneralAccessKeyCreate',
+    );
+    return validateResult<Schema<'GeneralAccessKeyIssued'>>(
+      await request<unknown>('createGeneralAccessKey', {
+        headers: { 'Idempotency-Key': idempotency() },
+        body: JSON.stringify(canonicalBody),
+      }),
+      GeneralAccessKeyIssuedSchema,
+      'GeneralAccessKeyIssued',
+    );
+  },
+  renameAccessKey: async (keyId: string, label: string, etag: string) => {
+    const canonicalBody = validateInput<Schema<'GeneralAccessKeyCreateRequest'>>(
+      { label, expires_at: null },
+      GeneralAccessKeyCreateRequestSchema,
+      'GeneralAccessKeyRename',
+    );
+    return validateResult<Schema<'GeneralAccessKeyMetadata'>>(
+      await request<unknown>(
+        'renameGeneralAccessKey',
+        {
+          headers: { 'If-Match': etag },
+          body: JSON.stringify({ label: canonicalBody.label }),
+        },
+        { key_id: keyId },
+      ),
+      GeneralAccessKeyMetadataSchema,
+      'GeneralAccessKeyMetadata',
+    );
+  },
+  rotateAccessKey: async (keyId: string, etag: string) =>
+    validateResult<Schema<'GeneralAccessKeyIssued'>>(
+      await request<unknown>(
+        'rotateGeneralAccessKey',
+        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() } },
+        { key_id: keyId },
+      ),
+      GeneralAccessKeyIssuedSchema,
+      'GeneralAccessKeyIssued',
+    ),
+  revokeAccessKey: async (keyId: string, etag: string) =>
+    request<undefined>(
+      'revokeGeneralAccessKey',
+      { headers: { 'If-Match': etag } },
+      { key_id: keyId },
+    ),
+  expireAccessKey: async (keyId: string, etag: string) =>
+    request<undefined>(
+      'expireGeneralAccessKey',
+      { headers: { 'If-Match': etag } },
+      { key_id: keyId },
+    ),
+  configurationCatalog: async (signal?: AbortSignal) =>
+    validateResult<Schema<'ConfigurationCatalog'>>(
+      await request<unknown>('getConfigurationCatalog', { signal: signal ?? null }),
+      ConfigurationCatalogSchema,
+      'ConfigurationCatalog',
+    ),
+  configurationActive: async (signal?: AbortSignal) =>
+    validateResult<Schema<'ConfigurationActive'>>(
+      await request<unknown>('getActiveConfiguration', { signal: signal ?? null }),
+      ConfigurationActiveSchema,
+      'ConfigurationActive',
+    ),
+  putConfigurationCandidate: async (
+    body: Schema<'ConfigurationCandidateRequest'>,
+    etag: string,
+  ) => {
+    const canonicalBody = validateInput(
+      body,
+      ConfigurationCandidateRequestSchema,
+      'ConfigurationCandidate',
+    );
+    return validateResult<Schema<'ConfigurationCandidate'>>(
+      await request<unknown>('putConfigurationCandidate', {
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        body: JSON.stringify(canonicalBody),
+      }),
+      ConfigurationCandidateSchema,
+      'ConfigurationCandidate',
+    );
+  },
+  validateConfigurationCandidate: async () =>
+    validateResult<Schema<'ConfigurationValidationResult'>>(
+      await request<unknown>('validateConfigurationCandidate', {
+        headers: { 'Idempotency-Key': idempotency() },
+      }),
+      ConfigurationValidationResultSchema,
+      'ConfigurationValidationResult',
+    ),
+  activateConfiguration: async (revision: number, etag: string) =>
+    validateResult<Schema<'ConfigurationActive'>>(
+      await request<unknown>('activateConfiguration', {
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        body: JSON.stringify({ revision }),
+      }),
+      ConfigurationActiveSchema,
+      'ConfigurationActive',
+    ),
+  databaseConnection: async (signal?: AbortSignal) =>
+    validateResult<Schema<'DatabaseConnectionStatus'>>(
+      await request<unknown>('getDomainDatabaseConnection', { signal: signal ?? null }),
+      DatabaseConnectionStatusSchema,
+      'DatabaseConnectionStatus',
+    ),
+  putDatabaseConnectionCandidate: async (
+    body: Schema<'DatabaseConnectionCandidateRequest'>,
+    etag: string,
+  ) => {
+    const canonicalBody = validateInput(
+      body,
+      DatabaseConnectionCandidateRequestSchema,
+      'DatabaseConnectionCandidate',
+    );
+    return validateResult<Schema<'DatabaseConnectionCandidate'>>(
+      await request<unknown>('putDomainDatabaseConnectionCandidate', {
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        body: JSON.stringify(canonicalBody),
+      }),
+      DatabaseConnectionCandidateSchema,
+      'DatabaseConnectionCandidate',
+    );
+  },
+  validateDatabaseConnectionCandidate: async () =>
+    validateResult<Schema<'DatabaseConnectionValidationResult'>>(
+      await request<unknown>('validateDomainDatabaseConnectionCandidate', {
+        headers: { 'Idempotency-Key': idempotency() },
+      }),
+      DatabaseConnectionValidationResultSchema,
+      'DatabaseConnectionValidationResult',
+    ),
+  activateDatabaseConnection: async (etag: string) =>
+    validateResult<Schema<'DatabaseConnectionStatus'>>(
+      await request<unknown>('activateDomainDatabaseConnection', {
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+      }),
+      DatabaseConnectionStatusSchema,
+      'DatabaseConnectionStatus',
+    ),
   setupStatus: async (signal?: AbortSignal) =>
     validateResult<Schema<'SetupStatus'>>(
       await request<unknown>('getSetupStatus', { signal: signal ?? null }),
@@ -374,34 +582,24 @@ export const api = {
       'SetupProviderConnectionValidationResult',
     );
   },
-  completeSetup: async (body: Schema<'SetupCompleteRequest'>, idempotencyKey = idempotency()) => {
+  completeSetup: async (
+    body: Schema<'SetupCompleteRequest'> | Record<string, unknown>,
+    etag: string,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'SetupCompleteRequest'>>(
       body,
       SetupCompleteRequestSchema,
       'SetupComplete',
     );
-    const result = await request<unknown>('completeSetup', {
-      headers: { 'Idempotency-Key': idempotencyKey },
-      body: JSON.stringify(canonicalBody),
-    });
-    if (result.status !== 200) throw new ContractError('Setup completion must return HTTP 200.');
-    const parsed = SettingsDetailSchema.safeParse(result.body);
-    if (!parsed.success)
-      throw new ContractError('Setup completion returned an invalid SettingsDetail contract.');
-    const settings = parsed.data as Schema<'SettingsDetail'>;
-    const expectedEtag = `W/"${settings.settings_id}:${settings.revision}"`;
-    if (!result.etag || !/^W\/"[^"]+:[1-9][0-9]*"$/.test(result.etag))
-      throw new ContractError('Setup completion returned a missing or malformed ETag.');
-    if (result.etag !== expectedEtag)
-      throw new ContractError('Setup completion ETag does not match the SettingsDetail identity.');
-    if (
-      settings.ai_connection_id !== canonicalBody.ai_connection_id ||
-      settings.research_policy_id !== canonicalBody.research_policy_id ||
-      settings.risk_policy_id !== canonicalBody.risk_policy_id ||
-      settings.cost_model_id !== canonicalBody.cost_model_id
-    )
-      throw new ContractError('Setup completion bindings do not match the submitted server refs.');
-    return { ...result, body: settings };
+    return validateResult<Schema<'ConfigurationActive'>>(
+      await request<unknown>('completeSetup', {
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(canonicalBody),
+      }),
+      ConfigurationActiveSchema,
+      'ConfigurationActive',
+    );
   },
   overview: async (signal?: AbortSignal) =>
     validateResult<Schema<'OverviewReadModel'>>(
@@ -947,6 +1145,10 @@ export const EVENT_QUERY_RULES = {
   'memo.created': (event) => plan([workspaceQueryKey('memo', event.object_id), overview()]),
   'memo.updated': (event) => plan([workspaceQueryKey('memo', event.object_id), overview()]),
   'setup.completed': () => plan([workspaceQueryKey('setup-status'), overview()]),
+  'configuration.updated': () => plan([workspaceQueryKey('settings'), overview()]),
+  'configuration.apply_failed': () => plan([workspaceQueryKey('settings')]),
+  'database.connection.updated': () => plan([workspaceQueryKey('settings')]),
+  'database.connection.failed': () => plan([workspaceQueryKey('settings')]),
   'notification.created': () => plan([overview()]),
   'notification.updated': () => plan([overview()]),
   'system.health.updated': () => plan([workspaceQueryKey('system-health'), overview()]),
@@ -992,6 +1194,7 @@ const MUTABLE_QUERY_ROOTS = new Set([
   'system-health',
   'agents',
   'agent',
+  'settings',
 ]);
 export const isMutableEventQueryKey = (queryKey: readonly unknown[]): boolean => {
   if (queryKey[0] !== auth.scope() || !MUTABLE_QUERY_ROOTS.has(String(queryKey[1]))) return false;
@@ -1084,6 +1287,7 @@ export function streamEvents(
         const response = await fetch(pathFor('streamEvents'), {
           method: operationMap.streamEvents.method,
           headers: headersFor('streamEvents', { headers }),
+          credentials: 'include',
           signal: controller.signal,
         });
         if (!response.ok) {

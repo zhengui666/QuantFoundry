@@ -1,10 +1,10 @@
 {
-  "column_count": 953,
-  "domain_column_count": 875,
+  "column_count": 967,
+  "domain_column_count": 889,
   "domain_table_count": 50,
   "manifest_version": 1,
   "source_path": "docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md",
-  "source_section_sha256": "da4bff5fbee78ffd65f6157cbb3b71f78a8fa55ba9dd5e61599185360704095e",
+  "source_section_sha256": "0600b72aea50e17ccdf483319c97204f17648e95b2df70fefbae00403527905f",
   "support_column_count": 78,
   "support_table_count": 13,
   "support_tables": [
@@ -5601,6 +5601,94 @@
           "semantics": "Model"
         },
         {
+          "constraints": "",
+          "default": "CODEX-DEFAULT",
+          "name": "ai_connection_id",
+          "nullable": false,
+          "postgres_type": "varchar",
+          "semantics": "Installation-level Remote Codex connection identity"
+        },
+        {
+          "constraints": "",
+          "default": "1",
+          "name": "ai_connection_revision",
+          "nullable": false,
+          "postgres_type": "bigint",
+          "semantics": "Captured connection revision"
+        },
+        {
+          "constraints": "",
+          "default": "1",
+          "name": "effective_configuration_revision",
+          "nullable": false,
+          "postgres_type": "bigint",
+          "semantics": "Effective installation configuration snapshot"
+        },
+        {
+          "constraints": "CHECK lowercase hex SHA-256",
+          "default": "zero hash",
+          "name": "effective_configuration_sha256",
+          "nullable": false,
+          "postgres_type": "varchar(64)",
+          "semantics": "Effective configuration snapshot hash"
+        },
+        {
+          "constraints": "",
+          "default": "1",
+          "name": "agent_configuration_revision",
+          "nullable": false,
+          "postgres_type": "bigint",
+          "semantics": "Captured role projection revision"
+        },
+        {
+          "constraints": "",
+          "default": "DEFAULT",
+          "name": "runtime_profile",
+          "nullable": false,
+          "postgres_type": "varchar",
+          "semantics": "Resolved runtime profile"
+        },
+        {
+          "constraints": "",
+          "default": "30",
+          "name": "tool_timeout_seconds",
+          "nullable": false,
+          "postgres_type": "integer",
+          "semantics": "Captured tool timeout"
+        },
+        {
+          "constraints": "",
+          "default": "25",
+          "name": "max_steps",
+          "nullable": false,
+          "postgres_type": "integer",
+          "semantics": "Captured run step cap"
+        },
+        {
+          "constraints": "",
+          "default": "50",
+          "name": "max_tool_calls",
+          "nullable": false,
+          "postgres_type": "integer",
+          "semantics": "Captured tool-call cap"
+        },
+        {
+          "constraints": "CHECK lowercase hex SHA-256",
+          "default": "zero hash",
+          "name": "prompt_manifest_sha256",
+          "nullable": false,
+          "postgres_type": "varchar(64)",
+          "semantics": "Prompt manifest binding"
+        },
+        {
+          "constraints": "CHECK lowercase hex SHA-256",
+          "default": "zero hash",
+          "name": "tool_registry_sha256",
+          "nullable": false,
+          "postgres_type": "varchar(64)",
+          "semantics": "Canonical tool registry binding"
+        },
+        {
           "constraints": "FK research_cases(id), INDEX",
           "default": "NULL",
           "name": "research_id",
@@ -6061,6 +6149,30 @@
           "nullable": true,
           "postgres_type": "text",
           "semantics": "小型 provenance locator；不复制原始输出"
+        },
+        {
+          "constraints": "",
+          "default": "1",
+          "name": "effective_configuration_revision",
+          "nullable": false,
+          "postgres_type": "bigint",
+          "semantics": "Captured installation configuration snapshot"
+        },
+        {
+          "constraints": "CHECK lowercase hex SHA-256",
+          "default": "zero hash",
+          "name": "configuration_sha256",
+          "nullable": false,
+          "postgres_type": "varchar(64)",
+          "semantics": "Captured configuration hash"
+        },
+        {
+          "constraints": "CHECK lowercase hex SHA-256",
+          "default": "zero hash",
+          "name": "tool_registry_sha256",
+          "nullable": false,
+          "postgres_type": "varchar(64)",
+          "semantics": "Canonical tool registry binding"
         }
       ],
       "name": "tool_calls",

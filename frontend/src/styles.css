@@ -13,7 +13,6 @@
 body {
   margin: 0;
 }
-.unsupported-width,
 .nav-short {
   display: none;
 }
@@ -199,6 +198,13 @@ label {
 table {
   width: 100%;
   border-collapse: collapse;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.lede {
+  color: var(--qf-color-text-secondary);
+  max-width: 72ch;
 }
 th,
 td {
@@ -436,12 +442,34 @@ code {
 
 @media (max-width: 1179px) {
   .app {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .sidebar {
+    padding-inline: 8px;
+  }
+  .sidebar .nav-label {
     display: none;
   }
-  .unsupported-width {
-    display: block;
-    max-width: 680px;
-    margin: 72px auto;
-    padding: 32px;
+  .sidebar .nav-short {
+    display: inline;
+  }
+  .sidebar a {
+    text-align: center;
+    padding-inline: 4px;
+  }
+  main {
+    padding-inline: 16px;
+  }
+  .topbar {
+    flex-wrap: wrap;
+  }
+  .auth-form {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: end;
+  }
+  .auth-form label {
+    flex: 1;
   }
 }

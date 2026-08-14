@@ -20,12 +20,12 @@ def _event_type_values() -> tuple[str, ...]:
 
 
 EVENT_TYPES = _event_type_values()
-if len(EVENT_TYPES) != 31 or len(set(EVENT_TYPES)) != 31:
-    raise RuntimeError("generated EventType must contain exactly 31 unique members")
+if len(EVENT_TYPES) != 35 or len(set(EVENT_TYPES)) != 35:
+    raise RuntimeError("generated EventType must contain exactly 35 unique members")
 
 
 def _event_object_types() -> dict[str, str]:
-    """Derive the 31 event-to-locator branches from the generated model."""
+    """Derive the 35 event-to-locator branches from the generated model."""
 
     result: dict[str, str] = {}
     schema = SseEnvelope.model_json_schema(mode="validation")

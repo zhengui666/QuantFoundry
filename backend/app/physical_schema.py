@@ -223,11 +223,11 @@ def load_physical_metadata(
                         raise ValueError(
                             f"unsupported index direction {direction!r} on {index['name']}"
                         )
-                    if nulls == "FIRST":
+                    if include_sqlite_partial_indexes and nulls == "FIRST":
                         expression = expression.nulls_first()
-                    elif nulls == "LAST":
+                    elif include_sqlite_partial_indexes and nulls == "LAST":
                         expression = expression.nulls_last()
-                    elif nulls is not None:
+                    elif nulls is not None and include_sqlite_partial_indexes:
                         raise ValueError(
                             f"unsupported index NULLS direction {nulls!r} on {index['name']}"
                         )

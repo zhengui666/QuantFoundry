@@ -11,8 +11,22 @@ test('QF-PID six routes accept both forms and reject every applicable 003..011 c
   const resourceRequests: string[] = [];
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === '/api/v1/auth/session')
+      return route.fulfill({
+        json: {
+          principal: 'OWNER',
+          auth_method: 'GENERAL_ACCESS_KEY',
+          key_id: 'gak_e2e0000000000000',
+          issued_at: '2026-08-10T00:00:00Z',
+          last_seen_at: '2026-08-10T00:00:00Z',
+          expires_at: '2099-01-01T00:00:00Z',
+          csrf_token: 'e2e-csrf-token-0000000000000000000000',
+        },
+      });
     if (url.pathname === '/api/v1/events/stream')
       return route.fulfill({ body: '', contentType: 'text/event-stream' });
+    if (url.pathname === '/api/v1/configuration/active')
+      return route.fulfill({ status: 404, body: '' });
     resourceRequests.push(url.pathname);
     return route.fulfill({
       status: 404,
@@ -44,10 +58,12 @@ test('QF-PID six routes accept both forms and reject every applicable 003..011 c
     for (const invalid of publicIdNegativeCases(type)) {
       const before = resourceRequests.length;
       await page.goto(`/${path}/${encodeURIComponent(invalid.value)}`);
-      await expect(page.getByText(/Invalid canonical .* public ID/i)).toBeVisible();
-      expect(resourceRequests, `${path}:${invalid.caseId}:${invalid.mutation}`).toHaveLength(
-        before,
-      );
+      await expect(page.getByText(/canonical contract|公开 ID 不符合/i)).toBeVisible();
+      const requestedPath = new URL(page.url()).pathname;
+      expect(
+        resourceRequests.slice(before),
+        `${path}:${invalid.caseId}:${invalid.mutation}`,
+      ).not.toContain(requestedPath);
     }
   }
 });

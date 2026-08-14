@@ -11,6 +11,8 @@ database_url = os.getenv("QF_ALEMBIC_URL") or os.getenv("QF_DATABASE_URL")
 if not database_url:
     raise RuntimeError("QF_ALEMBIC_URL or QF_DATABASE_URL is required")
 os.environ.setdefault("QF_DATABASE_URL", database_url)
+_previous_alembic_running = os.environ.get("QF_ALEMBIC_RUNNING")
+os.environ["QF_ALEMBIC_RUNNING"] = "1"
 
 from app.main import Base  # noqa: E402
 
@@ -66,7 +68,13 @@ def run_migrations_online():
                 raise RuntimeError("SQLite migration failed to restore foreign keys")
 
 
-if context.is_offline_mode():
-    run_migrations_offline()
-else:
-    run_migrations_online()
+try:
+    if context.is_offline_mode():
+        run_migrations_offline()
+    else:
+        run_migrations_online()
+finally:
+    if _previous_alembic_running is None:
+        os.environ.pop("QF_ALEMBIC_RUNNING", None)
+    else:
+        os.environ["QF_ALEMBIC_RUNNING"] = _previous_alembic_running

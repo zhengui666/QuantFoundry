@@ -21,6 +21,330 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange one general access key for an Owner session */
+        post: operations["loginWithGeneralAccessKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current Owner session and CSRF token */
+        get: operations["getCurrentOwnerSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke the current Owner session */
+        post: operations["logoutOwnerSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/access-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List masked general access key metadata */
+        get: operations["listGeneralAccessKeys"];
+        put?: never;
+        /** Create a general access key and reveal its secret once */
+        post: operations["createGeneralAccessKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/access-keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename a general access key */
+        patch: operations["renameGeneralAccessKey"];
+        trace?: never;
+    };
+    "/auth/access-keys/{key_id}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate a general access key and reveal the replacement once */
+        post: operations["rotateGeneralAccessKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/access-keys/{key_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a general access key and its derived sessions */
+        post: operations["revokeGeneralAccessKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/access-keys/{key_id}/expire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Expire a general access key and its derived sessions */
+        post: operations["expireGeneralAccessKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/configuration/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the closed installation configuration catalog */
+        get: operations["getConfigurationCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/configuration/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the active configuration revision and masked values */
+        get: operations["getActiveConfiguration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/configuration/candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace the immutable candidate configuration change-set */
+        put: operations["putConfigurationCandidate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/configuration/candidate/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate the candidate configuration as one closed change-set */
+        post: operations["validateConfigurationCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/configuration/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate a validated configuration revision */
+        post: operations["activateConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/configuration/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a new revision from a prior valid snapshot */
+        post: operations["rollbackConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Domain PostgreSQL connection state without secrets */
+        get: operations["getDomainDatabaseConnection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/connection/candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stage a Domain PostgreSQL connection candidate */
+        put: operations["putDomainDatabaseConnectionCandidate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/connection/candidate/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate the staged Domain PostgreSQL connection */
+        post: operations["validateDomainDatabaseConnectionCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/connection/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate the validated Domain PostgreSQL connection */
+        post: operations["activateDomainDatabaseConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/connection/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revert to the verified last-known-good Domain PostgreSQL connection */
+        post: operations["revertDomainDatabaseConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup/status": {
         parameters: {
             query?: never;
@@ -47,7 +371,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Complete required owner setup with the R2 required AI connection reference */
+        /** Complete the installation-only setup transition using the shared configuration revision */
         post: operations["completeSetup"];
         delete?: never;
         options?: never;
@@ -741,6 +1065,220 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        GeneralAccessKeyLoginRequest: {
+            /** @description Raw general access key accepted only by this public exchange. It is never persisted or echoed. */
+            key: string;
+        };
+        GeneralAccessKeyMetadata: {
+            key_id: string;
+            label: string;
+            masked_hint: string;
+            /** @enum {unknown} */
+            status: "ACTIVE" | "REVOKED" | "EXPIRED";
+            /** Format: date-time */
+            expires_at: string | null;
+            /** Format: date-time */
+            last_used_at: string | null;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        GeneralAccessKeyList: {
+            items: components["schemas"]["GeneralAccessKeyMetadata"][];
+        };
+        GeneralAccessKeyCreateRequest: {
+            label: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+        };
+        GeneralAccessKeyRenameRequest: {
+            label: string;
+        };
+        GeneralAccessKeyIssued: {
+            key: components["schemas"]["GeneralAccessKeyMetadata"];
+            /** @description Raw secret displayed exactly once in the successful create/rotate response; it MUST NOT be logged, persisted, audited, or stored by the browser. */
+            secret: string;
+        };
+        OwnerSessionView: {
+            /** @constant */
+            principal: "OWNER";
+            /** @constant */
+            auth_method: "GENERAL_ACCESS_KEY";
+            key_id: string;
+            /** Format: date-time */
+            issued_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** @description Per-session CSRF token; never a bearer credential. */
+            csrf_token: string;
+        };
+        SessionBootstrapResponse: {
+            session: components["schemas"]["OwnerSessionView"];
+        };
+        ConfigurationCatalog: {
+            catalog_version: string;
+            entries: components["schemas"]["ConfigurationCatalogEntry"][];
+        };
+        ConfigurationCatalogEntry: {
+            key: string;
+            group: string;
+            schema_version: number;
+            /** @constant */
+            scope: "INSTALLATION";
+            /** @enum {unknown} */
+            sensitivity: "PUBLIC" | "MASKED" | "SECRET";
+            /** @enum {unknown} */
+            apply_mode: "LIVE_NEW_WORK" | "DRAIN_RELOAD" | "RESTART_REQUIRED" | "SECURITY_IMMEDIATE";
+            consumers: string[];
+            dependencies: string[];
+            /** @description Closed JSON Schema for this key; it is immutable catalog data */
+            schema: Record<string, never>;
+            validator: string;
+            safe_range?: Record<string, never> | null;
+        };
+        ConfigurationValueWrite: {
+            key: string;
+            value?: string | number | boolean | Record<string, never> | unknown[] | null;
+            secret?: string;
+        } & (unknown | unknown);
+        ConfigurationValueView: {
+            key: string;
+            /** @enum {unknown} */
+            sensitivity: "PUBLIC" | "MASKED" | "SECRET";
+            configured: boolean;
+            value: string | number | boolean | Record<string, never> | unknown[] | null;
+            masked_hint: string | null;
+        };
+        ConfigurationCandidateRequest: {
+            /** Format: int64 */
+            base_revision: number;
+            values: components["schemas"]["ConfigurationValueWrite"][];
+        };
+        ConfigurationCandidate: {
+            /** Format: int64 */
+            revision: number;
+            /** @enum {unknown} */
+            state: "CANDIDATE" | "VALIDATED" | "APPLYING" | "FAILED" | "ACTIVE" | "SUPERSEDED";
+            /** Format: int64 */
+            base_revision: number;
+            catalog_version: string;
+            values: components["schemas"]["ConfigurationValueView"][];
+            snapshot_sha256: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ConfigurationConsumerState: {
+            consumer: string;
+            /** Format: int64 */
+            desired_revision: number;
+            /** Format: int64 */
+            applied_revision: number | null;
+            /** @enum {unknown} */
+            ack: "PENDING" | "ACKED" | "FAILED";
+            error_code: components["schemas"]["CanonicalErrorCode"] | null;
+            /** Format: date-time */
+            heartbeat_at: string;
+        };
+        ConfigurationActive: {
+            /** Format: int64 */
+            active_revision: number;
+            /** Format: int64 */
+            last_known_good_revision: number;
+            catalog_version: string;
+            values: components["schemas"]["ConfigurationValueView"][];
+            snapshot_sha256: string;
+            consumer_states: components["schemas"]["ConfigurationConsumerState"][];
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ConfigurationValidationResult: {
+            /** Format: int64 */
+            revision: number;
+            /** @enum {unknown} */
+            status: "VALID" | "INVALID";
+            errors: components["schemas"]["FieldError"][];
+            warnings: components["schemas"]["FieldError"][];
+            /** Format: date-time */
+            validated_at: string;
+        };
+        ConfigurationActivateRequest: {
+            /** Format: int64 */
+            revision: number;
+        };
+        ConfigurationRollbackRequest: {
+            /** Format: int64 */
+            source_revision: number;
+        };
+        DatabaseConnectionCandidate: {
+            /** Format: int64 */
+            revision: number;
+            /** @enum {unknown} */
+            state: "CANDIDATE" | "VALIDATED" | "ACTIVE" | "FAILED" | "SUPERSEDED";
+            /** Format: int64 */
+            base_revision: number;
+            host: string;
+            port: number;
+            database: string;
+            /** @enum {unknown} */
+            tls_mode: "DISABLED" | "VERIFY_CA" | "VERIFY_FULL";
+            username_masked: string;
+            password_configured: boolean;
+            client_key_configured: boolean;
+            pool_profile?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        DatabaseConnectionCandidateRequest: {
+            /** Format: int64 */
+            base_revision: number;
+            connection: {
+                host: string;
+                port: number;
+                database: string;
+                /** @enum {unknown} */
+                tls_mode: "DISABLED" | "VERIFY_CA" | "VERIFY_FULL";
+                username: string;
+                password?: string;
+                client_key_pem?: string;
+                ca_certificate_pem?: string;
+                pool_profile?: string | null;
+            };
+        };
+        DatabaseConnectionStatus: {
+            /** @enum {unknown} */
+            state: "BOOTSTRAP_LOCKED" | "DATABASE_DISCONNECTED" | "VALIDATING" | "APPLYING" | "READY" | "DEGRADED";
+            /** Format: int64 */
+            active_revision: number | null;
+            /** Format: int64 */
+            candidate_revision: number | null;
+            /** Format: int64 */
+            last_known_good_revision: number | null;
+            active: components["schemas"]["DatabaseConnectionCandidate"] | null;
+            candidate: components["schemas"]["DatabaseConnectionCandidate"] | null;
+            /** @enum {unknown} */
+            domain_operations: "AVAILABLE" | "READ_ONLY_RECOVERY" | "UNAVAILABLE";
+            /** Format: date-time */
+            checked_at: string;
+        };
+        DatabaseConnectionCheck: {
+            /** @enum {unknown} */
+            name: "NETWORK" | "TLS" | "CREDENTIAL" | "POSTGRES_VERSION" | "PRIVILEGE" | "SCHEMA" | "MIGRATION_COMPATIBILITY";
+            /** @enum {unknown} */
+            status: "PASS" | "FAIL" | "SKIPPED";
+            detail: string;
+        };
+        DatabaseConnectionValidationResult: {
+            /** Format: int64 */
+            revision: number;
+            /** @enum {unknown} */
+            status: "VALID" | "INVALID";
+            checks: components["schemas"]["DatabaseConnectionCheck"][];
+            /** Format: date-time */
+            validated_at: string;
+        };
         SystemHealth: {
             /** @enum {unknown} */
             status: "HEALTHY" | "DEGRADED" | "UNAVAILABLE";
@@ -756,7 +1294,7 @@ export interface components {
             checked_at: string;
         };
         /** @enum {string} */
-        CanonicalErrorCode: "INVALID_REQUEST" | "RESOURCE_NOT_FOUND" | "PRECONDITION_REQUIRED" | "REVISION_MISMATCH" | "IDEMPOTENCY_CONFLICT" | "IDEMPOTENCY_IN_PROGRESS" | "RESOURCE_CONFLICT" | "SERVICE_DEGRADED" | "INTERNAL_ERROR" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "HUMAN_APPROVAL_REQUIRED" | "RESEARCH_NOT_MUTABLE" | "RESEARCH_WAITING_USER" | "EXPERIMENT_IMMUTABLE" | "EXPERIMENT_INVALID" | "NON_REPRODUCIBLE" | "MULTIPLE_TESTING_LIMIT_REACHED" | "STRATEGY_VERSION_FROZEN" | "STRATEGY_VERSION_MISMATCH" | "STRATEGY_NOT_FROZEN" | "STRATEGY_NOT_VALIDATED" | "VALIDATION_IN_PROGRESS" | "VALIDATION_FAILED" | "VALIDATION_PREREQUISITES_INCOMPLETE" | "VALIDATION_TEST_BLOCKED" | "HOLDOUT_LOCKED" | "HOLDOUT_APPROVAL_REQUIRED" | "HOLDOUT_PREREQUISITES_INCOMPLETE" | "HOLDOUT_ALREADY_EXPOSED" | "HOLDOUT_RESULT_FORBIDDEN" | "APPROVAL_STALE" | "APPROVAL_ALREADY_RESOLVED" | "APPROVAL_PREREQUISITES_CHANGED" | "APPROVAL_TYPE_MISMATCH" | "DATA_CAPABILITY_MISSING" | "DATA_QUALITY_BLOCKED" | "DATA_SNAPSHOT_MISSING" | "PIT_GUARANTEE_UNAVAILABLE" | "STALE_DATA" | "PROVIDER_UNAVAILABLE" | "JOB_CONFLICT" | "JOB_NOT_CANCELLABLE" | "JOB_LEASE_LOST" | "JOB_FAILED" | "PAPER_APPROVAL_REQUIRED" | "PAPER_RISK_BLOCKED" | "PAPER_DATA_BLOCKED" | "PAPER_DUPLICATE_RUN" | "PAPER_VERSION_MISMATCH" | "RISK_LIMIT_EXCEEDED" | "AGENT_DISABLED" | "AGENT_TOOL_FORBIDDEN" | "AGENT_BUDGET_EXCEEDED" | "AGENT_OUTPUT_INVALID" | "AGENT_MODEL_UNAVAILABLE" | "AGENT_RESUME_CONFLICT" | "AGENT_CONTEXT_STALE" | "AGENT_RETRY_EXHAUSTED" | "TOOL_INPUT_INVALID" | "TOOL_EXECUTION_FAILED" | "CREDENTIAL_INVALID" | "CREDENTIAL_NOT_CONFIGURED" | "CONNECTION_VALIDATION_EXPIRED" | "CONNECTION_KIND_MISMATCH";
+        CanonicalErrorCode: "INVALID_REQUEST" | "RESOURCE_NOT_FOUND" | "PRECONDITION_REQUIRED" | "REVISION_MISMATCH" | "IDEMPOTENCY_CONFLICT" | "IDEMPOTENCY_IN_PROGRESS" | "RESOURCE_CONFLICT" | "SERVICE_DEGRADED" | "INTERNAL_ERROR" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "HUMAN_APPROVAL_REQUIRED" | "RESEARCH_NOT_MUTABLE" | "RESEARCH_WAITING_USER" | "EXPERIMENT_IMMUTABLE" | "EXPERIMENT_INVALID" | "NON_REPRODUCIBLE" | "MULTIPLE_TESTING_LIMIT_REACHED" | "STRATEGY_VERSION_FROZEN" | "STRATEGY_VERSION_MISMATCH" | "STRATEGY_NOT_FROZEN" | "STRATEGY_NOT_VALIDATED" | "VALIDATION_IN_PROGRESS" | "VALIDATION_FAILED" | "VALIDATION_PREREQUISITES_INCOMPLETE" | "VALIDATION_TEST_BLOCKED" | "HOLDOUT_LOCKED" | "HOLDOUT_APPROVAL_REQUIRED" | "HOLDOUT_PREREQUISITES_INCOMPLETE" | "HOLDOUT_ALREADY_EXPOSED" | "HOLDOUT_RESULT_FORBIDDEN" | "APPROVAL_STALE" | "APPROVAL_ALREADY_RESOLVED" | "APPROVAL_PREREQUISITES_CHANGED" | "APPROVAL_TYPE_MISMATCH" | "DATA_CAPABILITY_MISSING" | "DATA_QUALITY_BLOCKED" | "DATA_SNAPSHOT_MISSING" | "PIT_GUARANTEE_UNAVAILABLE" | "STALE_DATA" | "PROVIDER_UNAVAILABLE" | "JOB_CONFLICT" | "JOB_NOT_CANCELLABLE" | "JOB_LEASE_LOST" | "JOB_FAILED" | "PAPER_APPROVAL_REQUIRED" | "PAPER_RISK_BLOCKED" | "PAPER_DATA_BLOCKED" | "PAPER_DUPLICATE_RUN" | "PAPER_VERSION_MISMATCH" | "RISK_LIMIT_EXCEEDED" | "AGENT_DISABLED" | "AGENT_TOOL_FORBIDDEN" | "AGENT_BUDGET_EXCEEDED" | "AGENT_OUTPUT_INVALID" | "AGENT_MODEL_UNAVAILABLE" | "AGENT_RESUME_CONFLICT" | "AGENT_CONTEXT_STALE" | "AGENT_RETRY_EXHAUSTED" | "TOOL_INPUT_INVALID" | "TOOL_EXECUTION_FAILED" | "CREDENTIAL_INVALID" | "CREDENTIAL_NOT_CONFIGURED" | "CONNECTION_VALIDATION_EXPIRED" | "CONNECTION_KIND_MISMATCH" | "LAST_ACTIVE_KEY_REQUIRED" | "CONFIGURATION_VALIDATION_FAILED" | "CONFIGURATION_APPLY_FAILED" | "CONFIGURATION_RESTART_REQUIRED" | "DATABASE_CONNECTION_FAILED" | "DATABASE_SCHEMA_INCOMPATIBLE" | "DATABASE_SWITCH_FAILED" | "BOOTSTRAP_LOCKED" | "DATABASE_DISCONNECTED" | "CSRF_REQUIRED";
         ApiProblem: {
             /** Format: uri */
             type: string;
@@ -787,7 +1325,7 @@ export interface components {
             approval_id?: (string) | null;
             validation_id?: (string) | null;
             retry_after_seconds?: number | null;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         ActionCapability: {
             action: string;
             /** @enum {unknown} */
@@ -803,7 +1341,7 @@ export interface components {
             /** @enum {unknown} */
             danger_level: "NORMAL" | "STATE_CHANGE" | "IRREVERSIBLE" | "CAPITAL_GATE";
         };
-        /** @description Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST still resolve and authorize it inside the caller's authenticated workspace. */
+        /** @description Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST resolve and authorize it inside the installation's fixed singleton namespace. */
         ObjectRef: {
             /** @enum {unknown} */
             type: "research_policy" | "risk_policy" | "cost_model" | "credential" | "capability" | "dataset" | "snapshot" | "data_quality_run" | "data_quality_issue" | "research" | "evidence" | "conclusion" | "experiment" | "factor" | "strategy" | "validation" | "exposure" | "red_team_run" | "portfolio" | "memo" | "approval" | "paper" | "paper_run" | "paper_order" | "paper_fill" | "review" | "agent_run" | "tool_call" | "job" | "domain_event" | "audit_event" | "artifact" | "notification" | "provenance";
@@ -811,7 +1349,7 @@ export interface components {
             version: number | null;
             revision: number;
         } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
-        /** @description id is globally unique but remains workspace-authorized; hash equality never grants object access. */
+        /** @description id is globally unique but remains authorized to the fixed installation namespace; hash equality never grants object access. */
         VersionedHashRef: {
             id: (string) | (string) | (string);
             version: number;
@@ -825,14 +1363,14 @@ export interface components {
             commit: string;
             build_id: string;
         };
-        /** @description Policy id is globally unique but MUST resolve to an active policy of the required kind in the authenticated workspace. */
+        /** @description Policy id is globally unique but MUST resolve to an active policy of the required kind in the installation namespace. */
         PolicyRef: {
             /** @enum {unknown} */
             type: "research_policy" | "risk_policy";
             id: (string) | (string);
             version: number;
         } & (unknown & unknown);
-        /** @description provenance_id is globally unique but MUST be resolved and authorized in the authenticated workspace. */
+        /** @description provenance_id is globally unique but MUST be resolved and authorized in the installation namespace. */
         ProvenanceRef: {
             /**
              * @example PROV-01ARZ3NDEKTSV4RRFFQ69G5FAV
@@ -1068,13 +1606,13 @@ export interface components {
             ai_connection_id: string | null;
             data_provider_configured: boolean;
             research_policy_active: boolean;
-            /** @description Stable public research-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null. */
+            /** @description Stable public research-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null. */
             research_policy_id: (string) | null;
             risk_policy_active: boolean;
-            /** @description Stable public risk-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null. */
+            /** @description Stable public risk-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null. */
             risk_policy_id: (string) | null;
             cost_model_active: boolean;
-            /** @description Stable public cost-model reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null. */
+            /** @description Stable public cost-model reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null. */
             cost_model_id: (string) | null;
             /**
              * @description Earliest required recovery step caused by an invalid server reference. Null means no AI/policy/cost reference recovery is required; it does not by itself mean setup is completed.
@@ -1138,60 +1676,13 @@ export interface components {
             checked_at: string;
         };
         SetupProviderConnectionValidationResult: components["schemas"]["SetupProviderConnectionValidationSuccess"] | components["schemas"]["SetupProviderConnectionValidationFailure"];
-        /** @description P0 R2 intentionally tightens the pre-release executable baseline by requiring a successful, unexpired, unconsumed, owner-bound AI connection reference of kind AI. */
+        /** @description Installation-only transition request. It carries a candidate configuration revision; all field values, validation, secret handling, and activation semantics belong to the shared Configuration API and Bootstrap Control DB. */
         SetupCompleteRequest: {
-            /** @enum {unknown} */
-            language: "zh-CN" | "en";
-            timezone: string;
-            base_currency: string;
-            number_format_locale: string;
-            /** @description Required in P0_EXECUTABLE_R2; expired refs fail with CONNECTION_VALIDATION_EXPIRED and non-AI refs fail with CONNECTION_KIND_MISMATCH. */
-            ai_connection_id: string;
-            default_data_provider_id?: string | null;
-            default_benchmark: string;
-            /** @constant */
-            default_frequency: "DAILY";
-            /** Format: date */
-            default_research_start?: string | null;
-            initial_paper_capital: string;
-            /** @description Must resolve to status ACTIVE, current Owner/workspace, and kind RESEARCH_POLICY. */
-            research_policy_id: string;
-            /** @description Must resolve to status ACTIVE, current Owner/workspace, and kind RISK_POLICY. */
-            risk_policy_id: string;
-            /** @description Must resolve to status ACTIVE, current Owner/workspace, and kind COST_MODEL. */
-            cost_model_id: string;
+            /** Format: int64 */
+            configuration_revision: number;
         };
-        SettingsDetail: {
-            /**
-             * @description Workspace-local singleton alias; not a public semantic object ID.
-             * @constant
-             */
-            settings_id: "SETTINGS-DEFAULT";
-            revision: number;
-            /** @enum {unknown} */
-            language: "zh-CN" | "en";
-            timezone: string;
-            base_currency: string;
-            number_format_locale: string;
-            ai_connection_id: string;
-            default_data_provider_id: string | null;
-            default_benchmark: string;
-            /** @constant */
-            default_frequency: "DAILY";
-            /** Format: date */
-            default_research_start: string | null;
-            initial_paper_capital: string;
-            /** @description Exact public RESEARCH_POLICY binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity. */
-            research_policy_id: string;
-            /** @description Exact public RISK_POLICY binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity. */
-            risk_policy_id: string;
-            /** @description Exact public COST_MODEL binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity. */
-            cost_model_id: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
+        /** @description Backward-compatible schema name for the active configuration projection. It is no longer an app_settings row and contains no user/workspace or file-backed value semantics. */
+        SettingsDetail: components["schemas"]["ConfigurationActive"];
         DateCoverage: {
             /** Format: date */
             start: string | null;
@@ -1614,7 +2105,7 @@ export interface components {
         };
         /** @description Empty object or mode EXACT reproduces the immutable source snapshot, parameters, engine/adapter contract, policy, cost model, and code version. CONTROLLED_OVERRIDE may change only explicitly named execution-version fields and can never mutate the source experiment. */
         ExperimentReproduceRequest: components["schemas"]["ExperimentReproduceExactRequest"] | components["schemas"]["ExperimentReproduceControlledOverrideRequest"];
-        /** @description The new Experiment id is high-entropy and globally unique; resource access remains restricted to the authenticated workspace that created it. */
+        /** @description The new Experiment id is high-entropy and globally unique; resource access remains restricted to OWNER in the installation namespace. */
         NewExperimentResourceRef: {
             /** @constant */
             type: "experiment";
@@ -1826,7 +2317,7 @@ export interface components {
             invalid_reason_code: components["schemas"]["CanonicalErrorCode"] | null;
             invalid_reason_detail: string | null;
         };
-        /** @description id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace. */
+        /** @description id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace. */
         VersionRef: {
             id: (string) | (string);
             version: number;
@@ -2349,7 +2840,7 @@ export interface components {
             /** Format: int64 */
             object_revision: number | null;
             artifact_id: (string) | null;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         JobAccepted: {
             /**
              * @example JOB-01ARZ3NDEKTSV4RRFFQ69G5FAV
@@ -2389,7 +2880,7 @@ export interface components {
          * @description Exact lowercase P0 R2 SSE event-type allowlist. New members require a canonical contract revision before publication.
          * @enum {string}
          */
-        EventType: "job.updated" | "research.created" | "research.updated" | "research.conclusion.created" | "experiment.created" | "experiment.updated" | "factor.updated" | "strategy.created" | "strategy.updated" | "validation.created" | "validation.updated" | "validation.holdout.updated" | "approval.created" | "approval.updated" | "paper.created" | "paper.updated" | "paper.run.updated" | "review.created" | "review.updated" | "data.provider.updated" | "data.capability.updated" | "data.quality.updated" | "agent.run.updated" | "tool.call.updated" | "memo.created" | "memo.updated" | "setup.completed" | "notification.created" | "notification.updated" | "system.health.updated" | "system.resync_required";
+        EventType: "job.updated" | "research.created" | "research.updated" | "research.conclusion.created" | "experiment.created" | "experiment.updated" | "factor.updated" | "strategy.created" | "strategy.updated" | "validation.created" | "validation.updated" | "validation.holdout.updated" | "approval.created" | "approval.updated" | "paper.created" | "paper.updated" | "paper.run.updated" | "review.created" | "review.updated" | "data.provider.updated" | "data.capability.updated" | "data.quality.updated" | "agent.run.updated" | "tool.call.updated" | "memo.created" | "memo.updated" | "setup.completed" | "configuration.updated" | "configuration.apply_failed" | "database.connection.updated" | "database.connection.failed" | "notification.created" | "notification.updated" | "system.health.updated" | "system.resync_required";
         EventWaitingOn: {
             /** @constant */
             type: "JOB";
@@ -2422,8 +2913,8 @@ export interface components {
             /** Format: int64 */
             object_revision?: number | null;
             waiting_on?: components["schemas"]["EventWaitingOn"] | null;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
-        /** @description event_id and referenced public IDs are globally unique, while sequence and replay ordering are local to the authenticated workspace stream; no envelope authorizes cross-workspace resolution. */
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        /** @description event_id and referenced public IDs are globally unique, while sequence and replay ordering are local to the singleton installation stream; no envelope grants a second namespace. */
         SseEnvelope: {
             /** @constant */
             schema_version: 1;
@@ -2451,13 +2942,11 @@ export interface components {
             agent_run_id: (string) | null;
             tool_call_id: (string) | null;
             payload: components["schemas"]["EventPayload"];
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         /** @enum {string} */
         AgentRoleKey: "RESEARCH_DIRECTOR" | "FACTOR_SCIENTIST" | "STRATEGY_SCIENTIST" | "PORTFOLIO_ANALYST" | "RED_TEAM_RESEARCHER" | "PERFORMANCE_ANALYST";
         AgentConfigUpdate: {
             enabled?: boolean;
-            model_provider?: string;
-            model_name?: string;
             runtime_profile?: string;
             tool_timeout_seconds?: number;
             max_steps_override?: number | null;
@@ -2466,8 +2955,13 @@ export interface components {
         AgentConfig: {
             role_key: components["schemas"]["AgentRoleKey"];
             enabled: boolean;
-            model_provider: string;
-            model_name: string;
+            /** @description Installation-level Remote Codex provider projection; not writable per role. */
+            readonly model_provider: string;
+            /** @description Installation-level Remote Codex model projection; not writable per role. */
+            readonly model_name: string;
+            readonly ai_connection_id: string;
+            /** Format: int64 */
+            readonly ai_connection_revision: number;
             runtime_profile: string;
             tool_timeout_seconds: number;
             max_steps_override: number | null;
@@ -2490,6 +2984,20 @@ export interface components {
             agent_version: string;
             model_provider: string;
             model_name: string;
+            ai_connection_id: string;
+            /** Format: int64 */
+            ai_connection_revision: number;
+            /** Format: int64 */
+            effective_configuration_revision: number;
+            effective_configuration_sha256: string;
+            /** Format: int64 */
+            agent_configuration_revision: number;
+            runtime_profile: string;
+            tool_timeout_seconds: number;
+            max_steps: number;
+            max_tool_calls: number;
+            prompt_manifest_sha256: string;
+            tool_registry_sha256: string;
             research_id: (string) | null;
             object_type: ("job" | "research" | "conclusion" | "experiment" | "factor" | "strategy_version" | "validation" | "approval" | "paper" | "paper_run" | "review" | "capability" | "snapshot" | "agent_run" | "tool_call" | "memo" | "notification" | "settings" | "provider_connection" | "agent_config" | "event_stream") | null;
             object_id: ((string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | "SETTINGS-DEFAULT" | string | ("RESEARCH_DIRECTOR" | "FACTOR_SCIENTIST" | "STRATEGY_SCIENTIST" | "PORTFOLIO_ANALYST" | "RED_TEAM_RESEARCHER" | "PERFORMANCE_ANALYST") | (string)) | null;
@@ -2517,7 +3025,7 @@ export interface components {
             ended_at: string | null;
             /** Format: date-time */
             created_at: string;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         NextAction: {
             action: string;
             object_type: ("job" | "research" | "conclusion" | "experiment" | "factor" | "strategy_version" | "validation" | "approval" | "paper" | "paper_run" | "review" | "capability" | "snapshot" | "agent_run" | "tool_call" | "memo" | "notification" | "settings" | "provider_connection" | "agent_config" | "event_stream") | null;
@@ -2525,7 +3033,7 @@ export interface components {
             object_version: number | null;
             /** Format: int64 */
             object_revision: number | null;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         ToolWarning: {
             code: string;
             detail: string;
@@ -2553,6 +3061,10 @@ export interface components {
             experiment_id: (string) | null;
             job_id: (string) | null;
             input_sha256: string;
+            /** Format: int64 */
+            effective_configuration_revision: number;
+            configuration_sha256: string;
+            tool_registry_sha256: string;
             policy_version_ref: string;
             /** @enum {unknown} */
             status: "RUNNING" | "SUCCESS" | "ERROR" | "CANCELLED";
@@ -2656,7 +3168,7 @@ export interface components {
         IdempotencyKey: string;
         IfMatch: string;
         ResearchId: string;
-        /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Global uniqueness never grants cross-workspace access. */
+        /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Resolution is always bound to the installation's fixed singleton namespace. */
         DatasetId: string;
         SnapshotId: string;
         ExperimentId: string;
@@ -2668,6 +3180,7 @@ export interface components {
         JobId: string;
         AgentRunId: string;
         ToolCallId: string;
+        GeneralAccessKeyId: string;
         Version: number;
         AgentRole: components["schemas"]["AgentRoleKey"];
     };
@@ -2699,6 +3212,560 @@ export interface operations {
             503: components["responses"]["Problem503"];
         };
     };
+    loginWithGeneralAccessKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneralAccessKeyLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Session established; the opaque session is set only as a Secure HttpOnly cookie. */
+            200: {
+                headers: {
+                    /** @description qf_session cookie with Secure, HttpOnly, SameSite=Strict and bounded expiry attributes. */
+                    "Set-Cookie": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionBootstrapResponse"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            429: components["responses"]["Problem429"];
+            503: components["responses"]["Problem503"];
+        };
+    };
+    getCurrentOwnerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session projection without a raw session token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerSessionView"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+        };
+    };
+    logoutOwnerSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+        };
+    };
+    listGeneralAccessKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key metadata only; raw secrets are never returned by list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralAccessKeyList"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+        };
+    };
+    createGeneralAccessKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneralAccessKeyCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Key metadata and one-time raw secret. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralAccessKeyIssued"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            422: components["responses"]["Problem422"];
+            429: components["responses"]["Problem429"];
+        };
+    };
+    renameGeneralAccessKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                key_id: components["parameters"]["GeneralAccessKeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneralAccessKeyRenameRequest"];
+            };
+        };
+        responses: {
+            /** @description Renamed key metadata. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralAccessKeyMetadata"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            404: components["responses"]["Problem404"];
+            412: components["responses"]["Problem412"];
+            422: components["responses"]["Problem422"];
+        };
+    };
+    rotateGeneralAccessKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                key_id: components["parameters"]["GeneralAccessKeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Replacement key metadata and one-time raw secret. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralAccessKeyIssued"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            404: components["responses"]["Problem404"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+            429: components["responses"]["Problem429"];
+        };
+    };
+    revokeGeneralAccessKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                key_id: components["parameters"]["GeneralAccessKeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key and derived sessions revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            404: components["responses"]["Problem404"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+        };
+    };
+    expireGeneralAccessKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                key_id: components["parameters"]["GeneralAccessKeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key and derived sessions expired */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            404: components["responses"]["Problem404"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+        };
+    };
+    getConfigurationCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every mutable configuration key and its typed application rules. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationCatalog"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            503: components["responses"]["Problem503"];
+        };
+    };
+    getActiveConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active Control DB configuration snapshot; secret values are masked. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationActive"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            503: components["responses"]["Problem503"];
+        };
+    };
+    putConfigurationCandidate: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Candidate revision persisted but not active. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationCandidate"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+            422: components["responses"]["Problem422"];
+        };
+    };
+    validateConfigurationCandidate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Candidate validation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationValidationResult"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            404: components["responses"]["Problem404"];
+            409: components["responses"]["Problem409"];
+            422: components["responses"]["Problem422"];
+        };
+    };
+    activateConfiguration: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationActivateRequest"];
+            };
+        };
+        responses: {
+            /** @description Active configuration after consumer ACK convergence. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationActive"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+            422: components["responses"]["Problem422"];
+            503: components["responses"]["Problem503"];
+        };
+    };
+    rollbackConfiguration: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationRollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description New monotonic active configuration revision. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationActive"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+            422: components["responses"]["Problem422"];
+            503: components["responses"]["Problem503"];
+        };
+    };
+    getDomainDatabaseConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active/candidate/last-known-good connection state with masked fields. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnectionStatus"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+        };
+    };
+    putDomainDatabaseConnectionCandidate: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseConnectionCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Candidate staged; it is not active. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnectionCandidate"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+            422: components["responses"]["Problem422"];
+        };
+    };
+    validateDomainDatabaseConnectionCandidate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Network, TLS, privilege, version, and schema compatibility result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnectionValidationResult"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            404: components["responses"]["Problem404"];
+            409: components["responses"]["Problem409"];
+            422: components["responses"]["Problem422"];
+        };
+    };
+    activateDomainDatabaseConnection: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Activated Domain PostgreSQL connection state. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnectionStatus"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+            422: components["responses"]["Problem422"];
+            503: components["responses"]["Problem503"];
+        };
+    };
+    revertDomainDatabaseConnection: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["IfMatch"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Last-known-good connection restored. */
+            200: {
+                headers: {
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConnectionStatus"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            412: components["responses"]["Problem412"];
+            503: components["responses"]["Problem503"];
+        };
+    };
     getSetupStatus: {
         parameters: {
             query?: never;
@@ -2727,6 +3794,7 @@ export interface operations {
             query?: never;
             header: {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "If-Match": components["parameters"]["IfMatch"];
             };
             path?: never;
             cookie?: never;
@@ -2737,21 +3805,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Persisted settings */
+            /** @description Installation transition result; values are read from the shared active configuration revision. */
             200: {
                 headers: {
-                    /** @description Exact weak ETag of the persisted SettingsDetail representation. It MUST equal W/"{settings_id}:{revision}" for the response body and must not be derived from request input or client state. */
+                    /** @description Exact weak ETag of the active configuration representation. */
                     ETag: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SettingsDetail"];
+                    "application/json": components["schemas"]["ConfigurationActive"];
                 };
             };
             401: components["responses"]["Problem401"];
             403: components["responses"]["Problem403"];
             409: components["responses"]["Problem409"];
             422: components["responses"]["Problem422"];
+            428: components["responses"]["Problem428"];
             429: components["responses"]["Problem429"];
         };
     };
@@ -2892,7 +3961,7 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Global uniqueness never grants cross-workspace access. */
+                /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Resolution is always bound to the installation's fixed singleton namespace. */
                 dataset_id: components["parameters"]["DatasetId"];
             };
             cookie?: never;
@@ -2926,7 +3995,7 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Global uniqueness never grants cross-workspace access. */
+                /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Resolution is always bound to the installation's fixed singleton namespace. */
                 dataset_id: components["parameters"]["DatasetId"];
             };
             cookie?: never;

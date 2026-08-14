@@ -6,19 +6,20 @@ import json
 import logging
 import os
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any, Literal, Protocol, cast
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Security
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi import Path as ApiPath
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.routing import APIRoute
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.utils import create_model_field
 from sqlalchemy import (
     DDL,
@@ -75,6 +76,15 @@ from app.api_models import (
 from app.contract_route import CanonicalRoute
 from app.contracts import canonical_openapi, validated_payload
 from app.contracts import now as NOW
+from app.control_plane import (
+    _csrf,
+    _session_context,
+    activate_configuration_revision,
+    active_runtime_snapshot,
+    build_router,
+    init_control_db,
+    restore_active_domain_database,
+)
 from app.engines import (
     EngineInputError,
     load_cost_model,
@@ -93,6 +103,7 @@ from app.event_contract import (
 from app.event_contract import (
     ValidationError as EventValidationError,
 )
+from app.generated_api_models import ConfigurationActive
 from app.idempotency import execute as execute_idempotent
 from app.locator_contract import register_sqlite_functions
 from app.provider_credentials import (
@@ -117,12 +128,22 @@ from app.section14_schema import (
 from app.services import probe_health
 from app.sse import durable_event_stream
 
-DB_URL = os.getenv("QF_DATABASE_URL")
 ENVIRONMENT = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV", "production")
-if not DB_URL:
-    raise RuntimeError(
-        "QF_DATABASE_URL is required; production never defaults to SQLite"
+if ENVIRONMENT in {"test", "local", "development"}:
+    DB_URL = os.getenv("QF_DATABASE_URL") or (
+        "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
     )
+else:
+    DB_URL = "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
+TOOL_REGISTRY_SHA256 = hashlib.sha256(
+    (
+        Path(__file__).resolve().parents[2]
+        / "docs/后端系统技术方案/contracts/tools/v1-p0.yaml"
+    ).read_bytes()
+).hexdigest()
+PROMPT_MANIFEST_SHA256 = hashlib.sha256(
+    b"quantfoundry-agent-prompt-manifest-ux001-d2"
+).hexdigest()
 if ENVIRONMENT == "production" and DB_URL.startswith("sqlite"):
     raise RuntimeError(
         "production database must be configured through Alembic/PostgreSQL"
@@ -1334,6 +1355,19 @@ class AgentRunRow(Base):
     agent_version = Column(String, nullable=False, default="1.0")
     model_provider = Column(String, nullable=False, default="unconfigured")
     model_name = Column(String, nullable=False, default="unconfigured")
+    ai_connection_id = Column(String, nullable=False, default="CODEX-DEFAULT")
+    ai_connection_revision = Column(BigInteger, nullable=False, default=1)
+    effective_configuration_revision = Column(BigInteger, nullable=False, default=1)
+    effective_configuration_sha256 = Column(
+        String(64), nullable=False, default="0" * 64
+    )
+    agent_configuration_revision = Column(BigInteger, nullable=False, default=1)
+    runtime_profile = Column(String, nullable=False, default="DEFAULT")
+    tool_timeout_seconds = Column(Integer, nullable=False, default=30)
+    max_steps = Column(Integer, nullable=False, default=30)
+    max_tool_calls = Column(Integer, nullable=False, default=100)
+    prompt_manifest_sha256 = Column(String(64), nullable=False, default="0" * 64)
+    tool_registry_sha256 = Column(String(64), nullable=False, default="0" * 64)
     research_ref_id = Column(
         "research_id", Uuid(as_uuid=True), ForeignKey("research_cases.id")
     )
@@ -1395,6 +1429,9 @@ class ToolCallRow(Base):
     status = Column(String, nullable=False)
     input_payload = Column(Text, nullable=False, default="{}")
     input_sha256 = Column(String(64), nullable=False)
+    effective_configuration_revision = Column(BigInteger, nullable=False, default=1)
+    configuration_sha256 = Column(String(64), nullable=False, default="0" * 64)
+    tool_registry_sha256 = Column(String(64), nullable=False, default="0" * 64)
     semantic_scope = Column(String, nullable=False, default="")
     objective = Column(Text)
     research_ref_id = Column(
@@ -1730,9 +1767,14 @@ augment_section14_metadata(Base.metadata)
 
 
 # Schema creation is explicitly test-only. Durable environments are Alembic-only.
-if os.getenv("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP") == "1":
-    if ENVIRONMENT != "test" or not DB_URL.startswith("sqlite"):
-        raise RuntimeError("test schema bootstrap is allowed only for SQLite tests")
+if os.getenv("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP") == "1" and (
+    ENVIRONMENT != "test" or not DB_URL.startswith("sqlite")
+):
+    raise RuntimeError("test schema bootstrap is allowed only for SQLite tests")
+if (
+    os.getenv("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP") == "1"
+    and os.getenv("QF_ALEMBIC_RUNNING") != "1"
+):
     logger.warning(
         "test-only SQLite schema bootstrap enabled; Alembic is authoritative"
     )
@@ -1744,6 +1786,11 @@ app = FastAPI(
     docs_url=None,
 )
 app.router.route_class = CanonicalRoute
+app.state.environment = ENVIRONMENT
+init_control_db()
+app.state.domain_database_available = True
+restore_active_domain_database()
+app.include_router(build_router())
 
 
 ROLES = [
@@ -1759,24 +1806,17 @@ ENGINE_VERSIONS = {
     "qf-simulation-v1": "1.0.0",
     "qf-validation-v1": "1.0.0",
 }
-DEFAULT_AGENT_PROVIDER = os.getenv("QF_AGENT_PROVIDER", "unconfigured")
-DEFAULT_AGENT_MODEL = os.getenv("QF_AGENT_MODEL", "unconfigured")
+DEFAULT_AGENT_PROVIDER = "unconfigured"
+DEFAULT_AGENT_MODEL = "unconfigured"
 
 
 def remote_codex_mode() -> bool:
-    return os.getenv("QF_AGENT_PROVIDER", DEFAULT_AGENT_PROVIDER).lower() in {
-        "openai-compatible",
-        "remote-codex",
-    } or bool(os.getenv("QF_CODEX_BASE_URL"))
+    return active_runtime_snapshot()["model_name"] != "unconfigured"
 
 
 def remote_codex_projection() -> tuple[str, str]:
-    return (
-        "remote-codex",
-        os.getenv("QF_CODEX_MODEL")
-        or os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL)
-        or "unconfigured",
-    )
+    projection = active_runtime_snapshot()
+    return projection["model_provider"], projection["model_name"]
 
 
 def require_engine(engine_key: str, engine_version: str, expected_key: str) -> None:
@@ -1841,6 +1881,8 @@ def resolve_research_policy(
 
 
 def db():
+    if not app.state.domain_database_available:
+        raise problem(503, "DATABASE_DISCONNECTED", "domain database is unavailable")
     s = SessionLocal()
     try:
         yield s
@@ -1888,43 +1930,26 @@ def _session_is_active(row: SessionToken, now: datetime) -> bool:
     return row.revoked_at is None and expires_at > now
 
 
-bearer = HTTPBearer(auto_error=False, scheme_name="bearerAuth")
-
-
 def auth(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Security(bearer),
     s: Session = Depends(db),
 ) -> Actor:
     preauthenticated = getattr(request.state, "actor", None)
     if isinstance(preauthenticated, Actor):
         return preauthenticated
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise problem(401, "UNAUTHENTICATED", "Bearer authentication required")
-    token = credentials.credentials.strip()
-    if not token:
-        raise problem(401, "UNAUTHENTICATED", "Bearer token is empty")
     request_id = getattr(request.state, "request_id", new_id("REQ"))
-    test_actor = _configured_test_actor(token, request_id)
-    if test_actor is not None:
-        return test_actor
-    digest = hashlib.sha256(token.encode()).hexdigest()
-    row = s.get(SessionToken, digest)
-    now = datetime.now(UTC)
-    if row is None or not _session_is_active(row, now):
-        raise problem(401, "UNAUTHENTICATED", "Bearer token is invalid or expired")
-    user = s.get(User, row.actor_id)
-    workspace = s.get(Workspace, row.workspace_id)
-    if (
-        user is None
-        or workspace is None
-        or (user.role == "OWNER" and workspace.owner_id != user.id)
-    ):
-        raise problem(401, "UNAUTHENTICATED", "Bearer session is no longer valid")
-    actor = Actor(
-        _as_str(user.id), _as_str(workspace.id), _as_str(user.role), request_id
-    )
-    return actor
+    control_session = _session_context(request)
+    if not isinstance(control_session, JSONResponse):
+        return Actor("OWNER", canonical_workspace_id("system"), "OWNER", request_id)
+    if ENVIRONMENT == "test":
+        authorization = request.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            test_actor = _configured_test_actor(
+                authorization.removeprefix("Bearer ").strip(), request_id
+            )
+            if test_actor is not None:
+                return test_actor
+    raise problem(401, "UNAUTHENTICATED", "Session cookie authentication required")
 
 
 def require_owner(actor: Actor = Depends(auth)) -> Actor:
@@ -1939,62 +1964,40 @@ async def authenticate_before_request_validation(request: Request, call_next):
     if not request.url.path.startswith("/api/v1") or request.url.path in {
         "/api/v1/system/health",
         "/api/v1/openapi.json",
+        "/api/v1/auth/login",
     }:
         return await call_next(request)
-    authorization = request.headers.get("Authorization", "")
-    if (
-        not authorization.startswith("Bearer ")
-        or not authorization.removeprefix("Bearer ").strip()
-    ):
-        return JSONResponse(
-            problem_payload(
-                401, "UNAUTHENTICATED", request, "Bearer authentication required"
-            ),
-            status_code=401,
-            media_type="application/problem+json",
+    control_session = _session_context(request)
+    if not isinstance(control_session, JSONResponse):
+        csrf_error = _csrf(request, control_session)
+        if csrf_error is not None:
+            return csrf_error
+        request.state.actor = Actor(
+            "OWNER", canonical_workspace_id("system"), "OWNER", request.state.request_id
         )
-    token = authorization.removeprefix("Bearer ").strip()
-    actor = _configured_test_actor(token, request.state.request_id)
-    if actor is None:
-        session = SessionLocal()
-        try:
-            digest = hashlib.sha256(token.encode()).hexdigest()
-            row = session.get(SessionToken, digest)
-            now = datetime.now(UTC)
-            if row is not None and _session_is_active(row, now):
-                user = session.get(User, row.actor_id)
-                workspace = session.get(Workspace, row.workspace_id)
-                if (
-                    user is not None
-                    and workspace is not None
-                    and (user.role != "OWNER" or workspace.owner_id == user.id)
-                ):
-                    actor = Actor(
-                        _as_str(user.id),
-                        _as_str(workspace.id),
-                        _as_str(user.role),
-                        request.state.request_id,
-                    )
-        finally:
-            session.close()
-    if actor is None:
-        return JSONResponse(
-            problem_payload(
-                401, "UNAUTHENTICATED", request, "Bearer token is invalid or expired"
-            ),
-            status_code=401,
-            media_type="application/problem+json",
-        )
-    if actor.role != "OWNER":
-        return JSONResponse(
-            problem_payload(
-                403, "PERMISSION_DENIED", request, "Owner authority required"
-            ),
-            status_code=403,
-            media_type="application/problem+json",
-        )
-    request.state.actor = actor
-    return await call_next(request)
+        return await call_next(request)
+    # Production has exactly one auth path: the Control DB cookie session.
+    # Bearer remains available only for isolated legacy test fixtures.
+    if ENVIRONMENT == "test":
+        authorization = request.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            actor = _configured_test_actor(
+                authorization.removeprefix("Bearer ").strip(),
+                request.state.request_id,
+            )
+            if actor is not None:
+                request.state.actor = actor
+                return await call_next(request)
+    return JSONResponse(
+        problem_payload(
+            401,
+            "UNAUTHENTICATED",
+            request,
+            "Session cookie authentication required",
+        ),
+        status_code=401,
+        media_type="application/problem+json",
+    )
 
 
 def problem(status: int, code: str, detail: str | None = None):
@@ -2834,10 +2837,33 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
     )
 
 
-@app.post("/api/v1/setup/complete")
+@app.post(
+    "/api/v1/setup/complete",
+    response_model=ConfigurationActive,
+    operation_id="completeSetup",
+)
 def setup_complete(
     data: SetupCompleteRequest,
+    response: Response,
     idempotency_key: IdempotencyKey,
+    if_match: IfMatch,
+    actor: Actor = Depends(require_owner),
+):
+    if idempotency_key is None:
+        raise problem(422, "INVALID_REQUEST", "Idempotency-Key is required")
+    payload, revision = activate_configuration_revision(
+        data.configuration_revision, if_match
+    )
+    if isinstance(payload, JSONResponse):
+        return payload
+    response.headers["ETag"] = f'W/"config:{revision}"'
+    return validated_payload("ConfigurationActive", payload)
+
+
+def setup_complete_legacy(
+    data: SetupCompleteRequest,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch,
     actor: Actor = Depends(require_owner),
     s: Session = Depends(db),
 ):
@@ -3146,6 +3172,11 @@ def setup_complete(
 
 
 def setup_provider_catalog() -> list[dict[str, Any]]:
+    # Production provider discovery is Control DB-only. The legacy setup
+    # endpoint remains test/local compatibility and must never turn env values
+    # into effective installation configuration.
+    if ENVIRONMENT in {"production", "staging"}:
+        return []
     providers: list[dict[str, Any]] = []
     if ENVIRONMENT == "test" and encryption_is_configured():
         providers.append(
@@ -3161,7 +3192,7 @@ def setup_provider_catalog() -> list[dict[str, Any]]:
             }
         )
     if (
-        ENVIRONMENT != "production"
+        ENVIRONMENT not in {"production", "staging"}
         and os.getenv("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER") == "1"
         and encryption_is_configured()
     ):
@@ -3235,6 +3266,8 @@ def _connection_credential_is_authentic(
 def _validate_provider_credential(
     configured: dict[str, Any], payload: dict[str, Any]
 ) -> bool:
+    if ENVIRONMENT in {"production", "staging"}:
+        return False
     credential = payload["credential"]
     provider_id = configured["provider_id"]
     if provider_id == "TEST_AI":
@@ -3245,7 +3278,7 @@ def _validate_provider_credential(
     if provider_id == "LOCAL_DETERMINISTIC_DATA":
         configured_credential = os.getenv("QF_LOCAL_DATA_CREDENTIAL", "")
         return bool(
-            ENVIRONMENT != "production"
+            ENVIRONMENT not in {"production", "staging"}
             and os.getenv("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER") == "1"
             and len(configured_credential) >= 20
             and hmac.compare_digest(credential, configured_credential)
@@ -3923,10 +3956,10 @@ def start_research(
         cfg = s.get(AgentConfigRow, (actor.workspace_id, "RESEARCH_DIRECTOR"))
         now = datetime.now(UTC)
         if cfg is None:
+            runtime_projection = active_runtime_snapshot()
             model_provider, model_name = (
-                remote_codex_projection()
-                if remote_codex_mode()
-                else (DEFAULT_AGENT_PROVIDER, DEFAULT_AGENT_MODEL)
+                runtime_projection["model_provider"],
+                runtime_projection["model_name"],
             )
             cfg = AgentConfigRow(
                 workspace_id=actor.workspace_id,
@@ -3944,10 +3977,10 @@ def start_research(
             s.flush()
         if not cfg.enabled:
             raise problem(409, "AGENT_DISABLED")
+        runtime_snapshot = active_runtime_snapshot()
         run_model_provider, run_model_name = (
-            remote_codex_projection()
-            if remote_codex_mode()
-            else (cfg.model_provider, cfg.model_name)
+            runtime_snapshot["model_provider"],
+            runtime_snapshot["model_name"],
         )
         run_id = new_id("ARUN")
         s.add(
@@ -3967,6 +4000,21 @@ def start_research(
                 created_at=now,
                 model_provider=run_model_provider,
                 model_name=run_model_name,
+                ai_connection_id=runtime_snapshot["ai_connection_id"],
+                ai_connection_revision=runtime_snapshot["ai_connection_revision"],
+                effective_configuration_revision=runtime_snapshot[
+                    "effective_configuration_revision"
+                ],
+                effective_configuration_sha256=runtime_snapshot[
+                    "effective_configuration_sha256"
+                ],
+                agent_configuration_revision=cfg.revision,
+                runtime_profile=cfg.runtime_profile,
+                tool_timeout_seconds=cfg.tool_timeout_seconds,
+                max_steps=cfg.max_steps_override or 25,
+                max_tool_calls=cfg.max_tool_calls_override or 50,
+                prompt_manifest_sha256=PROMPT_MANIFEST_SHA256,
+                tool_registry_sha256=TOOL_REGISTRY_SHA256,
                 agent_version="1.0",
             )
         )
@@ -5678,11 +5726,8 @@ def agents(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
 
 def default_agent_config(role: str):
     now = datetime.now(UTC)
-    model_provider, model_name = (
-        remote_codex_projection()
-        if remote_codex_mode()
-        else (DEFAULT_AGENT_PROVIDER, DEFAULT_AGENT_MODEL)
-    )
+    projection = active_runtime_snapshot()
+    model_provider, model_name = projection["model_provider"], projection["model_name"]
     return SimpleNamespace(
         role=role,
         enabled=True,
@@ -5693,20 +5738,22 @@ def default_agent_config(role: str):
         max_steps_override=None,
         max_tool_calls_override=None,
         revision=1,
+        ai_connection_id=projection["ai_connection_id"],
+        ai_connection_revision=projection["ai_connection_revision"],
         created_at=now,
         updated_at=now,
     )
 
 
 def agent_config_payload(row):
-    model_provider, model_name = row.model_provider, row.model_name
-    if remote_codex_mode():
-        model_provider, model_name = remote_codex_projection()
+    projection = active_runtime_snapshot()
     return {
         "role_key": row.role,
         "enabled": row.enabled,
-        "model_provider": model_provider,
-        "model_name": model_name,
+        "model_provider": projection["model_provider"],
+        "model_name": projection["model_name"],
+        "ai_connection_id": projection["ai_connection_id"],
+        "ai_connection_revision": projection["ai_connection_revision"],
         "runtime_profile": row.runtime_profile,
         "tool_timeout_seconds": row.tool_timeout_seconds,
         "max_steps_override": row.max_steps_override,
@@ -5743,6 +5790,10 @@ def agent_config(
     actor: Actor = Depends(require_owner),
     s: Session = Depends(db),
 ):
+    if s.get(Workspace, actor.workspace_id) is None:
+        raise problem(
+            503, "DATABASE_DISCONNECTED", "domain database is not initialized"
+        )
     s.info.update(
         {
             "actor_id": actor.id,
@@ -5755,25 +5806,6 @@ def agent_config(
         raise problem(404, "RESOURCE_NOT_FOUND")
     if not if_match:
         raise problem(428, "PRECONDITION_REQUIRED")
-    if remote_codex_mode():
-        projected_provider, projected_model = remote_codex_projection()
-        requested_provider = payload.get("model_provider")
-        requested_model = payload.get("model_name")
-        if requested_provider is not None and requested_provider not in {
-            projected_provider,
-            "openai-compatible",
-        }:
-            raise problem(
-                409,
-                "RESOURCE_CONFLICT",
-                "Remote Codex provider is fixed for every Agent Role",
-            )
-        if requested_model is not None and requested_model != projected_model:
-            raise problem(
-                409,
-                "RESOURCE_CONFLICT",
-                "Remote Codex model is fixed for every Agent Role",
-            )
     row = s.get(AgentConfigRow, (actor.workspace_id, role)) or AgentConfigRow(
         workspace_id=actor.workspace_id,
         role=role,
@@ -5790,11 +5822,11 @@ def agent_config(
     if if_match != f'W/"agent:{role}:{row.revision}"':
         raise problem(412, "REVISION_MISMATCH")
     row.enabled = payload.get("enabled", row.enabled)
-    if remote_codex_mode():
-        row.model_provider, row.model_name = remote_codex_projection()
-    else:
-        row.model_provider = payload.get("model_provider", row.model_provider)
-        row.model_name = payload.get("model_name", row.model_name)
+    projection = active_runtime_snapshot()
+    row.model_provider, row.model_name = (
+        projection["model_provider"],
+        projection["model_name"],
+    )
     row.runtime_profile = payload.get("runtime_profile", row.runtime_profile)
     row.tool_timeout_seconds = payload.get(
         "tool_timeout_seconds", row.tool_timeout_seconds
@@ -5846,6 +5878,17 @@ def agent_run(
         "agent_version": r.agent_version,
         "model_provider": r.model_provider,
         "model_name": r.model_name,
+        "ai_connection_id": r.ai_connection_id,
+        "ai_connection_revision": r.ai_connection_revision,
+        "effective_configuration_revision": r.effective_configuration_revision,
+        "effective_configuration_sha256": r.effective_configuration_sha256,
+        "agent_configuration_revision": r.agent_configuration_revision,
+        "runtime_profile": r.runtime_profile,
+        "tool_timeout_seconds": r.tool_timeout_seconds,
+        "max_steps": r.max_steps,
+        "max_tool_calls": r.max_tool_calls,
+        "prompt_manifest_sha256": r.prompt_manifest_sha256,
+        "tool_registry_sha256": r.tool_registry_sha256,
         "research_id": r.research_id,
         "object_type": r.object_type,
         "object_id": r.object_id,
@@ -5886,6 +5929,9 @@ def tool_call(
         "experiment_id": r.experiment_id,
         "job_id": r.job_id,
         "input_sha256": r.input_sha256,
+        "effective_configuration_revision": r.effective_configuration_revision,
+        "configuration_sha256": r.configuration_sha256,
+        "tool_registry_sha256": r.tool_registry_sha256,
         "policy_version_ref": r.policy_version_ref,
         "status": r.status,
         "result_summary": json.loads(r.result_summary) if r.result_summary else None,
@@ -5927,14 +5973,23 @@ def _configure_contract_routes() -> None:
             response["$ref"].rsplit("/", 1)[-1]
         ]
 
-    for route in app.routes:
+    routes: list[APIRoute] = []
+    for candidate in app.routes:
+        included = getattr(candidate, "original_router", None)
+        if included is not None:
+            routes.extend(
+                route for route in included.routes if isinstance(route, APIRoute)
+            )
+        elif isinstance(candidate, APIRoute):
+            routes.append(candidate)
+    for route in routes:
         if not isinstance(route, APIRoute) or not route.path.startswith("/api/v1"):
             continue
         canonical_path = route.path.removeprefix("/api/v1")
         methods = [
             method.lower()
             for method in route.methods or set()
-            if method.lower() in {"get", "post", "put"}
+            if method.lower() in {"get", "post", "put", "patch"}
         ]
         if len(methods) != 1:
             continue
@@ -5971,7 +6026,7 @@ def _configure_contract_routes() -> None:
                             else {}
                         ),
                         **(
-                            {"content": declared["content"]}
+                            {"content": declared.get("content", {})}
                             if "application/json" not in declared.get("content", {})
                             else {}
                         ),
@@ -6007,6 +6062,13 @@ def application_openapi() -> dict[str, Any]:
         for path, operations in generated["paths"].items()
         if path.startswith("/api/v1")
     }
+    for path, operations in generated["paths"].items():
+        expected_path = specification["paths"].get(path, {})
+        for method, operation in operations.items():
+            if method in expected_path:
+                operation["security"] = expected_path[method].get(
+                    "security", specification.get("security")
+                )
     generated["security"] = specification["security"]
     generated["paths"]["/system/health"]["get"]["security"] = []
     path_parameter_models = {
@@ -6078,16 +6140,17 @@ def application_openapi() -> dict[str, Any]:
             for status in list(operation["responses"]):
                 if status not in declared:
                     del operation["responses"][status]
-    # FastAPI emits every request/response model attached to a route. Add only
-    # referenced leaf models that FastAPI cannot discover through external
-    # JSON-Schema refs; never replace the generated runtime document/spec.
+    # Generate every model first so missing runtime bindings fail closed, then
+    # publish the canonical closed schemas byte-for-byte (including writeOnly).
     runtime_schemas = generated.setdefault("components", {}).setdefault("schemas", {})
     model_schemas = application_schemas()
-    # FastAPI expands private helper classes used inside generated unions.  The
-    # public runtime surface is the closed set of independently generated
-    # component models, with their helper definitions already inlined.
+    missing_schemas = set(specification["components"]["schemas"]) - set(model_schemas)
+    if missing_schemas:
+        raise RuntimeError(
+            f"runtime schema bindings missing: {sorted(missing_schemas)}"
+        )
     runtime_schemas.clear()
-    runtime_schemas.update(model_schemas)
+    runtime_schemas.update(deepcopy(specification["components"]["schemas"]))
     generated["info"] = specification["info"]
     generated["servers"] = specification.get("servers", [])
     app.openapi_schema = generated

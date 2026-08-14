@@ -33,15 +33,19 @@ actual_pnpm_version="$(pnpm --version)"
 
 fullstack_tmp="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-fullstack.XXXXXX")"
 environment_file="$fullstack_tmp/local.env"
-bootstrap_output="$fullstack_tmp/bootstrap.json"
-bootstrap_repeat_output="$fullstack_tmp/bootstrap-repeat.json"
 seed_output="$fullstack_tmp/seed.json"
 project_name="qf-fullstack-$$"
 export COMPOSE_PROJECT_NAME="$project_name"
+keep_failed="${QF_FULLSTACK_KEEP_FAILED:-0}"
 
 cleanup() {
   local status="$?"
   trap - EXIT INT TERM
+  if [[ "$status" != 0 && "$keep_failed" == "1" ]]; then
+    printf 'Full-stack failure preserved for diagnosis: project=%s temp=%s\n' \
+      "$project_name" "$fullstack_tmp" >&2
+    exit "$status"
+  fi
   docker compose --project-name "$project_name" --profile local \
     --env-file "$environment_file" down --volumes --remove-orphans >/dev/null 2>&1 || true
   case "$fullstack_tmp" in
@@ -64,6 +68,7 @@ export QF_BUILD_ID="fullstack-ci"
 export QF_POSTGRES_DB=quantfoundry
 export QF_POSTGRES_USER=quantfoundry
 export QF_POSTGRES_PASSWORD
+QF_FULLSTACK_DATABASE_URL="postgresql+psycopg://${QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB}"
 export QF_ARTIFACT_ROOT=/var/lib/quantfoundry/artifacts
 export QF_DATA_ROOT=/var/lib/quantfoundry/data
 export QF_AGENT_PROVIDER=remote-codex
@@ -93,49 +98,25 @@ for name in \
   printf '%s=%s\n' "$name" "${!name}" >> "$environment_file"
 done
 
-QF_ENV_FILE="$environment_file" \
-QF_BOOTSTRAP_OUTPUT_FILE="$bootstrap_output" \
-QF_BOOTSTRAP_OWNER_EMAIL=fullstack-owner@local.invalid \
-QF_BOOTSTRAP_WORKSPACE_NAME='QuantFoundry Full Stack' \
-  "$repo_root/scripts/bootstrap-local.sh"
-
-QF_ENV_FILE="$environment_file" \
-QF_BOOTSTRAP_OUTPUT_FILE="$bootstrap_repeat_output" \
-QF_BOOTSTRAP_OWNER_EMAIL=fullstack-owner@local.invalid \
-QF_BOOTSTRAP_WORKSPACE_NAME='QuantFoundry Full Stack' \
-  "$repo_root/scripts/bootstrap-local.sh"
-python3 "$repo_root/scripts/bootstrap_result_check.py" \
-  "$bootstrap_output" "$bootstrap_repeat_output"
-
-security_counts="$(
-  docker compose --project-name "$project_name" --profile local \
-    --env-file "$environment_file" exec -T postgres psql \
-    --username quantfoundry --dbname quantfoundry --tuples-only --no-align \
-    --command "
-      SELECT
-        (SELECT count(*) FROM session_tokens
-          WHERE length(token_sha256) = 64)::text || ':' ||
-        (SELECT count(*) FROM session_tokens
-          WHERE revoked_at IS NULL)::text || ':' ||
-        (SELECT count(*) FROM model_provider_connections
-          WHERE octet_length(ciphertext) > 0
-            AND octet_length(nonce) > 0
-            AND key_id IS NOT NULL)::text;
-    "
-)"
-[[ "$security_counts" == "2:1:2" ]] || {
-  printf 'Expected two hashed/one active session and two encrypted provider connections; got %s.\n' \
-    "$security_counts" >&2
+general_key="$(QF_ENV_FILE="$environment_file" QF_BOOTSTRAP_KEY_LABEL=fullstack \
+  "$repo_root/scripts/bootstrap-local.sh" | tail -n 1)"
+[[ "$general_key" =~ ^qfk_gak_[a-z0-9]{16,32}\.[A-Za-z0-9_-]{43,}$ ]] || {
+  printf '%s\n' 'Bootstrap did not return a valid one-time general access key.' >&2
   exit 1
 }
-printf '%s\n' 'Bootstrap persisted only token verifiers and encrypted provider credentials.'
+export QF_FULLSTACK_GENERAL_KEY="$general_key"
 
 application_url="http://127.0.0.1:${http_port}"
 docker compose --project-name "$project_name" --profile local \
-  --env-file "$environment_file" exec -T api \
+  --env-file "$environment_file" exec -T \
+  -e QF_FULLSTACK_GENERAL_KEY="$general_key" \
+  -e QF_FULLSTACK_DATABASE_URL="$QF_FULLSTACK_DATABASE_URL" \
+  -e QF_CODEX_BASE_URL="$QF_CODEX_BASE_URL" \
+  -e QF_CODEX_MODEL="$QF_CODEX_MODEL" \
+  -e QF_LOCAL_PROVIDER_API_KEY="$QF_LOCAL_PROVIDER_API_KEY" api \
   python /workspace/scripts/fullstack_seed.py \
   --application-url "$application_url" \
-  < "$bootstrap_repeat_output" > "$seed_output"
+  > "$seed_output"
 
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" up --build --detach --wait frontend
@@ -144,12 +125,11 @@ json_field() {
   python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8"))[sys.argv[2]]; assert isinstance(value,str) and value; print(value)' "$seed_output" "$1"
 }
 QF_FULLSTACK_BASE_URL="$(json_field QF_FULLSTACK_BASE_URL)"
-QF_FULLSTACK_BEARER_TOKEN="$(json_field QF_FULLSTACK_BEARER_TOKEN)"
 QF_FULLSTACK_FACTOR_ID="$(json_field QF_FULLSTACK_FACTOR_ID)"
 QF_FULLSTACK_SNAPSHOT_ID="$(json_field QF_FULLSTACK_SNAPSHOT_ID)"
 QF_FULLSTACK_COST_MODEL_ID="$(json_field QF_FULLSTACK_COST_MODEL_ID)"
 QF_FULLSTACK_VALIDATION_POLICY_ID="$(json_field QF_FULLSTACK_VALIDATION_POLICY_ID)"
-export QF_FULLSTACK_BASE_URL QF_FULLSTACK_BEARER_TOKEN QF_FULLSTACK_FACTOR_ID
+export QF_FULLSTACK_BASE_URL QF_FULLSTACK_FACTOR_ID QF_FULLSTACK_GENERAL_KEY
 export QF_FULLSTACK_SNAPSHOT_ID QF_FULLSTACK_COST_MODEL_ID
 export QF_FULLSTACK_VALIDATION_POLICY_ID
 

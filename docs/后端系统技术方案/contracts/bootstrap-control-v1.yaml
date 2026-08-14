@@ -1,0 +1,244 @@
+schema_version: UX001_D1_R1
+status: TARGET_SCHEMA_FROZEN
+authority:
+  logical_source: this file freezes the D1 control-plane relation names, fields, sensitivity, and invariants.
+  physical_source: SQLAlchemy metadata plus Alembic migration for the embedded Bootstrap Control DB.
+  generated_outputs: [bootstrap_schema_manifest, bootstrap_physical_snapshot, bootstrap_generated_models]
+  plaintext_secret_storage: FORBIDDEN
+  file_env_cli_fallback: FORBIDDEN
+  root_of_trust: OS_KEYCHAIN_OR_TPM_OR_EXTERNAL_SECRET_INJECTION
+storage:
+  control_db:
+    product_role: bootstrap_and_mutable_configuration_authority
+    domain_outage_behavior: auth_and_recovery_surface_remains_available
+  domain_db:
+    product_role: immutable_versioned_domain_content_and_lineage
+    connection_authority: control_db_only
+  dual_write_or_fallback: FORBIDDEN
+field_types:
+  id: text
+  revision: int64
+  timestamp: timestamp_with_timezone
+  json: canonical_json
+  hash: lowercase_sha256_hex
+  ciphertext: aead_envelope
+relations:
+  bootstrap_state:
+    cardinality: exactly_one
+    primary_key: [singleton_key]
+    fields:
+      singleton_key: {type: text, const: BOOTSTRAP-DEFAULT, nullable: false}
+      installation_id: {type: text, min_length: 16, max_length: 128, nullable: false}
+      schema_version: {type: text, nullable: false}
+      readiness_state: {type: enum, values: [BOOTSTRAP_LOCKED, DATABASE_DISCONNECTED, CONFIG_VALIDATING, CONFIG_APPLYING, RESTART_REQUIRED, DEGRADED, READY], nullable: false}
+      active_configuration_revision: {type: revision, nullable: true}
+      last_known_good_configuration_revision: {type: revision, nullable: true}
+      active_database_connection_revision: {type: revision, nullable: true}
+      last_known_good_database_connection_revision: {type: revision, nullable: true}
+      auth_epoch: {type: int64, min: 1, nullable: false}
+      created_at: {type: timestamp, nullable: false}
+      updated_at: {type: timestamp, nullable: false}
+    checks:
+      - active_configuration_revision_is_known_or_null
+      - active_database_connection_revision_is_known_or_null
+      - auth_epoch_positive
+  general_access_keys:
+    cardinality: many
+    primary_key: [key_id]
+    fields:
+      key_id: {type: text, pattern: '^gak_[a-z0-9]{16,32}$', nullable: false}
+      label: {type: text, min_length: 1, max_length: 80, nullable: false}
+      verifier_phc: {type: text, min_length: 1, max_length: 512, nullable: false, sensitivity: verifier}
+      hash_algorithm: {type: enum, values: [ARGON2ID], nullable: false}
+      hash_parameters_version: {type: text, max_length: 64, nullable: false}
+      per_key_salt: {type: bytes, nullable: false, sensitivity: verifier}
+      pepper_key_id: {type: text, max_length: 128, nullable: false, sensitivity: root_locator}
+      masked_hint: {type: text, min_length: 3, max_length: 32, nullable: false}
+      status: {type: enum, values: [ACTIVE, REVOKED, EXPIRED], nullable: false}
+      expires_at: {type: timestamp, nullable: true}
+      created_at: {type: timestamp, nullable: false}
+      last_used_at: {type: timestamp, nullable: true}
+      revoked_at: {type: timestamp, nullable: true}
+      revision: {type: revision, nullable: false}
+    checks:
+      - raw_secret_absent
+      - lookup_hash_absent
+      - active_key_requires_unexpired_or_null_expiry
+      - revoke_or_expire_must_not_remove_last_active_key_without_replacement
+    indexes: [status, expires_at, last_used_at]
+  owner_sessions:
+    cardinality: many
+    primary_key: [session_id]
+    fields:
+      session_id: {type: text, pattern: '^sess_[a-z0-9]{32,64}$', nullable: false}
+      token_sha256: {type: hash, nullable: false, sensitivity: verifier}
+      access_key_id: {type: text, references: general_access_keys.key_id, nullable: false}
+      csrf_verifier_sha256: {type: hash, nullable: false, sensitivity: verifier}
+      issued_at: {type: timestamp, nullable: false}
+      last_seen_at: {type: timestamp, nullable: false}
+      idle_expires_at: {type: timestamp, nullable: false}
+      absolute_expires_at: {type: timestamp, nullable: false}
+      revoked_at: {type: timestamp, nullable: true}
+      revoke_reason: {type: text, max_length: 128, nullable: true}
+      auth_epoch: {type: int64, min: 1, nullable: false}
+    checks:
+      - raw_session_token_absent
+      - raw_csrf_token_absent
+      - absolute_expiry_after_issue
+    indexes: [token_sha256, access_key_id, absolute_expires_at, revoked_at]
+  configuration_catalog:
+    cardinality: many
+    primary_key: [key]
+    fields:
+      key: {type: text, pattern: '^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$', nullable: false}
+      group: {type: text, max_length: 64, nullable: false}
+      schema_version: {type: int64, min: 1, nullable: false}
+      scope: {type: enum, values: [INSTALLATION], nullable: false}
+      sensitivity: {type: enum, values: [PUBLIC, MASKED, SECRET], nullable: false}
+      apply_mode: {type: enum, values: [LIVE_NEW_WORK, DRAIN_RELOAD, RESTART_REQUIRED, SECURITY_IMMEDIATE], nullable: false}
+      consumers: {type: json, nullable: false}
+      dependencies: {type: json, nullable: false}
+      value_schema: {type: json, nullable: false}
+      validator: {type: text, max_length: 160, nullable: false}
+      safe_range: {type: json, nullable: true}
+      default_for_first_materialization: {type: json, nullable: true}
+      deprecated_at: {type: timestamp, nullable: true}
+    checks:
+      - key_is_unique
+      - schema_is_closed_json_schema
+      - catalog_entry_is_immutable_after_publication
+  configuration_revisions:
+    cardinality: many
+    primary_key: [revision]
+    fields:
+      revision: {type: revision, nullable: false}
+      base_revision: {type: revision, nullable: true}
+      state: {type: enum, values: [CANDIDATE, VALIDATED, APPLYING, FAILED, ACTIVE, SUPERSEDED], nullable: false}
+      catalog_version: {type: text, max_length: 64, nullable: false}
+      snapshot_sha256: {type: hash, nullable: false}
+      actor_principal: {type: enum, values: [OWNER, SYSTEM], nullable: false}
+      validation_status: {type: enum, values: [PENDING, VALID, INVALID], nullable: false}
+      failure_code: {type: text, max_length: 128, nullable: true}
+      created_at: {type: timestamp, nullable: false}
+      validated_at: {type: timestamp, nullable: true}
+      activated_at: {type: timestamp, nullable: true}
+    checks:
+      - revision_is_monotonic
+      - immutable_after_insert
+      - active_requires_validated
+  configuration_values:
+    cardinality: many
+    primary_key: [revision, key]
+    fields:
+      revision: {type: revision, references: configuration_revisions.revision, nullable: false}
+      key: {type: text, references: configuration_catalog.key, nullable: false}
+      typed_value: {type: json, nullable: true}
+      ciphertext: {type: ciphertext, nullable: true, sensitivity: secret}
+      secret_key_id: {type: text, max_length: 128, nullable: true, sensitivity: root_locator}
+      value_sha256: {type: hash, nullable: false}
+    checks:
+      - exactly_one_of_typed_value_or_ciphertext_by_catalog_sensitivity
+      - aad_binds_installation_key_revision_schema_version
+      - plaintext_secret_absent
+  active_configuration:
+    cardinality: exactly_one
+    primary_key: [singleton_key]
+    fields:
+      singleton_key: {type: text, const: CONFIGURATION-DEFAULT, nullable: false}
+      active_revision: {type: revision, references: configuration_revisions.revision, nullable: false}
+      last_known_good_revision: {type: revision, references: configuration_revisions.revision, nullable: false}
+      candidate_revision: {type: revision, references: configuration_revisions.revision, nullable: true}
+      updated_at: {type: timestamp, nullable: false}
+    checks:
+      - active_and_lkg_are_valid
+      - pointer_change_is_cas_protected
+  configuration_consumer_states:
+    cardinality: many
+    primary_key: [consumer]
+    fields:
+      consumer: {type: text, max_length: 80, nullable: false}
+      desired_revision: {type: revision, nullable: false}
+      applied_revision: {type: revision, nullable: true}
+      ack: {type: enum, values: [PENDING, ACKED, FAILED], nullable: false}
+      error_code: {type: text, max_length: 128, nullable: true}
+      heartbeat_at: {type: timestamp, nullable: false}
+      instance_id: {type: text, max_length: 128, nullable: false}
+      build_sha: {type: hash, nullable: false}
+    checks:
+      - required_consumer_ack_before_ready
+      - acked_revision_matches_desired
+  domain_database_connection_revisions:
+    cardinality: many
+    primary_key: [revision]
+    fields:
+      revision: {type: revision, nullable: false}
+      state: {type: enum, values: [CANDIDATE, VALIDATED, ACTIVE, FAILED, SUPERSEDED], nullable: false}
+      base_revision: {type: revision, nullable: true}
+      nonsecret_payload: {type: json, nullable: false}
+      ciphertext_envelope: {type: ciphertext, nullable: false, sensitivity: secret}
+      validation_sha256: {type: hash, nullable: true}
+      failure_code: {type: text, max_length: 128, nullable: true}
+      created_at: {type: timestamp, nullable: false}
+      validated_at: {type: timestamp, nullable: true}
+      activated_at: {type: timestamp, nullable: true}
+    checks:
+      - dsn_password_and_private_keys_are_encrypted
+      - no_raw_dsn_string
+      - activate_requires_network_tls_credential_privilege_schema_checks
+  bootstrap_audit_events:
+    cardinality: many
+    primary_key: [sequence]
+    fields:
+      sequence: {type: int64, min: 1, nullable: false}
+      event_id: {type: text, pattern: '^BAUD-[a-z0-9]{24,64}$', nullable: false}
+      event_type: {type: enum, values: [LOGIN_SUCCESS, LOGIN_FAILURE, RATE_LIMIT, SESSION_REVOKED, KEY_CREATED, KEY_RENAMED, KEY_ROTATED, KEY_REVOKED, KEY_EXPIRED, CONFIG_CANDIDATE, CONFIG_VALIDATED, CONFIG_ACTIVATED, CONFIG_FAILED, CONFIG_ROLLED_BACK, DATABASE_CANDIDATE, DATABASE_VALIDATED, DATABASE_ACTIVATED, DATABASE_REVERTED, DATABASE_FAILED], nullable: false}
+      actor_principal: {type: enum, values: [OWNER, SYSTEM], nullable: false}
+      access_key_id: {type: text, references: general_access_keys.key_id, nullable: true}
+      session_id_sha256: {type: hash, nullable: true, sensitivity: verifier}
+      configuration_revision: {type: revision, nullable: true}
+      database_connection_revision: {type: revision, nullable: true}
+      before_sha256: {type: hash, nullable: true}
+      after_sha256: {type: hash, nullable: true}
+      masked_summary: {type: json, nullable: false}
+      previous_event_hash: {type: hash, nullable: true}
+      event_hash: {type: hash, nullable: false}
+      created_at: {type: timestamp, nullable: false}
+    checks:
+      - append_only
+      - hash_chain_continuous
+      - no_secret_or_ciphertext_or_raw_provider_payload
+indexes:
+  - {relation: general_access_keys, columns: [status, expires_at]}
+  - {relation: owner_sessions, columns: [token_sha256]}
+  - {relation: configuration_revisions, columns: [state, created_at]}
+  - {relation: configuration_consumer_states, columns: [ack, desired_revision]}
+  - {relation: bootstrap_audit_events, columns: [event_type, created_at]}
+domain_transition:
+  authority: SQLALCHEMY_METADATA_AND_ALEMBIC
+  target_status: TARGET_TRANSITION_FROZEN
+  singleton_namespace:
+    relation: workspaces
+    retained: true
+    cardinality: exactly_one
+    public_api: forbidden
+    mutable_owner_id: removed
+    request_override: forbidden
+  remove_or_migrate_to_control_db:
+    users: REMOVE
+    session_tokens: REMOVE
+    app_settings: REMOVE
+    model_provider_connections: MOVE_TO_CONTROL_DB
+    agent_configs: MOVE_TO_CONTROL_DB_PROJECTION_ONLY
+    setup_bindings: MOVE_TO_CONTROL_DB_PROJECTION_ONLY
+  domain_columns_to_add:
+    agent_runs: [effective_configuration_revision, agent_configuration_revision, ai_connection_id, ai_connection_revision, runtime_profile, tool_timeout_seconds, max_steps, max_tool_calls, prompt_manifest_sha256, tool_registry_sha256]
+    tool_calls: [effective_configuration_revision, configuration_sha256, tool_registry_sha256]
+  namespace_invariant:
+    - every retained workspace_id equals the installation singleton namespace
+    - user_id, owner_id, role and workspace selector input rejected by closed request schemas
+    - no cross-namespace product route remains
+  generated_count_policy:
+    - do_not_merge_control_and_domain_table_counts
+    - derive_control_manifest_from_target_metadata
+    - derive_domain_manifest_from_target_metadata_and_alembic
+    - publish_counts_only_after_symmetric_diff_zero

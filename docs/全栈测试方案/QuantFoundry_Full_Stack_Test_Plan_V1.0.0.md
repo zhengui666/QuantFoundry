@@ -12,7 +12,7 @@
 **目标 API Contract：** `/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml`
 **产品阶段：** MVP / First Usable Product
 **部署模式：** Single-human-principal / Self-hosted
-**测试文档状态：** Final V1.0 + UX-001 D0 target amendment；D1 executable matrix pending
+**测试文档状态：** Final V1.0 + UX-001 D1 contract amendment；D2 targeted runtime gates 与全新 PG18 populated/full-stack frontend gates passed；chaos/independent release evidence pending
 **日期：** 2026-08-13
 **正式路径：** `/QuantFoundry/docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md`
 
@@ -483,7 +483,7 @@ CI diff 必须为零（允许排序/格式标准化后比较）。
 同时验证：
 
 - schema 本身合法；
-- `stage=P0_EXECUTABLE`、`revision=P0_EXECUTABLE_R2` 的 canonical 实际 operation 对 request、response、parameter、header、security、status 与 error 进行字段级校验；
+- `stage=UX001_D1`、`revision=UX001_D1_R1` 的 canonical 实际 operation 对 request、response、parameter、header、security、status 与 error 进行字段级校验；
 - operationId 唯一；
 - required fields 与 implementation 一致；
 - Error response 使用 `application/problem+json`；
@@ -491,9 +491,9 @@ CI diff 必须为零（允许排序/格式标准化后比较）。
 - Holdout result endpoint 403 contract；
 - generated TypeScript types 无人工 patch。
 
-### 7.1.1 `P0_EXECUTABLE` revision `P0_EXECUTABLE_R2` 45-operation Contract Matrix
+### 7.1.1 `P0_EXECUTABLE` revision `P0_EXECUTABLE_R2` 45-operation Contract Matrix（historical baseline）
 
-Canonical metadata 必须精确为 `x-quantfoundry-contract-stage: P0_EXECUTABLE`、`x-quantfoundry-contract-revision: P0_EXECUTABLE_R2`、`x-quantfoundry-operation-count: 45`，`components.schemas` 计数精确为 162。除 `getSystemHealth` 显式 `security: []` 外，其余 44 个 operation 必须继承全局 Bearer auth；任何增删、方法/路径/auth/schema 改动必须先修改 canonical OpenAPI。
+历史 baseline metadata 为 `x-quantfoundry-contract-stage: P0_EXECUTABLE`、`x-quantfoundry-contract-revision: P0_EXECUTABLE_R2`、`x-quantfoundry-operation-count: 45`、`components.schemas=162`、`canonical errors=65`。该矩阵只用于 D1 前回归诊断；UX001_D1_R1 target metadata 与 65-operation additions 见 §7.1.2。
 
 | # | Method | Path | operationId | Auth |
 |---:|---|---|---|---|
@@ -543,9 +543,22 @@ Canonical metadata 必须精确为 `x-quantfoundry-contract-stage: P0_EXECUTABLE
 | 44 | GET | `/jobs/{job_id}` | `getJob` | Bearer |
 | 45 | GET | `/events/stream` | `streamEvents` | Bearer |
 
-每行必须覆盖 positive request/response schema、required parameters/headers、documented success status、canonical Problem response 与对应 auth negative。45/45 operation 必须声明并运行 `application/problem+json` Problem contract；matrix、canonical schema 与 runtime discovery 任一差异均阻断 PR。
+历史 P0 baseline 的每行必须覆盖 positive request/response schema、required parameters/headers、documented success status、canonical Problem response 与对应 auth negative。45/45 operation 只作为 D1 前 baseline；UX001_D1_R1 target 必须由 65-operation generated matrix 替换，matrix、canonical schema 与 runtime discovery 任一差异均阻断 PR。
 
-### 7.1.2 R2 新增 operation 实际执行测试（12 项）
+### 7.1.2 UX001_D1 machine-derived control-plane additions（20 operations）
+
+以下 operation family 必须由 canonical OpenAPI 解析器按 `operationId` 自动生成测试矩阵；本表只声明分组，不复制第二份 field-level schema：
+
+| Family | Operation IDs |
+|---|---|
+| Auth/session | `loginWithGeneralAccessKey`, `getCurrentOwnerSession`, `logoutOwnerSession` |
+| General access keys | `listGeneralAccessKeys`, `createGeneralAccessKey`, `renameGeneralAccessKey`, `rotateGeneralAccessKey`, `revokeGeneralAccessKey`, `expireGeneralAccessKey` |
+| Configuration | `getConfigurationCatalog`, `getActiveConfiguration`, `putConfigurationCandidate`, `validateConfigurationCandidate`, `activateConfiguration`, `rollbackConfiguration` |
+| Domain database | `getDomainDatabaseConnection`, `putDomainDatabaseConnectionCandidate`, `validateDomainDatabaseConnectionCandidate`, `activateDomainDatabaseConnection`, `revertDomainDatabaseConnection` |
+
+Target matrix 必须覆盖：public login exchange、cookie/CSRF/Origin/Fetch Metadata、one-time secret reveal、last-active-key lock、global If-Match、closed catalog values、AEAD masking、consumer ACK、candidate/test/activate/LKG recovery、Domain DB unavailable recovery 与 no-file/env/CLI fallback。失败必须使用 canonical Problem Details，不得以 old Bearer fixture 代替。
+
+### 7.1.3 R2 新增 operation 实际执行测试（12 项，historical baseline）
 
 新增 R2 operation 不是只做 schema discovery；以下 12 项必须在真实 HTTP/contract harness 中执行成功路径与指定负向路径：
 
@@ -714,19 +727,19 @@ SSE `SseEnvelope`：
 
 - `schema_version=1`；
 - `sequence` 正整数单调；
-- `event_type` 必须由 generated `EventType` 唯一提供，精确覆盖 31 个小写成员；mapping 以 `Record<EventType, ...>` 做 missing/extra compile gate，不维护手写 union；
+- `event_type` 必须由 generated `EventType` 唯一提供，精确覆盖 35 个小写成员；mapping 以 `Record<EventType, ...>` 做 missing/extra compile gate，不维护手写 union；
 - `object_version/object_revision` 按 generated locator branch 精确约束；`strategy_version` 两者必须 >=1，`settings/provider_connection/agent_config/event_stream` 必须 version=null 且 revision>=1，其他 branch 才允许 nullable；
 - generated `EventPayload` 与 `EventWaitingOn` 均须保留 `additionalProperties:false`；`EventWaitingOn` 只接受 `{type:'JOB',job_id}`；
 - Holdout event payload 无 result value、metric、chart point、sentinel、credential 或 raw tool/model payload；
 - unknown future event type、大小写漂移、unknown envelope/payload/waiting-on field 或错误 waiting-on shape 均整条 fail closed：不 merge/cache/toast，记录 contract/version skew，进入与 `system.resync_required` 相同的 query-level safe refetch；
 - `schema_version != 1` 同样 fail closed；持续 version skew 显示 incompatible/degraded 并停止无界重连，breaking envelope change 必须先有 canonical revision/client update；
 - resync 只 invalid/refetch 与 current route/event domain 相交的 active mutable query，保留 App、route、Tab、scroll、immutable cache 与 draft；
-- 31-member mapping 必须包含 `experiment.created` → Research Workspace/List + optional active Experiment detail，以及 `experiment.updated` → Experiment detail + Research Workspace；两者都不得把 notification payload merge 成对象 truth；
+- 35-member mapping 必须包含 `experiment.created` → Research Workspace/List + optional active Experiment detail，以及 `experiment.updated` → Experiment detail + Research Workspace；两者都不得把 notification payload merge 成对象 truth；
 - Paper/Review/Notification 虽是已知 event member，R2 仅刷新现有 `overview`，不得借事件调用 45-operation 之外的 future endpoint。
 
 ### 7.3.1 Closed locator / EventType pair matrix
 
-Harness 必须直接加载 generated 21-branch locator enum 与 pair rules，启动时断言 branch count=21、EventType count=31、EventType→branch mapping covered=31/missing=0/extra=0。14 个当前 producer branch 必须精确为 `job/research/experiment/factor/strategy_version/validation/approval/snapshot/agent_run/tool_call/memo/settings/provider_connection/agent_config`；`event_stream` 只由 replay/resync synthesizer 产生；`conclusion/paper/paper_run/review/capability/notification` 保留为正式 catalog branch。
+Harness 必须直接加载 generated 21-branch locator enum 与 pair rules，启动时断言 branch count=21、EventType count=35、EventType→branch mapping covered=35/missing=0/extra=0。14 个当前 producer branch 必须精确为 `job/research/experiment/factor/strategy_version/validation/approval/snapshot/agent_run/tool_call/memo/settings/provider_connection/agent_config`；`event_stream` 只由 replay/resync synthesizer 产生；`conclusion/paper/paper_run/review/capability/notification` 保留为正式 catalog branch。
 
 | ID | Parameterized case | Machine assertion |
 |---|---|---|
@@ -737,8 +750,8 @@ Harness 必须直接加载 generated 21-branch locator enum 与 pair rules，启
 | `QF-EVTLOC-005` | `provider_connection` UUID | 四表均仅 lowercase RFC UUIDv4 + version=null + revision>=1 accept；uppercase/mixed/non-v4/wrong-variant/catalog key/public ID/wrong version-revision reject |
 | `QF-EVTLOC-006` | `agent_config` role | 六个 generated `AgentRoleKey` 在四表各自 accept；unknown/case drift/public Agent ID/non-null version/null或nonpositive revision reject |
 | `QF-EVTLOC-007` | `event_stream` synthetic | 四表均仅 current envelope `event_id` 的 exact `EVT-` ID + version=null + revision>=1 accept；不同 event ID、其他 public ID、wrong version/missing revision reject |
-| `QF-EVTLOC-008` | 31 EventType own-branch positive | 从 generated pair rules 为每个 EventType 生成 exact branch，31/31 publish→`domain_events` table-level persist→replay→client decode 通过 |
-| `QF-EVTLOC-009` | 31 EventType rotated-branch negative | 每个 EventType 轮换到非 mapped branch；generated publisher pair-rule 必须在 DB insert 前拒绝；若 rotated tuple 同时违反 locator own-shape，`ck_domain_events_locator_quartet` 二次拒绝。replay 不透传，client 不 merge/cache/toast/query-key |
+| `QF-EVTLOC-008` | 35 EventType own-branch positive | 从 generated pair rules 为每个 EventType 生成 exact branch，35/35 publish→`domain_events` table-level persist→replay→client decode 通过 |
+| `QF-EVTLOC-009` | 35 EventType rotated-branch negative | 每个 EventType 轮换到非 mapped branch；generated publisher pair-rule 必须在 DB insert 前拒绝；若 rotated tuple 同时违反 locator own-shape，`ck_domain_events_locator_quartet` 二次拒绝。replay 不透传，client 不 merge/cache/toast/query-key |
 | `QF-EVTLOC-010` | producer/catalog boundary | 精确 14 writer + one synthesizer；formal catalog-only branch 不能由未授权 writer 发布，也不得从 allowlist 删除 |
 | `QF-EVTLOC-011` | unknown/mismatch recovery + migration | unknown type/event/schema version、case drift、tuple mismatch 均 fail closed/resync；无法从同 workspace 权威行证明的历史 `domain_events` quartet 必须 quarantine，并阻断该 workspace 的 replay/resume/completion，其他 workspace 不受影响 |
 | `QF-EVTLOC-012` | generated frontend/DB fixtures | fixture factory 只从 7-source runtime schemas 生成，21 branch 每个 fixture 必须直接执行 `domain_events` insert 以验证 named CHECK；strategy event 必须保留 non-null version/revision，删 required/注入 extra/影子 pair map 必须在 generated decoder 或 DB CHECK 失败 |
@@ -747,7 +760,7 @@ Harness 必须直接加载 generated 21-branch locator enum 与 pair rules，启
 
 `domain_events` 表级 oracle 必须独立执行 generated 21 branches：16 个 ordinary branch 各执行上述 4 种 version/revision 组合；`strategy_version` 只接受 version/revision 同时 `>=1`；`settings/provider_connection/agent_config/event_stream` 只接受 version SQL NULL + revision `>=1`。每个正例必须 insert→select→workspace replay own-shape exact；四列全 NULL、type/ID half-null、unknown type、wrong prefix、仅旋转 type/ID/version/revision 中部分字段而导致 own-shape mismatch、0/负数或特殊 branch 数字条件违例必须被 `ck_domain_events_locator_quartet` 拒绝。将整个合法 locator 旋转给非 mapped EventType 的负例由 generated publisher pair-rule 在 insert 前拒绝。任一历史 invalid row 未被同 workspace 权威数据修复前，必须 quarantine 并阻断该 authenticated workspace 的 event replay；不得跳过该 row、清 null 或以其他 workspace 数据回填。
 
-31-member expected mapping 不手写为测试 union，但 report 必须按 generated rule 输出以下 grouped oracle 并与 canonical exact compare：
+35-member expected mapping 不手写为测试 union，但 report 必须按 generated rule 输出以下 grouped oracle 并与 canonical exact compare：
 
 | EventType | Branch |
 |---|---|
@@ -850,7 +863,7 @@ Canonical Tool Contract 已落库：`contracts/tools/README.md` 定义版本/兼
 | `QF-WS-020` | same-SHA Artifact isolation | WA/WB 写相同 bytes/`sha256`，metadata rows、`storage_key`、refcount、authorization 与 signed URL 保持 workspace-local；content hash 相等不授予读取 |
 | `QF-WS-021` | Artifact leak negatives | 用 foreign `artifact_id`/storage key/hash/URL 读取、列 metadata、导出/删除 → 同质非可见响应；HTTP/DOM/log/SSE/Audit/telemetry 中无 foreign metadata、key、URL、credential、密钥/密文 |
 
-矩阵必须参数化覆盖 canonical 45-operation 中所有 resource/list/detail/mutation 路径：唯一 public `getSystemHealth` 不读取 workspace-owned row；其余 44 authenticated operations 保持 Bearer + server workspace scope。不得为测试增加 OpenAPI 未定义的 workspace selector 或 endpoint。
+历史 baseline 矩阵参数化覆盖 45-operation 中所有 resource/list/detail/mutation 路径：唯一 public `getSystemHealth` 不读取旧 workspace-owned row；其余 44 authenticated operations 的 Bearer + server workspace scope 只用于 D1 前诊断。UX001_D1_R1 的 target matrix 必须改用 singleton OWNER + cookie/CSRF，不得为测试增加 OpenAPI 未定义的 user/workspace selector 或 endpoint。
 
 ## 7.7 Public semantic ID machine-executable matrix
 
@@ -1288,8 +1301,8 @@ B 不能覆盖 A。
 
 | # | Case | 必测断言 |
 |---:|---|---|
-| 1 | 31-member positive exhaustiveness | 从 canonical `EventType.enum` 生成 31 个 event，逐个通过 decoder；数量精确 31、大小写精确，不使用手写 union |
-| 2 | 31-member routing exhaustiveness | `Record<EventType, QueryInvalidationRule>` 对 31 个 member 一一有且仅有映射；missing/extra 在 typecheck/contract test 失败；逐项等于前端方案 §20.4，各 P0 active query key 与 current route 对齐 |
+| 1 | 35-member positive exhaustiveness | 从 canonical `EventType.enum` 生成 35 个 event，逐个通过 decoder；数量精确 35、大小写精确，不使用手写 union |
+| 2 | 35-member routing exhaustiveness | `Record<EventType, QueryInvalidationRule>` 对 35 个 member 一一有且仅有映射；missing/extra 在 typecheck/contract test 失败；逐项等于前端方案 §20.4，各 P0 active query key 与 current route 对齐 |
 | 3 | case drift | canonical lowercase 通过；`Experiment.Updated`、uppercase/mixed-case 等全部拒绝，不执行 handler |
 | 4 | unknown future member | 未在当前 enum 的 future event type 整条 fail closed；不 merge/cache/toast，记录 version skew，进入本地 `system.resync_required` recovery |
 | 5 | unknown schema version | `schema_version != 1` 整条 fail closed；持续 skew 显示 incompatible/degraded、停止无界 reconnect；client 未升级前不猜测解析 |
@@ -2095,11 +2108,11 @@ Pause/Resume concurrent：
 
 # 30. Security Test Matrix
 
-## 30.1 Bearer Authentication / CSRF（current baseline only）
+## 30.1 Bearer Authentication / CSRF（current baseline historical only）
 
 本节只验证 D1 前 committed 45-operation current baseline；它已被 §51 对 UX-001 target supersede。D1 后必须以 general-key login → HttpOnly session + CSRF 的 generated matrix 原位替换，不得同时保留 Bearer 为长期 browser contract。
 
-45-operation matrix 中除 `GET /system/health` 外的 44 个 operation 必须逐项覆盖：
+历史 45-operation matrix 中除 `GET /system/health` 外的 44 个 operation 仅用于 D1 前 baseline 诊断；UX-001 target 必须逐项覆盖：
 
 - missing `Authorization`；
 - non-Bearer scheme；
@@ -2111,9 +2124,9 @@ Pause/Resume concurrent：
 - token placed in query/body/cookie instead of canonical header；
 - SSE connection missing/invalid Bearer。
 
-44/44 secured operations 必须断言：missing/invalid Bearer → HTTP 401 + `UNAUTHENTICATED`；有效 token 但 authority 不足 → HTTP 403 + `PERMISSION_DENIED`；均返回 canonical `application/problem+json` 且无业务副作用。`GET /system/health` 必须在无 token 时成功，但不得泄露 credential、config 或内部 topology。若具体部署额外启用 cookie session，再执行 CSRF、cross-origin 与 secure-cookie 属性测试；cookie 模式不得弱化 Bearer contract。
+历史 Bearer 断言只允许在 baseline fixture 中运行。UX-001 target 必须断言：unknown/revoked/expired/wrong general key 对外统一为 401 + `UNAUTHENTICATED`；登录成功只建立 Secure/HttpOnly/SameSite cookie session；mutation 缺失或错误 CSRF/Origin/Fetch Metadata → 403 + `CSRF_REQUIRED`；无业务副作用且不泄露 key/session/config。不得保留长期 Bearer 双轨。
 
-上述 403 只针对当前 workspace 内可见资源上的 actor/policy authority negative。以有效 token 请求其他 workspace 的 valid public ID 必须按 §7.6 返回与不存在一致的 404；body/FK ref 按对应 canonical generic validation failure，不得用 403 暴露存在性。
+上述 403 只针对固定 OWNER 在 singleton namespace 内的 authority/policy negative；请求伪造 user/owner/role/workspace/namespace 字段必须由 closed schema 拒绝，不得暴露第二主体或 namespace。
 
 ## 30.2 Secret Redaction
 
@@ -2582,8 +2595,8 @@ Backend unit
 Backend property critical subset
 Engine golden full canonical suite
 Field-level staged P0 OpenAPI validation + runtime diff
-45/45 operation Problem matrix
-44/44 secured operation Bearer 401/403 matrix
+45/45 operation Problem matrix（historical baseline）
+44/44 secured operation Bearer 401/403 matrix（historical baseline）
 Canonical error enum generated/runtime diff
 Tool README + v1-p0 schema/registry/policy diff
 Frontend generated type diff
@@ -2940,8 +2953,8 @@ real Postgres CI
 synthetic fixtures
 Clock
 OpenAPI diff
-field-level 45-operation Problem contract
-44-operation Bearer 401/403 contract
+field-level 45-operation Problem contract（historical baseline）
+44-operation Bearer 401/403 contract（historical baseline）
 Test IDs/reporting
 engine golden framework
 ```
@@ -3168,15 +3181,15 @@ Quant Engine 测试负责证明：
 |---|---|
 | Change ID | `UX-001` |
 | 目标状态 | `TARGET_NORMATIVE` |
-| 当前阶段 | `D0_DOCS_ONLY` |
-| 可执行测试阶段 | `D1_MACHINE_CONTRACT_AND_SCHEMA_REQUIRED` |
-| auth/config/database/Agent 代码实现 | `BLOCKED` until D1 complete |
+| 当前阶段 | `D3_FRONTEND_CONTROL_PLANE_IMPLEMENTED` |
+| 可执行测试阶段 | `UX001_D1_R1_TARGETED_RUNTIME_EXECUTED_D3_FRONTEND_BUILT` |
+| auth/config/database/Agent/Frontend 代码实现 | `D3_IMPLEMENTATION_COMPLETE_TARGETED` |
 
-本节是 Backend §41 与 Agent §93 的测试联动 target normative。D0 只冻结用例、Oracle、证据与发布门禁，不得编写测试代码、fixture、migration 或业务代码来对准尚未修订的 current machine contract。
+本节是 Backend §41 与 Agent §93 的测试联动 target normative。D1 machine sources 已冻结；runtime fixture execution、migration roundtrip 与 release evidence 属于 D2。
 
 对 UX-001 目标，本节明确 supersede 本文既有 Bearer-only、optional cookie、authenticated multi-workspace、`>=12 (workspace_id,role_key)` 与 locale-only browser `storageState` 验收语义。这些旧章节只能验证 D1 前 current baseline，不是 target oracle；D1 必须原位替换为 general-key login → HttpOnly session + CSRF、singleton namespace 与 empty browser storage 语义，不保留长期双轨。
 
-以下数字在本文其他章节中均必须解读为 **UX-001 之前的 current baseline**：
+以下数字在本文其他章节中均必须解读为 **UX-001 之前的 current baseline**；D1 target counts 只从 canonical machine source 读取：
 
 ```text
 63 PostgreSQL application tables
@@ -3189,7 +3202,13 @@ Quant Engine 测试负责证明：
 >=12 distinct (workspace_id, role_key) tuples
 ```
 
-D1 必须先修订 canonical OpenAPI、Bootstrap Control DB schema、Domain PostgreSQL schema 和 migration authority，再由生成器重算 exact values。禁止手工猜数、只增量修改 old count、把 Bootstrap 表塞入旧 PostgreSQL 63-table allowlist，或在数量相等时忽略 identity/signature diff。Bootstrap 与 Domain schema 必须各有自己的 exact manifest 和 symmetric diff。
+```text
+D1 target OpenAPI operations: 65
+D1 target OpenAPI schemas: 186
+D1 target canonical errors: 75
+```
+
+D1 已完成 canonical OpenAPI、Bootstrap Control DB target schema、configuration catalog 与 executable matrix 冻结；D2 targeted runtime implementation、全新 PostgreSQL 18 populated roundtrip（63 tables/3918 rows/42 nonempty/12 workspace-role/191 CHECKs）与 full-stack frontend gate 已通过；DB chaos、存量迁移 quarantine 与独立 release evidence 仍待完成。禁止手工猜数、只增量修改 old count、把 Bootstrap 表塞入旧 PostgreSQL 63-table allowlist，或在数量相等时忽略 identity/signature diff。Bootstrap 与 Domain schema 必须各有自己的 exact manifest 和 symmetric diff。
 
 `contracts/tools/v1-p0.yaml` 的 exact 13-entry `name@version` set 不随 UX-001 改变；它是 target 与 current baseline 共同门禁。
 

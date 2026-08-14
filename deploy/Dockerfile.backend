@@ -25,7 +25,7 @@ RUN uv sync --frozen --no-dev --no-install-project --no-cache
 COPY --chown=quantfoundry:quantfoundry backend/ ./
 COPY --chown=quantfoundry:quantfoundry docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md /workspace/docs/后端系统技术方案/
 COPY --chown=quantfoundry:quantfoundry docs/后端系统技术方案/contracts/ /workspace/docs/后端系统技术方案/contracts/
-COPY --chown=quantfoundry:quantfoundry scripts/bootstrap_local.py scripts/bootstrap_owner.py scripts/bootstrap_result_check.py scripts/fullstack_seed.py scripts/api_healthcheck.py scripts/runtime_healthcheck.py /workspace/scripts/
+COPY --chown=quantfoundry:quantfoundry scripts/bootstrap-general-key.py scripts/fullstack_seed.py scripts/api_healthcheck.py scripts/runtime_healthcheck.py /workspace/scripts/
 RUN mkdir -p /var/lib/quantfoundry/artifacts /var/lib/quantfoundry/data /workspace/scripts \
     && chown -R quantfoundry:quantfoundry /var/lib/quantfoundry /workspace
 

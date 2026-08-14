@@ -7,7 +7,9 @@ import socket
 import time
 from datetime import UTC, datetime
 
+from app import main as domain_main
 from app.artifacts import probe_artifact_store, reap_orphan_artifacts
+from app.control_plane import restore_active_domain_database
 from app.main import ArtifactRow, SessionLocal
 from app.queue import reap_expired_jobs, record_heartbeat
 from scheduler.paper import PaperScheduler
@@ -22,6 +24,13 @@ def scheduler_id() -> str:
 
 
 def run_once() -> int:
+    if not domain_main.app.state.domain_database_available:
+        try:
+            restore_active_domain_database()
+        except Exception:  # noqa: BLE001 - recovery loop must remain alive
+            return 0
+        if not domain_main.app.state.domain_database_available:
+            return 0
     probe_artifact_store()
     session = SessionLocal()
     try:
@@ -41,7 +50,10 @@ def run_once() -> int:
 
 def run_forever(poll_seconds: float = 15.0) -> None:
     while True:
-        run_once()
+        try:
+            run_once()
+        except Exception:  # noqa: BLE001 - one failed cycle must not kill scheduler
+            pass
         time.sleep(poll_seconds)
 
 

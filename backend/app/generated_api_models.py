@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from jsonschema import Draft202012Validator
 from pydantic import (
@@ -17,6 +17,283 @@ from pydantic import (
     RootModel,
     model_validator,
 )
+
+
+class GeneralAccessKeyLoginRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: str = Field(
+        ...,
+        max_length=256,
+        min_length=60,
+        pattern="^qfk_gak_[a-z0-9]{16,32}\\.[A-Za-z0-9_-]{43,}$",
+    )
+    """
+    Raw general access key accepted only by this public exchange. It is never persisted or echoed.
+    """
+
+
+class GeneralAccessKeyMetadata(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key_id: str = Field(..., pattern="^gak_[a-z0-9]{16,32}$")
+    label: str = Field(..., max_length=80, min_length=1)
+    masked_hint: str = Field(..., max_length=32, min_length=3)
+    status: Literal["ACTIVE", "REVOKED", "EXPIRED"]
+    expires_at: AwareDatetime | None
+    last_used_at: AwareDatetime | None
+    revision: int = Field(..., ge=1)
+    created_at: AwareDatetime
+
+
+class GeneralAccessKeyList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    items: list[GeneralAccessKeyMetadata]
+
+
+class GeneralAccessKeyCreateRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    label: str = Field(..., max_length=80, min_length=1)
+    expires_at: AwareDatetime | None = None
+
+
+class GeneralAccessKeyRenameRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    label: str = Field(..., max_length=80, min_length=1)
+
+
+class GeneralAccessKeyIssued(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: GeneralAccessKeyMetadata
+    secret: str = Field(
+        ...,
+        max_length=256,
+        min_length=60,
+        pattern="^qfk_gak_[a-z0-9]{16,32}\\.[A-Za-z0-9_-]{43,}$",
+    )
+    """
+    Raw secret displayed exactly once in the successful create/rotate response; it MUST NOT be logged, persisted, audited, or stored by the browser.
+    """
+
+
+class OwnerSessionView(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    principal: Literal["OWNER"]
+    auth_method: Literal["GENERAL_ACCESS_KEY"]
+    key_id: str = Field(..., pattern="^gak_[a-z0-9]{16,32}$")
+    issued_at: AwareDatetime
+    last_seen_at: AwareDatetime
+    expires_at: AwareDatetime
+    csrf_token: str = Field(..., max_length=256, min_length=32)
+    """
+    Per-session CSRF token; never a bearer credential.
+    """
+
+
+class SessionBootstrapResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    session: OwnerSessionView
+
+
+class Consumer(RootModel[str]):
+    root: str = Field(..., max_length=80, min_length=1)
+
+
+class Dependency(RootModel[str]):
+    root: str = Field(..., max_length=160, min_length=1)
+
+
+class ConfigurationCatalogEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
+    group: str = Field(..., max_length=64, min_length=1)
+    schema_version: int = Field(..., ge=1)
+    scope: Literal["INSTALLATION"]
+    sensitivity: Literal["PUBLIC", "MASKED", "SECRET"]
+    apply_mode: Literal[
+        "LIVE_NEW_WORK", "DRAIN_RELOAD", "RESTART_REQUIRED", "SECURITY_IMMEDIATE"
+    ]
+    consumers: list[Consumer] = Field(..., min_length=1)
+    dependencies: list[Dependency]
+    schema_: dict[str, Any] = Field(..., alias="schema")
+    """
+    Closed JSON Schema for this key; it is immutable catalog data
+    """
+    validator: str = Field(..., max_length=160, min_length=1)
+    safe_range: dict[str, Any] | None = None
+
+
+class ConfigurationValueWrite1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
+    value: str | float | bool | dict[str, Any] | list | None = None
+    secret: str | None = Field(default=None, max_length=16384, min_length=1)
+
+
+class ConfigurationValueWrite2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
+    value: str | float | bool | dict[str, Any] | list | None = None
+    secret: str = Field(..., max_length=16384, min_length=1)
+
+
+class ConfigurationValueView(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
+    sensitivity: Literal["PUBLIC", "MASKED", "SECRET"]
+    configured: bool
+    value: str | float | bool | dict[str, Any] | list | None
+    masked_hint: str | None = Field(..., max_length=80)
+
+
+class ConfigurationCandidateRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: int = Field(..., ge=1)
+    values: list[ConfigurationValueWrite1 | ConfigurationValueWrite2] = Field(
+        ..., min_length=1
+    )
+
+
+class ConfigurationCandidate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: int = Field(..., ge=1)
+    state: Literal[
+        "CANDIDATE", "VALIDATED", "APPLYING", "FAILED", "ACTIVE", "SUPERSEDED"
+    ]
+    base_revision: int = Field(..., ge=1)
+    catalog_version: str
+    values: list[ConfigurationValueView]
+    snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    created_at: AwareDatetime
+
+
+class ConfigurationActivateRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: int = Field(..., ge=1)
+
+
+class ConfigurationRollbackRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    source_revision: int = Field(..., ge=1)
+
+
+class DatabaseConnectionCandidate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: int = Field(..., ge=1)
+    state: Literal["CANDIDATE", "VALIDATED", "ACTIVE", "FAILED", "SUPERSEDED"]
+    base_revision: int = Field(..., ge=1)
+    host: str = Field(..., max_length=253, min_length=1)
+    port: int = Field(..., ge=1, le=65535)
+    database: str = Field(..., max_length=63, min_length=1)
+    tls_mode: Literal["DISABLED", "VERIFY_CA", "VERIFY_FULL"]
+    username_masked: str = Field(..., max_length=80, min_length=1)
+    password_configured: bool
+    client_key_configured: bool
+    pool_profile: str | None = Field(default=None, max_length=64)
+    created_at: AwareDatetime
+
+
+class Connection(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    host: str = Field(..., max_length=253, min_length=1)
+    port: int = Field(..., ge=1, le=65535)
+    database: str = Field(..., max_length=63, min_length=1)
+    tls_mode: Literal["DISABLED", "VERIFY_CA", "VERIFY_FULL"]
+    username: str = Field(..., max_length=128, min_length=1)
+    password: str | None = Field(default=None, max_length=4096, min_length=1)
+    client_key_pem: str | None = Field(default=None, max_length=16384, min_length=1)
+    ca_certificate_pem: str | None = Field(default=None, max_length=16384, min_length=1)
+    pool_profile: str | None = Field(default=None, max_length=64)
+
+
+class DatabaseConnectionCandidateRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: int = Field(..., ge=1)
+    connection: Connection
+
+
+class DatabaseConnectionStatus(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    state: Literal[
+        "BOOTSTRAP_LOCKED",
+        "DATABASE_DISCONNECTED",
+        "VALIDATING",
+        "APPLYING",
+        "READY",
+        "DEGRADED",
+    ]
+    active_revision: int | None = Field(..., ge=1)
+    candidate_revision: int | None = Field(..., ge=1)
+    last_known_good_revision: int | None = Field(..., ge=1)
+    active: DatabaseConnectionCandidate | None
+    candidate: DatabaseConnectionCandidate | None
+    domain_operations: Literal["AVAILABLE", "READ_ONLY_RECOVERY", "UNAVAILABLE"]
+    checked_at: AwareDatetime
+
+
+class DatabaseConnectionCheck(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    name: Literal[
+        "NETWORK",
+        "TLS",
+        "CREDENTIAL",
+        "POSTGRES_VERSION",
+        "PRIVILEGE",
+        "SCHEMA",
+        "MIGRATION_COMPATIBILITY",
+    ]
+    status: Literal["PASS", "FAIL", "SKIPPED"]
+    detail: str = Field(..., max_length=300)
+
+
+class DatabaseConnectionValidationResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: int = Field(..., ge=1)
+    status: Literal["VALID", "INVALID"]
+    checks: list[DatabaseConnectionCheck] = Field(..., min_length=1)
+    validated_at: AwareDatetime
 
 
 class SystemHealth(BaseModel):
@@ -1648,6 +1925,36 @@ class ProblemContext(BaseModel):
                 },
                 {
                     "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "configuration.updated",
+                                    "configuration.apply_failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {"properties": {"object_type": {"const": "settings"}}},
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "database.connection.updated",
+                                    "database.connection.failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {
+                        "properties": {"object_type": {"const": "provider_connection"}}
+                    },
+                },
+                {
+                    "if": {
                         "properties": {"event_type": {"const": "notification.created"}},
                         "required": ["event_type"],
                     },
@@ -2652,6 +2959,38 @@ class ProblemContext(BaseModel):
                     {
                         "if": {
                             "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "configuration.updated",
+                                        "configuration.apply_failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {"properties": {"object_type": {"const": "settings"}}},
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "database.connection.updated",
+                                        "database.connection.failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {
+                            "properties": {
+                                "object_type": {"const": "provider_connection"}
+                            }
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
                                 "event_type": {"const": "notification.created"}
                             },
                             "required": ["event_type"],
@@ -2779,6 +3118,16 @@ class ActionCapability(BaseModel):
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
         | None
     )
@@ -4016,7 +4365,7 @@ class Id37(RootModel[Id371 | Id372]):
 
 class ObjectRef(BaseModel):
     """
-    Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST still resolve and authorize it inside the caller's authenticated workspace.
+    Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST resolve and authorize it inside the installation's fixed singleton namespace.
     """
 
     model_config = ConfigDict(
@@ -6472,7 +6821,7 @@ class Id40(RootModel[Id401 | Id402]):
 
 class VersionedHashRef(BaseModel):
     """
-    id is globally unique but remains workspace-authorized; hash equality never grants object access.
+    id is globally unique but remains authorized to the fixed installation namespace; hash equality never grants object access.
     """
 
     model_config = ConfigDict(
@@ -6573,7 +6922,7 @@ class Id44(RootModel[Id441 | Id442]):
 
 class PolicyRef(BaseModel):
     """
-    Policy id is globally unique but MUST resolve to an active policy of the required kind in the authenticated workspace.
+    Policy id is globally unique but MUST resolve to an active policy of the required kind in the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -6764,7 +7113,7 @@ class ProvenanceId1(RootModel[str]):
 
 class ProvenanceRef(BaseModel):
     """
-    provenance_id is globally unique but MUST be resolved and authorized in the authenticated workspace.
+    provenance_id is globally unique but MUST be resolved and authorized in the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -6977,7 +7326,7 @@ class Id46(RootModel[str]):
 
 class Strategy(BaseModel):
     """
-    id is globally unique but remains workspace-authorized; hash equality never grants object access.
+    id is globally unique but remains authorized to the fixed installation namespace; hash equality never grants object access.
     """
 
     model_config = ConfigDict(
@@ -7022,7 +7371,7 @@ class Id48(RootModel[str]):
 
 class Factor(BaseModel):
     """
-    id is globally unique but remains workspace-authorized; hash equality never grants object access.
+    id is globally unique but remains authorized to the fixed installation namespace; hash equality never grants object access.
     """
 
     model_config = ConfigDict(
@@ -7067,7 +7416,7 @@ class Id50(RootModel[str]):
 
 class CostModel(BaseModel):
     """
-    id is globally unique but remains workspace-authorized; hash equality never grants object access.
+    id is globally unique but remains authorized to the fixed installation namespace; hash equality never grants object access.
     """
 
     model_config = ConfigDict(
@@ -7196,6 +7545,16 @@ class OverviewAttentionItem(BaseModel):
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
         | None
     )
@@ -7440,7 +7799,7 @@ class ResearchPolicyId1(RootModel[str]):
         pattern="^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
     )
     """
-    Stable public research-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public research-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7456,7 +7815,7 @@ class ResearchPolicyId2(RootModel[str]):
         pattern="^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     )
     """
-    Stable public research-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public research-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7469,7 +7828,7 @@ class ResearchPolicyId(RootModel[ResearchPolicyId1 | ResearchPolicyId2]):
         ],
     )
     """
-    Stable public research-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public research-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7485,7 +7844,7 @@ class RiskPolicyId1(RootModel[str]):
         pattern="^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
     )
     """
-    Stable public risk-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public risk-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7501,7 +7860,7 @@ class RiskPolicyId2(RootModel[str]):
         pattern="^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     )
     """
-    Stable public risk-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public risk-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7514,7 +7873,7 @@ class RiskPolicyId(RootModel[RiskPolicyId1 | RiskPolicyId2]):
         ],
     )
     """
-    Stable public risk-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public risk-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7530,7 +7889,7 @@ class CostModelId1(RootModel[str]):
         pattern="^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
     )
     """
-    Stable public cost-model reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public cost-model reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7546,7 +7905,7 @@ class CostModelId2(RootModel[str]):
         pattern="^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     )
     """
-    Stable public cost-model reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public cost-model reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7559,7 +7918,7 @@ class CostModelId(RootModel[CostModelId1 | CostModelId2]):
         ],
     )
     """
-    Stable public cost-model reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public cost-model reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
 
 
@@ -7828,17 +8187,17 @@ class SetupStatus(BaseModel):
     research_policy_active: bool
     research_policy_id: ResearchPolicyId | None
     """
-    Stable public research-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public research-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
     risk_policy_active: bool
     risk_policy_id: RiskPolicyId | None
     """
-    Stable public risk-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public risk-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
     cost_model_active: bool
     cost_model_id: CostModelId | None
     """
-    Stable public cost-model reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+    Stable public cost-model reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
     """
     fallback_step: (
         Literal["AI_PROVIDER", "RESEARCH_DEFAULTS", "RESEARCH_CONSTITUTION"] | None
@@ -8134,248 +8493,15 @@ class SetupProviderConnectionValidationRequest(BaseModel):
     credential: str = Field(..., min_length=1, json_schema_extra={"writeOnly": True})
 
 
-class ResearchPolicyId3(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RP-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=29,
-        min_length=29,
-        pattern="^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
-    )
-
-
-class ResearchPolicyId4(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RP-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=39,
-        min_length=39,
-        pattern="^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    )
-
-
-class RiskPolicyId3(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RISK-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=31,
-        min_length=31,
-        pattern="^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
-    )
-
-
-class RiskPolicyId4(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RISK-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=41,
-        min_length=41,
-        pattern="^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    )
-
-
-class CostModelId3(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "COST-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=31,
-        min_length=31,
-        pattern="^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
-    )
-
-
-class CostModelId4(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "COST-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=41,
-        min_length=41,
-        pattern="^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    )
-
-
 class SetupCompleteRequest(BaseModel):
     """
-    P0 R2 intentionally tightens the pre-release executable baseline by requiring a successful, unexpired, unconsumed, owner-bound AI connection reference of kind AI.
+    Installation-only transition request. It carries a candidate configuration revision; all field values, validation, secret handling, and activation semantics belong to the shared Configuration API and Bootstrap Control DB.
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
-    language: Literal["zh-CN", "en"]
-    timezone: str
-    base_currency: str = Field(..., pattern="^[A-Z]{3}$")
-    number_format_locale: str
-    ai_connection_id: str = Field(..., min_length=1)
-    """
-    Required in P0_EXECUTABLE_R2; expired refs fail with CONNECTION_VALIDATION_EXPIRED and non-AI refs fail with CONNECTION_KIND_MISMATCH.
-    """
-    default_data_provider_id: str | None = None
-    default_benchmark: str
-    default_frequency: Literal["DAILY"]
-    default_research_start: date | None = None
-    initial_paper_capital: str = Field(..., pattern="^[0-9]+(\\\\.[0-9]+)?$")
-    research_policy_id: ResearchPolicyId3 | ResearchPolicyId4 = Field(
-        ...,
-        examples=[
-            "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RP-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    risk_policy_id: RiskPolicyId3 | RiskPolicyId4 = Field(
-        ...,
-        examples=[
-            "RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RISK-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    cost_model_id: CostModelId3 | CostModelId4 = Field(
-        ...,
-        examples=[
-            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "COST-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-
-
-class ResearchPolicyId5(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RP-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=29,
-        min_length=29,
-        pattern="^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
-    )
-
-
-class ResearchPolicyId6(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RP-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=39,
-        min_length=39,
-        pattern="^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    )
-
-
-class RiskPolicyId5(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RISK-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=31,
-        min_length=31,
-        pattern="^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
-    )
-
-
-class RiskPolicyId6(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RISK-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=41,
-        min_length=41,
-        pattern="^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    )
-
-
-class CostModelId5(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "COST-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=31,
-        min_length=31,
-        pattern="^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$",
-    )
-
-
-class CostModelId6(RootModel[str]):
-    root: str = Field(
-        ...,
-        examples=[
-            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "COST-550e8400-e29b-41d4-a716-446655440000",
-        ],
-        max_length=41,
-        min_length=41,
-        pattern="^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    )
-
-
-class SettingsDetail(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    settings_id: Literal["SETTINGS-DEFAULT"]
-    """
-    Workspace-local singleton alias; not a public semantic object ID.
-    """
-    revision: int = Field(..., ge=1)
-    language: Literal["zh-CN", "en"]
-    timezone: str
-    base_currency: str
-    number_format_locale: str
-    ai_connection_id: str
-    default_data_provider_id: str | None
-    default_benchmark: str
-    default_frequency: Literal["DAILY"]
-    default_research_start: date | None
-    initial_paper_capital: str
-    research_policy_id: ResearchPolicyId5 | ResearchPolicyId6 = Field(
-        ...,
-        examples=[
-            "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RP-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    risk_policy_id: RiskPolicyId5 | RiskPolicyId6 = Field(
-        ...,
-        examples=[
-            "RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RISK-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    cost_model_id: CostModelId5 | CostModelId6 = Field(
-        ...,
-        examples=[
-            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "COST-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    created_at: AwareDatetime
-    updated_at: AwareDatetime
+    configuration_revision: int = Field(..., ge=1)
 
 
 class DateCoverage(BaseModel):
@@ -8550,6 +8676,16 @@ class RequirementEvaluation(BaseModel):
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
         | None
     )
@@ -8784,7 +8920,7 @@ class DatasetSnapshot(BaseModel):
     provenance: ProvenanceRef
 
 
-class ResearchPolicyId71(RootModel[str]):
+class ResearchPolicyId31(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -8797,7 +8933,7 @@ class ResearchPolicyId71(RootModel[str]):
     )
 
 
-class ResearchPolicyId72(RootModel[str]):
+class ResearchPolicyId32(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -8810,8 +8946,8 @@ class ResearchPolicyId72(RootModel[str]):
     )
 
 
-class ResearchPolicyId7(RootModel[ResearchPolicyId71 | ResearchPolicyId72]):
-    root: ResearchPolicyId71 | ResearchPolicyId72 = Field(
+class ResearchPolicyId3(RootModel[ResearchPolicyId31 | ResearchPolicyId32]):
+    root: ResearchPolicyId31 | ResearchPolicyId32 = Field(
         ...,
         examples=[
             "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -8826,7 +8962,7 @@ class ResearchCreateRequest(BaseModel):
     )
     title: str = Field(..., max_length=256, min_length=1)
     original_user_prompt: str = Field(..., min_length=1)
-    research_policy_id: ResearchPolicyId7 | None = None
+    research_policy_id: ResearchPolicyId3 | None = None
 
 
 class ResearchStartRequest(BaseModel):
@@ -9161,7 +9297,7 @@ class ResearchId5(RootModel[str]):
     )
 
 
-class ResearchPolicyId8(RootModel[str]):
+class ResearchPolicyId4(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -9174,7 +9310,7 @@ class ResearchPolicyId8(RootModel[str]):
     )
 
 
-class ResearchPolicyId9(RootModel[str]):
+class ResearchPolicyId5(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -9399,7 +9535,7 @@ class StrategyId(RootModel[StrategyId1 | StrategyId2]):
     )
 
 
-class CostModelId7(RootModel[str]):
+class CostModelId3(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -9412,7 +9548,7 @@ class CostModelId7(RootModel[str]):
     )
 
 
-class CostModelId8(RootModel[str]):
+class CostModelId4(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -9457,7 +9593,7 @@ class ExperimentCreateRequest(BaseModel):
     factor_version: int | None = Field(default=None, ge=1)
     strategy_id: StrategyId | None = None
     strategy_version: int | None = Field(default=None, ge=1)
-    cost_model_id: CostModelId7 | CostModelId8 = Field(
+    cost_model_id: CostModelId3 | CostModelId4 = Field(
         ...,
         examples=[
             "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -9540,7 +9676,7 @@ class Id54(RootModel[str]):
 
 class NewExperimentResourceRef(BaseModel):
     """
-    The new Experiment id is high-entropy and globally unique; resource access remains restricted to the authenticated workspace that created it.
+    The new Experiment id is high-entropy and globally unique; resource access remains restricted to OWNER in the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -9797,6 +9933,16 @@ class ExperimentSearchResultFailed(BaseModel):
         "CREDENTIAL_NOT_CONFIGURED",
         "CONNECTION_VALIDATION_EXPIRED",
         "CONNECTION_KIND_MISMATCH",
+        "LAST_ACTIVE_KEY_REQUIRED",
+        "CONFIGURATION_VALIDATION_FAILED",
+        "CONFIGURATION_APPLY_FAILED",
+        "CONFIGURATION_RESTART_REQUIRED",
+        "DATABASE_CONNECTION_FAILED",
+        "DATABASE_SCHEMA_INCOMPATIBLE",
+        "DATABASE_SWITCH_FAILED",
+        "BOOTSTRAP_LOCKED",
+        "DATABASE_DISCONNECTED",
+        "CSRF_REQUIRED",
     ]
 
 
@@ -9987,7 +10133,7 @@ class Id56(RootModel[str]):
 
 class FactorRef(BaseModel):
     """
-    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -10031,7 +10177,7 @@ class Id58(RootModel[str]):
 
 class StrategyRef(BaseModel):
     """
-    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -10047,7 +10193,7 @@ class StrategyRef(BaseModel):
     version: int = Field(..., ge=1)
 
 
-class CostModelId9(RootModel[str]):
+class CostModelId5(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10060,7 +10206,7 @@ class CostModelId9(RootModel[str]):
     )
 
 
-class CostModelId10(RootModel[str]):
+class CostModelId6(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10183,7 +10329,7 @@ class Id60(RootModel[Id601 | Id602]):
 
 class VersionRef(BaseModel):
     """
-    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -10442,7 +10588,7 @@ class ResearchId13(RootModel[str]):
     )
 
 
-class CostModelId11(RootModel[str]):
+class CostModelId7(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10455,7 +10601,7 @@ class CostModelId11(RootModel[str]):
     )
 
 
-class CostModelId12(RootModel[str]):
+class CostModelId8(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10484,7 +10630,7 @@ class StrategyCreateRequest(BaseModel):
     universe: UniverseSpec
     signals: list[StrategySignal] = Field(..., min_length=1)
     rules: StrategyRules
-    cost_model_id: CostModelId11 | CostModelId12 = Field(
+    cost_model_id: CostModelId7 | CostModelId8 = Field(
         ...,
         examples=[
             "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -10498,7 +10644,7 @@ class StrategyCreateRequest(BaseModel):
     known_failure_modes: list[str]
 
 
-class CostModelId13(RootModel[str]):
+class CostModelId9(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10511,7 +10657,7 @@ class CostModelId13(RootModel[str]):
     )
 
 
-class CostModelId14(RootModel[str]):
+class CostModelId10(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10536,7 +10682,7 @@ class StrategySpecification(BaseModel):
     universe: UniverseSpec
     signals: list[StrategySignal]
     rules: StrategyRules
-    cost_model_id: CostModelId13 | CostModelId14 = Field(
+    cost_model_id: CostModelId9 | CostModelId10 = Field(
         ...,
         examples=[
             "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -10673,7 +10819,7 @@ class StrategyId4(RootModel[str]):
     )
 
 
-class CostModelId15(RootModel[str]):
+class CostModelId11(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10686,7 +10832,7 @@ class CostModelId15(RootModel[str]):
     )
 
 
-class CostModelId16(RootModel[str]):
+class CostModelId12(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10725,7 +10871,7 @@ class SnapshotId5(RootModel[str]):
     )
 
 
-class CostModelId17(RootModel[str]):
+class CostModelId13(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10738,7 +10884,7 @@ class CostModelId17(RootModel[str]):
     )
 
 
-class CostModelId18(RootModel[str]):
+class CostModelId14(RootModel[str]):
     root: str = Field(
         ...,
         examples=[
@@ -10762,7 +10908,7 @@ class BacktestRequest(BaseModel):
             "DS-550e8400-e29b-41d4-a716-446655440000",
         ],
     )
-    cost_model_id: CostModelId17 | CostModelId18 = Field(
+    cost_model_id: CostModelId13 | CostModelId14 = Field(
         ...,
         examples=[
             "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -10972,6 +11118,16 @@ class ValidationTestResult(BaseModel):
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
         | None
     )
@@ -11036,7 +11192,7 @@ class Id64(RootModel[str]):
 
 class Strategy1(BaseModel):
     """
-    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -11163,7 +11319,7 @@ class ValidationDetail(BaseModel):
     )
     strategy: Strategy1
     """
-    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
     """
     policy_id: PolicyId2 | PolicyId3 = Field(
         ...,
@@ -11470,7 +11626,7 @@ class Id66(RootModel[str]):
 
 class Strategy2(BaseModel):
     """
-    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
     """
 
     model_config = ConfigDict(
@@ -11499,7 +11655,7 @@ class MemoDetail(BaseModel):
     )
     strategy: Strategy2
     """
-    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+    id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
     """
     status: Literal["GENERATING", "FINAL", "FAILED"]
     sections: list[MemoSection]
@@ -13636,6 +13792,36 @@ class JobResultRef(BaseModel):
                 },
                 {
                     "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "configuration.updated",
+                                    "configuration.apply_failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {"properties": {"object_type": {"const": "settings"}}},
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "database.connection.updated",
+                                    "database.connection.failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {
+                        "properties": {"object_type": {"const": "provider_connection"}}
+                    },
+                },
+                {
+                    "if": {
                         "properties": {"event_type": {"const": "notification.created"}},
                         "required": ["event_type"],
                     },
@@ -14630,6 +14816,38 @@ class JobResultRef(BaseModel):
                     {
                         "if": {
                             "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "configuration.updated",
+                                        "configuration.apply_failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {"properties": {"object_type": {"const": "settings"}}},
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "database.connection.updated",
+                                        "database.connection.failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {
+                            "properties": {
+                                "object_type": {"const": "provider_connection"}
+                            }
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
                                 "event_type": {"const": "notification.created"}
                             },
                             "required": ["event_type"],
@@ -14829,6 +15047,16 @@ class JobDetail(BaseModel):
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
         | None
     )
@@ -16402,8 +16630,6 @@ class AgentConfigUpdate(BaseModel):
         json_schema_extra={"minProperties": 1},
     )
     enabled: bool = cast(bool, None)
-    model_provider: str = Field(default=cast(str, None), max_length=64, min_length=1)
-    model_name: str = Field(default=cast(str, None), max_length=128, min_length=1)
     runtime_profile: str = Field(default=cast(str, None), max_length=32, min_length=1)
     tool_timeout_seconds: int = Field(default=cast(int, None), ge=1)
     max_steps_override: int | None = Field(default=None, ge=1)
@@ -16430,7 +16656,15 @@ class AgentConfig(BaseModel):
     ]
     enabled: bool
     model_provider: str
+    """
+    Installation-level Remote Codex provider projection; not writable per role.
+    """
     model_name: str
+    """
+    Installation-level Remote Codex model projection; not writable per role.
+    """
+    ai_connection_id: str
+    ai_connection_revision: int = Field(..., ge=1)
     runtime_profile: str
     tool_timeout_seconds: int = Field(..., ge=1)
     max_steps_override: int | None = Field(..., ge=1)
@@ -18766,6 +19000,36 @@ class NextAction(BaseModel):
                 },
                 {
                     "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "configuration.updated",
+                                    "configuration.apply_failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {"properties": {"object_type": {"const": "settings"}}},
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "database.connection.updated",
+                                    "database.connection.failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {
+                        "properties": {"object_type": {"const": "provider_connection"}}
+                    },
+                },
+                {
+                    "if": {
                         "properties": {"event_type": {"const": "notification.created"}},
                         "required": ["event_type"],
                     },
@@ -19760,6 +20024,38 @@ class NextAction(BaseModel):
                     {
                         "if": {
                             "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "configuration.updated",
+                                        "configuration.apply_failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {"properties": {"object_type": {"const": "settings"}}},
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "database.connection.updated",
+                                        "database.connection.failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {
+                            "properties": {
+                                "object_type": {"const": "provider_connection"}
+                            }
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
                                 "event_type": {"const": "notification.created"}
                             },
                             "required": ["event_type"],
@@ -20048,6 +20344,9 @@ class ToolCallDetail(BaseModel):
     experiment_id: ExperimentId7 | None
     job_id: JobId15 | None
     input_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    effective_configuration_revision: int = Field(..., ge=1)
+    configuration_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    tool_registry_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     policy_version_ref: str
     status: Literal["RUNNING", "SUCCESS", "ERROR", "CANCELLED"]
     result_summary: ToolResultSummary | None
@@ -20057,6 +20356,129 @@ class ToolCallDetail(BaseModel):
     started_at: AwareDatetime
     finished_at: AwareDatetime | None
     duration_ms: int | None = Field(..., ge=0)
+
+
+class ConfigurationCatalog(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    catalog_version: str = Field(..., max_length=64, min_length=1)
+    entries: list[ConfigurationCatalogEntry]
+
+
+class ConfigurationConsumerState(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    consumer: str = Field(..., max_length=80, min_length=1)
+    desired_revision: int = Field(..., ge=1)
+    applied_revision: int | None = Field(..., ge=1)
+    ack: Literal["PENDING", "ACKED", "FAILED"]
+    error_code: (
+        Literal[
+            "INVALID_REQUEST",
+            "RESOURCE_NOT_FOUND",
+            "PRECONDITION_REQUIRED",
+            "REVISION_MISMATCH",
+            "IDEMPOTENCY_CONFLICT",
+            "IDEMPOTENCY_IN_PROGRESS",
+            "RESOURCE_CONFLICT",
+            "SERVICE_DEGRADED",
+            "INTERNAL_ERROR",
+            "UNAUTHENTICATED",
+            "PERMISSION_DENIED",
+            "HUMAN_APPROVAL_REQUIRED",
+            "RESEARCH_NOT_MUTABLE",
+            "RESEARCH_WAITING_USER",
+            "EXPERIMENT_IMMUTABLE",
+            "EXPERIMENT_INVALID",
+            "NON_REPRODUCIBLE",
+            "MULTIPLE_TESTING_LIMIT_REACHED",
+            "STRATEGY_VERSION_FROZEN",
+            "STRATEGY_VERSION_MISMATCH",
+            "STRATEGY_NOT_FROZEN",
+            "STRATEGY_NOT_VALIDATED",
+            "VALIDATION_IN_PROGRESS",
+            "VALIDATION_FAILED",
+            "VALIDATION_PREREQUISITES_INCOMPLETE",
+            "VALIDATION_TEST_BLOCKED",
+            "HOLDOUT_LOCKED",
+            "HOLDOUT_APPROVAL_REQUIRED",
+            "HOLDOUT_PREREQUISITES_INCOMPLETE",
+            "HOLDOUT_ALREADY_EXPOSED",
+            "HOLDOUT_RESULT_FORBIDDEN",
+            "APPROVAL_STALE",
+            "APPROVAL_ALREADY_RESOLVED",
+            "APPROVAL_PREREQUISITES_CHANGED",
+            "APPROVAL_TYPE_MISMATCH",
+            "DATA_CAPABILITY_MISSING",
+            "DATA_QUALITY_BLOCKED",
+            "DATA_SNAPSHOT_MISSING",
+            "PIT_GUARANTEE_UNAVAILABLE",
+            "STALE_DATA",
+            "PROVIDER_UNAVAILABLE",
+            "JOB_CONFLICT",
+            "JOB_NOT_CANCELLABLE",
+            "JOB_LEASE_LOST",
+            "JOB_FAILED",
+            "PAPER_APPROVAL_REQUIRED",
+            "PAPER_RISK_BLOCKED",
+            "PAPER_DATA_BLOCKED",
+            "PAPER_DUPLICATE_RUN",
+            "PAPER_VERSION_MISMATCH",
+            "RISK_LIMIT_EXCEEDED",
+            "AGENT_DISABLED",
+            "AGENT_TOOL_FORBIDDEN",
+            "AGENT_BUDGET_EXCEEDED",
+            "AGENT_OUTPUT_INVALID",
+            "AGENT_MODEL_UNAVAILABLE",
+            "AGENT_RESUME_CONFLICT",
+            "AGENT_CONTEXT_STALE",
+            "AGENT_RETRY_EXHAUSTED",
+            "TOOL_INPUT_INVALID",
+            "TOOL_EXECUTION_FAILED",
+            "CREDENTIAL_INVALID",
+            "CREDENTIAL_NOT_CONFIGURED",
+            "CONNECTION_VALIDATION_EXPIRED",
+            "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
+        ]
+        | None
+    )
+    heartbeat_at: AwareDatetime
+
+
+class ConfigurationActive(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    active_revision: int = Field(..., ge=1)
+    last_known_good_revision: int = Field(..., ge=1)
+    catalog_version: str
+    values: list[ConfigurationValueView]
+    snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    consumer_states: list[ConfigurationConsumerState]
+    updated_at: AwareDatetime
+
+
+class ConfigurationValidationResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: int = Field(..., ge=1)
+    status: Literal["VALID", "INVALID"]
+    errors: list[FieldError]
+    warnings: list[FieldError]
+    validated_at: AwareDatetime
 
 
 class ApiProblem(BaseModel):
@@ -20132,6 +20554,16 @@ class ApiProblem(BaseModel):
         "CREDENTIAL_NOT_CONFIGURED",
         "CONNECTION_VALIDATION_EXPIRED",
         "CONNECTION_KIND_MISMATCH",
+        "LAST_ACTIVE_KEY_REQUIRED",
+        "CONFIGURATION_VALIDATION_FAILED",
+        "CONFIGURATION_APPLY_FAILED",
+        "CONFIGURATION_RESTART_REQUIRED",
+        "DATABASE_CONNECTION_FAILED",
+        "DATABASE_SCHEMA_INCOMPATIBLE",
+        "DATABASE_SWITCH_FAILED",
+        "BOOTSTRAP_LOCKED",
+        "DATABASE_DISCONNECTED",
+        "CSRF_REQUIRED",
     ]
     detail: str | None
     instance: str | None
@@ -20349,6 +20781,16 @@ class SetupProviderConnectionValidationFailure(BaseModel):
         "CREDENTIAL_NOT_CONFIGURED",
         "CONNECTION_VALIDATION_EXPIRED",
         "CONNECTION_KIND_MISMATCH",
+        "LAST_ACTIVE_KEY_REQUIRED",
+        "CONFIGURATION_VALIDATION_FAILED",
+        "CONFIGURATION_APPLY_FAILED",
+        "CONFIGURATION_RESTART_REQUIRED",
+        "DATABASE_CONNECTION_FAILED",
+        "DATABASE_SCHEMA_INCOMPATIBLE",
+        "DATABASE_SWITCH_FAILED",
+        "BOOTSTRAP_LOCKED",
+        "DATABASE_DISCONNECTED",
+        "CSRF_REQUIRED",
     ]
     data_capabilities: list[DataCapability]
     checked_at: AwareDatetime
@@ -20366,9 +20808,415 @@ class SetupProviderConnectionValidationResult(
     ) = Field(..., discriminator="state")
 
 
+class SettingsDetail(RootModel[ConfigurationActive]):
+    root: ConfigurationActive
+
+    @model_validator(mode="after")
+    def validate_conditional_constraints(self):
+        validator = Draft202012Validator(
+            {
+                "allOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "active_revision",
+                            "last_known_good_revision",
+                            "catalog_version",
+                            "values",
+                            "snapshot_sha256",
+                            "consumer_states",
+                            "updated_at",
+                        ],
+                        "properties": {
+                            "active_revision": {
+                                "type": "integer",
+                                "format": "int64",
+                                "minimum": 1,
+                            },
+                            "last_known_good_revision": {
+                                "type": "integer",
+                                "format": "int64",
+                                "minimum": 1,
+                            },
+                            "catalog_version": {"type": "string"},
+                            "values": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": [
+                                        "key",
+                                        "sensitivity",
+                                        "configured",
+                                        "value",
+                                        "masked_hint",
+                                    ],
+                                    "properties": {
+                                        "key": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$",
+                                        },
+                                        "sensitivity": {
+                                            "enum": ["PUBLIC", "MASKED", "SECRET"]
+                                        },
+                                        "configured": {"type": "boolean"},
+                                        "value": {
+                                            "anyOf": [
+                                                {"type": "string"},
+                                                {"type": "number"},
+                                                {"type": "boolean"},
+                                                {"type": "object"},
+                                                {"type": "array"},
+                                                {"type": "null"},
+                                            ]
+                                        },
+                                        "masked_hint": {
+                                            "type": ["string", "null"],
+                                            "maxLength": 80,
+                                        },
+                                    },
+                                },
+                            },
+                            "snapshot_sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$",
+                            },
+                            "consumer_states": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": [
+                                        "consumer",
+                                        "desired_revision",
+                                        "applied_revision",
+                                        "ack",
+                                        "error_code",
+                                        "heartbeat_at",
+                                    ],
+                                    "properties": {
+                                        "consumer": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 80,
+                                        },
+                                        "desired_revision": {
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "minimum": 1,
+                                        },
+                                        "applied_revision": {
+                                            "type": ["integer", "null"],
+                                            "format": "int64",
+                                            "minimum": 1,
+                                        },
+                                        "ack": {"enum": ["PENDING", "ACKED", "FAILED"]},
+                                        "error_code": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "INVALID_REQUEST",
+                                                        "RESOURCE_NOT_FOUND",
+                                                        "PRECONDITION_REQUIRED",
+                                                        "REVISION_MISMATCH",
+                                                        "IDEMPOTENCY_CONFLICT",
+                                                        "IDEMPOTENCY_IN_PROGRESS",
+                                                        "RESOURCE_CONFLICT",
+                                                        "SERVICE_DEGRADED",
+                                                        "INTERNAL_ERROR",
+                                                        "UNAUTHENTICATED",
+                                                        "PERMISSION_DENIED",
+                                                        "HUMAN_APPROVAL_REQUIRED",
+                                                        "RESEARCH_NOT_MUTABLE",
+                                                        "RESEARCH_WAITING_USER",
+                                                        "EXPERIMENT_IMMUTABLE",
+                                                        "EXPERIMENT_INVALID",
+                                                        "NON_REPRODUCIBLE",
+                                                        "MULTIPLE_TESTING_LIMIT_REACHED",
+                                                        "STRATEGY_VERSION_FROZEN",
+                                                        "STRATEGY_VERSION_MISMATCH",
+                                                        "STRATEGY_NOT_FROZEN",
+                                                        "STRATEGY_NOT_VALIDATED",
+                                                        "VALIDATION_IN_PROGRESS",
+                                                        "VALIDATION_FAILED",
+                                                        "VALIDATION_PREREQUISITES_INCOMPLETE",
+                                                        "VALIDATION_TEST_BLOCKED",
+                                                        "HOLDOUT_LOCKED",
+                                                        "HOLDOUT_APPROVAL_REQUIRED",
+                                                        "HOLDOUT_PREREQUISITES_INCOMPLETE",
+                                                        "HOLDOUT_ALREADY_EXPOSED",
+                                                        "HOLDOUT_RESULT_FORBIDDEN",
+                                                        "APPROVAL_STALE",
+                                                        "APPROVAL_ALREADY_RESOLVED",
+                                                        "APPROVAL_PREREQUISITES_CHANGED",
+                                                        "APPROVAL_TYPE_MISMATCH",
+                                                        "DATA_CAPABILITY_MISSING",
+                                                        "DATA_QUALITY_BLOCKED",
+                                                        "DATA_SNAPSHOT_MISSING",
+                                                        "PIT_GUARANTEE_UNAVAILABLE",
+                                                        "STALE_DATA",
+                                                        "PROVIDER_UNAVAILABLE",
+                                                        "JOB_CONFLICT",
+                                                        "JOB_NOT_CANCELLABLE",
+                                                        "JOB_LEASE_LOST",
+                                                        "JOB_FAILED",
+                                                        "PAPER_APPROVAL_REQUIRED",
+                                                        "PAPER_RISK_BLOCKED",
+                                                        "PAPER_DATA_BLOCKED",
+                                                        "PAPER_DUPLICATE_RUN",
+                                                        "PAPER_VERSION_MISMATCH",
+                                                        "RISK_LIMIT_EXCEEDED",
+                                                        "AGENT_DISABLED",
+                                                        "AGENT_TOOL_FORBIDDEN",
+                                                        "AGENT_BUDGET_EXCEEDED",
+                                                        "AGENT_OUTPUT_INVALID",
+                                                        "AGENT_MODEL_UNAVAILABLE",
+                                                        "AGENT_RESUME_CONFLICT",
+                                                        "AGENT_CONTEXT_STALE",
+                                                        "AGENT_RETRY_EXHAUSTED",
+                                                        "TOOL_INPUT_INVALID",
+                                                        "TOOL_EXECUTION_FAILED",
+                                                        "CREDENTIAL_INVALID",
+                                                        "CREDENTIAL_NOT_CONFIGURED",
+                                                        "CONNECTION_VALIDATION_EXPIRED",
+                                                        "CONNECTION_KIND_MISMATCH",
+                                                        "LAST_ACTIVE_KEY_REQUIRED",
+                                                        "CONFIGURATION_VALIDATION_FAILED",
+                                                        "CONFIGURATION_APPLY_FAILED",
+                                                        "CONFIGURATION_RESTART_REQUIRED",
+                                                        "DATABASE_CONNECTION_FAILED",
+                                                        "DATABASE_SCHEMA_INCOMPATIBLE",
+                                                        "DATABASE_SWITCH_FAILED",
+                                                        "BOOTSTRAP_LOCKED",
+                                                        "DATABASE_DISCONNECTED",
+                                                        "CSRF_REQUIRED",
+                                                    ],
+                                                },
+                                                {"type": "null"},
+                                            ]
+                                        },
+                                        "heartbeat_at": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                        },
+                                    },
+                                },
+                            },
+                            "updated_at": {"type": "string", "format": "date-time"},
+                        },
+                    }
+                ]
+            }
+        )
+        errors = sorted(
+            validator.iter_errors(self.model_dump(mode="json")),
+            key=lambda error: list(error.absolute_path),
+        )
+        if errors:
+            raise ValueError(errors[0].message)
+        return self
+
+
 class ResearchSummary(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "active_revision",
+                        "last_known_good_revision",
+                        "catalog_version",
+                        "values",
+                        "snapshot_sha256",
+                        "consumer_states",
+                        "updated_at",
+                    ],
+                    "properties": {
+                        "active_revision": {
+                            "type": "integer",
+                            "format": "int64",
+                            "minimum": 1,
+                        },
+                        "last_known_good_revision": {
+                            "type": "integer",
+                            "format": "int64",
+                            "minimum": 1,
+                        },
+                        "catalog_version": {"type": "string"},
+                        "values": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": [
+                                    "key",
+                                    "sensitivity",
+                                    "configured",
+                                    "value",
+                                    "masked_hint",
+                                ],
+                                "properties": {
+                                    "key": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$",
+                                    },
+                                    "sensitivity": {
+                                        "enum": ["PUBLIC", "MASKED", "SECRET"]
+                                    },
+                                    "configured": {"type": "boolean"},
+                                    "value": {
+                                        "anyOf": [
+                                            {"type": "string"},
+                                            {"type": "number"},
+                                            {"type": "boolean"},
+                                            {"type": "object"},
+                                            {"type": "array"},
+                                            {"type": "null"},
+                                        ]
+                                    },
+                                    "masked_hint": {
+                                        "type": ["string", "null"],
+                                        "maxLength": 80,
+                                    },
+                                },
+                            },
+                        },
+                        "snapshot_sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$",
+                        },
+                        "consumer_states": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": [
+                                    "consumer",
+                                    "desired_revision",
+                                    "applied_revision",
+                                    "ack",
+                                    "error_code",
+                                    "heartbeat_at",
+                                ],
+                                "properties": {
+                                    "consumer": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                    },
+                                    "desired_revision": {
+                                        "type": "integer",
+                                        "format": "int64",
+                                        "minimum": 1,
+                                    },
+                                    "applied_revision": {
+                                        "type": ["integer", "null"],
+                                        "format": "int64",
+                                        "minimum": 1,
+                                    },
+                                    "ack": {"enum": ["PENDING", "ACKED", "FAILED"]},
+                                    "error_code": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string",
+                                                "enum": [
+                                                    "INVALID_REQUEST",
+                                                    "RESOURCE_NOT_FOUND",
+                                                    "PRECONDITION_REQUIRED",
+                                                    "REVISION_MISMATCH",
+                                                    "IDEMPOTENCY_CONFLICT",
+                                                    "IDEMPOTENCY_IN_PROGRESS",
+                                                    "RESOURCE_CONFLICT",
+                                                    "SERVICE_DEGRADED",
+                                                    "INTERNAL_ERROR",
+                                                    "UNAUTHENTICATED",
+                                                    "PERMISSION_DENIED",
+                                                    "HUMAN_APPROVAL_REQUIRED",
+                                                    "RESEARCH_NOT_MUTABLE",
+                                                    "RESEARCH_WAITING_USER",
+                                                    "EXPERIMENT_IMMUTABLE",
+                                                    "EXPERIMENT_INVALID",
+                                                    "NON_REPRODUCIBLE",
+                                                    "MULTIPLE_TESTING_LIMIT_REACHED",
+                                                    "STRATEGY_VERSION_FROZEN",
+                                                    "STRATEGY_VERSION_MISMATCH",
+                                                    "STRATEGY_NOT_FROZEN",
+                                                    "STRATEGY_NOT_VALIDATED",
+                                                    "VALIDATION_IN_PROGRESS",
+                                                    "VALIDATION_FAILED",
+                                                    "VALIDATION_PREREQUISITES_INCOMPLETE",
+                                                    "VALIDATION_TEST_BLOCKED",
+                                                    "HOLDOUT_LOCKED",
+                                                    "HOLDOUT_APPROVAL_REQUIRED",
+                                                    "HOLDOUT_PREREQUISITES_INCOMPLETE",
+                                                    "HOLDOUT_ALREADY_EXPOSED",
+                                                    "HOLDOUT_RESULT_FORBIDDEN",
+                                                    "APPROVAL_STALE",
+                                                    "APPROVAL_ALREADY_RESOLVED",
+                                                    "APPROVAL_PREREQUISITES_CHANGED",
+                                                    "APPROVAL_TYPE_MISMATCH",
+                                                    "DATA_CAPABILITY_MISSING",
+                                                    "DATA_QUALITY_BLOCKED",
+                                                    "DATA_SNAPSHOT_MISSING",
+                                                    "PIT_GUARANTEE_UNAVAILABLE",
+                                                    "STALE_DATA",
+                                                    "PROVIDER_UNAVAILABLE",
+                                                    "JOB_CONFLICT",
+                                                    "JOB_NOT_CANCELLABLE",
+                                                    "JOB_LEASE_LOST",
+                                                    "JOB_FAILED",
+                                                    "PAPER_APPROVAL_REQUIRED",
+                                                    "PAPER_RISK_BLOCKED",
+                                                    "PAPER_DATA_BLOCKED",
+                                                    "PAPER_DUPLICATE_RUN",
+                                                    "PAPER_VERSION_MISMATCH",
+                                                    "RISK_LIMIT_EXCEEDED",
+                                                    "AGENT_DISABLED",
+                                                    "AGENT_TOOL_FORBIDDEN",
+                                                    "AGENT_BUDGET_EXCEEDED",
+                                                    "AGENT_OUTPUT_INVALID",
+                                                    "AGENT_MODEL_UNAVAILABLE",
+                                                    "AGENT_RESUME_CONFLICT",
+                                                    "AGENT_CONTEXT_STALE",
+                                                    "AGENT_RETRY_EXHAUSTED",
+                                                    "TOOL_INPUT_INVALID",
+                                                    "TOOL_EXECUTION_FAILED",
+                                                    "CREDENTIAL_INVALID",
+                                                    "CREDENTIAL_NOT_CONFIGURED",
+                                                    "CONNECTION_VALIDATION_EXPIRED",
+                                                    "CONNECTION_KIND_MISMATCH",
+                                                    "LAST_ACTIVE_KEY_REQUIRED",
+                                                    "CONFIGURATION_VALIDATION_FAILED",
+                                                    "CONFIGURATION_APPLY_FAILED",
+                                                    "CONFIGURATION_RESTART_REQUIRED",
+                                                    "DATABASE_CONNECTION_FAILED",
+                                                    "DATABASE_SCHEMA_INCOMPATIBLE",
+                                                    "DATABASE_SWITCH_FAILED",
+                                                    "BOOTSTRAP_LOCKED",
+                                                    "DATABASE_DISCONNECTED",
+                                                    "CSRF_REQUIRED",
+                                                ],
+                                            },
+                                            {"type": "null"},
+                                        ]
+                                    },
+                                    "heartbeat_at": {
+                                        "type": "string",
+                                        "format": "date-time",
+                                    },
+                                },
+                            },
+                        },
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                }
+            ]
+        },
     )
     research_id: ResearchId2 | ResearchId3 = Field(
         ...,
@@ -20542,7 +21390,7 @@ class ResearchDetail(BaseModel):
     evidence_status: Literal["INSUFFICIENT", "WEAK", "MIXED", "SUPPORTIVE", "STRONG"]
     current_revision_no: int = Field(..., ge=1)
     active_plan_version: int | None = Field(..., ge=1)
-    research_policy_id: ResearchPolicyId8 | ResearchPolicyId9 = Field(
+    research_policy_id: ResearchPolicyId4 | ResearchPolicyId5 = Field(
         ...,
         examples=[
             "RP-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -20660,7 +21508,7 @@ class ExperimentDetail(BaseModel):
     )
     factor_ref: FactorRef | None
     strategy_ref: StrategyRef | None
-    cost_model_id: CostModelId9 | CostModelId10 = Field(
+    cost_model_id: CostModelId5 | CostModelId6 = Field(
         ...,
         examples=[
             "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -20765,6 +21613,16 @@ class ExperimentDetail(BaseModel):
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
         | None
     )
@@ -20806,7 +21664,7 @@ class StrategyVersionDetail(BaseModel):
     universe: UniverseSpec
     signals: list[StrategySignal]
     rules: StrategyRules
-    cost_model_id: CostModelId15 | CostModelId16 = Field(
+    cost_model_id: CostModelId11 | CostModelId12 = Field(
         ...,
         examples=[
             "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -20888,7 +21746,7 @@ class ApprovalDecisionResult(BaseModel):
 
 class EventPayload(BaseModel):
     """
-    Named notification fields documented for P0 R2 only; full object truth remains the detail endpoint. Holdout result values, metrics, chart points, credentials, and raw tool/model payloads are forbidden.
+    Named notification fields documented for P0 R2 only; full object truth remains the detail endpoint. Holdout result values, metrics, chart points, credentials, raw tool/model payloads, and internal scheduler evidence (including trading_date, attempt, lease, calendar/timezone, evidence Artifact, or failure-review detail) are forbidden. Scheduler evidence is the backend-only paper_scheduler_evidence.v1 Audit-linked Artifact.
     """
 
     model_config = ConfigDict(
@@ -21767,6 +22625,36 @@ class EventPayload(BaseModel):
                 },
                 {
                     "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "configuration.updated",
+                                    "configuration.apply_failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {"properties": {"object_type": {"const": "settings"}}},
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "database.connection.updated",
+                                    "database.connection.failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {
+                        "properties": {"object_type": {"const": "provider_connection"}}
+                    },
+                },
+                {
+                    "if": {
                         "properties": {"event_type": {"const": "notification.created"}},
                         "required": ["event_type"],
                     },
@@ -21871,6 +22759,16 @@ class EventPayload(BaseModel):
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
         | None
     ) = None
@@ -22858,6 +23756,38 @@ class EventPayload(BaseModel):
                     {
                         "if": {
                             "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "configuration.updated",
+                                        "configuration.apply_failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {"properties": {"object_type": {"const": "settings"}}},
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "database.connection.updated",
+                                        "database.connection.failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {
+                            "properties": {
+                                "object_type": {"const": "provider_connection"}
+                            }
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
                                 "event_type": {"const": "notification.created"}
                             },
                             "required": ["event_type"],
@@ -22913,7 +23843,7 @@ class EventPayload(BaseModel):
 
 class SseEnvelope(BaseModel):
     """
-    event_id and referenced public IDs are globally unique, while sequence and replay ordering are local to the authenticated workspace stream; no envelope authorizes cross-workspace resolution.
+    event_id and referenced public IDs are globally unique, while sequence and replay ordering are local to the singleton installation stream; no envelope grants a second namespace.
     """
 
     model_config = ConfigDict(
@@ -23792,6 +24722,36 @@ class SseEnvelope(BaseModel):
                 },
                 {
                     "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "configuration.updated",
+                                    "configuration.apply_failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {"properties": {"object_type": {"const": "settings"}}},
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "database.connection.updated",
+                                    "database.connection.failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {
+                        "properties": {"object_type": {"const": "provider_connection"}}
+                    },
+                },
+                {
+                    "if": {
                         "properties": {"event_type": {"const": "notification.created"}},
                         "required": ["event_type"],
                     },
@@ -23858,6 +24818,10 @@ class SseEnvelope(BaseModel):
         "memo.created",
         "memo.updated",
         "setup.completed",
+        "configuration.updated",
+        "configuration.apply_failed",
+        "database.connection.updated",
+        "database.connection.failed",
         "notification.created",
         "notification.updated",
         "system.health.updated",
@@ -24835,6 +25799,38 @@ class SseEnvelope(BaseModel):
                     {
                         "if": {
                             "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "configuration.updated",
+                                        "configuration.apply_failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {"properties": {"object_type": {"const": "settings"}}},
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "database.connection.updated",
+                                        "database.connection.failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {
+                            "properties": {
+                                "object_type": {"const": "provider_connection"}
+                            }
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
                                 "event_type": {"const": "notification.created"}
                             },
                             "required": ["event_type"],
@@ -25759,6 +26755,36 @@ class AgentRunDetail(BaseModel):
                 },
                 {
                     "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "configuration.updated",
+                                    "configuration.apply_failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {"properties": {"object_type": {"const": "settings"}}},
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "event_type": {
+                                "enum": [
+                                    "database.connection.updated",
+                                    "database.connection.failed",
+                                ]
+                            }
+                        },
+                        "required": ["event_type"],
+                    },
+                    "then": {
+                        "properties": {"object_type": {"const": "provider_connection"}}
+                    },
+                },
+                {
+                    "if": {
                         "properties": {"event_type": {"const": "notification.created"}},
                         "required": ["event_type"],
                     },
@@ -25806,6 +26832,17 @@ class AgentRunDetail(BaseModel):
     agent_version: str
     model_provider: str
     model_name: str
+    ai_connection_id: str
+    ai_connection_revision: int = Field(..., ge=1)
+    effective_configuration_revision: int = Field(..., ge=1)
+    effective_configuration_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    agent_configuration_revision: int = Field(..., ge=1)
+    runtime_profile: str
+    tool_timeout_seconds: int = Field(..., ge=1)
+    max_steps: int = Field(..., ge=1)
+    max_tool_calls: int = Field(..., ge=1)
+    prompt_manifest_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    tool_registry_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     research_id: ResearchId15 | None
     object_type: (
         Literal[
@@ -26788,6 +27825,38 @@ class AgentRunDetail(BaseModel):
                     {
                         "if": {
                             "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "configuration.updated",
+                                        "configuration.apply_failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {"properties": {"object_type": {"const": "settings"}}},
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "event_type": {
+                                    "enum": [
+                                        "database.connection.updated",
+                                        "database.connection.failed",
+                                    ]
+                                }
+                            },
+                            "required": ["event_type"],
+                        },
+                        "then": {
+                            "properties": {
+                                "object_type": {"const": "provider_connection"}
+                            }
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
                                 "event_type": {"const": "notification.created"}
                             },
                             "required": ["event_type"],
@@ -26903,6 +27972,16 @@ class CanonicalErrorCode(
             "CREDENTIAL_NOT_CONFIGURED",
             "CONNECTION_VALIDATION_EXPIRED",
             "CONNECTION_KIND_MISMATCH",
+            "LAST_ACTIVE_KEY_REQUIRED",
+            "CONFIGURATION_VALIDATION_FAILED",
+            "CONFIGURATION_APPLY_FAILED",
+            "CONFIGURATION_RESTART_REQUIRED",
+            "DATABASE_CONNECTION_FAILED",
+            "DATABASE_SCHEMA_INCOMPATIBLE",
+            "DATABASE_SWITCH_FAILED",
+            "BOOTSTRAP_LOCKED",
+            "DATABASE_DISCONNECTED",
+            "CSRF_REQUIRED",
         ]
     ]
 ):
@@ -26972,6 +28051,16 @@ class CanonicalErrorCode(
         "CREDENTIAL_NOT_CONFIGURED",
         "CONNECTION_VALIDATION_EXPIRED",
         "CONNECTION_KIND_MISMATCH",
+        "LAST_ACTIVE_KEY_REQUIRED",
+        "CONFIGURATION_VALIDATION_FAILED",
+        "CONFIGURATION_APPLY_FAILED",
+        "CONFIGURATION_RESTART_REQUIRED",
+        "DATABASE_CONNECTION_FAILED",
+        "DATABASE_SCHEMA_INCOMPATIBLE",
+        "DATABASE_SWITCH_FAILED",
+        "BOOTSTRAP_LOCKED",
+        "DATABASE_DISCONNECTED",
+        "CSRF_REQUIRED",
     ]
 
 
@@ -27077,6 +28166,10 @@ class EventType(
             "memo.created",
             "memo.updated",
             "setup.completed",
+            "configuration.updated",
+            "configuration.apply_failed",
+            "database.connection.updated",
+            "database.connection.failed",
             "notification.created",
             "notification.updated",
             "system.health.updated",
@@ -27112,11 +28205,21 @@ class EventType(
         "memo.created",
         "memo.updated",
         "setup.completed",
+        "configuration.updated",
+        "configuration.apply_failed",
+        "database.connection.updated",
+        "database.connection.failed",
         "notification.created",
         "notification.updated",
         "system.health.updated",
         "system.resync_required",
     ]
+
+
+class ConfigurationValueWrite(
+    RootModel[ConfigurationValueWrite1 | ConfigurationValueWrite2]
+):
+    root: ConfigurationValueWrite1 | ConfigurationValueWrite2
 
 
 class ExperimentSearchDimension(
@@ -27162,6 +28265,30 @@ class StrategyLatestBacktest(
 
 
 SCHEMA_NAMES = (
+    "GeneralAccessKeyLoginRequest",
+    "GeneralAccessKeyMetadata",
+    "GeneralAccessKeyList",
+    "GeneralAccessKeyCreateRequest",
+    "GeneralAccessKeyRenameRequest",
+    "GeneralAccessKeyIssued",
+    "OwnerSessionView",
+    "SessionBootstrapResponse",
+    "ConfigurationCatalog",
+    "ConfigurationCatalogEntry",
+    "ConfigurationValueWrite",
+    "ConfigurationValueView",
+    "ConfigurationCandidateRequest",
+    "ConfigurationCandidate",
+    "ConfigurationConsumerState",
+    "ConfigurationActive",
+    "ConfigurationValidationResult",
+    "ConfigurationActivateRequest",
+    "ConfigurationRollbackRequest",
+    "DatabaseConnectionCandidate",
+    "DatabaseConnectionCandidateRequest",
+    "DatabaseConnectionStatus",
+    "DatabaseConnectionCheck",
+    "DatabaseConnectionValidationResult",
     "SystemHealth",
     "CanonicalErrorCode",
     "ApiProblem",

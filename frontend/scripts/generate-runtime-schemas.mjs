@@ -26,19 +26,19 @@ const operationCount = Object.values(document.paths ?? {}).reduce(
     ).length,
   0,
 );
-if (operationCount !== 45)
-  throw new Error(`Expected 45 canonical operations, found ${operationCount}`);
-if (Object.keys(schemas).length !== 162)
-  throw new Error(`Expected 162 canonical schemas, found ${Object.keys(schemas).length}`);
-if (schemas.CanonicalErrorCode?.enum?.length !== 65)
+if (operationCount !== 65)
+  throw new Error(`Expected 65 canonical operations, found ${operationCount}`);
+if (Object.keys(schemas).length !== 186)
+  throw new Error(`Expected 186 canonical schemas, found ${Object.keys(schemas).length}`);
+if (schemas.CanonicalErrorCode?.enum?.length !== 75)
   throw new Error(
-    `Expected 65 canonical errors, found ${schemas.CanonicalErrorCode?.enum?.length}`,
+    `Expected 75 canonical errors, found ${schemas.CanonicalErrorCode?.enum?.length}`,
   );
 for (const name of ['EventPayload', 'EventWaitingOn', 'SseEnvelope'])
   if (schemas[name]?.additionalProperties !== false)
     throw new Error(`${name} must remain a closed schema`);
-if (schemas.EventType?.enum?.length !== 31)
-  throw new Error(`Expected 31 canonical event types, found ${schemas.EventType?.enum?.length}`);
+if (schemas.EventType?.enum?.length !== 35)
+  throw new Error(`Expected 35 canonical event types, found ${schemas.EventType?.enum?.length}`);
 if (schemas.EventType.enum.some((eventType) => eventType !== eventType.toLowerCase()))
   throw new Error('Canonical event types must remain exact lowercase values');
 const eventObjectPairRules = document?.info?.['x-quantfoundry-event-object-pair-rules'];
@@ -112,7 +112,12 @@ const addArrayConstraints = (expression, schema) => {
 const zodFor = (schema, schemaName) => {
   if (!schema) return 'z.unknown()';
   if (schema.$ref) return `${refName(schema.$ref)}Schema`;
-  if (schema.oneOf) return `z.union([${schema.oneOf.map((branch) => zodFor(branch)).join(', ')}])`;
+  if (schema.allOf?.length && (!schema.properties || Object.keys(schema.properties).length === 0)) {
+    const [first, ...rest] = schema.allOf.map((branch) => zodFor(branch));
+    return rest.reduce((left, right) => `z.intersection(${left}, ${right})`, first);
+  }
+  if (schema.oneOf && !schema.properties)
+    return `z.union([${schema.oneOf.map((branch) => zodFor(branch)).join(', ')}])`;
   if (schema.anyOf) return `z.union([${schema.anyOf.map((branch) => zodFor(branch)).join(', ')}])`;
   if (schema.allOf && !schema.type && !schema.properties) {
     const [first, ...rest] = schema.allOf.map((branch) => zodFor(branch));
@@ -158,6 +163,9 @@ const zodFor = (schema, schemaName) => {
     if (schema.minProperties !== undefined)
       expression += `.refine((value) => Object.keys(value).length >= ${schema.minProperties}, { message: 'Object requires at least ${schema.minProperties} properties' })`;
   } else throw new Error(`Unsupported runtime schema: ${JSON.stringify(schema)}`);
+
+  if (schema.oneOf?.length && schema.properties)
+    expression += `.refine((value) => ${JSON.stringify(schema.oneOf.map((branch) => branch.required ?? []))}.some((required) => required.every((key) => (value as Record<string, unknown>)[key] !== undefined)), { message: 'Object must satisfy one canonical variant' })`;
 
   if (schemaName === 'ExperimentSearchRangeDimension')
     expression += `.superRefine((value, context) => {
@@ -289,6 +297,21 @@ export const EventObjectExamples = {${eventObjectExampleObject}} as const;
 const roots = [
   'CanonicalErrorCode',
   'ApiProblem',
+  'GeneralAccessKeyLoginRequest',
+  'GeneralAccessKeyList',
+  'GeneralAccessKeyCreateRequest',
+  'GeneralAccessKeyIssued',
+  'OwnerSessionView',
+  'SessionBootstrapResponse',
+  'ConfigurationCatalog',
+  'ConfigurationCandidateRequest',
+  'ConfigurationCandidate',
+  'ConfigurationValidationResult',
+  'ConfigurationActivateRequest',
+  'ConfigurationRollbackRequest',
+  'DatabaseConnectionStatus',
+  'DatabaseConnectionCandidateRequest',
+  'DatabaseConnectionValidationResult',
   'SetupStatus',
   'SetupCapabilityCatalog',
   'SetupProviderConnectionValidationRequest',

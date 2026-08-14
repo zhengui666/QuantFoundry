@@ -17,29 +17,44 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-const setupRequest = {
-  language: 'zh-CN',
-  timezone: 'Asia/Shanghai',
-  base_currency: 'USD',
-  number_format_locale: 'zh-CN',
-  ai_connection_id: 'CONN-AI-1',
-  default_data_provider_id: null,
-  default_benchmark: 'SPY',
-  default_frequency: 'DAILY',
-  default_research_start: null,
-  initial_paper_capital: '100000',
-  research_policy_id: 'RP-756FFQA659A84RCEVR0M9X8DMN',
-  risk_policy_id: 'RISK-7TTN4TSTQB0FXPTV60RHR5P7NH',
-  cost_model_id: 'COST-0QY70GRXXGT2HVM7HY8TMPXMVF',
-} satisfies Schema<'SetupCompleteRequest'>;
+const setupRequest = { configuration_revision: 1 } satisfies Schema<'SetupCompleteRequest'>;
+const activeConfiguration = {
+  active_revision: 1,
+  last_known_good_revision: 1,
+  catalog_version: 'v1',
+  values: [
+    {
+      key: 'ui.locale',
+      sensitivity: 'PUBLIC',
+      configured: true,
+      value: 'zh-CN',
+      masked_hint: null,
+    },
+  ],
+  snapshot_sha256: 'a'.repeat(64),
+  consumer_states: [
+    {
+      consumer: 'frontend',
+      desired_revision: 1,
+      applied_revision: 1,
+      ack: 'ACKED',
+      error_code: null,
+      heartbeat_at: '2026-08-10T00:00:00Z',
+    },
+  ],
+  updated_at: '2026-08-10T00:00:00Z',
+} satisfies Schema<'ConfigurationActive'>;
 
-const settingsResponse = {
-  settings_id: 'SETTINGS-DEFAULT',
-  revision: 3,
-  ...setupRequest,
-  created_at: '2026-08-10T00:00:00Z',
-  updated_at: '2026-08-10T00:01:00Z',
-} satisfies Schema<'SettingsDetail'>;
+const ownerSession = (key_id = 'KEY-1', csrf_token = 'csrf-1') =>
+  ({
+    principal: 'OWNER',
+    auth_method: 'GENERAL_ACCESS_KEY',
+    key_id,
+    issued_at: '2026-08-10T00:00:00Z',
+    last_seen_at: '2026-08-10T00:00:00Z',
+    expires_at: '2026-08-11T00:00:00Z',
+    csrf_token,
+  }) satisfies Schema<'OwnerSessionView'>;
 
 const strategySpecification = {
   thesis: 'Canonical quality thesis.',
@@ -135,216 +150,77 @@ const availableBacktest = {
 } satisfies Extract<Schema<'StrategyLatestBacktest'>, { state: 'AVAILABLE' }>;
 
 describe('canonical P0 network behavior', () => {
-  it('Setup case 21 and Settings cases 2-5 submit exact refs with required ETag', async () => {
+  it('submits the installation configuration revision with cookie-session CSRF', async () => {
     let received: unknown;
     server.use(
       http.post(`${base}/api/v1/setup/complete`, async ({ request }) => {
         received = await request.json();
         expect(request.headers.get('Idempotency-Key')).toBeTruthy();
-        return HttpResponse.json(
-          {
-            settings_id: 'SETTINGS-DEFAULT',
-            revision: 1,
-            ...(received as object),
-            created_at: '2026-01-01T00:00:00Z',
-            updated_at: '2026-01-01T00:00:00Z',
-          },
-          { headers: { ETag: 'W/"SETTINGS-DEFAULT:1"' } },
-        );
+        expect(request.headers.get('X-CSRF-Token')).toBe('csrf-1');
+        return HttpResponse.json(activeConfiguration, { headers: { ETag: 'W/"config:1"' } });
       }),
     );
-    await api.completeSetup({
-      language: 'en',
-      timezone: 'Asia/Shanghai',
-      base_currency: 'USD',
-      number_format_locale: 'en-US',
-      ai_connection_id: 'CONN-AI-1',
-      default_data_provider_id: null,
-      default_benchmark: 'SPY',
-      default_frequency: 'DAILY',
-      default_research_start: null,
-      initial_paper_capital: '100000',
-      research_policy_id: 'RP-756FFQA659A84RCEVR0M9X8DMN',
-      risk_policy_id: 'RISK-7TTN4TSTQB0FXPTV60RHR5P7NH',
-      cost_model_id: 'COST-0QY70GRXXGT2HVM7HY8TMPXMVF',
-    });
-    expect(received).toMatchObject({
-      research_policy_id: 'RP-756FFQA659A84RCEVR0M9X8DMN',
-      risk_policy_id: 'RISK-7TTN4TSTQB0FXPTV60RHR5P7NH',
-      cost_model_id: 'COST-0QY70GRXXGT2HVM7HY8TMPXMVF',
-    });
+    auth.establish(ownerSession());
+    await expect(api.completeSetup(setupRequest, 'W/"config:1"', 'SETUP-1')).resolves.toMatchObject(
+      {
+        body: activeConfiguration,
+        etag: 'W/"config:1"',
+      },
+    );
+    expect(received).toEqual(setupRequest);
   });
 
-  it('decodes exact SettingsDetail identity and replays the same setup intent key verbatim', async () => {
+  it('replays the same setup idempotency key without client mutation', async () => {
     const keys: string[] = [];
     const bodies: unknown[] = [];
     server.use(
       http.post(`${base}/api/v1/setup/complete`, async ({ request }) => {
         keys.push(request.headers.get('Idempotency-Key') ?? '');
         bodies.push(await request.json());
-        return HttpResponse.json(settingsResponse, { headers: { ETag: 'W/"SETTINGS-DEFAULT:3"' } });
+        return HttpResponse.json(activeConfiguration, { headers: { ETag: 'W/"config:1"' } });
       }),
     );
-    const first = await api.completeSetup(setupRequest, 'SETUP-INTENT-REPLAY-0001');
-    const replay = await api.completeSetup(setupRequest, 'SETUP-INTENT-REPLAY-0001');
+    const first = await api.completeSetup(setupRequest, 'W/"config:1"', 'SETUP-INTENT-REPLAY-0001');
+    const replay = await api.completeSetup(
+      setupRequest,
+      'W/"config:1"',
+      'SETUP-INTENT-REPLAY-0001',
+    );
     expect(first).toEqual(replay);
-    expect(first.etag).toBe('W/"SETTINGS-DEFAULT:3"');
+    expect(first.etag).toBe('W/"config:1"');
     expect(keys).toEqual(['SETUP-INTENT-REPLAY-0001', 'SETUP-INTENT-REPLAY-0001']);
     expect(bodies).toEqual([setupRequest, setupRequest]);
   });
 
-  it.each([
-    ['missing', null, settingsResponse],
-    ['malformed', 'SETTINGS-DEFAULT:3', settingsResponse],
-    ['settings mismatch', 'W/"SET-OTHER:3"', settingsResponse],
-    ['revision mismatch', 'W/"SETTINGS-DEFAULT:4"', settingsResponse],
-  ] as const)('fails closed on %s setup ETag without replay', async (_case, etag, body) => {
+  it('decodes the closed active-configuration response and surfaces API problems once', async () => {
     let calls = 0;
     server.use(
       http.post(`${base}/api/v1/setup/complete`, () => {
         calls += 1;
-        return HttpResponse.json(body, { headers: etag ? { ETag: etag } : {} });
-      }),
-    );
-    await expect(
-      api.completeSetup(setupRequest, 'SETUP-INTENT-CORRUPT-001'),
-    ).rejects.toBeInstanceOf(ContractError);
-    expect(calls).toBe(1);
-  });
-
-  it('Settings cases 1 and 7 reject open bodies and latest-ref rebinding', async () => {
-    let response: Record<string, unknown> = {
-      ...settingsResponse,
-      internal_policy_uuid: 'secret',
-    };
-    server.use(
-      http.post(`${base}/api/v1/setup/complete`, () =>
-        HttpResponse.json(response, { headers: { ETag: 'W/"SETTINGS-DEFAULT:3"' } }),
-      ),
-    );
-    await expect(api.completeSetup(setupRequest, 'SETUP-INTENT-CLOSED-001')).rejects.toBeInstanceOf(
-      ContractError,
-    );
-    response = { ...settingsResponse, research_policy_id: 'RP-270K8GD39FBTWZ14VVYZY57V6M' };
-    await expect(
-      api.completeSetup(setupRequest, 'SETUP-INTENT-BINDING-001'),
-    ).rejects.toBeInstanceOf(ContractError);
-  });
-
-  it('Setup case 22 / Settings case 6 surfaces all DRAFT, RETIRED, missing, and wrong-kind ref rejections generically', async () => {
-    const attempts = [
-      ['research_policy_id', 'RP-1RJR15X5CTJHM21NZG5M9WT0Q7'],
-      ['research_policy_id', 'RP-0SB2XEYD3G0248JM607RV6MJE1'],
-      ['risk_policy_id', 'RISK-3XGQ0S3M801W0JGSF157K5GC2W'],
-      ['risk_policy_id', 'RISK-0DTVKWXAD3ZBR1KTYZHE56F6W4'],
-      ['cost_model_id', 'COST-3ATWHJE111SKP4CAH92T3TYNNW'],
-      ['cost_model_id', 'COST-3ZGS0CY5NWB5W6K8XPDNPDYCF0'],
-    ] as const;
-    const received: unknown[] = [];
-    server.use(
-      http.post(`${base}/api/v1/setup/complete`, async ({ request }) => {
-        received.push(await request.json());
         return HttpResponse.json(
           {
             type: 'about:blank',
-            title: 'Invalid setup binding',
+            title: 'Configuration invalid',
             status: 422,
-            code: 'INVALID_REQUEST',
-            detail: 'One or more setup bindings are invalid.',
+            code: 'CONFIGURATION_VALIDATION_FAILED',
+            detail: 'Candidate configuration is invalid.',
             instance: null,
-            request_id: 'REQ-INVALID-BINDING',
+            request_id: 'REQ-CONFIG-1',
             retryable: false,
-            field_errors: [
-              { field: 'binding', code: 'INVALID', message: 'Invalid setup binding.' },
-            ],
+            field_errors: [],
             context: {},
           } satisfies Schema<'ApiProblem'>,
           { status: 422 },
         );
       }),
     );
-    for (const [field, value] of attempts) {
-      const body = { ...setupRequest, [field]: value };
-      await expect(api.completeSetup(body, `SETUP-INVALID-${received.length}`)).rejects.toSatisfy(
-        (error: unknown) =>
-          error instanceof ApiError &&
-          error.problem.code === 'INVALID_REQUEST' &&
-          error.problem.detail === 'One or more setup bindings are invalid.',
-      );
-    }
-    expect(received).toHaveLength(attempts.length);
-  });
-
-  it('Setup case 23 / Settings case 8 keeps cross-owner/workspace failures indistinguishable', async () => {
-    const responses: Schema<'ApiProblem'>[] = [];
-    server.use(
-      http.post(`${base}/api/v1/setup/complete`, () => {
-        const problem = {
-          type: 'about:blank',
-          title: 'Invalid setup binding',
-          status: 422,
-          code: 'INVALID_REQUEST',
-          detail: 'One or more setup bindings are invalid.',
-          instance: null,
-          request_id: 'REQ-CROSS-SCOPE',
-          retryable: false,
-          field_errors: [{ field: 'binding', code: 'INVALID', message: 'Invalid setup binding.' }],
-          context: {},
-        } satisfies Schema<'ApiProblem'>;
-        return HttpResponse.json(problem, { status: 422 });
-      }),
+    await expect(
+      api.completeSetup(setupRequest, 'W/"config:1"', 'SETUP-INVALID-1'),
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof ApiError && error.problem.code === 'CONFIGURATION_VALIDATION_FAILED',
     );
-    for (const [field, value] of [
-      ['research_policy_id', 'RP-1EVTGDFZAGEFNP1JDYVKANJ2WS'],
-      ['risk_policy_id', 'RISK-6YG32YXY56YPX3YCNN8TTPTMQG'],
-      ['cost_model_id', 'COST-15RC9NKBYJJWEXAR5KRG82C3BV'],
-    ] as const) {
-      try {
-        await api.completeSetup({ ...setupRequest, [field]: value }, `SETUP-CROSS-${field}`);
-      } catch (error) {
-        expect(error).toBeInstanceOf(ApiError);
-        responses.push((error as ApiError).problem);
-      }
-    }
-    expect(responses).toHaveLength(3);
-    expect(responses[0]).toMatchObject({ code: 'INVALID_REQUEST', context: {} });
-    expect(responses[1]).toEqual(responses[0]);
-    expect(responses[2]).toEqual(responses[0]);
-    expect(JSON.stringify(responses)).not.toMatch(/owner|workspace|internal|policy body/i);
-  });
-
-  it('surfaces setup PROCESSING/invalid refs once and preserves the caller-owned intent', async () => {
-    const keys: string[] = [];
-    let calls = 0;
-    server.use(
-      http.post(`${base}/api/v1/setup/complete`, ({ request }) => {
-        calls += 1;
-        keys.push(request.headers.get('Idempotency-Key') ?? '');
-        const processing = calls === 1;
-        return HttpResponse.json(
-          {
-            type: 'about:blank',
-            title: processing ? 'Processing' : 'Invalid binding',
-            status: processing ? 409 : 422,
-            code: processing ? 'IDEMPOTENCY_IN_PROGRESS' : 'INVALID_REQUEST',
-            detail: processing ? 'Original request is processing.' : 'Binding is not active.',
-            instance: null,
-            request_id: processing ? 'REQ-PROCESSING' : 'REQ-INVALID',
-            retryable: false,
-            field_errors: processing
-              ? []
-              : [{ field: 'research_policy_id', code: 'INVALID', message: 'Invalid binding.' }],
-            context: {},
-          } satisfies Schema<'ApiProblem'>,
-          { status: processing ? 409 : 422 },
-        );
-      }),
-    );
-    for (const code of ['IDEMPOTENCY_IN_PROGRESS', 'INVALID_REQUEST'])
-      await expect(api.completeSetup(setupRequest, 'SETUP-INTENT-PROCESSING-1')).rejects.toSatisfy(
-        (error: unknown) => error instanceof ApiError && error.problem.code === code,
-      );
-    expect(keys).toEqual(['SETUP-INTENT-PROCESSING-1', 'SETUP-INTENT-PROCESSING-1']);
+    expect(calls).toBe(1);
   });
 
   it('P09 decodes current and explicit identity, Content-Location, and every spec mirror field', async () => {
@@ -567,14 +443,16 @@ describe('canonical P0 network behavior', () => {
     });
   });
 
-  it('uses fresh bearer values and distinct idempotency keys for holdout runs', async () => {
+  it('uses cookie sessions, fresh CSRF values, and distinct idempotency keys for holdout runs', async () => {
     const authorization: Array<string | null> = [];
+    const csrf: Array<string | null> = [];
     const keys: string[] = [];
     server.use(
       http.post(
         `${base}/api/v1/validations/VAL-2GKYQRFB6BG5R4AVJSYCAJH56J/holdout-runs`,
         ({ request }) => {
           authorization.push(request.headers.get('Authorization'));
+          csrf.push(request.headers.get('X-CSRF-Token'));
           keys.push(request.headers.get('Idempotency-Key') ?? '');
           expect(request.headers.get('If-Match')).toBe('W/"holdout:4"');
           return HttpResponse.json({
@@ -595,11 +473,11 @@ describe('canonical P0 network behavior', () => {
         },
       ),
     );
-    auth.set('first-token');
+    auth.establish(ownerSession('KEY-1', 'csrf-1'));
     await api.runHoldout('VAL-2GKYQRFB6BG5R4AVJSYCAJH56J', 'W/"holdout:4"', {
       approval_id: 'APR-0T71YPB60APYFY39FY75RYTVZB',
     });
-    auth.set('rotated-token');
+    auth.establish(ownerSession('KEY-2', 'csrf-2'));
     await Promise.all([
       api.runHoldout('VAL-2GKYQRFB6BG5R4AVJSYCAJH56J', 'W/"holdout:4"', {
         approval_id: 'APR-0T71YPB60APYFY39FY75RYTVZB',
@@ -608,11 +486,8 @@ describe('canonical P0 network behavior', () => {
         approval_id: 'APR-0T71YPB60APYFY39FY75RYTVZB',
       }),
     ]);
-    expect(authorization).toEqual([
-      'Bearer first-token',
-      'Bearer rotated-token',
-      'Bearer rotated-token',
-    ]);
+    expect(authorization).toEqual([null, null, null]);
+    expect(csrf).toEqual(['csrf-1', 'csrf-2', 'csrf-2']);
     expect(new Set(keys).size).toBe(3);
     expect(keys.every(Boolean)).toBe(true);
   });
@@ -792,14 +667,14 @@ describe('canonical P0 network behavior', () => {
         );
       }),
     );
-    auth.set('current-token');
+    auth.establish(ownerSession());
     await expect(
       api.reproduceExperiment('EXP-0VAHT8C2J3KAX71AF6P3J6ES5J', { mode: 'EXACT' }, `KEY-${status}`),
     ).rejects.toSatisfy(
       (error: unknown) => error instanceof ApiError && error.problem.code === code,
     );
     expect(calls).toBe(1);
-    expect(auth.get()).toBe(status === 401 ? '' : 'current-token');
+    expect(auth.get()).toBe(status === 401 ? '' : 'session');
   });
 
   it('retains canonical error codes and request audit identity', async () => {
@@ -946,7 +821,7 @@ describe('canonical P0 network behavior', () => {
     expect({ approvalCalls, agentCalls }).toEqual({ approvalCalls: 1, agentCalls: 1 });
   });
 
-  it('SSE cases 13/16 isolate cursor and dedupe state across auth/workspace scopes', async () => {
+  it('SSE isolates cursor and dedupe state across owner sessions', async () => {
     let calls = 0;
     const events: Schema<'SseEnvelope'>[] = [];
     const resync = vi.fn();
@@ -976,14 +851,15 @@ describe('canonical P0 network behavior', () => {
         payload: JSON.parse(payload),
       })}\n\n`;
     };
-    auth.set('workspace-a-token');
+    auth.establish(ownerSession('KEY-A', 'csrf-a'));
     const workspaceAScope = auth.scope();
     server.use(
       http.get(`${base}/api/v1/events/stream`, ({ request }) => {
         calls += 1;
         if (calls === 2) {
           expect(request.headers.get('Last-Event-ID')).toBeNull();
-          expect(request.headers.get('Authorization')).toBe('Bearer workspace-b-token');
+          expect(request.headers.get('Authorization')).toBeNull();
+          expect(request.credentials).toBe('include');
         }
         const body =
           calls === 1
@@ -1001,7 +877,7 @@ describe('canonical P0 network behavior', () => {
     await vi.waitFor(() => expect(events.map((e) => e.sequence)).toEqual([7, 9]));
     expect(resync.mock.calls.length).toBeGreaterThanOrEqual(3);
     expect(sessionStorage.getItem(`qf.sse.cursor:${workspaceAScope}`)).toBe('10');
-    auth.set('workspace-b-token');
+    auth.establish(ownerSession('KEY-B', 'csrf-b'));
     const workspaceBScope = auth.scope();
     expect(workspaceBScope).not.toBe(workspaceAScope);
     expect(sessionStorage.getItem(`qf.sse.cursor:${workspaceAScope}`)).toBeNull();
@@ -1095,7 +971,7 @@ describe('canonical P0 network behavior', () => {
             title: 'Unauthenticated',
             status: 401,
             code: 'UNAUTHENTICATED',
-            detail: 'Bearer expired.',
+            detail: 'Session expired.',
             instance: null,
             request_id: 'REQ-SSE-401',
             retryable: false,
@@ -1106,7 +982,7 @@ describe('canonical P0 network behavior', () => {
         );
       }),
     );
-    auth.set('expired-stream-token');
+    auth.establish(ownerSession('KEY-EXPIRED', 'csrf-expired'));
     const stop = streamEvents(
       vi.fn(),
       vi.fn(),
@@ -1146,7 +1022,7 @@ describe('canonical P0 network behavior', () => {
         );
       }),
     );
-    auth.set('authorized-rest-token');
+    auth.establish(ownerSession('KEY-AUTHORIZED', 'csrf-authorized'));
     const stop = streamEvents(
       vi.fn(),
       vi.fn(),
@@ -1156,7 +1032,7 @@ describe('canonical P0 network behavior', () => {
     await vi.waitFor(() => expect(problems).toHaveLength(1));
     expect(problems[0]?.problem.request_id).toBe('REQ-SSE-403');
     expect(states).toContain('permission-denied');
-    expect(auth.get()).toBe('authorized-rest-token');
+    expect(auth.get()).toBe('session');
     await new Promise((resolve) => window.setTimeout(resolve, 25));
     expect(calls).toBe(1);
     stop();

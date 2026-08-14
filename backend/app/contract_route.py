@@ -138,10 +138,7 @@ class CanonicalRoute(APIRoute):
                     decoded_body = json.loads(response_body)
                     validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
                     if operation.get("operationId") == "completeSetup":
-                        expected_etag = (
-                            f'W/"{decoded_body["settings_id"]}:'
-                            f'{decoded_body["revision"]}"'
-                        )
+                        expected_etag = f'W/"config:{decoded_body["active_revision"]}"'
                         if response.headers.get("etag") != expected_etag:
                             return _problem(
                                 request,

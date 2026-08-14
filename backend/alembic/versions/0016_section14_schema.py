@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     LargeBinary,
@@ -34,7 +35,7 @@ from sqlalchemy import (
 )
 
 from alembic import op
-from app.event_contract import EVENT_OBJECT_TYPES
+from app.event_contract import EVENT_OBJECT_TYPES, EVENT_TYPE_CHECK_SQL
 from app.locator_contract import (
     POSTGRES_LOCATOR_CONTRACT_SHA256,
     POSTGRES_LOCATOR_FUNCTION_SQL,
@@ -68,6 +69,9 @@ _DOMAIN_LOCATOR_CHECK_NAME = "ck_domain_events_locator_quartet"
 _DOMAIN_LOCATOR_CHECK_SQL = (
     "qf_event_locator_quartet_valid("
     "object_type, object_id, object_version, object_revision, FALSE)"
+)
+_PAPER_STATUS_CHECK_SQL = (
+    "status IN ('PENDING', 'ACTIVE', 'PAUSED', 'DISABLED', 'FAILED')"
 )
 _POSTGRES_UUIDV7_COMPAT_SQL = """
 CREATE OR REPLACE FUNCTION public.uuidv7()
@@ -1550,7 +1554,7 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         _backfill_closed_storage(restore_rows)
 
     def metadata_for(path: Path) -> MetaData:
-        return load_physical_metadata(
+        metadata = load_physical_metadata(
             path,
             include_checks=(bind.dialect.name == "postgresql"),
             include_sqlite_partial_indexes=(bind.dialect.name == "postgresql"),
@@ -1559,6 +1563,37 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
             # compatibility path supplies explicit UUID values instead.
             include_server_defaults=(bind.dialect.name == "postgresql"),
         )
+        if path == PREVIOUS and bind.dialect.name == "postgresql":
+            # Rollback must retain newer closed events. The historical
+            # snapshot predates UX-001 event types, so use the current closed
+            # allowlist for the temporary compatibility schema.
+            table = metadata.tables["domain_events"]
+            constraint = next(
+                item
+                for item in table.constraints
+                if item.name == "domain_events_event_type_check"
+            )
+            table.constraints.remove(constraint)
+            table.append_constraint(
+                CheckConstraint(
+                    EVENT_TYPE_CHECK_SQL,
+                    name="domain_events_event_type_check",
+                )
+            )
+            table = metadata.tables["paper_deployments"]
+            constraint = next(
+                item
+                for item in table.constraints
+                if item.name == "ck_paper_deployments_status_valid"
+            )
+            table.constraints.remove(constraint)
+            table.append_constraint(
+                CheckConstraint(
+                    _PAPER_STATUS_CHECK_SQL,
+                    name="ck_paper_deployments_status_valid",
+                )
+            )
+        return metadata
 
     try:
         _drop_sqlite_guard_triggers()

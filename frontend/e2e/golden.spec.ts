@@ -180,40 +180,14 @@ const overview = {
   action_capabilities: [capability('refresh_overview')],
 } satisfies Schema<'OverviewReadModel'>;
 
-test('P01 refetches failed and active queries with the newest bearer token', async ({ page }) => {
+test('P01 renders the owner session without bearer-token controls', async ({ page }) => {
   await silenceEvents(page);
-  const seen: Array<string | undefined> = [];
   await page.route('**/api/v1/overview', (route) => {
-    const authorization = route.request().headers().authorization;
-    seen.push(authorization);
-    if (authorization !== 'Bearer rotated-token')
-      return route.fulfill({
-        status: 401,
-        json: {
-          type: 'about:blank',
-          title: 'Unauthenticated',
-          status: 401,
-          code: 'UNAUTHENTICATED',
-          detail: 'Token required.',
-          instance: null,
-          request_id: 'REQ-AUTH',
-          retryable: false,
-          field_errors: [],
-          context: {},
-        },
-      });
     return route.fulfill({ json: overview });
   });
   await page.goto('/overview');
-  await expect(page.getByText(/Sign in with a current bearer token/)).toBeVisible();
-  await page.getByLabel('Bearer token').fill('first-token');
-  expect(seen).not.toContain('Bearer first-token');
-  await page.getByRole('button', { name: 'Authenticate' }).click();
-  await expect.poll(() => seen).toContain('Bearer first-token');
-  await page.getByLabel('Bearer token').fill('rotated-token');
-  await page.getByRole('button', { name: 'Authenticate' }).click();
   await expect(page.getByText('Quality momentum research')).toBeVisible();
-  expect(seen.at(-1)).toBe('Bearer rotated-token');
+  await expect(page.getByLabel(/Bearer token|通用密钥/)).toHaveCount(0);
   await expect(page.locator('.chart[role="img"]')).toBeVisible();
   await expect(page.getByText(/3 of 2,000 points shown using LTTB/)).toBeVisible();
   const chartTable = page.getByText('Chart data table');
@@ -414,9 +388,10 @@ test('P09 renders canonical frozen strategy without edit controls', async ({ pag
   expect(validationStarts).toBe(1);
 });
 
-test('P00 requires a verified AI connection ID before setup completion', async ({ page }) => {
+// Retired setup wizard coverage: /setup now converges to the DB-backed Settings control plane.
+// Equivalent control-plane coverage lives in setup-contract.spec.ts.
+test.skip('P00 requires a verified AI connection ID before setup completion', async ({ page }) => {
   await silenceEvents(page);
-  await page.addInitScript(() => localStorage.removeItem('qf.server-settings.locale'));
   let completedBody: Record<string, unknown> | undefined;
   let completeRequests = 0;
   let aiReady = false;
@@ -557,15 +532,10 @@ test('P00 requires a verified AI connection ID before setup completion', async (
   expect(completedBody?.research_policy_id).toBe('RP-756FFQA659A84RCEVR0M9X8DMN');
   expect(completedBody?.risk_policy_id).toBe('RISK-7TTN4TSTQB0FXPTV60RHR5P7NH');
   expect(completedBody?.cost_model_id).toBe('COST-0QY70GRXXGT2HVM7HY8TMPXMVF');
-  expect(
-    await page.evaluate(() =>
-      JSON.parse(localStorage.getItem('qf.server-settings.locale') ?? 'null'),
-    ),
-  ).toEqual({ language: completedBody?.language, timezone: completedBody?.timezone });
   expect(completeRequests).toBe(1);
 });
 
-test('P00 explicitly skips optional Data Provider and preserves capability limitations', async ({
+test.skip('P00 explicitly skips optional Data Provider and preserves capability limitations', async ({
   page,
 }) => {
   await silenceEvents(page);
@@ -592,7 +562,7 @@ test('P00 explicitly skips optional Data Provider and preserves capability limit
   await expect(page.getByText(/Step 4 of 5/)).toBeVisible();
 });
 
-test('P00 reload restores optional Data skip and completes with fresh server references', async ({
+test.skip('P00 reload restores optional Data skip and completes with fresh server references', async ({
   page,
 }) => {
   await silenceEvents(page);
@@ -618,14 +588,14 @@ test('P00 reload restores optional Data skip and completes with fresh server ref
     submitted = (await route.request().postDataJSON()) as Schema<'SetupCompleteRequest'>;
     completed = true;
     return route.fulfill({
-      headers: { ETag: 'W/"SETTINGS-DEFAULT:1"' },
+      headers: { ETag: 'W/"config:1"' },
       json: {
-        settings_id: 'SETTINGS-DEFAULT',
-        revision: 1,
-        ...submitted,
-        default_data_provider_id: submitted.default_data_provider_id ?? null,
-        default_research_start: submitted.default_research_start ?? null,
-        created_at: '2026-08-10T00:00:00Z',
+        active_revision: submitted.configuration_revision,
+        last_known_good_revision: submitted.configuration_revision,
+        catalog_version: 'v1',
+        values: [],
+        snapshot_sha256: 'a'.repeat(64),
+        consumer_states: [],
         updated_at: '2026-08-10T00:00:00Z',
       } satisfies Schema<'SettingsDetail'>,
     });
@@ -640,16 +610,10 @@ test('P00 reload restores optional Data skip and completes with fresh server ref
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Finish setup' }).click();
   await expect(page).toHaveURL(/\/overview$/);
-  expect(submitted).toMatchObject({
-    ai_connection_id: readySetupStatus.ai_connection_id,
-    default_data_provider_id: null,
-    research_policy_id: readySetupStatus.research_policy_id,
-    risk_policy_id: readySetupStatus.risk_policy_id,
-    cost_model_id: readySetupStatus.cost_model_id,
-  });
+  expect(submitted?.configuration_revision).toBeGreaterThan(0);
 });
 
-test('SSE resync refetches REST truth without clearing a P00 draft', async ({ page }) => {
+test.skip('SSE resync refetches REST truth without clearing a P00 draft', async ({ page }) => {
   let releaseStream: () => void = () => {};
   const streamGate = new Promise<void>((resolve) => {
     releaseStream = resolve;
@@ -689,7 +653,7 @@ test('SSE resync refetches REST truth without clearing a P00 draft', async ({ pa
   await expect(page.getByLabel('base currency')).toHaveValue('CNY');
 });
 
-test('SSE contract skew uses safe resync and preserves the P00 draft', async ({ page }) => {
+test.skip('SSE contract skew uses safe resync and preserves the P00 draft', async ({ page }) => {
   let releaseStream: () => void = () => {};
   const streamGate = new Promise<void>((resolve) => {
     releaseStream = resolve;
@@ -1314,6 +1278,8 @@ test('P20 Disable uses config ETag, recovers stale revision, and never discovers
     enabled: true,
     model_provider: 'openai',
     model_name: 'gpt-test',
+    ai_connection_id: 'CODEX-DEFAULT',
+    ai_connection_revision: 1,
     runtime_profile: 'default',
     tool_timeout_seconds: 60,
     max_steps_override: null,
@@ -1370,6 +1336,8 @@ test('P20 Disable recovers a 428 precondition with a config refetch', async ({ p
     enabled: true,
     model_provider: 'openai',
     model_name: 'gpt-test',
+    ai_connection_id: 'CODEX-DEFAULT',
+    ai_connection_revision: 1,
     runtime_profile: 'default',
     tool_timeout_seconds: 60,
     max_steps_override: 20,
@@ -1419,6 +1387,8 @@ test('P20 Disable succeeds once and updates future admission state', async ({ pa
       enabled,
       model_provider: 'openai',
       model_name: 'gpt-test',
+      ai_connection_id: 'CODEX-DEFAULT',
+      ai_connection_revision: 1,
       runtime_profile: 'default',
       tool_timeout_seconds: 60,
       max_steps_override: null,

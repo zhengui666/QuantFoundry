@@ -16,34 +16,40 @@ const executeCapability = async (page: Page, action: string) => {
 };
 
 const applicationUrl = process.env.QF_FULLSTACK_BASE_URL;
-const bearerToken = process.env.QF_FULLSTACK_BEARER_TOKEN;
+const generalKey = process.env.QF_FULLSTACK_GENERAL_KEY;
 const factorId = process.env.QF_FULLSTACK_FACTOR_ID;
 const snapshotId = process.env.QF_FULLSTACK_SNAPSHOT_ID;
 const costModelId = process.env.QF_FULLSTACK_COST_MODEL_ID;
 const validationPolicyId = process.env.QF_FULLSTACK_VALIDATION_POLICY_ID;
 const enabled = Boolean(
-  applicationUrl && bearerToken && factorId && snapshotId && costModelId && validationPolicyId,
+  applicationUrl && generalKey && factorId && snapshotId && costModelId && validationPolicyId,
 );
 
+let apiCsrfToken = '';
 const apiHeaders = (extra: Record<string, string> = {}) => ({
-  Authorization: `Bearer ${bearerToken!}`,
   Accept: 'application/json',
+  ...(apiCsrfToken ? { 'X-CSRF-Token': apiCsrfToken } : {}),
   ...extra,
 });
 
-// The real Compose origin is different from the dev-server origin used by ordinary E2E.
-// Seed the persisted server Settings projection per page, not a host/browser locale, so
-// canonical English text locators stay deterministic while product default remains zh-CN.
-const seedEnglishServerSettings = async (page: Page) => {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'qf.server-settings.locale',
-      JSON.stringify({ language: 'en', timezone: 'UTC' }),
-    );
+const authenticateApi = async (request: APIRequestContext) => {
+  const response = await request.post(new URL('/api/v1/auth/login', applicationUrl!).href, {
+    data: { key: generalKey! },
   });
+  expect(response.status()).toBe(200);
+  const body = (await response.json()) as Schema<'SessionBootstrapResponse'>;
+  apiCsrfToken = body.session.csrf_token;
+};
+
+const sessionCookie = async (request: APIRequestContext) => {
+  const state = await request.storageState();
+  const cookie = state.cookies.find((item) => item.name === 'qf_session');
+  expect(cookie?.value).toBeTruthy();
+  return `qf_session=${cookie!.value}`;
 };
 
 const createResearchThroughApi = async (request: APIRequestContext) => {
+  await authenticateApi(request);
   const response = await request.post(new URL('/api/v1/research', applicationUrl!).href, {
     headers: apiHeaders({
       'Content-Type': 'application/json',
@@ -62,7 +68,7 @@ const createResearchThroughApi = async (request: APIRequestContext) => {
 test.describe('platform-driven full-stack Golden Flow', () => {
   test.skip(
     !enabled,
-    'Set QF_FULLSTACK_BASE_URL, bearer, factor, snapshot, cost-model, and policy IDs.',
+    'Set QF_FULLSTACK_BASE_URL, general key, factor, snapshot, cost-model, and policy IDs.',
   );
 
   test('proves decoded SSE causally refetches one active REST resource and converges UI', async ({
@@ -79,10 +85,9 @@ test.describe('platform-driven full-stack Golden Flow', () => {
         exactReads.push(url.pathname);
     });
 
-    await seedEnglishServerSettings(page);
     await page.goto(new URL(`/research/${created.research_id}?tab=overview`, applicationUrl!).href);
-    await page.getByLabel('Bearer token').fill(bearerToken!);
-    await page.getByRole('button', { name: 'Authenticate' }).click();
+    await page.getByLabel(/通用密钥|General access key/).fill(generalKey!);
+    await page.getByRole('button', { name: /登录|Sign in/ }).click();
     await expect(page.getByRole('heading', { name: created.title })).toBeVisible();
     await expect(page.getByText('DRAFT', { exact: true })).toBeVisible();
     // StrictMode/route loader may perform more than one initial read. Freeze the
@@ -99,7 +104,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     exactReads.forEach((path) => witness.observeRest(path));
     const probe = await startCanonicalSseProbe(
       new URL('/api/v1/events/stream', applicationUrl!),
-      bearerToken!,
+      await sessionCookie(request),
     );
     const beforeMutation = await request.get(new URL(exactPath, applicationUrl!).href, {
       headers: apiHeaders(),
@@ -149,6 +154,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     request,
   }) => {
     test.setTimeout(10 * 60_000);
+    await authenticateApi(request);
     const mutations: Array<{
       path: string;
       idempotency: string | null;
@@ -156,7 +162,8 @@ test.describe('platform-driven full-stack Golden Flow', () => {
       body: unknown;
     }> = [];
     const reads: string[] = [];
-    const streamTracker = createAuthenticatedStreamTracker(bearerToken!);
+    let browserCookie = '';
+    const streamTracker = createAuthenticatedStreamTracker(() => browserCookie);
     page.on('request', (request) => {
       const url = new URL(request.url());
       if (
@@ -165,7 +172,11 @@ test.describe('platform-driven full-stack Golden Flow', () => {
         url.pathname.startsWith('/api/v1/')
       )
         reads.push(url.pathname);
-      else if (request.method() === 'POST' && url.pathname.startsWith('/api/v1/'))
+      else if (
+        request.method() === 'POST' &&
+        url.pathname.startsWith('/api/v1/') &&
+        url.pathname !== '/api/v1/auth/login'
+      )
         mutations.push({
           path: url.pathname,
           idempotency: request.headers()['idempotency-key'] ?? null,
@@ -180,20 +191,21 @@ test.describe('platform-driven full-stack Golden Flow', () => {
         path: new URL(request.url()).pathname,
         status: response.status(),
         authorization: request.headers()['authorization'],
+        cookie: request.headers()['cookie'] ?? '',
       });
     });
     page.on('requestfinished', (request) => streamTracker.observeTermination(request));
     page.on('requestfailed', (request) => streamTracker.observeTermination(request));
 
-    await seedEnglishServerSettings(page);
     await page.goto(new URL('/overview', applicationUrl!).href);
-    await page.getByLabel('Bearer token').fill(bearerToken!);
-    await page.getByRole('button', { name: 'Authenticate' }).click();
+    await page.getByLabel(/通用密钥|General access key/).fill(generalKey!);
+    await page.getByRole('button', { name: /登录|Sign in/ }).click();
     await expect(page.getByRole('heading', { name: /总览|Overview/ })).toBeVisible();
+    browserCookie = `qf_session=${(await page.context().cookies()).find((item) => item.name === 'qf_session')?.value ?? ''}`;
     await expect.poll(() => streamTracker.snapshot().authenticatedAccepted).toBe(true);
     const sseProbe = await startCanonicalSseProbe(
       new URL('/api/v1/events/stream', applicationUrl!),
-      bearerToken!,
+      `qf_session=${(await page.context().cookies()).find((item) => item.name === 'qf_session')?.value}`,
     );
 
     await executeCapability(page, 'create_research');

@@ -36,7 +36,7 @@ import {
   Provenance,
   State,
 } from '../../ui';
-import { applyServerSettingsLocale } from '../../i18n';
+import { applyServerSettingsLocale, configurationLocale } from '../../i18n';
 import { ServerTime } from '../../format';
 
 function assertNever(value: never): never {
@@ -63,44 +63,74 @@ function setupRecoveryStep(status: Schema<'SetupStatus'>): number {
 
 export function Shell() {
   const { t } = useTranslation();
+  const translationRef = useRef(t);
+  translationRef.current = t;
+  const navigate = useNavigate();
   const client = useQueryClient();
   const [streamState, setStreamState] = useState('connecting');
   const [streamProblem, setStreamProblem] = useState<ApiError>();
-  const [tokenDraft, setTokenDraft] = useState('');
+  const [keyDraft, setKeyDraft] = useState('');
   const [reauthRequired, setReauthRequired] = useState(false);
   const [authScopeKey, setAuthScopeKey] = useState(auth.scope());
+  const [sessionReady, setSessionReady] = useState(() => Boolean(auth.get()));
   const isSetup = useRouterState({ select: (state) => state.location.pathname === '/setup' });
-  useEffect(
-    () =>
-      streamEvents(
-        (event) => {
-          setStreamState(t('stream.updated', { object: event.object_type }));
-          for (const queryKey of queryKeysForEvent(event))
-            void client.invalidateQueries({ queryKey, exact: true, type: 'active' });
-        },
-        () => {
-          setStreamState(t('stream.resynchronizing'));
-          void (async () => {
-            const predicate = (query: { queryKey: readonly unknown[] }) =>
-              isMutableEventQueryKey(query.queryKey);
-            await client.invalidateQueries({ type: 'active', refetchType: 'none', predicate });
-            await client.refetchQueries({ type: 'active', predicate });
-          })();
-        },
-        (state) => {
-          setStreamState(
-            state === 'client-update-required'
-              ? t('stream.clientUpdateRequired')
-              : state === 'resynchronizing'
-                ? t('stream.resynchronizing')
-                : t(`stream.${state}`),
-          );
-          if (state === 'connected') setStreamProblem(undefined);
-        },
-        setStreamProblem,
-      ),
-    [client, t],
-  );
+  const isLogin = useRouterState({ select: (state) => state.location.pathname === '/login' });
+  useEffect(() => {
+    if (auth.get()) return;
+    void api
+      .session()
+      .catch(() => undefined)
+      .finally(() => setSessionReady(true));
+  }, []);
+  useEffect(() => {
+    if (!auth.get()) return;
+    void api
+      .configurationActive()
+      .then(({ body }) => {
+        const locale = configurationLocale(
+          body.values.find((entry) => entry.key === 'appearance.locale')?.value,
+        );
+        if (locale) void applyServerSettingsLocale(locale);
+      })
+      .catch(() => undefined);
+  }, [authScopeKey]);
+  useEffect(() => {
+    if (sessionReady && !auth.get() && !isLogin) {
+      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (returnTo !== '/login') sessionStorage.setItem('qf.auth.return_to', returnTo);
+      void navigate({ to: '/login', replace: true });
+    }
+  }, [isLogin, navigate, sessionReady]);
+  useEffect(() => {
+    if (!auth.get()) return;
+    return streamEvents(
+      (event) => {
+        setStreamState(translationRef.current('stream.updated', { object: event.object_type }));
+        for (const queryKey of queryKeysForEvent(event))
+          void client.invalidateQueries({ queryKey, exact: true, type: 'active' });
+      },
+      () => {
+        setStreamState(translationRef.current('stream.resynchronizing'));
+        void (async () => {
+          const predicate = (query: { queryKey: readonly unknown[] }) =>
+            isMutableEventQueryKey(query.queryKey);
+          await client.invalidateQueries({ type: 'active', refetchType: 'none', predicate });
+          await client.refetchQueries({ type: 'active', predicate });
+        })();
+      },
+      (state) => {
+        setStreamState(
+          state === 'client-update-required'
+            ? translationRef.current('stream.clientUpdateRequired')
+            : state === 'resynchronizing'
+              ? translationRef.current('stream.resynchronizing')
+              : translationRef.current(`stream.${state}`),
+        );
+        if (state === 'connected') setStreamProblem(undefined);
+      },
+      setStreamProblem,
+    );
+  }, [authScopeKey, client]);
   useEffect(
     () =>
       auth.subscribe(() => {
@@ -112,6 +142,7 @@ export function Shell() {
       }),
     [client],
   );
+  if (!sessionReady && !isLogin) return <State kind="loading" />;
   const navigation = [
     ['/overview', 'nav.overview'],
     ['/research', 'nav.research'],
@@ -122,15 +153,10 @@ export function Shell() {
     ['/data', 'nav.data'],
     ['/agents', 'nav.agents'],
     ['/activity', 'nav.activity'],
+    ['/settings', 'nav.settings'],
   ] as const;
   return (
     <>
-      <section className="unsupported-width" role="alert">
-        <h1>{t('brand')}</h1>
-        <p>{t('shell.desktopOnly')}</p>
-        <p>{t('shell.minimumWidth')}</p>
-        <button onClick={() => auth.clear()}>{t('auth.logout')}</button>
-      </section>
       <div className={`app${isSetup ? ' setup-shell' : ''}`}>
         {!isSetup && (
           <nav className="sidebar" aria-label={t('nav.primary')}>
@@ -163,26 +189,38 @@ export function Shell() {
                 {streamState === 'connecting' ? t('stream.connecting') : streamState}
               </Badge>
             </span>
-            <form
-              className="auth-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                auth.set(tokenDraft.trim());
-                setReauthRequired(false);
-              }}
-            >
-              <label>
-                {t('auth.bearerToken')}
-                <input
-                  type="password"
-                  value={tokenDraft}
-                  aria-label={t('auth.bearerToken')}
-                  onChange={(event) => setTokenDraft(event.target.value)}
-                  placeholder={t('auth.memoryOnly')}
-                />
-              </label>
-              <button disabled={!tokenDraft.trim()}>{t('auth.authenticate')}</button>
-            </form>
+            {isLogin ? null : auth.get() ? (
+              <button className="secondary" onClick={() => void api.logout()}>
+                {t('auth.logout')}
+              </button>
+            ) : (
+              <form
+                className="auth-form"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  try {
+                    await api.login(keyDraft.trim());
+                    setKeyDraft('');
+                    setReauthRequired(false);
+                  } catch (error) {
+                    if (error instanceof ApiError) setStreamProblem(error);
+                    setReauthRequired(true);
+                  }
+                }}
+              >
+                <label>
+                  {t('auth.generalAccessKey')}
+                  <input
+                    type="password"
+                    value={keyDraft}
+                    aria-label={t('auth.generalAccessKey')}
+                    onChange={(event) => setKeyDraft(event.target.value)}
+                    placeholder={t('auth.memoryOnly')}
+                  />
+                </label>
+                <button disabled={!keyDraft.trim()}>{t('auth.authenticate')}</button>
+              </form>
+            )}
           </header>
           {reauthRequired && <State kind="error">{t('auth.expired')}</State>}
           {streamProblem && <Problem error={streamProblem} />}
@@ -283,14 +321,17 @@ export function SetupPage() {
         research_policy_id: server.research_policy_id,
         risk_policy_id: server.risk_policy_id,
         cost_model_id: server.cost_model_id,
-      } satisfies Schema<'SetupCompleteRequest'>;
+      };
       const payload = JSON.stringify(body);
       if (!completeIntent.current || completeIntent.current.payload !== payload)
         completeIntent.current = { payload, key: idempotency() };
       return api.completeSetup(body, completeIntent.current.key);
     },
     onSuccess: async ({ body }) => {
-      await applyServerSettingsLocale({ language: body.language, timezone: body.timezone });
+      const locale = configurationLocale(
+        body.values.find((entry) => entry.key === 'appearance.locale')?.value,
+      );
+      if (locale) await applyServerSettingsLocale(locale);
       const refreshed = await status.refetch();
       if (refreshed.data?.body.completed) {
         completeIntent.current = undefined;

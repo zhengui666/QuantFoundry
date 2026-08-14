@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
+from app import main as domain_main
 from app.agent_runtime import (
     ToolExecutionFailure,
     advance_agent_run,
@@ -16,6 +17,7 @@ from app.agent_runtime import (
     persist_tool_failure,
 )
 from app.artifacts import probe_artifact_store
+from app.control_plane import restore_active_domain_database
 from app.job_effects import apply_job_effect, apply_job_failure
 from app.main import Event, EventStreamWatermark, JobRow, SessionLocal
 from app.queue import (
@@ -94,6 +96,16 @@ def _claim(queue_name: str, identity: str) -> JobLease | None:
         session.close()
 
 
+def _domain_ready() -> bool:
+    if domain_main.app.state.domain_database_available:
+        return True
+    try:
+        restore_active_domain_database()
+    except Exception:  # noqa: BLE001 - recovery loop must remain alive
+        return False
+    return bool(domain_main.app.state.domain_database_available)
+
+
 def _mark_failed(lease: JobLease, error: Exception) -> None:
     session = SessionLocal()
     try:
@@ -129,6 +141,8 @@ def _run_once(
     crash_after_checkpoint: bool = False,
 ) -> int:
     queue_name = "agent" if agent_queue else "core"
+    if not _domain_ready():
+        return 0
     probe_artifact_store()
     lease = _claim(queue_name, identity or worker_id(queue_name))
     if lease is None:

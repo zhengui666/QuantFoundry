@@ -304,6 +304,7 @@ def sqlalchemy_type(pg_type: str, *, string_compatible_json: bool = False) -> An
         "date": Date(),
         "daterange": DateRangeCompat(),
         "timestamptz": DateTime(timezone=True),
+        "varchar": String(),
         "text": Text(),
         "jsonb": JSONTextCompat()
         if string_compatible_json

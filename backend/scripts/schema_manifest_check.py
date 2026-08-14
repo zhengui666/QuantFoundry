@@ -194,6 +194,10 @@ def _type_matches(expected: str, actual: Any, dialect: str) -> bool:
         }
     ):
         return wanted[1:] == got[1:] or got[1:] == (None,)
+    # SQLAlchemy represents an unbounded String as VARCHAR with length=None;
+    # the frozen manifest writes that contract as plain ``varchar``/``char``.
+    if wanted in {("varchar",), ("char",)} and got[:1] == wanted:
+        return got[1:] == (None,)
     return wanted == got
 
 
@@ -490,10 +494,10 @@ def _physical_contract(
     value = json.loads(PHYSICAL_PATH.read_text(encoding="utf-8"))
     if (
         value.get("table_count") != 63
-        or value.get("column_count") != 953
+        or value.get("column_count") != 967
         or sum(len(table["checks"]) for table in value["tables"]) != 191
     ):
-        raise RuntimeError("physical schema is not canonical 63/953/191")
+        raise RuntimeError("physical schema is not canonical 63/967/191")
     documented = _manifest_named_checks(manifest)
     if documented != _DOCUMENTED_NAMED_CHECKS:
         raise RuntimeError(
@@ -1052,7 +1056,10 @@ def _postgres_parsed_expected_indexes(
                     for index_offset, index in enumerate(indexes):
                         temporary_index = f"qf_index_{offset}_{index_offset}"
                         columns = ", ".join(
-                            preparer.quote(column) for column in index["columns"]
+                            preparer.quote(str(key["column"]))
+                            if key.get("column")
+                            else str(key["expression"])
+                            for key in _index_keys(index)
                         )
                         connection.execute(
                             text(

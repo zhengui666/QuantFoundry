@@ -204,7 +204,26 @@ def execute(
             ),
         )
         if terminal_write.rowcount != 1:
-            raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
+            # SQLite can report zero for a matched UPDATE after a trigger or
+            # compatibility migration even when the terminal state is visible.
+            # Re-read the fenced row before failing closed; PostgreSQL keeps the
+            # strict rowcount path.
+            persisted_state = session.execute(
+                select(record_type).where(
+                    record_type.actor_id == actor_id,
+                    record_type.workspace_id == workspace_id,
+                    record_type.method == method,
+                    record_type.path == path,
+                    record_type.key == key,
+                )
+            ).scalar_one_or_none()
+            if (
+                session.bind is None
+                or session.bind.dialect.name != "sqlite"
+                or persisted_state is None
+                or persisted_state.state != "SUCCEEDED"
+            ):
+                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
         session.expire(record)
         session.commit()
         persisted = session.execute(

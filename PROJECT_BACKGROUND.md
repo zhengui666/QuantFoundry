@@ -5,7 +5,7 @@
 **部署：** Single-human-principal / Self-hosted
 **状态：** Final V1.0
 **日期：** 2026-08-13
-**当前交付阶段：** 文档阶段 / 目标规范；D1 machine contract rewrite、实现与独立验收尚未完成
+**当前交付阶段：** D3 frontend control-plane slice complete；D4 local verification expanded（frontend full suite、backend UX-001 target、PG18 migration/auth/config 与 Paper Scheduler 001..007）；chaos/存量迁移/独立 release evidence 仍阻断 D4/D5 closure
 
 ## 1. 项目背景与范围
 
@@ -17,7 +17,7 @@ V1 的人机与配置边界固定为：一个不可创建、列举或切换的 h
 
 `Settings` 是全部可变配置的唯一写入口。所有普通 mutable value、secret、global revision/active pointer 与 effective selection 只持久化到固定嵌入式 Bootstrap Control DB；Domain PostgreSQL 只保存需要 domain lineage 的 immutable/versioned object content，Control DB 保存其 exact active ref。禁止 YAML/TOML/JSON/`.env`、环境变量、命令行参数作为普通配置来源或 fallback。Bootstrap Control DB 必须在 Domain DB 不可用时继续提供密钥验证、session、配置与 Domain DB 恢复控制面；加密 root 仅可来自 OS keychain、TPM 或 external secret injection，它是不可消除的 root-of-trust，不是普通配置。
 
-前端目标方向为 **Evidence Foundry**：证据优先、克制、可审计、数据密集但可理解；响应式 Web 从 390px 起可用，不建设原生移动 App。以上均为目标规范，不得据此宣称当前实现、canonical OpenAPI、schema 或测试已完成。
+前端目标方向为 **Evidence Foundry**：证据优先、克制、可审计、数据密集但可理解；响应式 Web 从 390px 起可用，不建设原生移动 App。D1 machine contract 已冻结；D2 backend 与 D3 frontend targeted checks 已通过，但完整 PostgreSQL/chaos/存量迁移/release closure 仍不得提前宣称完成。
 
 本文件不定义业务字段、页面、接口、计算或测试用例；这些内容以各专项事实源为准。
 
@@ -29,7 +29,7 @@ V1 的人机与配置边界固定为：一个不可创建、列举或切换的 h
 2. `docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md`：事实源关系、变更顺序、P0 no-waiver、兼容与发布语义；`docs/治理/p0-blockers.yaml` 是 P0 状态与 evidence 的机器可读 registry。
 3. `docs/PRD/V1.0.0.md`：Final V1.0；产品范围、业务流程、功能与验收口径。
 4. 专项技术基线：UI、前端、后端、Agent 与正式测试方案，各自在其职责范围内生效。
-5. 已提交的 machine-readable contracts：`docs/后端系统技术方案/contracts/openapi-v1.yaml`、`docs/后端系统技术方案/contracts/tools/README.md` 与 `docs/后端系统技术方案/contracts/tools/v1-p0.yaml`；在其对应协议范围内为最高精度事实源。
+5. 已提交的 machine-readable contracts：`docs/后端系统技术方案/contracts/openapi-v1.yaml`、`docs/后端系统技术方案/contracts/configuration-catalog-v1.yaml`、`docs/后端系统技术方案/contracts/bootstrap-control-v1.yaml`、`docs/后端系统技术方案/contracts/ux001-d1-test-matrix.yaml`、`docs/后端系统技术方案/contracts/tools/README.md` 与 `docs/后端系统技术方案/contracts/tools/v1-p0.yaml`；在其对应协议范围内为最高精度事实源。Bootstrap 文件是 D1 target schema，运行时物理迁移属于 D2。
 6. 补丁、historical archive、草稿、示例和测试夹具不构成独立事实源；不得覆盖以上文件。
 
 ## 3. 文档版本与状态
@@ -43,6 +43,9 @@ V1.0.0 专项基线以仓库中正式文件路径为准。文件名包含版本�
 | Agent | `docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md` |
 | 全栈测试 | `docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md` |
 | API 契约 | `docs/后端系统技术方案/contracts/openapi-v1.yaml`（canonical machine-readable 事实源） |
+| Bootstrap/Domain schema | `docs/后端系统技术方案/contracts/bootstrap-control-v1.yaml`（D1 target schema；D2 physical migration 已落地，完整 PG evidence 待补） |
+| D1 configuration catalog | `docs/后端系统技术方案/contracts/configuration-catalog-v1.yaml` |
+| D1 executable matrix | `docs/后端系统技术方案/contracts/ux001-d1-test-matrix.yaml` |
 | Tool 契约 | `docs/后端系统技术方案/contracts/tools/README.md` + `docs/后端系统技术方案/contracts/tools/v1-p0.yaml`（staged P0/P0.5 canonical 事实源） |
 
 前端共建 Patch 已完整合并进 `QuantFoundry_Frontend_Technical_Design_V1.0.0.md`，当前仅为 historical archive，不再生效，也不是竞争事实源。不得创建或保留两份可独立修改的 API 契约。

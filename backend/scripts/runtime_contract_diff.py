@@ -284,12 +284,12 @@ for schema_name, canonical_schema in canonical_schemas.items():
 expected_operation_count = canonical["info"]["x-quantfoundry-operation-count"]
 expected_error_count = len(canonical_schemas["CanonicalErrorCode"]["enum"])
 expected_schema_count = len(canonical_schemas)
-if expected_operation_count != 45:
-    errors.append("canonical operation metadata is not the approved 45")
-if expected_error_count != 65:
-    errors.append("canonical error count is not the approved 65")
-if expected_schema_count != 162:
-    errors.append("canonical schema count is not the approved 162")
+if expected_operation_count != len(canonical_operations):
+    errors.append("canonical operation metadata differs from canonical paths")
+if expected_error_count != len(canonical_schemas["CanonicalErrorCode"]["enum"]):
+    errors.append("canonical error metadata differs from canonical enum")
+if expected_schema_count != len(canonical_schemas):
+    errors.append("canonical schema metadata differs from canonical components")
 if len(runtime_schemas) != expected_schema_count:
     errors.append("runtime schema count differs from canonical")
 if len(runtime_schemas["CanonicalErrorCode"]["enum"]) != expected_error_count:

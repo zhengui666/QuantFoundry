@@ -46,7 +46,7 @@ export const formalPublicIdSources = [
     path: 'docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md',
     kind: 'file',
   },
-  { path: 'docs/PRD/V1.0.0', kind: 'file' },
+  { path: 'docs/PRD/V1.0.0.md', kind: 'file' },
   { path: 'docs/UI设计方案/QuantFoundry_UI_Design_V1.0.0.md', kind: 'file' },
   {
     path: 'docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md',

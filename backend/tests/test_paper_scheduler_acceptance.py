@@ -96,10 +96,13 @@ def pg18_session_factory() -> sessionmaker[Session]:
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one_or_none()
-        if revision != "0017_paper_scheduler_state_init":
+        if revision not in {
+            "0017_paper_scheduler_state_init",
+            "0018_ux001_runtime_snapshots",
+        }:
             pytest.fail(
-                "QF-PAPER-SCH requires Alembic head "
-                "0017_paper_scheduler_state_init; "
+                "QF-PAPER-SCH requires the 0017 scheduler migration or a "
+                "descendant head; "
                 f"found {revision!r}"
             )
     return sessionmaker(bind=bind, expire_on_commit=False)
