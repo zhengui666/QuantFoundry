@@ -163,6 +163,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", default="http://127.0.0.1:8000/api/v1")
     parser.add_argument("--application-url", required=True)
+    parser.add_argument("--prepare-only", action="store_true")
     return parser.parse_args()
 
 
@@ -431,6 +432,8 @@ def main() -> int:
             },
             payload={"revision": candidate_revision},
         )
+        if args.prepare_only:
+            return 0
         validation = request_json(
             client,
             "POST",

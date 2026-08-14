@@ -118,12 +118,23 @@ docker compose --project-name "$project_name" --profile local \
   -e QF_CODEX_MODEL="$QF_CODEX_MODEL" \
   -e QF_LOCAL_PROVIDER_API_KEY="$QF_LOCAL_PROVIDER_API_KEY" api \
   python /workspace/scripts/fullstack_seed.py \
-  --application-url "$application_url" \
-  > "$seed_output"
+  --prepare-only \
+  --application-url "$application_url"
 
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" up --build --detach --wait \
   worker agent-worker scheduler
+
+docker compose --project-name "$project_name" --profile local \
+  --env-file "$environment_file" exec -T \
+  -e QF_FULLSTACK_GENERAL_KEY="$general_key" \
+  -e QF_FULLSTACK_DATABASE_URL="$QF_FULLSTACK_DATABASE_URL" \
+  -e QF_CODEX_BASE_URL="$QF_CODEX_BASE_URL" \
+  -e QF_CODEX_MODEL="$QF_CODEX_MODEL" \
+  -e QF_LOCAL_PROVIDER_API_KEY="$QF_LOCAL_PROVIDER_API_KEY" api \
+  python /workspace/scripts/fullstack_seed.py \
+  --application-url "$application_url" \
+  > "$seed_output"
 
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" up --build --detach --wait frontend
