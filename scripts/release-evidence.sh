@@ -25,7 +25,7 @@ gate() {
   git -C "$repo_root" rev-parse "HEAD^{commit}" > "$output_dir/commit.txt"
   git -C "$repo_root" rev-parse "refs/tags/$tag" > "$output_dir/tag-object.txt"
   printf '%s\n' "$tag" > "$output_dir/tag.txt"
-  (cd "$repo_root/backend" && PYTHONPATH="$repo_root/backend/src" uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
+  (cd "$repo_root/backend" && PYTHONPATH="$repo_root/backend/src:$repo_root/backend" uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
   git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
   QF_RELEASE_TAG="$tag" QF_RELEASE_COMMIT="$commit" "$repo_root/scripts/ci/run-gate.sh" rc "$output_dir"
 }
@@ -36,7 +36,7 @@ collect_inputs() {
   cp "$repo_root/docs/治理/p0-blockers.yaml" "$output_dir/p0-blockers.yaml"
   cp "$repo_root/docs/治理/release-known-issues.json" "$output_dir/release-known-issues.json"
   git -C "$repo_root" rev-parse 'HEAD^{commit}' > "$output_dir/commit.txt"
-  (cd "$repo_root/backend" && PYTHONPATH="$repo_root/backend/src" uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
+  (cd "$repo_root/backend" && PYTHONPATH="$repo_root/backend/src:$repo_root/backend" uv run --frozen alembic heads) > "$output_dir/alembic-heads.txt"
   git -C "$repo_root" ls-files 'backend/alembic/versions/*.py' | sort > "$output_dir/alembic-migrations.txt"
 }
 
