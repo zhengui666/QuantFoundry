@@ -62,7 +62,7 @@ test('QF-PID six routes accept both forms and reject every applicable 003..011 c
     for (const invalid of publicIdNegativeCases(type)) {
       const before = resourceRequests.length;
       await page.goto(`/${path}/${encodeURIComponent(invalid.value)}`, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: 'commit',
       });
       await expect(
         page.getByText(/Invalid canonical .* public ID|公开 ID 不符合 canonical contract/i),

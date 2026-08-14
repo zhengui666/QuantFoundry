@@ -477,13 +477,13 @@ blockers:
         closure_criteria: *criteria_ci
         commands: *independent_review_commands
   - id: P0-SUPPLY-CHAIN-RELEASE-EVIDENCE
-    title: Public GitHub, GHCR, and v0.1.2-alpha release evidence is complete
+    title: Public GitHub, GHCR, and v0.1.3-alpha release evidence is complete
     source:
       - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#6-release-semantics
       - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#44-test-evidence--release-artifacts
     owner_role: Release Agent
     closure_criteria:
-      - Public GitHub release v0.1.2-alpha is reproducible from a tagged commit.
+      - Public GitHub release v0.1.3-alpha is reproducible from a tagged commit.
       - GHCR image digest, build provenance, SBOM or equivalent supply-chain record, and verification reports are archived.
       - Every other release-blocking P0 registry entry is closed with evidence.
       - The immutable release manifest binds tag/ref/commit, Compose-rendered GHCR digests, checksums, P0 and known-issue snapshots, test reports, SBOM, provenance, attestation, and signature verification as GitHub Release assets.
