@@ -353,7 +353,6 @@ def main() -> int:
         dataset_id = required_string(seeded, "dataset_id")
         cost_model_id = required_string(seeded, "cost_model_id")
         validation_policy_id = required_string(seeded, "validation_policy_id")
-        write_fullstack_dataset(dataset_id)
         key_prefix = f"fullstack-{dataset_id}"
         active_response = client.get("/configuration/active", headers=auth)
         if active_response.status_code != 200:
@@ -434,6 +433,7 @@ def main() -> int:
         )
         if args.prepare_only:
             return 0
+        write_fullstack_dataset(dataset_id)
         validation = request_json(
             client,
             "POST",
