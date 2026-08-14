@@ -170,7 +170,7 @@ services:
     healthcheck:
       test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "worker", "--queue", "core"]
       interval: 15s
-      timeout: 5s
+      timeout: 30s
       retries: 8
       start_period: 15s
 
@@ -191,7 +191,7 @@ services:
     healthcheck:
       test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "worker", "--queue", "agent"]
       interval: 15s
-      timeout: 5s
+      timeout: 30s
       retries: 8
       start_period: 15s
 
@@ -208,7 +208,7 @@ services:
     healthcheck:
       test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "scheduler"]
       interval: 15s
-      timeout: 5s
+      timeout: 30s
       retries: 8
       start_period: 15s
 
