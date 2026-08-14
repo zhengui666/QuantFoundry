@@ -41,6 +41,13 @@ keep_failed="${QF_FULLSTACK_KEEP_FAILED:-0}"
 cleanup() {
   local status="$?"
   trap - EXIT INT TERM
+  if [[ "$status" != 0 ]]; then
+    docker compose --project-name "$project_name" --profile local \
+      --env-file "$environment_file" ps --all >&2 || true
+    docker compose --project-name "$project_name" --profile local \
+      --env-file "$environment_file" logs --no-color --tail=120 \
+      worker agent-worker scheduler api >&2 || true
+  fi
   if [[ "$status" != 0 && "$keep_failed" == "1" ]]; then
     printf 'Full-stack failure preserved for diagnosis: project=%s temp=%s\n' \
       "$project_name" "$fullstack_tmp" >&2
