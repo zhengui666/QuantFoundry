@@ -281,4 +281,4 @@ jobs:
           test -s evidence/release-assets/SHA256SUMS
           find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG"
           scripts/release-evidence.sh verify-remote-assets "$TAG" "$COMMIT" evidence
-          gh release edit "$TAG" --draft=false
+          gh release edit "$TAG" --draft=false --prerelease
