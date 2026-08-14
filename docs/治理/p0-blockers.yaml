@@ -100,41 +100,41 @@ blockers:
     release_blocking: true
     evidence:
       - verifier_role: Independent Test Agent
-        verified_at_utc: '2026-08-14T10:17:15Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790525083
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
-        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        verified_at_utc: '2026-08-14T10:50:02Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792007005
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005/artifacts/9216524193
+        artifact_sha256: 21451c0439775d6bc53ffe5c060375a438b852f873626c732b1c4c39b6754690
         report:
           path: P0-PRODUCT-PAPER-DAILY-SCHEDULER.json
-          sha256: 0792942a6e79168f693bdc51ca03220c57af7ca74a391371c892e5ecd7c66795
+          sha256: 67b1f554e94557fcc6250ede66ddb1a042f0db08d89b1db6922da0c2a55870fa
           content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790525083
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
-          subject_sha256: 0792942a6e79168f693bdc51ca03220c57af7ca74a391371c892e5ecd7c66795
+          run_id: 31792007005
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005
+          subject_sha256: 67b1f554e94557fcc6250ede66ddb1a042f0db08d89b1db6922da0c2a55870fa
         closure_criteria: *criteria_paper_scheduler
         commands: *independent_test_commands
       - verifier_role: Independent Review Agent
-        verified_at_utc: '2026-08-14T10:02:09Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790527708
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
-        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        verified_at_utc: '2026-08-14T10:23:54Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792010209
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209/artifacts/9215845862
+        artifact_sha256: 8648ca42c7cc1a921a86ef7078332e68117d5391d2079e5420588fcadb5a92bf
         report:
           path: P0-PRODUCT-PAPER-DAILY-SCHEDULER.json
-          sha256: cae0a799f4c4f3f6409d5dcfebec3fd18e00b5ce0f92b46e1a46ba0040c1a710
+          sha256: f1208cc54a9eb9e72f6cd47b4ed210d76486b3ca771dfa4edded1f4fb906e2cc
           content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790527708
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
-          subject_sha256: cae0a799f4c4f3f6409d5dcfebec3fd18e00b5ce0f92b46e1a46ba0040c1a710
+          run_id: 31792010209
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209
+          subject_sha256: f1208cc54a9eb9e72f6cd47b4ed210d76486b3ca771dfa4edded1f4fb906e2cc
         closure_criteria: *criteria_paper_scheduler
         commands: *independent_review_commands
   - id: P0-CONTRACT-OPENAPI-45
@@ -156,41 +156,41 @@ blockers:
     release_blocking: true
     evidence:
       - verifier_role: Independent Test Agent
-        verified_at_utc: '2026-08-14T10:17:15Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790525083
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
-        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        verified_at_utc: '2026-08-14T10:50:02Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792007005
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005/artifacts/9216524193
+        artifact_sha256: 21451c0439775d6bc53ffe5c060375a438b852f873626c732b1c4c39b6754690
         report:
           path: P0-CONTRACT-OPENAPI-45.json
-          sha256: 33304ec8680691aed1767de8362afa76110ed9722f72ac8e5dfb3957f3bbf03a
+          sha256: 851bdea1e6070282cdbae757746849d529fa3379051b28806dac4d9353f68e52
           content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790525083
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
-          subject_sha256: 33304ec8680691aed1767de8362afa76110ed9722f72ac8e5dfb3957f3bbf03a
+          run_id: 31792007005
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005
+          subject_sha256: 851bdea1e6070282cdbae757746849d529fa3379051b28806dac4d9353f68e52
         closure_criteria: *criteria_openapi
         commands: *independent_test_commands
       - verifier_role: Independent Review Agent
-        verified_at_utc: '2026-08-14T10:02:09Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790527708
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
-        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        verified_at_utc: '2026-08-14T10:23:54Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792010209
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209/artifacts/9215845862
+        artifact_sha256: 8648ca42c7cc1a921a86ef7078332e68117d5391d2079e5420588fcadb5a92bf
         report:
           path: P0-CONTRACT-OPENAPI-45.json
-          sha256: 4a5b9ff01e1f3b64df4f974959afdd64d49f79a63d64c28b5d1cdc9173e760d2
+          sha256: 6e163949421e508294c4aa3d6e968227fa90033efc451fc6dc54a6b9c7b0255b
           content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790527708
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
-          subject_sha256: 4a5b9ff01e1f3b64df4f974959afdd64d49f79a63d64c28b5d1cdc9173e760d2
+          run_id: 31792010209
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209
+          subject_sha256: 6e163949421e508294c4aa3d6e968227fa90033efc451fc6dc54a6b9c7b0255b
         closure_criteria: *criteria_openapi
         commands: *independent_review_commands
   - id: P0-CONTRACT-TOOLS-13
@@ -210,41 +210,41 @@ blockers:
     release_blocking: true
     evidence:
       - verifier_role: Independent Test Agent
-        verified_at_utc: '2026-08-14T10:17:15Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790525083
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
-        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        verified_at_utc: '2026-08-14T10:50:02Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792007005
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005/artifacts/9216524193
+        artifact_sha256: 21451c0439775d6bc53ffe5c060375a438b852f873626c732b1c4c39b6754690
         report:
           path: P0-CONTRACT-TOOLS-13.json
-          sha256: 62e93b620ee28d0485003b002d8dac2a0eb0c11f1d881331e2bf4ae453785a69
+          sha256: 8bf276a001245c9f3a4576e6430601781f3cafb6832570c7263a6ad313ed2d88
           content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790525083
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
-          subject_sha256: 62e93b620ee28d0485003b002d8dac2a0eb0c11f1d881331e2bf4ae453785a69
+          run_id: 31792007005
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005
+          subject_sha256: 8bf276a001245c9f3a4576e6430601781f3cafb6832570c7263a6ad313ed2d88
         closure_criteria: *criteria_tools
         commands: *independent_test_commands
       - verifier_role: Independent Review Agent
-        verified_at_utc: '2026-08-14T10:02:09Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790527708
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
-        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        verified_at_utc: '2026-08-14T10:23:54Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792010209
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209/artifacts/9215845862
+        artifact_sha256: 8648ca42c7cc1a921a86ef7078332e68117d5391d2079e5420588fcadb5a92bf
         report:
           path: P0-CONTRACT-TOOLS-13.json
-          sha256: 26afed017fa7a3257930d8e1ddca3686d0f4114ec2dcf21cd23ce1ec88b1918a
+          sha256: c8d86f82c3f3994c85ff51b5e6fc5c4212b28bf6b4d087cda6010da19526877d
           content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790527708
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
-          subject_sha256: 26afed017fa7a3257930d8e1ddca3686d0f4114ec2dcf21cd23ce1ec88b1918a
+          run_id: 31792010209
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209
+          subject_sha256: c8d86f82c3f3994c85ff51b5e6fc5c4212b28bf6b4d087cda6010da19526877d
         closure_criteria: *criteria_tools
         commands: *independent_review_commands
   - id: P0-SCHEMA-ALEMBIC-AUTHORITY
@@ -268,41 +268,41 @@ blockers:
     release_blocking: true
     evidence:
       - verifier_role: Independent Test Agent
-        verified_at_utc: '2026-08-14T10:17:15Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790525083
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
-        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        verified_at_utc: '2026-08-14T10:50:02Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792007005
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005/artifacts/9216524193
+        artifact_sha256: 21451c0439775d6bc53ffe5c060375a438b852f873626c732b1c4c39b6754690
         report:
           path: P0-SCHEMA-ALEMBIC-AUTHORITY.json
-          sha256: af3f44b7fc770da02f7e12d3412db9d123f35cf2b40f42a32074945542194984
+          sha256: 6409fd291db335a08b19be93a71a50c0909ea29e44a4dc8a2f031e20426a9ae5
           content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790525083
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
-          subject_sha256: af3f44b7fc770da02f7e12d3412db9d123f35cf2b40f42a32074945542194984
+          run_id: 31792007005
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005
+          subject_sha256: 6409fd291db335a08b19be93a71a50c0909ea29e44a4dc8a2f031e20426a9ae5
         closure_criteria: *criteria_schema
         commands: *independent_test_commands
       - verifier_role: Independent Review Agent
-        verified_at_utc: '2026-08-14T10:02:09Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790527708
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
-        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        verified_at_utc: '2026-08-14T10:23:54Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792010209
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209/artifacts/9215845862
+        artifact_sha256: 8648ca42c7cc1a921a86ef7078332e68117d5391d2079e5420588fcadb5a92bf
         report:
           path: P0-SCHEMA-ALEMBIC-AUTHORITY.json
-          sha256: e6d6b7cf25e06d738ae490f3576d3cd22a753d5395a90e3779049d30abf40fd7
+          sha256: bb4b93aaa63ca93f892848b3514f595f08fad4c0cc70c73087ec78e0fee8e208
           content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790527708
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
-          subject_sha256: e6d6b7cf25e06d738ae490f3576d3cd22a753d5395a90e3779049d30abf40fd7
+          run_id: 31792010209
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209
+          subject_sha256: bb4b93aaa63ca93f892848b3514f595f08fad4c0cc70c73087ec78e0fee8e208
         closure_criteria: *criteria_schema
         commands: *independent_review_commands
   - id: P0-ARCHITECTURE-TARGET-LAYERS
@@ -326,41 +326,41 @@ blockers:
     release_blocking: true
     evidence:
       - verifier_role: Independent Test Agent
-        verified_at_utc: '2026-08-14T10:17:15Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790525083
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
-        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        verified_at_utc: '2026-08-14T10:50:02Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792007005
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005/artifacts/9216524193
+        artifact_sha256: 21451c0439775d6bc53ffe5c060375a438b852f873626c732b1c4c39b6754690
         report:
           path: P0-ARCHITECTURE-TARGET-LAYERS.json
-          sha256: e39a64d0eff3fff630ae219ae5a76f987e965a640a6b010f25bc3c77dc9119c3
+          sha256: 6b8eaf77bf68ec4dd36edc02f9afb5f9640aaf9e85f0af7cdbe43271efa9fe93
           content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790525083
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
-          subject_sha256: e39a64d0eff3fff630ae219ae5a76f987e965a640a6b010f25bc3c77dc9119c3
+          run_id: 31792007005
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005
+          subject_sha256: 6b8eaf77bf68ec4dd36edc02f9afb5f9640aaf9e85f0af7cdbe43271efa9fe93
         closure_criteria: *criteria_architecture
         commands: *independent_test_commands
       - verifier_role: Independent Review Agent
-        verified_at_utc: '2026-08-14T10:02:09Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790527708
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
-        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        verified_at_utc: '2026-08-14T10:23:54Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792010209
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209/artifacts/9215845862
+        artifact_sha256: 8648ca42c7cc1a921a86ef7078332e68117d5391d2079e5420588fcadb5a92bf
         report:
           path: P0-ARCHITECTURE-TARGET-LAYERS.json
-          sha256: 73a8d5456966cfc7a86b29ef635516215eec0cdadc8ebc305ea2358e44b295fd
+          sha256: f61d6465194bde467d32328452d9afaf89d8fef8f6910a03833dbc3fbaf5aedf
           content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790527708
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
-          subject_sha256: 73a8d5456966cfc7a86b29ef635516215eec0cdadc8ebc305ea2358e44b295fd
+          run_id: 31792010209
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209
+          subject_sha256: f61d6465194bde467d32328452d9afaf89d8fef8f6910a03833dbc3fbaf5aedf
         closure_criteria: *criteria_architecture
         commands: *independent_review_commands
   - id: P0-SECURITY-RESEARCH-INTEGRITY
@@ -386,41 +386,41 @@ blockers:
     release_blocking: true
     evidence:
       - verifier_role: Independent Test Agent
-        verified_at_utc: '2026-08-14T10:17:15Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790525083
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
-        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        verified_at_utc: '2026-08-14T10:50:02Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792007005
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005/artifacts/9216524193
+        artifact_sha256: 21451c0439775d6bc53ffe5c060375a438b852f873626c732b1c4c39b6754690
         report:
           path: P0-SECURITY-RESEARCH-INTEGRITY.json
-          sha256: 42cb52449815142fb3ad9017a440498e5fe478fa3523e9055f7a2e532f771896
+          sha256: abd98adc9f2cf81527abc73435467a966cf4f959443f0f36612fd6e7c7be3059
           content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790525083
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
-          subject_sha256: 42cb52449815142fb3ad9017a440498e5fe478fa3523e9055f7a2e532f771896
+          run_id: 31792007005
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005
+          subject_sha256: abd98adc9f2cf81527abc73435467a966cf4f959443f0f36612fd6e7c7be3059
         closure_criteria: *criteria_security
         commands: *independent_test_commands
       - verifier_role: Independent Review Agent
-        verified_at_utc: '2026-08-14T10:02:09Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790527708
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
-        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        verified_at_utc: '2026-08-14T10:23:54Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792010209
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209/artifacts/9215845862
+        artifact_sha256: 8648ca42c7cc1a921a86ef7078332e68117d5391d2079e5420588fcadb5a92bf
         report:
           path: P0-SECURITY-RESEARCH-INTEGRITY.json
-          sha256: d751b215adb2528f2f8e438c97a28e4943f6f9b0b73d70275361d19f76cc0552
+          sha256: f0d2c6d370ef8299edd35520083cca3154f3f6b45ef25e25974804e8ef8aa0c9
           content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790527708
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
-          subject_sha256: d751b215adb2528f2f8e438c97a28e4943f6f9b0b73d70275361d19f76cc0552
+          run_id: 31792010209
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209
+          subject_sha256: f0d2c6d370ef8299edd35520083cca3154f3f6b45ef25e25974804e8ef8aa0c9
         closure_criteria: *criteria_security
         commands: *independent_review_commands
   - id: P0-CI-REPRODUCIBILITY
@@ -439,41 +439,41 @@ blockers:
     release_blocking: true
     evidence:
       - verifier_role: Independent Test Agent
-        verified_at_utc: '2026-08-14T10:17:15Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790525083
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
-        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        verified_at_utc: '2026-08-14T10:50:02Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792007005
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005/artifacts/9216524193
+        artifact_sha256: 21451c0439775d6bc53ffe5c060375a438b852f873626c732b1c4c39b6754690
         report:
           path: P0-CI-REPRODUCIBILITY.json
-          sha256: 74dc54bda2df4747ab6df259c706b40ef97821f0644db9a8fdd68979f67b5c74
+          sha256: 92119eeef2b4af8ea67f0df1b512a2fd1e881d9b2834bdfa5449982e8170d356
           content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790525083
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
-          subject_sha256: 74dc54bda2df4747ab6df259c706b40ef97821f0644db9a8fdd68979f67b5c74
+          run_id: 31792007005
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792007005
+          subject_sha256: 92119eeef2b4af8ea67f0df1b512a2fd1e881d9b2834bdfa5449982e8170d356
         closure_criteria: *criteria_ci
         commands: *independent_test_commands
       - verifier_role: Independent Review Agent
-        verified_at_utc: '2026-08-14T10:02:09Z'
-        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
-        build_id: github-actions/31790527708
-        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
-        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        verified_at_utc: '2026-08-14T10:23:54Z'
+        commit_sha: b48241e7dec17ddbc8e94383f37e4def03411dfe
+        build_id: github-actions/31792010209
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209/artifacts/9215845862
+        artifact_sha256: 8648ca42c7cc1a921a86ef7078332e68117d5391d2079e5420588fcadb5a92bf
         report:
           path: P0-CI-REPRODUCIBILITY.json
-          sha256: f019591625e1c46e7176290d037b6da9aa24493f0d74874d47776423f9449acc
+          sha256: 544d55e7f371f9b7045ced4ca00a5996a1923045bcfdfc47b9e72099c1a94794
           content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
         attestation:
           provider: github-actions
           issuer: https://token.actions.githubusercontent.com
           repository: zhengui666/QuantFoundry
-          run_id: 31790527708
-          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
-          subject_sha256: f019591625e1c46e7176290d037b6da9aa24493f0d74874d47776423f9449acc
+          run_id: 31792010209
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31792010209
+          subject_sha256: 544d55e7f371f9b7045ced4ca00a5996a1923045bcfdfc47b9e72099c1a94794
         closure_criteria: *criteria_ci
         commands: *independent_review_commands
   - id: P0-SUPPLY-CHAIN-RELEASE-EVIDENCE
