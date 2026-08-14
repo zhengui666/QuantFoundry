@@ -47,6 +47,14 @@ cleanup() {
     docker compose --project-name "$project_name" --profile local \
       --env-file "$environment_file" logs --no-color --tail=120 \
       worker agent-worker scheduler api >&2 || true
+    for service in worker agent-worker scheduler; do
+      container_id="$(docker compose --project-name "$project_name" --profile local \
+        --env-file "$environment_file" ps -q "$service")"
+      if [[ -n "$container_id" ]]; then
+        docker inspect --format \
+          "{{.Name}} health={{json .State.Health.Log}}" "$container_id" >&2 || true
+      fi
+    done
   fi
   if [[ "$status" != 0 && "$keep_failed" == "1" ]]; then
     printf 'Full-stack failure preserved for diagnosis: project=%s temp=%s\n' \

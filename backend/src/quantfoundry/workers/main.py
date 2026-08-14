@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import time
@@ -32,6 +33,9 @@ from quantfoundry.infrastructure.jobs.queue import (
 
 class SimulatedWorkerCrash(RuntimeError):
     """Test hook proving uncommitted effects roll back and leases recover."""
+
+
+logger = logging.getLogger(__name__)
 
 
 def _domain_ready() -> bool:
@@ -235,7 +239,10 @@ def run_forever(agent_queue: bool = False, poll_seconds: float = 1.0) -> None:
         try:
             _run_once(agent_queue)
         except Exception:  # noqa: BLE001 - worker boundary retries after recovery
-            pass
+            logger.exception(
+                "worker loop recovered after an iteration failure",
+                extra={"queue": "agent" if agent_queue else "core"},
+            )
         time.sleep(poll_seconds)
 
 

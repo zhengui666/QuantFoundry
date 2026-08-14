@@ -33,7 +33,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if not domain_main.app.state.domain_database_available:
-        return 0 if os.getenv("QF_ENV", "production") in {"local", "development"} else 1
+        if os.getenv("QF_ENV", "production") in {"local", "development"}:
+            return 0
+        print("domain_database_unavailable", file=sys.stderr)
+        return 1
     threshold = datetime.now(UTC) - timedelta(seconds=args.max_age_seconds)
     statement = select(RuntimeHeartbeat).where(
         RuntimeHeartbeat.component == args.component,
@@ -43,8 +46,15 @@ def main() -> int:
         statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)
     session = SessionLocal()
     try:
-        return 0 if session.execute(statement.limit(1)).scalar_one_or_none() else 1
-    except SQLAlchemyError:
+        if session.execute(statement.limit(1)).scalar_one_or_none():
+            return 0
+        print(
+            f"heartbeat_missing component={args.component} queue={args.queue}",
+            file=sys.stderr,
+        )
+        return 1
+    except SQLAlchemyError as error:
+        print(f"heartbeat_query_failed error={type(error).__name__}", file=sys.stderr)
         return 1
     finally:
         session.close()
