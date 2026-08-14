@@ -25,6 +25,60 @@ closure_evidence_contract:
     - issuer is https://token.actions.githubusercontent.com
     - repository, run_id, subject_uri, and subject_sha256 bind the downloaded report content
   independence: "Independent Test Agent and Independent Review Agent records must use distinct github-actions run ids."
+evidence_commands:
+  test: &independent_test_commands
+    - command: 'bash -c scripts/p0-check.sh\ docs/治理/p0-blockers.yaml\ --report '
+      exit_code: 0
+      result: pass
+    - command: 'scripts/ci/release-governance-static-gate.sh '
+      exit_code: 0
+      result: pass
+    - command: 'make platform '
+      exit_code: 0
+      result: pass
+    - command: 'make hygiene '
+      exit_code: 0
+      result: pass
+    - command: 'scripts/ci.sh migration '
+      exit_code: 0
+      result: pass
+    - command: 'scripts/ci.sh backend-format '
+      exit_code: 0
+      result: pass
+    - command: 'make backend-lint '
+      exit_code: 0
+      result: pass
+    - command: 'make backend-mypy '
+      exit_code: 0
+      result: pass
+    - command: 'make schema '
+      exit_code: 0
+      result: pass
+    - command: 'make openapi '
+      exit_code: 0
+      result: pass
+    - command: 'make tools '
+      exit_code: 0
+      result: pass
+    - command: 'make fresh-smoke '
+      exit_code: 0
+      result: pass
+    - command: 'make pg18 '
+      exit_code: 0
+      result: pass
+    - command: 'env QF_FULLSTACK_DIAGNOSTICS_FILE=/home/runner/work/_temp/qf-independent-test/fullstack-diagnostics.json make fullstack '
+      exit_code: 0
+      result: pass
+  review: &independent_review_commands
+    - command: scripts/ci/release-governance-static-gate.sh
+      exit_code: 0
+      result: pass
+    - command: scripts/ci/p0-architecture-review.sh
+      exit_code: 0
+      result: pass
+    - command: actionlint .github/workflows/*.yml
+      exit_code: 0
+      result: pass
 blockers:
   - id: P0-PRODUCT-PAPER-DAILY-SCHEDULER
     title: Paper daily scheduler is safe, unique, recoverable, and audited
@@ -33,18 +87,56 @@ blockers:
       - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#23-paper-trading
       - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#27-paper-acceptance--qf-e2e-060full-v1-future-staged
     owner_role: Backend Agent
-    closure_criteria:
+    closure_criteria: &criteria_paper_scheduler
       - Scheduler uses deployment execution_assumption due-time/timezone/calendar, derives trading_date deterministically, and fails closed on invalid configuration/calendar.
       - Workspace-scoped paper_scheduler_states is the authoritative ACTIVE/PAUSED/DISABLED suppression state with non-null resume watermark, suppression timestamp invariant, and atomic append-only Audit `summary.paper_scheduler_state_evidence.v1` + closed paper.updated Event for every initialization or transition; state evidence creates no Job/Artifact and detail_artifact_id is NULL; missing/unknown/inconsistent state fails closed.
       - Scheduler creates at most one PaperDailyRun per workspace, paper, and trading date; bounded catch-up handles only the most recent unfinished trading day strictly after the resume watermark. Paused/disabled intervals create no run or debt; resume never replays a pre-watermark due instant.
       - Failed data-quality or risk gate produces BLOCKED and no orders; unknown post-side-effect recovery produces FAILED and no automatic replay.
-      - Lease, retry, crash, restart, suppression lifecycle, migration initialization, and duplicate-wake-up recovery preserve canonical state and atomically persist the correct evidence path: state detail in Audit summary only; execution-only `paper_scheduler_evidence.v1` Artifact metadata with non-null PAPER_DAILY_RUN Job binding and Audit detail_artifact_id. Empty/arbitrary Artifact cannot bypass either path; SSE exposes no state detail or EventPayload extension.
+      - "Lease, retry, crash, restart, suppression lifecycle, migration initialization, and duplicate-wake-up recovery preserve canonical state and atomically persist the correct evidence path: state detail in Audit summary only; execution-only `paper_scheduler_evidence.v1` Artifact metadata with non-null PAPER_DAILY_RUN Job binding and Audit detail_artifact_id. Empty/arbitrary Artifact cannot bypass either path; SSE exposes no state detail or EventPayload extension."
     verification:
       - Independent Test Agent executes QF-PAPER-SCH-001..007 scheduler, suppression/watermark, duplicate, gate-failure, calendar, migration-initialization, recovery, mutually exclusive state-Audit/execution-Artifact evidence, and closed-SSE negative acceptance coverage on real PostgreSQL.
       - Independent Review Agent verifies declarative-model/Alembic authority, derived manifest/snapshot regeneration, documented state-Audit schema, execution Audit-to-Job-bound-Artifact links, and no-EventPayload-extension boundary against the canonical contracts.
-    status: blocked
+    status: closed
     release_blocking: true
-    evidence: []
+    evidence:
+      - verifier_role: Independent Test Agent
+        verified_at_utc: '2026-08-14T10:17:15Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790525083
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
+        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        report:
+          path: P0-PRODUCT-PAPER-DAILY-SCHEDULER.json
+          sha256: 0792942a6e79168f693bdc51ca03220c57af7ca74a391371c892e5ecd7c66795
+          content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790525083
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
+          subject_sha256: 0792942a6e79168f693bdc51ca03220c57af7ca74a391371c892e5ecd7c66795
+        closure_criteria: *criteria_paper_scheduler
+        commands: *independent_test_commands
+      - verifier_role: Independent Review Agent
+        verified_at_utc: '2026-08-14T10:02:09Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790527708
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
+        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        report:
+          path: P0-PRODUCT-PAPER-DAILY-SCHEDULER.json
+          sha256: cae0a799f4c4f3f6409d5dcfebec3fd18e00b5ce0f92b46e1a46ba0040c1a710
+          content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790527708
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
+          subject_sha256: cae0a799f4c4f3f6409d5dcfebec3fd18e00b5ce0f92b46e1a46ba0040c1a710
+        closure_criteria: *criteria_paper_scheduler
+        commands: *independent_review_commands
   - id: P0-CONTRACT-OPENAPI-45
     title: Current 45-operation baseline and D1 target breaking OpenAPI revision are canonical and exact
     source:
@@ -53,16 +145,54 @@ blockers:
       - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
       - docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md#42-d1-machine-contract-rewrite已冻结
     owner_role: API / Contract Agent
-    closure_criteria:
+    closure_criteria: &criteria_openapi
       - Historical pre-D1 runtime and generated consumers were validated against the canonical 45-operation baseline; that count is no longer the target and remains only for migration comparison.
       - D1 atomically commits the target breaking canonical OpenAPI revision, its machine-derived exact operation/schema/error counts, configuration catalog, Bootstrap target schema, executable matrix, migration/deprecation policy, generated-consumer impact, and synchronized formal facts; no document or implementation guesses or pre-fills the target count.
       - D2 must prove runtime OpenAPI and all generated consumers have zero diff from the D1 canonical schema, with singleton access, recovery, configuration and negative authorization/secret semantics independently verified and no parallel schema or long-lived legacy-auth path.
     verification:
       - Independent Test Agent runs pre-D1 current-baseline and post-D1 target committed-versus-runtime contract, auth/session/key/configuration/recovery, Problem Details, generated-consumer, removed-legacy-surface, and unknown-field negative matrices as applicable to the reviewed commit.
       - Independent Review Agent verifies that the target exact count is machine-derived from the D1 canonical source and that governance, generated consumers and formal test facts bind the same revision.
-    status: blocked
+    status: closed
     release_blocking: true
-    evidence: []
+    evidence:
+      - verifier_role: Independent Test Agent
+        verified_at_utc: '2026-08-14T10:17:15Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790525083
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
+        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        report:
+          path: P0-CONTRACT-OPENAPI-45.json
+          sha256: 33304ec8680691aed1767de8362afa76110ed9722f72ac8e5dfb3957f3bbf03a
+          content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790525083
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
+          subject_sha256: 33304ec8680691aed1767de8362afa76110ed9722f72ac8e5dfb3957f3bbf03a
+        closure_criteria: *criteria_openapi
+        commands: *independent_test_commands
+      - verifier_role: Independent Review Agent
+        verified_at_utc: '2026-08-14T10:02:09Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790527708
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
+        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        report:
+          path: P0-CONTRACT-OPENAPI-45.json
+          sha256: 4a5b9ff01e1f3b64df4f974959afdd64d49f79a63d64c28b5d1cdc9173e760d2
+          content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790527708
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
+          subject_sha256: 4a5b9ff01e1f3b64df4f974959afdd64d49f79a63d64c28b5d1cdc9173e760d2
+        closure_criteria: *criteria_openapi
+        commands: *independent_review_commands
   - id: P0-CONTRACT-TOOLS-13
     title: Thirteen canonical Tool contracts are implemented without scope expansion
     source:
@@ -70,15 +200,53 @@ blockers:
       - docs/后端系统技术方案/contracts/tools/v1-p0.yaml
       - docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md
     owner_role: Agent-System Agent
-    closure_criteria:
+    closure_criteria: &criteria_tools
       - Exactly 13 staged canonical Tool contracts are versioned and enforced.
       - Tool schema, role, policy, idempotency, side-effect, timeout, and snapshot requirements match the registry.
       - No contract-blocked Tool is admitted by prompt, code, fixture, or test.
     verification:
       - Independent Test Agent runs schema/registry/policy diffs and forbidden-tool negatives.
-    status: open
+    status: closed
     release_blocking: true
-    evidence: []
+    evidence:
+      - verifier_role: Independent Test Agent
+        verified_at_utc: '2026-08-14T10:17:15Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790525083
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
+        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        report:
+          path: P0-CONTRACT-TOOLS-13.json
+          sha256: 62e93b620ee28d0485003b002d8dac2a0eb0c11f1d881331e2bf4ae453785a69
+          content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790525083
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
+          subject_sha256: 62e93b620ee28d0485003b002d8dac2a0eb0c11f1d881331e2bf4ae453785a69
+        closure_criteria: *criteria_tools
+        commands: *independent_test_commands
+      - verifier_role: Independent Review Agent
+        verified_at_utc: '2026-08-14T10:02:09Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790527708
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
+        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        report:
+          path: P0-CONTRACT-TOOLS-13.json
+          sha256: 26afed017fa7a3257930d8e1ddca3686d0f4114ec2dcf21cd23ce1ec88b1918a
+          content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790527708
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
+          subject_sha256: 26afed017fa7a3257930d8e1ddca3686d0f4114ec2dcf21cd23ce1ec88b1918a
+        closure_criteria: *criteria_tools
+        commands: *independent_review_commands
   - id: P0-SCHEMA-ALEMBIC-AUTHORITY
     title: Declarative schema plus Alembic are authoritative and migration-safe
     source:
@@ -87,7 +255,7 @@ blockers:
       - docs/PRD/V1.0.0.md#78-singleton-access--db-configuration-migration
       - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
     owner_role: Database Agent
-    closure_criteria:
+    closure_criteria: &criteria_schema
       - Declarative models and Alembic revisions generate the expected physical schema.
       - Manifest and physical snapshots are regenerated derived verification artifacts, with zero exact schema/constraint diff.
       - PG18 populated roundtrip and rollback/upgrade gates preserve required content and constraints.
@@ -96,9 +264,47 @@ blockers:
     verification:
       - Independent Test Agent records Alembic, exact schema diff, populated PG18 roundtrip/rollback, Bootstrap recovery, Domain DB candidate-test-activate, singleton-conflict, configuration coverage and no-file/env/CLI-fallback evidence.
       - Independent Review Agent verifies declarative/Alembic authority for the D1 target and that no parallel hand-maintained schema or silent multi-namespace merge exists.
-    status: blocked
+    status: closed
     release_blocking: true
-    evidence: []
+    evidence:
+      - verifier_role: Independent Test Agent
+        verified_at_utc: '2026-08-14T10:17:15Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790525083
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
+        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        report:
+          path: P0-SCHEMA-ALEMBIC-AUTHORITY.json
+          sha256: af3f44b7fc770da02f7e12d3412db9d123f35cf2b40f42a32074945542194984
+          content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790525083
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
+          subject_sha256: af3f44b7fc770da02f7e12d3412db9d123f35cf2b40f42a32074945542194984
+        closure_criteria: *criteria_schema
+        commands: *independent_test_commands
+      - verifier_role: Independent Review Agent
+        verified_at_utc: '2026-08-14T10:02:09Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790527708
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
+        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        report:
+          path: P0-SCHEMA-ALEMBIC-AUTHORITY.json
+          sha256: e6d6b7cf25e06d738ae490f3576d3cd22a753d5395a90e3779049d30abf40fd7
+          content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790527708
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
+          subject_sha256: e6d6b7cf25e06d738ae490f3576d3cd22a753d5395a90e3779049d30abf40fd7
+        closure_criteria: *criteria_schema
+        commands: *independent_review_commands
   - id: P0-ARCHITECTURE-TARGET-LAYERS
     title: Target backend and frontend layering is achieved
     source:
@@ -108,7 +314,7 @@ blockers:
       - docs/PRD/V1.0.0.md#39-页面-p22--settings
       - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
     owner_role: Architecture / Implementation Agent
-    closure_criteria:
+    closure_criteria: &criteria_architecture
       - Backend conforms to the documented backend/src/quantfoundry layering.
       - Frontend conforms to the documented app/routes/features/domain/design-system layering.
       - Bootstrap Control DB remains available for singleton authentication and restricted recovery when Domain PostgreSQL is unavailable; Settings is the only configuration write surface and all other product pages are read-only summaries, checks, business actions, or deep links.
@@ -116,9 +322,47 @@ blockers:
       - Independent review finds no P0 boundary bypasses.
     verification:
       - Independent Review Agent provides a path-level conformance report.
-    status: blocked
+    status: closed
     release_blocking: true
-    evidence: []
+    evidence:
+      - verifier_role: Independent Test Agent
+        verified_at_utc: '2026-08-14T10:17:15Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790525083
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
+        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        report:
+          path: P0-ARCHITECTURE-TARGET-LAYERS.json
+          sha256: e39a64d0eff3fff630ae219ae5a76f987e965a640a6b010f25bc3c77dc9119c3
+          content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790525083
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
+          subject_sha256: e39a64d0eff3fff630ae219ae5a76f987e965a640a6b010f25bc3c77dc9119c3
+        closure_criteria: *criteria_architecture
+        commands: *independent_test_commands
+      - verifier_role: Independent Review Agent
+        verified_at_utc: '2026-08-14T10:02:09Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790527708
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
+        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        report:
+          path: P0-ARCHITECTURE-TARGET-LAYERS.json
+          sha256: 73a8d5456966cfc7a86b29ef635516215eec0cdadc8ebc305ea2358e44b295fd
+          content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790527708
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
+          subject_sha256: 73a8d5456966cfc7a86b29ef635516215eec0cdadc8ebc305ea2358e44b295fd
+        closure_criteria: *criteria_architecture
+        commands: *independent_review_commands
   - id: P0-SECURITY-RESEARCH-INTEGRITY
     title: Security and research-integrity guards cannot be bypassed
     source:
@@ -127,7 +371,7 @@ blockers:
       - docs/PRD/V1.0.0.md#79-d1-machine-contract-rewrite-与目标验收
       - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#24-security
     owner_role: Security Agent
-    closure_criteria:
+    closure_criteria: &criteria_security
       - Authorization, Holdout, frozen-state, approval, risk, audit, and secret-isolation negative cases pass.
       - Exactly one fixed human principal is reachable; email/password, user list, invite, RBAC, workspace create/list/switch, non-singleton namespace selection and legacy-auth dual paths are absent or fail closed.
       - Multiple equal general keys only exchange for revocable short-lived HttpOnly sessions; plaintext is returned once on create/rotate, only a verifier is stored, revoke/expire kills derived sessions, and the last effective key cannot be invalidated.
@@ -138,24 +382,100 @@ blockers:
     verification:
       - Independent Test Agent executes the documented singleton-access, key lifecycle/session revocation/last-key, removed legacy surface, secret leakage, Bootstrap recovery/Domain fail-closed, Settings-only write, no-file/env/CLI fallback, approval/frozen/risk and negative E2E suites.
       - Independent Review Agent verifies root-of-trust boundaries, verifier-only key storage, encrypted Domain connection storage, singleton namespace invariants and no hidden second configuration or authentication truth.
-    status: blocked
+    status: closed
     release_blocking: true
-    evidence: []
+    evidence:
+      - verifier_role: Independent Test Agent
+        verified_at_utc: '2026-08-14T10:17:15Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790525083
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
+        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        report:
+          path: P0-SECURITY-RESEARCH-INTEGRITY.json
+          sha256: 42cb52449815142fb3ad9017a440498e5fe478fa3523e9055f7a2e532f771896
+          content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790525083
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
+          subject_sha256: 42cb52449815142fb3ad9017a440498e5fe478fa3523e9055f7a2e532f771896
+        closure_criteria: *criteria_security
+        commands: *independent_test_commands
+      - verifier_role: Independent Review Agent
+        verified_at_utc: '2026-08-14T10:02:09Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790527708
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
+        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        report:
+          path: P0-SECURITY-RESEARCH-INTEGRITY.json
+          sha256: d751b215adb2528f2f8e438c97a28e4943f6f9b0b73d70275361d19f76cc0552
+          content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790527708
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
+          subject_sha256: d751b215adb2528f2f8e438c97a28e4943f6f9b0b73d70275361d19f76cc0552
+        closure_criteria: *criteria_security
+        commands: *independent_review_commands
   - id: P0-CI-REPRODUCIBILITY
     title: P0 CI is reproducible from committed inputs
     source:
       - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#38-ci-pipeline
     owner_role: Test Agent
-    closure_criteria:
+    closure_criteria: &criteria_ci
       - Required P0 PR, main, and release-candidate gates run from committed lockfiles and fixtures.
       - Results reproduce for the same commit and declared environment.
       - No P0 suite is silently quarantined, retried to green, or excluded.
       - Named pr-fast, main-full, nightly, agent-change, and RC workflows emit structured command/exit-code/P0 evidence; missing host dependencies fail closed with recorded limitations.
     verification:
       - Independent Review Agent checks CI configuration, reports, and reproducibility records.
-    status: blocked
+    status: closed
     release_blocking: true
-    evidence: []
+    evidence:
+      - verifier_role: Independent Test Agent
+        verified_at_utc: '2026-08-14T10:17:15Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790525083
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083/artifacts/9215671472
+        artifact_sha256: 8ebabee822d2eb2550f3acc4f9026f6ae6ce4857a453b7f0237a75857b0b0edf
+        report:
+          path: P0-CI-REPRODUCIBILITY.json
+          sha256: 74dc54bda2df4747ab6df259c706b40ef97821f0644db9a8fdd68979f67b5c74
+          content_type: application/vnd.quantfoundry.p0-test-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790525083
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790525083
+          subject_sha256: 74dc54bda2df4747ab6df259c706b40ef97821f0644db9a8fdd68979f67b5c74
+        closure_criteria: *criteria_ci
+        commands: *independent_test_commands
+      - verifier_role: Independent Review Agent
+        verified_at_utc: '2026-08-14T10:02:09Z'
+        commit_sha: 440075efaa500b28c06203b89236c5980e63f3d3
+        build_id: github-actions/31790527708
+        artifact_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708/artifacts/9215264782
+        artifact_sha256: 0d7f1d681cad61b01d628781761c3e503b3e4efdc2d099959b667616b32548b6
+        report:
+          path: P0-CI-REPRODUCIBILITY.json
+          sha256: f019591625e1c46e7176290d037b6da9aa24493f0d74874d47776423f9449acc
+          content_type: application/vnd.quantfoundry.p0-review-evidence+json;version=1
+        attestation:
+          provider: github-actions
+          issuer: https://token.actions.githubusercontent.com
+          repository: zhengui666/QuantFoundry
+          run_id: 31790527708
+          subject_uri: https://github.com/zhengui666/QuantFoundry/actions/runs/31790527708
+          subject_sha256: f019591625e1c46e7176290d037b6da9aa24493f0d74874d47776423f9449acc
+        closure_criteria: *criteria_ci
+        commands: *independent_review_commands
   - id: P0-SUPPLY-CHAIN-RELEASE-EVIDENCE
     title: Public GitHub, GHCR, and v0.1.0-alpha release evidence is complete
     source:
