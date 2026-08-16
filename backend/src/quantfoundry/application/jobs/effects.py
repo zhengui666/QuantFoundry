@@ -1272,6 +1272,8 @@ def _generate_memo(
         if isinstance(value, (int, float, str)) and not isinstance(value, bool)
     }
     validation_detail = json.loads(validation.detail)
+    if validation_detail.get("result") != "PASS":
+        raise InvalidJobState("memo requires a passing holdout result")
     sections = [
         {
             "section_key": "thesis",

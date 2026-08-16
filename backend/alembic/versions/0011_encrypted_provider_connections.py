@@ -17,6 +17,15 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    existing_bindings = bind.execute(
+        sa.text("SELECT COUNT(*) FROM setup_bindings")
+    ).scalar_one()
+    if existing_bindings:
+        raise RuntimeError(
+            "0011 cannot discard populated setup_bindings; migrate the legacy "
+            "metadata bindings through an explicit credential/quarantine flow first"
+        )
     op.drop_table("setup_bindings")
     op.create_table(
         "model_provider_connections",
@@ -58,6 +67,9 @@ def upgrade() -> None:
             "status IN ('VALIDATED', 'ACTIVE', 'REVOKED')",
             name="provider_connection_status",
         ),
+        sa.UniqueConstraint(
+            "workspace_id", "id", name="uq_model_provider_connections_workspace_id_id"
+        ),
     )
     op.create_index(
         "ix_model_provider_connections_workspace_id",
@@ -85,42 +97,65 @@ def upgrade() -> None:
         sa.Column(
             "settings_record_id",
             sa.String(),
-            sa.ForeignKey("records.id"),
             nullable=False,
-            unique=True,
         ),
         sa.Column(
             "ai_connection_id",
             sa.String(),
-            sa.ForeignKey("model_provider_connections.id"),
             nullable=False,
         ),
         sa.Column(
             "data_connection_id",
             sa.String(),
-            sa.ForeignKey("model_provider_connections.id"),
         ),
         sa.Column(
             "research_policy_version_id",
             sa.String(),
-            sa.ForeignKey("research_policy_versions.id"),
             nullable=False,
         ),
         sa.Column(
             "risk_policy_version_id",
             sa.String(),
-            sa.ForeignKey("risk_policy_versions.id"),
             nullable=False,
         ),
         sa.Column(
             "cost_model_version_id",
             sa.String(),
-            sa.ForeignKey("cost_model_versions.id"),
             nullable=False,
         ),
         sa.Column("revision", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "settings_record_id"],
+            ["records.workspace_id", "records.id"],
+            name="fk_setup_bindings_settings_record_records",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "ai_connection_id"],
+            ["model_provider_connections.workspace_id", "model_provider_connections.id"],
+            name="fk_setup_bindings_ai_connection_model_provider_connections",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "data_connection_id"],
+            ["model_provider_connections.workspace_id", "model_provider_connections.id"],
+            name="fk_setup_bindings_data_connection_model_provider_connections",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "research_policy_version_id"],
+            ["research_policy_versions.workspace_id", "research_policy_versions.id"],
+            name="fk_setup_bindings_research_policy_versions",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "risk_policy_version_id"],
+            ["risk_policy_versions.workspace_id", "risk_policy_versions.id"],
+            name="fk_setup_bindings_risk_policy_versions",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "cost_model_version_id"],
+            ["cost_model_versions.workspace_id", "cost_model_versions.id"],
+            name="fk_setup_bindings_cost_model_versions",
+        ),
     )
 
 

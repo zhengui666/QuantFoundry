@@ -355,20 +355,13 @@ export function SetupPage() {
         server.fallback_step !== null
       )
         throw new ContractError('Fresh server setup refs are required before Finish.');
-      const body = {
-        ...form,
-        ai_connection_id: server.ai_connection_id,
-        default_data_provider_id: dataProviderId || null,
-        default_frequency: 'DAILY',
-        default_research_start: form.default_research_start || null,
-        research_policy_id: server.research_policy_id,
-        risk_policy_id: server.risk_policy_id,
-        cost_model_id: server.cost_model_id,
-      };
+      const active = await api.configurationActive();
+      if (!active.etag) throw new ContractError('Fresh configuration ETag is required.');
+      const body = { configuration_revision: active.body.active_revision };
       const payload = JSON.stringify(body);
       if (!completeIntent.current || completeIntent.current.payload !== payload)
         completeIntent.current = { payload, key: idempotency() };
-      return api.completeSetup(body, completeIntent.current.key);
+      return api.completeSetup(body, active.etag, completeIntent.current.key);
     },
     onSuccess: async ({ body }) => {
       const locale = configurationLocale(

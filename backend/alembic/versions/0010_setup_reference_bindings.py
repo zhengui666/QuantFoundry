@@ -42,6 +42,11 @@ def _version_table(name: str, public_column: str) -> None:
             public_column,
             name=f"uq_{name}_workspace_public",
         ),
+        sa.UniqueConstraint(
+            "workspace_id",
+            "id",
+            name=f"uq_{name}_workspace_id",
+        ),
     )
     op.create_index(f"ix_{name}_workspace_id", name, ["workspace_id"])
 
@@ -54,6 +59,12 @@ def upgrade() -> None:
     )
     _version_table("risk_policy_versions", "policy_id")
     _version_table("cost_model_versions", "cost_model_id")
+    op.create_index(
+        "uq_records_workspace_id_id",
+        "records",
+        ["workspace_id", "id"],
+        unique=True,
+    )
     op.create_table(
         "setup_bindings",
         sa.Column(
@@ -65,37 +76,56 @@ def upgrade() -> None:
         sa.Column(
             "settings_record_id",
             sa.String(),
-            sa.ForeignKey("records.id"),
             nullable=False,
-            unique=True,
         ),
         sa.Column(
             "ai_connection_record_id",
             sa.String(),
-            sa.ForeignKey("records.id"),
             nullable=False,
         ),
         sa.Column(
             "research_policy_version_id",
             sa.String(),
-            sa.ForeignKey("research_policy_versions.id"),
             nullable=False,
         ),
         sa.Column(
             "risk_policy_version_id",
             sa.String(),
-            sa.ForeignKey("risk_policy_versions.id"),
             nullable=False,
         ),
         sa.Column(
             "cost_model_version_id",
             sa.String(),
-            sa.ForeignKey("cost_model_versions.id"),
             nullable=False,
         ),
         sa.Column("revision", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "settings_record_id"],
+            ["records.workspace_id", "records.id"],
+            name="fk_setup_bindings_settings_record_records",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "ai_connection_record_id"],
+            ["records.workspace_id", "records.id"],
+            name="fk_setup_bindings_ai_connection_record_records",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "research_policy_version_id"],
+            ["research_policy_versions.workspace_id", "research_policy_versions.id"],
+            name="fk_setup_bindings_research_policy_versions",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "risk_policy_version_id"],
+            ["risk_policy_versions.workspace_id", "risk_policy_versions.id"],
+            name="fk_setup_bindings_risk_policy_versions",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "cost_model_version_id"],
+            ["cost_model_versions.workspace_id", "cost_model_versions.id"],
+            name="fk_setup_bindings_cost_model_versions",
+        ),
     )
 
 

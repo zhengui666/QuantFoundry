@@ -25,6 +25,25 @@ repository = os.environ["GITHUB_REPOSITORY"]
 token = os.environ["GITHUB_TOKEN"]
 env = os.environ.copy()
 env["GH_TOKEN"] = token
+content_type = "application/vnd.quantfoundry.independent-review+json;version=1"
+criteria = [
+    "Agent/governance change conforms to canonical contracts and fail-closed CI policy.",
+    "Independent review commands completed successfully on the reviewed commit.",
+]
+scope_paths = [
+    "AGENTS.md",
+    "PROJECT_BACKGROUND.md",
+    "backend/src/quantfoundry",
+    "backend/workers",
+    "docs/Agent技术方案",
+    "docs/后端系统技术方案/contracts/tools",
+    "docs/治理",
+    ".github/workflows",
+    "scripts/ci",
+    "scripts/release-evidence.sh",
+    "scripts/release-check.sh",
+]
+trusted_workflow_blob_sha = "106fe374a92e902b4f0e119533680b51a640822d"
 
 def gh_json(endpoint):
     completed = subprocess.run(
@@ -48,6 +67,22 @@ if run.get("status") != "completed" or run.get("conclusion") != "success" or run
     raise SystemExit("independent review run must be a completed successful workflow_dispatch run")
 if run.get("path", "").split("@", 1)[0] != ".github/workflows/independent-agent-review.yml":
     raise SystemExit("independent review run used an unauthorized workflow")
+workflow_id = run.get("workflow_id")
+if not isinstance(workflow_id, int) or workflow_id < 1:
+    raise SystemExit("independent review run has no workflow identity")
+workflow = gh_json(f"/repos/{repository}/actions/workflows/independent-agent-review.yml")
+if workflow.get("id") != workflow_id or workflow.get("path") != ".github/workflows/independent-agent-review.yml":
+    raise SystemExit("independent review run workflow identity is not canonical")
+repository_info = gh_json(f"/repos/{repository}")
+default_branch = repository_info.get("default_branch")
+if not isinstance(default_branch, str) or not default_branch:
+    raise SystemExit("repository default branch is unavailable")
+workflow_source = gh_json(
+    f"/repos/{repository}/contents/.github/workflows/independent-agent-review.yml"
+    f"?ref={default_branch}"
+)
+if workflow_source.get("sha") != trusted_workflow_blob_sha:
+    raise SystemExit("independent review workflow is not the trusted revision")
 run_id = run["id"]
 artifacts = gh_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts").get("artifacts", [])
 artifact = next(
@@ -88,14 +123,40 @@ try:
     report = json.loads(payload)
 except json.JSONDecodeError as error:
     raise SystemExit(f"independent review artifact report is not JSON: {error}") from error
-if not isinstance(report, dict) or report.get("commit") != commit or report.get("github_run_id") != run_id:
+if not isinstance(report, dict):
+    raise SystemExit("independent review artifact report must be a JSON object")
+if report.get("schema_version") != "1.0.0" or report.get("content_type") != content_type:
+    raise SystemExit("independent review artifact report schema or content_type is invalid")
+if report.get("commit") != commit or report.get("github_run_id") != run_id:
     raise SystemExit("independent review artifact report is not bound to the selected run and commit")
+if report.get("verifier_role") != "Independent Review Agent" or report.get("result") != "approved":
+    raise SystemExit("independent review artifact report is not an approved independent review")
+if report.get("criteria") != criteria or report.get("reviewed_paths") != scope_paths:
+    raise SystemExit("independent review artifact report scope or criteria are not canonical")
+scope = subprocess.run(
+    ["git", "ls-tree", "-r", "--full-tree", commit, "--", *scope_paths],
+    check=True,
+    stdout=subprocess.PIPE,
+).stdout
+if report.get("review_scope_sha256") != hashlib.sha256(scope).hexdigest():
+    raise SystemExit("independent review artifact report scope digest is not current")
+commands = report.get("commands")
+if not isinstance(commands, list) or not commands or any(
+    not isinstance(item, dict)
+    or set(item) != {"command", "result", "exit_code"}
+    or not isinstance(item.get("command"), str)
+    or not item["command"].strip()
+    or item.get("result") != "pass"
+    or item.get("exit_code") != 0
+    for item in commands
+):
+    raise SystemExit("independent review artifact report contains an invalid command result")
 locator = {
     "schema_version": "1.0.0",
     "content_type": "application/vnd.quantfoundry.independent-review+json;version=1",
     "commit": commit,
     "verifier_role": "Independent Review Agent",
-    "result": "approved",
+    "result": report["result"],
     "github_run_id": run_id,
     "artifact_uri": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}",
     "artifact_sha256": hashlib.sha256(archive).hexdigest(),

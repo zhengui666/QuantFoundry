@@ -1546,17 +1546,19 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
     if bind.dialect.name == "sqlite":
         register_sqlite_functions(bind.connection.driver_connection)
     target_is_current = snapshot == CURRENT
-    roundtrip_preexisting = bool(_backup_names(bind, _ROUNDTRIP_BACKUP_PREFIX))
+    # A downgrade snapshot is only a recovery aid.  The next upgrade must
+    # read the live downgraded tables so writes made between revisions survive.
+    if target_is_current:
+        _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)
+    roundtrip_preexisting = False
     source_schema = _sqlite_source_schema(bind) if bind.dialect.name == "sqlite" else []
     _backup_tables(bind, _SOURCE_BACKUP_PREFIX, replace=True)
     source_rows = _read_backup_rows(bind, _SOURCE_BACKUP_PREFIX)
     if not target_is_current:
         _backup_tables(bind, _ROUNDTRIP_BACKUP_PREFIX, replace=True)
-    restore_rows = (
-        _read_backup_rows(bind, _ROUNDTRIP_BACKUP_PREFIX)
-        if target_is_current and roundtrip_preexisting
-        else {name: [dict(row) for row in rows] for name, rows in source_rows.items()}
-    )
+    restore_rows = {
+        name: [dict(row) for row in rows] for name, rows in source_rows.items()
+    }
     if target_is_current and not roundtrip_preexisting:
         _backfill_closed_storage(restore_rows)
     _normalize_paper_deployment_statuses(

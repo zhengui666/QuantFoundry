@@ -47,6 +47,7 @@ scope_paths = [
     "scripts/release-evidence.sh",
     "scripts/release-check.sh",
 ]
+trusted_workflow_blob_sha = "106fe374a92e902b4f0e119533680b51a640822d"
 
 def review_scope_sha256():
     completed = subprocess.run(
@@ -104,6 +105,22 @@ if run.get("status") != "completed" or run.get("conclusion") != "success" or run
     raise SystemExit("independent review report run did not complete successfully as workflow_dispatch")
 if run.get("path", "").split("@", 1)[0] != ".github/workflows/independent-agent-review.yml":
     raise SystemExit("independent review report run used an unauthorized workflow")
+workflow_id = run.get("workflow_id")
+if not isinstance(workflow_id, int) or workflow_id < 1:
+    raise SystemExit("independent review report run has no workflow identity")
+workflow = gh_json(f"/repos/{repository}/actions/workflows/independent-agent-review.yml")
+if workflow.get("id") != workflow_id or workflow.get("path") != ".github/workflows/independent-agent-review.yml":
+    raise SystemExit("independent review report run workflow identity is not canonical")
+repository_info = gh_json(f"/repos/{repository}")
+default_branch = repository_info.get("default_branch")
+if not isinstance(default_branch, str) or not default_branch:
+    raise SystemExit("repository default branch is unavailable")
+workflow_source = gh_json(
+    f"/repos/{repository}/contents/.github/workflows/independent-agent-review.yml"
+    f"?ref={default_branch}"
+)
+if workflow_source.get("sha") != trusted_workflow_blob_sha:
+    raise SystemExit("independent review workflow is not the trusted revision")
 artifact_id = match.group(3)
 artifact = gh_json(f"/repos/{repository}/actions/artifacts/{artifact_id}")
 if artifact.get("expired") or artifact.get("workflow_run", {}).get("id") != run_id:

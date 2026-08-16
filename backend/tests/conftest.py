@@ -59,7 +59,10 @@ def _test_runtime_directory(name: str, environment_name: str) -> Path:
 os.environ.setdefault(
     "QF_DATABASE_URL", f"sqlite:////tmp/quantfoundry-pytest-{os.getpid()}.db"
 )
-os.environ.setdefault("QF_ENV", "test")
+# Test collection must never inherit production/staging control-plane state;
+# the control DB teardown below is intentionally destructive to this test root.
+os.environ["QF_ENV"] = "test"
+os.environ["QF_ENVIRONMENT"] = "test"
 if os.environ["QF_DATABASE_URL"].startswith("sqlite"):
     os.environ.setdefault("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP", "1")
 else:

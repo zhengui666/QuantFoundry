@@ -126,6 +126,8 @@ if ENVIRONMENT in {"local", "development", "test", "ci"}:
         "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
     )
 else:
+    # UX-001: production domain connectivity is restored from the active,
+    # encrypted Control-DB binding; keep the sentinel until that canary passes.
     DB_URL = "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
 if ENVIRONMENT == "production" and DB_URL.startswith("sqlite"):
     raise RuntimeError(
@@ -1756,6 +1758,7 @@ app = FastAPI(
 app.router.route_class = CanonicalRoute
 # Domain workers must restore the Control-DB ACTIVE binding before their first
 # query; an unset flag would incorrectly treat the sentinel engine as ready.
+# app.main/control_plane owns the lifecycle and sets this only after a canary.
 app.state.domain_database_available = False
 
 

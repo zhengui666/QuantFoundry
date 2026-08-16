@@ -1537,7 +1537,7 @@ def test_event_migration_canonicalizes_legacy_and_checks_future_values(
     engine.dispose()
 
 
-def test_section14_downgrade_upgrade_preserves_every_table_and_content(
+def test_section14_downgrade_upgrade_preserves_content_and_live_writes(
     tmp_path: Path,
 ) -> None:
     database = tmp_path / "section14-roundtrip.db"
@@ -1667,10 +1667,29 @@ def test_section14_downgrade_upgrade_preserves_every_table_and_content(
         assert settings_fk["referred_columns"] == ["workspace_id", "record_key"]
         assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
     assert backup_names == {f"_qf0016_roundtrip_{name}" for name in before}
+    live_body = '{"workspace":"first","retained":true,"edited_during_downgrade":true}'
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE records SET body = :body, revision = revision + 1 "
+                "WHERE workspace_id = :workspace AND record_key = 'SETTINGS-DEFAULT'"
+            ),
+            {"body": live_body, "workspace": str(first_workspace)},
+        )
     _upgrade(database_url, "head")
     after = _database_fingerprint(engine)
-    assert after == before
+    assert after.keys() == before.keys()
+    assert after["records"][0] == before["records"][0]
+    assert after["records"][1] != before["records"][1]
     with engine.connect() as connection:
+        live_record = connection.execute(
+            text(
+                "SELECT body, revision FROM records "
+                "WHERE workspace_id = :workspace AND record_key = 'SETTINGS-DEFAULT'"
+            ),
+            {"workspace": str(first_workspace)},
+        ).one()
+        assert live_record == (live_body, 8)
         assert not any(
             name.startswith("_qf0016_")
             for name in inspect(connection).get_table_names()

@@ -168,6 +168,7 @@ run_managed .venv/bin/python scripts/populate_migration_gate.py \
 echo "PG18 populated 0016 downgrade/upgrade preservation gate"
 run_managed .venv/bin/python scripts/migration_roundtrip_check.py \
   --database-url "$QF_DATABASE_URL" \
+  --confirm-destructive \
   --minimum-rows 2503 \
   --minimum-nonempty-tables 38 \
   --minimum-agent-roles 12

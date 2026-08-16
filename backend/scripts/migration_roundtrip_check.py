@@ -292,9 +292,18 @@ def main() -> int:
         type=int,
         default=gate_manifest["minimum_workspace_role_tuples"],
     )
+    parser.add_argument(
+        "--confirm-destructive",
+        action="store_true",
+        help="confirm that the supplied disposable gate database may be downgraded",
+    )
     args = parser.parse_args()
     if not args.database_url:
         parser.error("--database-url or QF_DATABASE_URL is required")
+    if not args.confirm_destructive:
+        parser.error("--confirm-destructive is required for the downgrade/upgrade gate")
+    if not args.database_url.startswith("postgresql+psycopg://"):
+        parser.error("--database-url must target the PostgreSQL migration gate")
 
     _validate_requested_floors(
         minimum_rows=args.minimum_rows,
@@ -315,29 +324,49 @@ def main() -> int:
         critical_table_floors=gate_manifest["critical_table_floors"],
     )
 
-    _alembic(args.database_url, "downgrade", "0015_langgraph_checkpoint")
-    roles_downgraded = _agent_roles(args.database_url, "role_key")
-    if roles_downgraded != roles_before:
-        raise RuntimeError(
-            "agent_configs role mapping changed during downgrade: "
-            f"before={sorted(roles_before)!r}, downgraded={sorted(roles_downgraded)!r}"
+    # The downgrade mutates the supplied database.  Once it starts, every
+    # failure path must attempt to restore head before the process exits.
+    downgraded = True
+    restored = False
+    original_error: BaseException | None = None
+    try:
+        _alembic(args.database_url, "downgrade", "0015_langgraph_checkpoint")
+        roles_downgraded = _agent_roles(args.database_url, "role_key")
+        if roles_downgraded != roles_before:
+            raise RuntimeError(
+                "agent_configs role mapping changed during downgrade: "
+                f"before={sorted(roles_before)!r}, downgraded={sorted(roles_downgraded)!r}"
+            )
+        _alembic(args.database_url, "upgrade", "head")
+        restored = True
+        after = _fingerprint(args.database_url)
+        roles_after = _agent_roles(args.database_url, "role_key")
+        _validate_content_roundtrip(before, after)
+        if roles_after != roles_before:
+            raise RuntimeError("agent_configs role mapping changed after upgrade")
+        _validate_coverage(
+            after,
+            roles_after,
+            minimum_rows=args.minimum_rows,
+            minimum_nonempty_tables=args.minimum_nonempty_tables,
+            minimum_agent_roles=args.minimum_agent_roles,
+            critical_table_floors=gate_manifest["critical_table_floors"],
         )
-    _alembic(args.database_url, "upgrade", "head")
-    after = _fingerprint(args.database_url)
-    roles_after = _agent_roles(args.database_url, "role_key")
-    _validate_content_roundtrip(before, after)
-    if roles_after != roles_before:
-        raise RuntimeError("agent_configs role mapping changed after upgrade")
-    _validate_coverage(
-        after,
-        roles_after,
-        minimum_rows=args.minimum_rows,
-        minimum_nonempty_tables=args.minimum_nonempty_tables,
-        minimum_agent_roles=args.minimum_agent_roles,
-        critical_table_floors=gate_manifest["critical_table_floors"],
-    )
-    _alembic_check(args.database_url)
-    schema_after = _schema_contract(args.database_url)
+        _alembic_check(args.database_url)
+        schema_after = _schema_contract(args.database_url)
+    except BaseException as error:
+        original_error = error
+        raise
+    finally:
+        if downgraded and not restored:
+            try:
+                _alembic(args.database_url, "upgrade", "head")
+            except BaseException as restore_error:
+                if original_error is not None:
+                    raise RuntimeError(
+                        "migration roundtrip failed and automatic restoration also failed"
+                    ) from restore_error
+                raise
     if schema_after != schema_before:
         raise RuntimeError(
             f"schema/constraint report changed: before={schema_before}, "
