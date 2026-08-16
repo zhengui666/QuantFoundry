@@ -184,6 +184,10 @@ button.secondary {
   border-color: var(--qf-color-border);
 }
 button.text-button {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
   margin: 0;
   padding: 0;
   background: transparent;
