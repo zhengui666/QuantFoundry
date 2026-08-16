@@ -210,43 +210,60 @@ export function Shell() {
     ['/activity', 'nav.activity'],
     ['/settings', 'nav.settings'],
   ] as const;
+  const navigationLinks = (mobile: boolean) =>
+    navigation.map(([to, key]) => (
+      <Link
+        key={to}
+        to={to}
+        aria-label={t(key)}
+        onClick={mobile ? () => setMobileNavOpen(false) : undefined}
+        activeProps={{ className: 'active', 'aria-current': 'page' }}
+      >
+        <span className="nav-label">{t(key)}</span>
+        <span className="nav-short" aria-hidden="true">
+          {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
+        </span>
+      </Link>
+    ));
   return (
     <>
       <div className={`app${isSetup ? ' setup-shell' : ''}`}>
         <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
           {!isSetup && (
-            <Dialog.Portal>
-              <Dialog.Overlay className="mobile-nav-backdrop" />
-              <Dialog.Content asChild aria-describedby={undefined}>
-                <nav
-                  id="primary-navigation"
-                  className="sidebar mobile-sheet-open"
-                  aria-label={t('nav.primary')}
-                >
-                  <Dialog.Title className="mobile-sheet-title">{t('nav.primary')}</Dialog.Title>
-                  <div className="brand">
-                    <span className="nav-label">{t('brand')}</span>
-                    <span className="nav-short" aria-hidden="true">
-                      QF
-                    </span>
-                  </div>
-                  {navigation.map(([to, key]) => (
-                    <Link
-                      key={to}
-                      to={to}
-                      aria-label={t(key)}
-                      onClick={() => setMobileNavOpen(false)}
-                      activeProps={{ className: 'active', 'aria-current': 'page' }}
-                    >
-                      <span className="nav-label">{t(key)}</span>
+            <>
+              <nav
+                id="primary-navigation"
+                className="sidebar desktop-sidebar"
+                aria-label={t('nav.primary')}
+              >
+                <div className="brand">
+                  <span className="nav-label">{t('brand')}</span>
+                  <span className="nav-short" aria-hidden="true">
+                    QF
+                  </span>
+                </div>
+                {navigationLinks(false)}
+              </nav>
+              <Dialog.Portal>
+                <Dialog.Overlay className="mobile-nav-backdrop" />
+                <Dialog.Content asChild aria-describedby={undefined}>
+                  <nav
+                    id="primary-navigation-sheet"
+                    className="sidebar mobile-sidebar"
+                    aria-label={t('nav.primary')}
+                  >
+                    <Dialog.Title className="mobile-sheet-title">{t('nav.primary')}</Dialog.Title>
+                    <div className="brand">
+                      <span className="nav-label">{t('brand')}</span>
                       <span className="nav-short" aria-hidden="true">
-                        {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
+                        QF
                       </span>
-                    </Link>
-                  ))}
-                </nav>
-              </Dialog.Content>
-            </Dialog.Portal>
+                    </div>
+                    {navigationLinks(true)}
+                  </nav>
+                </Dialog.Content>
+              </Dialog.Portal>
+            </>
           )}
           <main key={authScopeKey}>
             <header className="topbar">
@@ -255,7 +272,7 @@ export function Shell() {
                   <button
                     className="mobile-nav-trigger secondary"
                     aria-expanded={mobileNavOpen}
-                    aria-controls="primary-navigation"
+                    aria-controls="primary-navigation-sheet"
                   >
                     {t('nav.primary')}
                   </button>

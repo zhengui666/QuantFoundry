@@ -16,11 +16,11 @@ for (const [weight, asset] of expected) {
   const face = faces.find(
     (value) =>
       value.includes("font-family: 'Noto Sans CJK SC'") &&
-      value.includes(`url('/fonts/${asset}')`) &&
+      value.includes(`url('../../assets/fonts/${asset}')`) &&
       new RegExp(`font-weight:\\s*${weight};`).test(value),
   );
   if (!face) throw new Error(`Missing Noto Sans CJK SC ${weight} face for ${asset}`);
-  await access(join(frontendRoot, 'public/fonts', asset));
+  await access(join(frontendRoot, 'src/assets/fonts', asset));
 }
 
 process.stdout.write('Font asset gate passed: Noto Sans CJK SC 400/500/600/700 faces and files.\n');

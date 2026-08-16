@@ -33,6 +33,7 @@ const checks = [
   ['qf-color-focus', 'qf-color-sidebar', 3],
   ['qf-color-focus', 'qf-color-surface-canvas', 3],
   ['qf-color-focus', 'qf-color-surface-panel', 3],
+  ['qf-color-on-accent', 'qf-color-sidebar-active', 4.5],
   ['qf-color-disabled-text', 'qf-color-disabled-surface', 4.5],
 ];
 const failures = checks
