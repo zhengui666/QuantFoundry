@@ -2658,35 +2658,37 @@ export function ValidationPage() {
       </div>
       <div className="validation-layout">
         <Panel title={t('domainComponent.validationMatrix')}>
-          <table>
-            <thead>
-              <tr>
-                <th>{t('validation.test')}</th>
-                <th>{t('validation.purpose')}</th>
-                <th>{t('domainComponent.state')}</th>
-                <th>{t('validation.result')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.tests.map((test) => (
-                <tr
-                  key={`${test.test_key}:${test.attempt_no}`}
-                  className={test.state === 'FAIL' ? 'failed-row' : ''}
-                >
-                  <td>
-                    <button className="text-button" onClick={() => setSelected(test.test_key)}>
-                      {test.test_key}
-                    </button>
-                  </td>
-                  <td>{test.purpose}</td>
-                  <td>
-                    <Badge>{test.state}</Badge>
-                  </td>
-                  <td>{test.calculated_result ?? '—'}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('validation.test')}</th>
+                  <th>{t('validation.purpose')}</th>
+                  <th>{t('domainComponent.state')}</th>
+                  <th>{t('validation.result')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {detail.tests.map((test) => (
+                  <tr
+                    key={`${test.test_key}:${test.attempt_no}`}
+                    className={test.state === 'FAIL' ? 'failed-row' : ''}
+                  >
+                    <td>
+                      <button className="text-button" onClick={() => setSelected(test.test_key)}>
+                        {test.test_key}
+                      </button>
+                    </td>
+                    <td>{test.purpose}</td>
+                    <td>
+                      <Badge>{test.state}</Badge>
+                    </td>
+                    <td>{test.calculated_result ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <Inspector
             title={t('validation.inspector')}
             trigger={
@@ -2783,36 +2785,38 @@ export function ApprovalListPage() {
     <>
       <h1>{t('page.approvals')}</h1>
       <Panel title={t('approval.queue')}>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('approval.type')}</th>
-              <th>{t('approval.subject')}</th>
-              <th>{t('approval.status')}</th>
-              <th>{t('approval.requested')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {query.data?.body.items.map((item) => (
-              <tr key={item.approval_id}>
-                <td>
-                  <Link to="/approvals/$approvalId" params={{ approvalId: item.approval_id }}>
-                    {item.type}
-                  </Link>
-                </td>
-                <td>
-                  {item.subject.id} · v{item.subject.version ?? '—'}
-                </td>
-                <td>
-                  <Badge>{item.status}</Badge>
-                </td>
-                <td>
-                  <ServerTime value={item.requested_at} />
-                </td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('approval.type')}</th>
+                <th>{t('approval.subject')}</th>
+                <th>{t('approval.status')}</th>
+                <th>{t('approval.requested')}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {query.data?.body.items.map((item) => (
+                <tr key={item.approval_id}>
+                  <td>
+                    <Link to="/approvals/$approvalId" params={{ approvalId: item.approval_id }}>
+                      {item.type}
+                    </Link>
+                  </td>
+                  <td>
+                    {item.subject.id} · v{item.subject.version ?? '—'}
+                  </td>
+                  <td>
+                    <Badge>{item.status}</Badge>
+                  </td>
+                  <td>
+                    <ServerTime value={item.requested_at} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Panel>
     </>
   );

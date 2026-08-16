@@ -219,6 +219,7 @@ table {
   border-collapse: collapse;
 }
 .table-scroll {
+  max-width: 100%;
   overflow-x: auto;
 }
 .lede {
@@ -244,9 +245,14 @@ th {
 }
 .summary {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   align-items: center;
   margin-bottom: 16px;
+}
+.summary > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .validation-layout {
   display: grid;
@@ -491,6 +497,9 @@ code {
     height: 100vh;
     background: var(--qf-color-overlay);
     z-index: 9;
+  }
+  .mobile-nav-backdrop:hover {
+    background: var(--qf-color-overlay);
   }
   main {
     padding-inline: 16px;

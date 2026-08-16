@@ -301,31 +301,33 @@ export function DataCapabilityMatrix({
   const { t } = useTranslation();
   return (
     <DomainBoundary state={viewState} name="data-capability-matrix">
-      <table>
-        <caption>{t('domainComponent.dataCapabilityMatrix')}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{t('domainComponent.capability')}</th>
-            <th scope="col">{t('domainComponent.provider')}</th>
-            <th scope="col">{t('domainComponent.state')}</th>
-            <th scope="col">{t('domainComponent.checkedAt')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {capabilities.map((capability) => (
-            <tr key={capability.capability_id}>
-              <td>{capability.capability_key}</td>
-              <td>{capability.provider_id}</td>
-              <td>
-                <StatusBadge status={capability.state} />
-              </td>
-              <td>
-                <ServerTime value={capability.checked_at} />
-              </td>
+      <div className="table-scroll">
+        <table>
+          <caption>{t('domainComponent.dataCapabilityMatrix')}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t('domainComponent.capability')}</th>
+              <th scope="col">{t('domainComponent.provider')}</th>
+              <th scope="col">{t('domainComponent.state')}</th>
+              <th scope="col">{t('domainComponent.checkedAt')}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {capabilities.map((capability) => (
+              <tr key={capability.capability_id}>
+                <td>{capability.capability_key}</td>
+                <td>{capability.provider_id}</td>
+                <td>
+                  <StatusBadge status={capability.state} />
+                </td>
+                <td>
+                  <ServerTime value={capability.checked_at} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </DomainBoundary>
   );
 }

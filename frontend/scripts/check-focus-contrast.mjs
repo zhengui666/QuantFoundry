@@ -29,19 +29,31 @@ function contrastRatio(first, second) {
   );
 }
 
-const focus = token('qf-color-focus');
-const backgrounds = ['qf-color-sidebar', 'qf-color-surface-canvas', 'qf-color-surface-panel'];
-const failures = backgrounds
-  .map((background) => [background, contrastRatio(focus, token(background))])
-  .filter(([, ratio]) => ratio < 3);
+const checks = [
+  ['qf-color-focus', 'qf-color-sidebar', 3],
+  ['qf-color-focus', 'qf-color-surface-canvas', 3],
+  ['qf-color-focus', 'qf-color-surface-panel', 3],
+  ['qf-color-disabled-text', 'qf-color-disabled-surface', 4.5],
+];
+const failures = checks
+  .map(([foreground, background, minimum]) => [
+    foreground,
+    background,
+    minimum,
+    contrastRatio(token(foreground), token(background)),
+  ])
+  .filter(([, , minimum, ratio]) => ratio < minimum);
 
 if (failures.length > 0)
   throw new Error(
     failures
-      .map(([background, ratio]) => `${focus} vs ${background}: ${ratio.toFixed(2)}:1`)
+      .map(
+        ([foreground, background, minimum, ratio]) =>
+          `${foreground} vs ${background}: ${ratio.toFixed(2)}:1 (minimum ${minimum}:1)`,
+      )
       .join('; '),
   );
 
 process.stdout.write(
-  `Focus contrast gate passed: ${backgrounds.map((background) => `${background} ${contrastRatio(focus, token(background)).toFixed(2)}:1`).join(', ')}`,
+  `Contrast gate passed: ${checks.map(([foreground, background]) => `${foreground}/${background} ${contrastRatio(token(foreground), token(background)).toFixed(2)}:1`).join(', ')}`,
 );

@@ -100,32 +100,34 @@ export default function CanonicalChart({ chart }: { chart: Schema<'ChartAggregat
       <Provenance value={chart.provenance} />
       <details>
         <summary>{t('chart.dataTable')}</summary>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{t('chart.series')}</th>
-              <th scope="col">{t('chart.x')}</th>
-              <th scope="col">{t('chart.y')}</th>
-              <th scope="col">{t('chart.unit')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {chart.series.flatMap((series) =>
-              series.points.map((point) => (
-                <tr key={`${series.series_id}:${point.x}`}>
-                  <td>{series.display_label}</td>
-                  <td>{point.x}</td>
-                  <td>
-                    {point.y === null
-                      ? t('chart.gap')
-                      : formatDecimal(point.y, series.value_format.precision)}
-                  </td>
-                  <td>{series.unit}</td>
-                </tr>
-              )),
-            )}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{t('chart.series')}</th>
+                <th scope="col">{t('chart.x')}</th>
+                <th scope="col">{t('chart.y')}</th>
+                <th scope="col">{t('chart.unit')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chart.series.flatMap((series) =>
+                series.points.map((point) => (
+                  <tr key={`${series.series_id}:${point.x}`}>
+                    <td>{series.display_label}</td>
+                    <td>{point.x}</td>
+                    <td>
+                      {point.y === null
+                        ? t('chart.gap')
+                        : formatDecimal(point.y, series.value_format.precision)}
+                    </td>
+                    <td>{series.unit}</td>
+                  </tr>
+                )),
+              )}
+            </tbody>
+          </table>
+        </div>
       </details>
     </figure>
   );
