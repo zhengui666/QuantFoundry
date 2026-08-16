@@ -136,7 +136,9 @@ def test_populated_roundtrip_requires_server_side_disposable_marker(
 ) -> None:
     monkeypatch.delenv("QF_MIGRATION_GATE_MARKER", raising=False)
     with pytest.raises(RuntimeError, match="QF_MIGRATION_GATE_MARKER"):
-        migration_roundtrip_check._require_disposable_migration_gate("postgresql+psycopg://gate")
+        migration_roundtrip_check._require_disposable_migration_gate(
+            "postgresql+psycopg://gate"
+        )
 
 
 def test_populated_roundtrip_gate_requires_12_workspace_roles() -> None:
@@ -932,6 +934,7 @@ def _insert_0017_baseline(
                     "suppressed_since_utc": None,
                     "resume_watermark_utc": instant.isoformat(),
                     "initialization_utc": instant.isoformat(),
+                    "domain_event_sequence": 1,
                     "revision": 1,
                     "reason_code": "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
                     "actor": {"type": "SYSTEM", "id": "alembic:0017"},

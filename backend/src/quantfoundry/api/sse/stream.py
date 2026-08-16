@@ -104,72 +104,73 @@ async def durable_event_stream(
     heartbeat_at = time.monotonic() + heartbeat_seconds
     first_poll = True
     while True:
-        session = session_factory()
-        try:
-            earliest = session.execute(
-                select(event_model)
-                .where(event_model.workspace_id == workspace_id)
-                .order_by(event_model.sequence.asc())
-                .limit(1)
-            ).scalar_one_or_none()
-            stream_state = (
-                session.get(watermark_model, workspace_id)
-                if watermark_model is not None
-                else None
-            )
-            watermark = (
-                stream_state.last_sequence
-                if stream_state is not None
-                else session.scalar(
-                    select(func.max(event_model.sequence)).where(
-                        event_model.workspace_id == workspace_id
+
+        def poll(
+            *, cursor_value: int = cursor, first_poll_value: bool = first_poll
+        ) -> tuple[list[Any], int | None]:
+            session = session_factory()
+            try:
+                earliest = session.execute(
+                    select(event_model)
+                    .where(event_model.workspace_id == workspace_id)
+                    .order_by(event_model.sequence.asc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                stream_state = (
+                    session.get(watermark_model, workspace_id)
+                    if watermark_model is not None
+                    else None
+                )
+                watermark = (
+                    stream_state.last_sequence
+                    if stream_state is not None
+                    else session.scalar(
+                        select(func.max(event_model.sequence)).where(
+                            event_model.workspace_id == workspace_id
+                        )
                     )
                 )
-            )
-            expired_through = (
-                stream_state.expired_through_sequence
-                if stream_state is not None
-                else None
-            )
-            if (
-                first_poll
-                and last_event_id is not None
-                and (
-                    (
+                expired_through = (
+                    stream_state.expired_through_sequence
+                    if stream_state is not None
+                    else None
+                )
+                if first_poll_value and last_event_id is not None:
+                    if watermark is not None and last_event_id > watermark:
+                        return [], int(watermark) + 1
+                    if (
                         expired_through is not None
                         and expired_through > 0
                         and last_event_id <= expired_through
+                    ):
+                        resume_sequence = (
+                            earliest.sequence
+                            if earliest is not None
+                            and earliest.sequence > last_event_id
+                            else int(watermark or 0) + 1
+                        )
+                        return [], resume_sequence
+                events = list(
+                    session.execute(
+                        select(event_model)
+                        .where(
+                            event_model.sequence > cursor_value,
+                            event_model.workspace_id == workspace_id,
+                        )
+                        .order_by(event_model.sequence.asc())
+                        .limit(batch_size)
                     )
-                    or (
-                        watermark_model is None
-                        and earliest is None
-                        and watermark is not None
-                        and last_event_id <= watermark
-                    )
+                    .scalars()
+                    .all()
                 )
-            ):
-                resume_sequence = (
-                    earliest.sequence
-                    if earliest is not None and earliest.sequence > last_event_id
-                    else int(watermark or 0) + 1
-                )
-                yield _resync_wire(envelope, resume_sequence, now)
-                return
-            events = (
-                session.execute(
-                    select(event_model)
-                    .where(
-                        event_model.sequence > cursor,
-                        event_model.workspace_id == workspace_id,
-                    )
-                    .order_by(event_model.sequence.asc())
-                    .limit(batch_size)
-                )
-                .scalars()
-                .all()
-            )
-        finally:
-            session.close()
+                return events, None
+            finally:
+                session.close()
+
+        events, resync_sequence = await asyncio.to_thread(poll)
+        if resync_sequence is not None:
+            yield _resync_wire(envelope, resync_sequence, now)
+            return
         first_poll = False
         if events:
             for event in events:

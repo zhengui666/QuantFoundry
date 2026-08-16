@@ -200,7 +200,9 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             if length < 0:
                 raise ValueError("Content-Length is required")
             if length > 4 * 1024 * 1024:
-                self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body_too_large"})
+                self._json(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body_too_large"}
+                )
                 return
             body = self.rfile.read(length)
             if len(body) != length:

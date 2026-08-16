@@ -22,7 +22,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 report_path = pathlib.Path(sys.argv[1])
 expected_commit = sys.argv[2]
@@ -103,7 +103,9 @@ if run.get("head_sha") != expected_commit:
     raise SystemExit("independent review report run is not bound to the current commit")
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review report run did not complete successfully as workflow_dispatch")
-if run.get("path", "").split("@", 1)[0] != ".github/workflows/independent-agent-review.yml":
+workflow_reference = run.get("path", "")
+workflow_path, separator, executed_ref = workflow_reference.partition("@")
+if workflow_path != ".github/workflows/independent-agent-review.yml" or not separator or not executed_ref:
     raise SystemExit("independent review report run used an unauthorized workflow")
 workflow_id = run.get("workflow_id")
 if not isinstance(workflow_id, int) or workflow_id < 1:
@@ -111,13 +113,9 @@ if not isinstance(workflow_id, int) or workflow_id < 1:
 workflow = gh_json(f"/repos/{repository}/actions/workflows/independent-agent-review.yml")
 if workflow.get("id") != workflow_id or workflow.get("path") != ".github/workflows/independent-agent-review.yml":
     raise SystemExit("independent review report run workflow identity is not canonical")
-repository_info = gh_json(f"/repos/{repository}")
-default_branch = repository_info.get("default_branch")
-if not isinstance(default_branch, str) or not default_branch:
-    raise SystemExit("repository default branch is unavailable")
 workflow_source = gh_json(
     f"/repos/{repository}/contents/.github/workflows/independent-agent-review.yml"
-    f"?ref={default_branch}"
+    f"?ref={quote(expected_commit, safe='')}"
 )
 if workflow_source.get("sha") != trusted_workflow_blob_sha:
     raise SystemExit("independent review workflow is not the trusted revision")

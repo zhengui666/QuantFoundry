@@ -10,6 +10,7 @@ import jsonschema
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from pydantic import ValidationError as PydanticValidationError
 
 from quantfoundry.contracts.openapi.api_models import validate_schema
 from quantfoundry.contracts.openapi.runtime import (
@@ -97,6 +98,8 @@ class CanonicalRoute(APIRoute):
             except (
                 json.JSONDecodeError,
                 jsonschema.ValidationError,
+                PydanticValidationError,
+                UnicodeDecodeError,
                 ValueError,
             ) as error:
                 from quantfoundry.api.app import invalid_request_response
@@ -134,21 +137,21 @@ class CanonicalRoute(APIRoute):
             declared_content = declared.get("content", {})
             if not declared_content:
                 return response
+            response_body = getattr(response, "body", b"")
+            if isinstance(response_body, memoryview):
+                response_body = response_body.tobytes()
+            if not response_body:
+                return _problem(request, "handler omitted declared response content")
             media = declared_content.get(content_type)
             if content_type == "text/markdown":
                 return response
             if media is None:
-                if not getattr(response, "body", b""):
-                    return response
                 return _problem(
                     request, "handler returned an undeclared response content type"
                 )
             reference = media.get("schema", {}).get("$ref")
             if reference and hasattr(response, "body"):
                 try:
-                    response_body = response.body
-                    if isinstance(response_body, memoryview):
-                        response_body = response_body.tobytes()
                     decoded_body = json.loads(response_body)
                     validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
                     if operation.get("operationId") == "completeSetup":
@@ -161,6 +164,8 @@ class CanonicalRoute(APIRoute):
                 except (
                     json.JSONDecodeError,
                     jsonschema.ValidationError,
+                    PydanticValidationError,
+                    UnicodeDecodeError,
                     ValueError,
                 ) as error:
                     return _problem(

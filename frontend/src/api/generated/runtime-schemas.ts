@@ -1,315 +1,923 @@
 // Generated from canonical openapi-v1.yaml. Do not edit.
 import { z } from 'zod';
-export const ResearchPolicyIdSchema = z.union([
-  z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(39)
-    .max(39)
-    .regex(new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const RiskPolicyIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const CostModelIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const CredentialIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^CRED-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^CRED-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const CapabilityIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const DatasetIdSchema = z.union([
-  z.string().min(32).max(32).regex(new RegExp('^DSSET-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(42)
-    .max(42)
-    .regex(
-      new RegExp('^DSSET-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const SnapshotIdSchema = z.union([
-  z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(39)
-    .max(39)
-    .regex(new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const DataQualityRunIdSchema = z.union([
-  z.string().min(29).max(29).regex(new RegExp('^DQ-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(39)
-    .max(39)
-    .regex(new RegExp('^DQ-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const DataQualityIssueIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^DQI-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^DQI-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const ResearchIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const EvidenceIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^EVID-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^EVID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const ConclusionIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const ExperimentIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const FactorIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const StrategyIdSchema = z.union([
-  z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(42)
-    .max(42)
-    .regex(
-      new RegExp('^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const ValidationIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const ExposureIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const RedTeamRunIdSchema = z.union([
-  z.string().min(29).max(29).regex(new RegExp('^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(39)
-    .max(39)
-    .regex(new RegExp('^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const PortfolioIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^PORT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^PORT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const MemoIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const ApprovalIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const PaperIdSchema = z.union([
-  z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(42)
-    .max(42)
-    .regex(
-      new RegExp('^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const PaperRunIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const PaperOrderIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^PORD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^PORD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const PaperFillIdSchema = z.union([
-  z.string().min(32).max(32).regex(new RegExp('^PFILL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(42)
-    .max(42)
-    .regex(
-      new RegExp('^PFILL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const ReviewIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const AgentRunIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const ToolCallIdSchema = z.union([
-  z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(42)
-    .max(42)
-    .regex(
-      new RegExp('^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const JobIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const DomainEventIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const AuditEventIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const ArtifactIdSchema = z.union([
-  z.string().min(30).max(30).regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(40)
-    .max(40)
-    .regex(new RegExp('^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-]);
-export const NotificationIdSchema = z.union([
-  z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(42)
-    .max(42)
-    .regex(
-      new RegExp('^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
-export const ProvenanceIdSchema = z.union([
-  z.string().min(31).max(31).regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-  z
-    .string()
-    .min(41)
-    .max(41)
-    .regex(
-      new RegExp('^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-    ),
-]);
+export const ResearchPolicyIdSchema = z
+  .string()
+  .min(29)
+  .max(39)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(29)
+        .max(29)
+        .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(39)
+        .max(39)
+        .regex(
+          new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const RiskPolicyIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const CostModelIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const CredentialIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^CRED-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^CRED-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const CapabilityIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const DatasetIdSchema = z
+  .string()
+  .min(32)
+  .max(42)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(32)
+        .max(32)
+        .regex(new RegExp('^DSSET-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(42)
+        .max(42)
+        .regex(
+          new RegExp('^DSSET-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const SnapshotIdSchema = z
+  .string()
+  .min(29)
+  .max(39)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(29)
+        .max(29)
+        .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(39)
+        .max(39)
+        .regex(
+          new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const DataQualityRunIdSchema = z
+  .string()
+  .min(29)
+  .max(39)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(29)
+        .max(29)
+        .regex(new RegExp('^DQ-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(39)
+        .max(39)
+        .regex(
+          new RegExp('^DQ-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const DataQualityIssueIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^DQI-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^DQI-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ResearchIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const EvidenceIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^EVID-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^EVID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ConclusionIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ExperimentIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const FactorIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const StrategyIdSchema = z
+  .string()
+  .min(32)
+  .max(42)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(32)
+        .max(32)
+        .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(42)
+        .max(42)
+        .regex(
+          new RegExp('^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ValidationIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ExposureIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const RedTeamRunIdSchema = z
+  .string()
+  .min(29)
+  .max(39)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(29)
+        .max(29)
+        .regex(new RegExp('^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(39)
+        .max(39)
+        .regex(
+          new RegExp('^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const PortfolioIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^PORT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^PORT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const MemoIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ApprovalIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const PaperIdSchema = z
+  .string()
+  .min(32)
+  .max(42)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(32)
+        .max(32)
+        .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(42)
+        .max(42)
+        .regex(
+          new RegExp('^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const PaperRunIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const PaperOrderIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^PORD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^PORD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const PaperFillIdSchema = z
+  .string()
+  .min(32)
+  .max(42)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(32)
+        .max(32)
+        .regex(new RegExp('^PFILL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(42)
+        .max(42)
+        .regex(
+          new RegExp('^PFILL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ReviewIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const AgentRunIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ToolCallIdSchema = z
+  .string()
+  .min(32)
+  .max(42)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(32)
+        .max(32)
+        .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(42)
+        .max(42)
+        .regex(
+          new RegExp('^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const JobIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const DomainEventIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const AuditEventIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ArtifactIdSchema = z
+  .string()
+  .min(30)
+  .max(40)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(30)
+        .max(30)
+        .regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(40)
+        .max(40)
+        .regex(
+          new RegExp('^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const NotificationIdSchema = z
+  .string()
+  .min(32)
+  .max(42)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(32)
+        .max(32)
+        .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(42)
+        .max(42)
+        .regex(
+          new RegExp('^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
+export const ProvenanceIdSchema = z
+  .string()
+  .min(31)
+  .max(41)
+  .superRefine((value, context) => {
+    const matches = [
+      z
+        .string()
+        .min(31)
+        .max(31)
+        .regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+        .safeParse(value).success,
+      z
+        .string()
+        .min(41)
+        .max(41)
+        .regex(
+          new RegExp('^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+        )
+        .safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
 export const PublicIdSchemas = {
   research_policy: ResearchPolicyIdSchema,
   risk_policy: RiskPolicyIdSchema,
@@ -559,290 +1167,595 @@ export const EventTypeObjectTypeMap = {
 export const EventObjectLocatorSchemas = {
   job: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   research: z
     .object({
-      object_id: z.union([
-        z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(31)
+        .max(41)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(31)
+              .max(31)
+              .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   conclusion: z
     .object({
-      object_id: z.union([
-        z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(31)
+        .max(41)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(31)
+              .max(31)
+              .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   experiment: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   factor: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   strategy_version: z
     .object({
-      object_id: z.union([
-        z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(32)
+        .max(42)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(32)
+              .max(32)
+              .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1),
       object_revision: z.number().int().min(1),
     })
     .passthrough(),
   validation: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   approval: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   paper: z
     .object({
-      object_id: z.union([
-        z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(32)
+        .max(42)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(32)
+              .max(32)
+              .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   paper_run: z
     .object({
-      object_id: z.union([
-        z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(31)
+        .max(41)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(31)
+              .max(31)
+              .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   review: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   capability: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   snapshot: z
     .object({
-      object_id: z.union([
-        z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(39)
-          .max(39)
-          .regex(
-            new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(29)
+        .max(39)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(29)
+              .max(29)
+              .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(39)
+              .max(39)
+              .regex(
+                new RegExp(
+                  '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   agent_run: z
     .object({
-      object_id: z.union([
-        z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(31)
+        .max(41)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(31)
+              .max(31)
+              .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   tool_call: z
     .object({
-      object_id: z.union([
-        z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(32)
+        .max(42)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(32)
+              .max(32)
+              .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   memo: z
     .object({
-      object_id: z.union([
-        z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(31)
+        .max(41)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(31)
+              .max(31)
+              .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
     .passthrough(),
   notification: z
     .object({
-      object_id: z.union([
-        z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(32)
+        .max(42)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(32)
+              .max(32)
+              .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.number().int().min(1).nullable(),
       object_revision: z.number().int().min(1).nullable(),
     })
@@ -879,16 +1792,35 @@ export const EventObjectLocatorSchemas = {
     .passthrough(),
   event_stream: z
     .object({
-      object_id: z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      object_id: z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
       object_version: z.null().nullable(),
       object_revision: z.number().int().min(1),
     })
@@ -1045,32 +1977,42 @@ export const FieldErrorSchema = z
 export const ProblemContextSchema = z
   .object({
     object_type: z
-      .union([
-        z.union([
-          z.literal('job'),
-          z.literal('research'),
-          z.literal('conclusion'),
-          z.literal('experiment'),
-          z.literal('factor'),
-          z.literal('strategy_version'),
-          z.literal('validation'),
-          z.literal('approval'),
-          z.literal('paper'),
-          z.literal('paper_run'),
-          z.literal('review'),
-          z.literal('capability'),
-          z.literal('snapshot'),
-          z.literal('agent_run'),
-          z.literal('tool_call'),
-          z.literal('memo'),
-          z.literal('notification'),
-          z.literal('settings'),
-          z.literal('provider_connection'),
-          z.literal('agent_config'),
-          z.literal('event_stream'),
-        ]),
-        z.null().nullable(),
-      ])
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .union([
+              z.literal('job'),
+              z.literal('research'),
+              z.literal('conclusion'),
+              z.literal('experiment'),
+              z.literal('factor'),
+              z.literal('strategy_version'),
+              z.literal('validation'),
+              z.literal('approval'),
+              z.literal('paper'),
+              z.literal('paper_run'),
+              z.literal('review'),
+              z.literal('capability'),
+              z.literal('snapshot'),
+              z.literal('agent_run'),
+              z.literal('tool_call'),
+              z.literal('memo'),
+              z.literal('notification'),
+              z.literal('settings'),
+              z.literal('provider_connection'),
+              z.literal('agent_config'),
+              z.literal('event_stream'),
+            ])
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
     object_id: z
       .unknown()
@@ -1081,310 +2023,514 @@ export const ProblemContextSchema = z
             .superRefine((value, context) => {
               const matches = [
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(29)
-                      .max(29)
-                      .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(39)
-                      .max(39)
-                      .regex(
-                        new RegExp(
-                          '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(29)
+                  .max(39)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(29)
+                        .max(29)
+                        .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(39)
+                        .max(39)
+                        .regex(
+                          new RegExp(
+                            '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z.literal('SETTINGS-DEFAULT').safeParse(value).success,
                 z
@@ -1406,22 +2552,34 @@ export const ProblemContextSchema = z
                   ])
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
               ].filter(Boolean).length;
               if (matches === 0)
@@ -1445,38 +2603,90 @@ export const ProblemContextSchema = z
     expected_revision: z.number().int().min(1).nullable().optional(),
     actual_revision: z.number().int().min(1).nullable().optional(),
     approval_id: z
-      .union([
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
             .string()
-            .min(40)
+            .min(30)
             .max(40)
-            .regex(
-              new RegExp(
-                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.null().nullable(),
-      ])
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .string()
+                  .min(30)
+                  .max(30)
+                  .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                  .safeParse(value).success,
+                z
+                  .string()
+                  .min(40)
+                  .max(40)
+                  .regex(
+                    new RegExp(
+                      '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches !== 1)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match exactly one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
     validation_id: z
-      .union([
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
             .string()
-            .min(40)
+            .min(30)
             .max(40)
-            .regex(
-              new RegExp(
-                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.null().nullable(),
-      ])
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .string()
+                  .min(30)
+                  .max(30)
+                  .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                  .safeParse(value).success,
+                z
+                  .string()
+                  .min(40)
+                  .max(40)
+                  .regex(
+                    new RegExp(
+                      '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches !== 1)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match exactly one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
     retry_after_seconds: z.number().int().min(1).nullable().optional(),
   })
@@ -1495,22 +2705,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1537,22 +2759,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1579,22 +2813,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1621,22 +2867,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1663,22 +2921,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1705,22 +2975,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.number().int().min(1),
                     object_revision: z.number().int().min(1),
@@ -1749,22 +3031,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1791,22 +3085,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1833,22 +3139,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1875,22 +3193,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1917,22 +3247,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -1959,22 +3301,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -2001,22 +3355,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(29)
+                      .max(39)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(29)
+                            .max(29)
+                            .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(39)
+                            .max(39)
+                            .regex(
+                              new RegExp(
+                                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -2043,22 +3409,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -2085,22 +3463,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -2127,22 +3517,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -2169,22 +3571,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -2308,22 +3722,34 @@ export const ProblemContextSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.null().nullable().optional(),
                     object_revision: z.number().int().min(1),
@@ -2923,6 +4349,46 @@ export const ProblemContextSchema = z
           });
       }
     }
+  })
+  .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_type'))
+      for (const key of ['object_id', 'object_version', 'object_revision'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
+  })
+  .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_id'))
+      for (const key of ['object_type', 'object_version', 'object_revision'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
+  })
+  .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_version'))
+      for (const key of ['object_type', 'object_id', 'object_revision'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
+  })
+  .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_revision'))
+      for (const key of ['object_type', 'object_id', 'object_version'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
   });
 export const ApiProblemSchema = z
   .object({
@@ -3044,8 +4510,34 @@ export const ConfigurationValueWriteSchema = z
   .strict()
   .superRefine((value, context) => {
     const matches = [
-      z.object({ value: z.unknown() }).passthrough().safeParse(value).success,
-      z.object({ secret: z.unknown() }).passthrough().safeParse(value).success,
+      z
+        .object({
+          key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
+          value: z.unknown().superRefine((value, context) => {
+            const matches = [
+              z.string().safeParse(value).success,
+              z.number().safeParse(value).success,
+              z.boolean().safeParse(value).success,
+              z.object({}).passthrough().safeParse(value).success,
+              z.array(z.unknown()).safeParse(value).success,
+              z.null().nullable().safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches === 0)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match at least one canonical variant',
+              });
+          }),
+        })
+        .strict()
+        .safeParse(value).success,
+      z
+        .object({
+          key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
+          secret: z.string().min(1).max(16384),
+        })
+        .strict()
+        .safeParse(value).success,
     ].filter(Boolean).length;
     if (matches !== 1)
       context.addIssue({
@@ -3150,8 +4642,28 @@ export const DatabaseConnectionStatusSchema = z
     active_revision: z.number().int().min(1).nullable(),
     candidate_revision: z.number().int().min(1).nullable(),
     last_known_good_revision: z.number().int().min(1).nullable(),
-    active: z.union([DatabaseConnectionCandidateSchema, z.null().nullable()]),
-    candidate: z.union([DatabaseConnectionCandidateSchema, z.null().nullable()]),
+    active: z.unknown().superRefine((value, context) => {
+      const matches = [
+        DatabaseConnectionCandidateSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    candidate: z.unknown().superRefine((value, context) => {
+      const matches = [
+        DatabaseConnectionCandidateSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     domain_operations: z.union([
       z.literal('AVAILABLE'),
       z.literal('READ_ONLY_RECOVERY'),
@@ -3173,7 +4685,7 @@ export const DatabaseConnectionCandidateRequestSchema = z
           z.literal('VERIFY_CA'),
           z.literal('VERIFY_FULL'),
         ]),
-        username: z.string().min(1).max(128),
+        username: z.string().min(1).max(128).optional(),
         password: z.string().min(1).max(4096).optional(),
         client_key_pem: z.string().min(1).max(16384).optional(),
         ca_certificate_pem: z.string().min(1).max(16384).optional(),
@@ -3213,51 +4725,128 @@ export const SetupStatusSchema = z
     ai_connection_id: z.string().nullable(),
     data_provider_configured: z.boolean(),
     research_policy_active: z.boolean(),
-    research_policy_id: z.union([
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    research_policy_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(39)
+          .min(29)
           .max(39)
-          .regex(
-            new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(29)
+                .max(29)
+                .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(39)
+                .max(39)
+                .regex(
+                  new RegExp(
+                    '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     risk_policy_active: z.boolean(),
-    risk_policy_id: z.union([
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    risk_policy_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(41)
+          .min(31)
           .max(41)
-          .regex(
-            new RegExp(
-              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     cost_model_active: z.boolean(),
-    cost_model_id: z.union([
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    cost_model_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(41)
+          .min(31)
           .max(41)
-          .regex(
-            new RegExp(
-              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     fallback_step: z
       .union([
         z.literal('AI_PROVIDER'),
@@ -3303,22 +4892,34 @@ export const SetupStatusSchema = z
               ? z
                   .object({
                     research_policy_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(29)
+                      .max(39)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(29)
+                            .max(29)
+                            .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(39)
+                            .max(39)
+                            .regex(
+                              new RegExp(
+                                '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -3345,22 +4946,34 @@ export const SetupStatusSchema = z
               ? z
                   .object({
                     risk_policy_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -3387,22 +5000,34 @@ export const SetupStatusSchema = z
               ? z
                   .object({
                     cost_model_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -3512,60 +5137,96 @@ export const SetupStatusSchema = z
                     ai_connection_id: z.string().min(1).optional(),
                     research_policy_active: z.literal(true).optional(),
                     research_policy_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(29)
+                      .max(39)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(29)
+                            .max(29)
+                            .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(39)
+                            .max(39)
+                            .regex(
+                              new RegExp(
+                                '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     risk_policy_active: z.literal(true).optional(),
                     risk_policy_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     cost_model_active: z.literal(true).optional(),
                     cost_model_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     fallback_step: z.null().nullable().optional(),
                   })
@@ -3660,16 +5321,35 @@ export const CapabilityLimitationSchema = z
   .strict();
 export const DataCapabilitySchema = z
   .object({
-    capability_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    capability_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     provider_id: z.string(),
     capability_key: z.string(),
     state: z.union([
@@ -3764,10 +5444,19 @@ export const SetupProviderConnectionValidationFailureSchema = z
     checked_at: z.iso.datetime({ offset: true }),
   })
   .strict();
-export const SetupProviderConnectionValidationResultSchema = z.union([
-  SetupProviderConnectionValidationSuccessSchema,
-  SetupProviderConnectionValidationFailureSchema,
-]);
+export const SetupProviderConnectionValidationResultSchema = z
+  .unknown()
+  .superRefine((value, context) => {
+    const matches = [
+      SetupProviderConnectionValidationSuccessSchema.safeParse(value).success,
+      SetupProviderConnectionValidationFailureSchema.safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
 export const SetupCompleteRequestSchema = z
   .object({ configuration_revision: z.number().int().min(1) })
   .strict();
@@ -3777,7 +5466,17 @@ export const ConfigurationConsumerStateSchema = z
     desired_revision: z.number().int().min(1),
     applied_revision: z.number().int().min(1).nullable(),
     ack: z.union([z.literal('PENDING'), z.literal('ACKED'), z.literal('FAILED')]),
-    error_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
+    error_code: z.unknown().superRefine((value, context) => {
+      const matches = [
+        CanonicalErrorCodeSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     heartbeat_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -3845,1833 +5544,14 @@ export const ObjectRefSchema = z
       z.literal('notification'),
       z.literal('provenance'),
     ]),
-    id: z.union([
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(39)
-          .max(39)
-          .regex(
-            new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^CRED-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^CRED-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^DSSET-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^DSSET-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(39)
-          .max(39)
-          .regex(
-            new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^DQ-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(39)
-          .max(39)
-          .regex(
-            new RegExp('^DQ-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^DQI-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^DQI-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^EVID-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^EVID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(39)
-          .max(39)
-          .regex(
-            new RegExp('^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^PORT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^PORT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^PORD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^PORD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^PFILL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^PFILL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-    ]),
+    id: z.unknown(),
     version: z.number().int().min(1).nullable(),
     revision: z.number().int().min(1),
   })
   .strict()
   .superRefine((value, context) => {
-    for (const result of [
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('research_policy') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('risk_policy') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('cost_model') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('credential') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^CRED-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^CRED-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('capability') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('dataset') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^DSSET-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^DSSET-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('snapshot') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('data_quality_run') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^DQ-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^DQ-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('data_quality_issue') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^DQI-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^DQI-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('research') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('evidence') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^EVID-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^EVID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('conclusion') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('experiment') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('factor') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('strategy') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('validation') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('exposure') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('red_team_run') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('portfolio') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PORT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PORT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('memo') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('approval') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('paper') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('paper_run') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('paper_order') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PORD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PORD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('paper_fill') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^PFILL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^PFILL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('review') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('agent_run') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('tool_call') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('job') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('domain_event') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('audit_event') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('artifact') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('notification') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-      z
-        .unknown()
-        .superRefine((value, context) => {
-          const conditional = z
-            .object({ type: z.literal('provenance') })
-            .passthrough()
-            .safeParse(value).success;
-          const result = (
-            conditional
-              ? z
-                  .object({
-                    id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
-                      .optional(),
-                  })
-                  .passthrough()
-              : z.unknown()
-          ).safeParse(value);
-          if (!result.success)
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-        })
-        .safeParse(value),
-    ]) {
-      if (!result.success) {
-        for (const issue of result.error.issues)
-          context.addIssue({
-            code: 'custom',
-            path: issue.path as (string | number)[],
-            message: issue.message,
-          });
-      }
-    }
-  })
-  .superRefine((value, context) => {
-    if (!PublicIdSchemas[value.type].safeParse(value.id).success)
+    const schema = PublicIdSchemas[value.type as keyof typeof PublicIdSchemas];
+    if (schema && !schema.safeParse(value.id).success)
       context.addIssue({
         code: 'custom',
         path: ['id'],
@@ -5683,7 +5563,17 @@ export const ActionCapabilitySchema = z
     action: z.string(),
     visibility: z.union([z.literal('SHOW'), z.literal('HIDE')]),
     allowed: z.boolean(),
-    reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
+    reason_code: z.unknown().superRefine((value, context) => {
+      const matches = [
+        CanonicalErrorCodeSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     reason_detail: z.string().nullable(),
     requires_confirmation: z.boolean(),
     idempotency_required: z.boolean(),
@@ -5716,7 +5606,17 @@ export const OverviewAttentionItemSchema = z
     object: ObjectRefSchema,
     title_key: z.string(),
     summary: z.string(),
-    reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
+    reason_code: z.unknown().superRefine((value, context) => {
+      const matches = [
+        CanonicalErrorCodeSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
   .strict();
@@ -5753,30 +5653,68 @@ export const AgentRoleKeySchema = z.union([
 export const OverviewCurrentAgentSchema = z
   .object({
     role: AgentRoleKeySchema,
-    agent_run_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    agent_run_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
   })
   .strict();
 export const OverviewActiveResearchItemSchema = z
   .object({
-    research_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    research_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     title: z.string(),
     status: ResearchStatusSchema,
     evidence_status: z.union([
@@ -5787,7 +5725,17 @@ export const OverviewActiveResearchItemSchema = z
       z.literal('STRONG'),
     ]),
     progress: JobProgressSchema,
-    current_agent: z.union([OverviewCurrentAgentSchema, z.null().nullable()]),
+    current_agent: z.unknown().superRefine((value, context) => {
+      const matches = [
+        OverviewCurrentAgentSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     updated_at: z.iso.datetime({ offset: true }),
@@ -5804,16 +5752,35 @@ export const OverviewStrategyPipelineSchema = z
   .strict();
 export const ProvenanceRefSchema = z
   .object({
-    provenance_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    provenance_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
   })
   .strict();
 export const OverviewPaperSummarySchema = z
@@ -5826,7 +5793,17 @@ export const OverviewPaperSummarySchema = z
     since_start_return: z.string().nullable(),
     benchmark_since_start_return: z.string().nullable(),
     as_of_date: z.iso.date().nullable(),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
   })
   .strict();
 export const ChartXAxisSchema = z
@@ -5848,7 +5825,20 @@ export const ChartValueFormatSchema = z
   })
   .strict();
 export const ChartPointSchema = z
-  .object({ x: z.union([z.string(), z.number()]), y: z.string().nullable() })
+  .object({
+    x: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z.string().safeParse(value).success,
+        z.number().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    y: z.string().nullable(),
+  })
   .strict();
 export const ChartSeriesSchema = z
   .object({
@@ -5927,16 +5917,35 @@ export const OverviewRecentFindingSchema = z
   .strict();
 export const OverviewAgentActivityItemSchema = z
   .object({
-    agent_run_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    agent_run_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     role: AgentRoleKeySchema,
     objective: z.string(),
     status: z.union([
@@ -5974,7 +5983,17 @@ export const OverviewReadModelSchema = z
     active_research: z.array(OverviewActiveResearchItemSchema),
     strategy_pipeline: OverviewStrategyPipelineSchema,
     paper_summary: OverviewPaperSummarySchema,
-    paper_performance_chart: z.union([ChartAggregateSchema, z.null().nullable()]),
+    paper_performance_chart: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ChartAggregateSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     recent_findings: z.array(OverviewRecentFindingSchema),
     agent_activity: z.array(OverviewAgentActivityItemSchema),
     data_health: OverviewDataHealthSchema,
@@ -5985,16 +6004,35 @@ export const OverviewReadModelSchema = z
 export const DataCapabilityListSchema = z.array(DataCapabilitySchema);
 export const ResearchSummarySchema = z
   .object({
-    research_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    research_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     title: z.string(),
     status: ResearchStatusSchema,
     evidence_status: z.union([
@@ -6020,21 +6058,47 @@ export const ResearchCreateRequestSchema = z
     title: z.string().min(1).max(256),
     original_user_prompt: z.string().min(1),
     research_policy_id: z
-      .union([
-        z.union([
-          z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
             .string()
-            .min(39)
+            .min(29)
             .max(39)
-            .regex(
-              new RegExp(
-                '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.null().nullable(),
-      ])
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .string()
+                  .min(29)
+                  .max(29)
+                  .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                  .safeParse(value).success,
+                z
+                  .string()
+                  .min(39)
+                  .max(39)
+                  .regex(
+                    new RegExp(
+                      '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches !== 1)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match exactly one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
   })
   .strict();
@@ -6069,16 +6133,35 @@ export const ResearchBriefReadModelSchema = z
   .strict();
 export const ResearchConclusionReadModelSchema = z
   .object({
-    conclusion_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    conclusion_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     evidence_status: z.union([
       z.literal('INSUFFICIENT'),
       z.literal('WEAK'),
@@ -6090,7 +6173,17 @@ export const ResearchConclusionReadModelSchema = z
     evidence_refs: z.array(ObjectRefSchema),
     uncertainties: z.array(z.string()),
     recommendation: z.string().nullable(),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -6117,7 +6210,17 @@ export const ResearchEvidenceResultLocatorSchema = z
   .object({
     result_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     metric_key: z.string().nullable(),
-    artifact: z.union([ObjectRefSchema, z.null().nullable()]),
+    artifact: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ObjectRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
   })
   .strict();
 export const ResearchEvidenceItemSchema = z
@@ -6130,23 +6233,52 @@ export const ResearchEvidenceItemSchema = z
     strength: z.union([z.literal('WEAK'), z.literal('MODERATE'), z.literal('STRONG')]),
     limitations: z.string().nullable(),
     is_invalidated: z.boolean(),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const NamedVersionSchema = z.object({ name: z.string(), version: z.string() }).strict();
 export const ResearchCurrentAgentWorkSchema = z
   .object({
-    agent_run_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    agent_run_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     agent_role: z.string(),
     status: z.union([
       z.literal('QUEUED'),
@@ -6158,19 +6290,59 @@ export const ResearchCurrentAgentWorkSchema = z
     ]),
     objective: z.string().nullable(),
     current_action: z.string().nullable(),
-    tool: z.union([NamedVersionSchema, z.null().nullable()]),
+    tool: z.unknown().superRefine((value, context) => {
+      const matches = [
+        NamedVersionSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     next_action: z.string().nullable(),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchOverviewReadModelSchema = z
   .object({
     brief: ResearchBriefReadModelSchema,
-    current_conclusion: z.union([ResearchConclusionReadModelSchema, z.null().nullable()]),
+    current_conclusion: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ResearchConclusionReadModelSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     progress: z.array(ResearchPlanNodeReadModelSchema),
     latest_evidence: z.array(ResearchEvidenceItemSchema),
-    current_agent_work: z.union([ResearchCurrentAgentWorkSchema, z.null().nullable()]),
+    current_agent_work: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ResearchCurrentAgentWorkSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
   })
   .strict();
 export const ResearchPlanReadModelSchema = z
@@ -6181,30 +6353,89 @@ export const ResearchPlanReadModelSchema = z
     rationale_summary: z.string().nullable(),
     nodes: z.array(ResearchPlanNodeReadModelSchema),
     content_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchTimelineItemSchema = z
   .object({
-    event_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    event_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     agent_role: z.string().nullable(),
     objective: z.string().nullable(),
-    tool: z.union([NamedVersionSchema, z.null().nullable()]),
+    tool: z.unknown().superRefine((value, context) => {
+      const matches = [
+        NamedVersionSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     result_summary: z.string().nullable(),
     decision_summary: z.string().nullable(),
     next_action: z.string().nullable(),
-    object: z.union([ObjectRefSchema, z.null().nullable()]),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    object: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ObjectRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     occurred_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -6239,20 +6470,57 @@ export const ResearchExperimentItemSchema = z
     ]),
     status: ExperimentStatusSchema,
     validity_state: ExperimentValidityStateSchema,
-    job_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    job_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -6269,7 +6537,17 @@ export const ArtifactReadModelSchema = z
     media_type: z.string(),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     size_bytes: z.number().int().min(0),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -6284,21 +6562,50 @@ export const RequesterRefSchema = z
   .strict();
 export const ResearchAuditItemSchema = z
   .object({
-    event_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    event_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     action: z.string(),
     actor: RequesterRefSchema,
     object: ObjectRefSchema,
     request_id: z.string(),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     occurred_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -6307,16 +6614,35 @@ export const ResearchAuditPageSchema = z
   .strict();
 export const ResearchDetailSchema = z
   .object({
-    research_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    research_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     title: z.string(),
     original_user_prompt: z.string(),
     normalized_question: z.string().nullable(),
@@ -6330,47 +6656,128 @@ export const ResearchDetailSchema = z
     ]),
     current_revision_no: z.number().int().min(1),
     active_plan_version: z.number().int().min(1).nullable(),
-    research_policy_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    research_policy_id: z
+      .string()
+      .min(29)
+      .max(39)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(29)
+            .max(29)
+            .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(39)
+            .max(39)
+            .regex(
+              new RegExp(
+                '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     director_agent_version: z.string().nullable(),
-    current_agent_run_id: z.union([
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    current_agent_run_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(41)
+          .min(31)
           .max(41)
-          .regex(
-            new RegExp(
-              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    current_job_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    current_job_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     overview: ResearchOverviewReadModelSchema,
-    plan: z.union([ResearchPlanReadModelSchema, z.null().nullable()]),
+    plan: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ResearchPlanReadModelSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     timeline: ResearchTimelinePageSchema,
     experiments: ResearchExperimentPageSchema,
     evidence: ResearchEvidencePageSchema,
@@ -6386,16 +6793,35 @@ export const ResearchDetailSchema = z
 export const ParameterSchema = z.object({ key: z.string(), value: z.string() }).strict();
 export const ExperimentCreateRequestSchema = z
   .object({
-    research_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    research_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     research_revision_no: z.number().int().min(1),
     objective: z.string(),
     hypothesis: z.string(),
@@ -6406,62 +6832,152 @@ export const ExperimentCreateRequestSchema = z
       z.literal('DATA_VALIDATION'),
       z.literal('STRICT_VALIDATION'),
     ]),
-    data_snapshot_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    factor_id: z
-      .union([
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    data_snapshot_id: z
+      .string()
+      .min(29)
+      .max(39)
+      .superRefine((value, context) => {
+        const matches = [
           z
             .string()
-            .min(40)
-            .max(40)
+            .min(29)
+            .max(29)
+            .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(39)
+            .max(39)
             .regex(
               new RegExp(
-                '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
               ),
-            ),
-        ]),
-        z.null().nullable(),
-      ])
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
+    factor_id: z
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(40)
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .string()
+                  .min(30)
+                  .max(30)
+                  .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                  .safeParse(value).success,
+                z
+                  .string()
+                  .min(40)
+                  .max(40)
+                  .regex(
+                    new RegExp(
+                      '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches !== 1)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match exactly one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
     factor_version: z.number().int().min(1).nullable().optional(),
     strategy_id: z
-      .union([
-        z.union([
-          z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
             .string()
-            .min(42)
+            .min(32)
             .max(42)
-            .regex(
-              new RegExp(
-                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.null().nullable(),
-      ])
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .string()
+                  .min(32)
+                  .max(32)
+                  .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                  .safeParse(value).success,
+                z
+                  .string()
+                  .min(42)
+                  .max(42)
+                  .regex(
+                    new RegExp(
+                      '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches !== 1)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match exactly one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
     strategy_version: z.number().int().min(1).nullable().optional(),
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    cost_model_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     parameters: z.array(ParameterSchema),
     engine_key: z.string(),
     engine_version: z.string(),
@@ -6487,36 +7003,85 @@ export const ExperimentReproduceControlledOverrideRequestSchema = z
     reason: z.string().min(1).max(4000),
   })
   .strict();
-export const ExperimentReproduceRequestSchema = z.union([
-  ExperimentReproduceExactRequestSchema,
-  ExperimentReproduceControlledOverrideRequestSchema,
-]);
+export const ExperimentReproduceRequestSchema = z.unknown().superRefine((value, context) => {
+  const matches = [
+    ExperimentReproduceExactRequestSchema.safeParse(value).success,
+    ExperimentReproduceControlledOverrideRequestSchema.safeParse(value).success,
+  ].filter(Boolean).length;
+  if (matches !== 1)
+    context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' });
+});
 export const VersionRefSchema = z
   .object({
-    id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
         z
           .string()
-          .min(42)
+          .min(32)
           .max(42)
-          .regex(
-            new RegExp(
-              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     version: z.number().int().min(1),
   })
   .strict();
@@ -6565,10 +7130,14 @@ export const ExperimentSearchRangeDimensionSchema = z
         message: 'INTEGER ranges require integral bounds and step',
       });
   });
-export const ExperimentSearchDimensionSchema = z.union([
-  ExperimentSearchSetDimensionSchema,
-  ExperimentSearchRangeDimensionSchema,
-]);
+export const ExperimentSearchDimensionSchema = z.unknown().superRefine((value, context) => {
+  const matches = [
+    ExperimentSearchSetDimensionSchema.safeParse(value).success,
+    ExperimentSearchRangeDimensionSchema.safeParse(value).success,
+  ].filter(Boolean).length;
+  if (matches !== 1)
+    context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' });
+});
 export const ExperimentSearchConfigurationSchema = z
   .object({
     method: z.union([z.literal('GRID'), z.literal('RANDOM')]),
@@ -6631,41 +7200,90 @@ export const ExperimentSearchResultFailedSchema = z
     failure_code: CanonicalErrorCodeSchema,
   })
   .strict();
-export const ExperimentSearchResultSchema = z.union([
-  ExperimentSearchResultNotApplicableSchema,
-  ExperimentSearchResultPendingSchema,
-  ExperimentSearchResultRunningSchema,
-  ExperimentSearchResultCompletedSchema,
-  ExperimentSearchResultFailedSchema,
-]);
+export const ExperimentSearchResultSchema = z.unknown().superRefine((value, context) => {
+  const matches = [
+    ExperimentSearchResultNotApplicableSchema.safeParse(value).success,
+    ExperimentSearchResultPendingSchema.safeParse(value).success,
+    ExperimentSearchResultRunningSchema.safeParse(value).success,
+    ExperimentSearchResultCompletedSchema.safeParse(value).success,
+    ExperimentSearchResultFailedSchema.safeParse(value).success,
+  ].filter(Boolean).length;
+  if (matches !== 1)
+    context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' });
+});
 export const CodeVersionSchema = z.object({ commit: z.string(), build_id: z.string() }).strict();
 export const PolicyRefSchema = z
   .object({
     type: z.union([z.literal('research_policy'), z.literal('risk_policy')]),
-    id: z.union([
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(39)
+          .min(29)
           .max(39)
-          .regex(
-            new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(29)
+                .max(29)
+                .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(39)
+                .max(39)
+                .regex(
+                  new RegExp(
+                    '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
         z
           .string()
-          .min(41)
+          .min(31)
           .max(41)
-          .regex(
-            new RegExp(
-              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     version: z.number().int().min(1),
   })
   .strict()
@@ -6683,22 +7301,34 @@ export const PolicyRefSchema = z
               ? z
                   .object({
                     id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(29)
+                      .max(39)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(29)
+                            .max(29)
+                            .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(39)
+                            .max(39)
+                            .regex(
+                              new RegExp(
+                                '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -6725,22 +7355,34 @@ export const PolicyRefSchema = z
               ? z
                   .object({
                     id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -6768,156 +7410,368 @@ export const PolicyRefSchema = z
   });
 export const VersionedHashRefSchema = z
   .object({
-    id: z.union([
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(42)
+          .min(32)
           .max(42)
-          .regex(
-            new RegExp(
-              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
         z
           .string()
-          .min(41)
+          .min(31)
           .max(41)
-          .regex(
-            new RegExp(
-              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     version: z.number().int().min(1),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
   .strict();
 export const ProvenanceSchema = z
   .object({
-    provenance_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    schema_version: z.literal(1),
-    experiment_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    source_experiment_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    tool_call_id: z.union([
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    data_snapshot_ids: z.array(
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(39)
-          .max(39)
-          .regex(
-            new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-    ),
-    engine: NamedVersionSchema,
-    adapter: z.union([NamedVersionSchema, z.null().nullable()]),
-    code: CodeVersionSchema,
-    policies: z.array(PolicyRefSchema),
-    strategy: z.union([
-      z.unknown().superRefine((value, context) => {
-        for (const result of [
-          VersionedHashRefSchema.safeParse(value),
+    provenance_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
           z
-            .object({
-              id: z
-                .union([
-                  z
-                    .string()
-                    .min(32)
-                    .max(32)
-                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(42)
-                    .max(42)
-                    .regex(
-                      new RegExp(
-                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
-                .optional(),
-            })
-            .passthrough()
-            .safeParse(value),
-        ]) {
-          if (!result.success) {
-            for (const issue of result.error.issues)
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
+    schema_version: z.literal(1),
+    experiment_id: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
               context.addIssue({
                 code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
+                message: 'Value must match exactly one canonical variant',
               });
-          }
-        }
-      }),
-      z.null().nullable(),
-    ]),
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    source_experiment_id: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    tool_call_id: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .string()
+          .min(32)
+          .max(42)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    data_snapshot_ids: z.array(
+      z
+        .string()
+        .min(29)
+        .max(39)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(29)
+              .max(29)
+              .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(39)
+              .max(39)
+              .regex(
+                new RegExp(
+                  '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
+    ),
+    engine: NamedVersionSchema,
+    adapter: z.unknown().superRefine((value, context) => {
+      const matches = [
+        NamedVersionSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    code: CodeVersionSchema,
+    policies: z.array(PolicyRefSchema),
+    strategy: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .unknown()
+          .superRefine((value, context) => {
+            for (const result of [
+              VersionedHashRefSchema.safeParse(value),
+              z
+                .object({
+                  id: z
+                    .string()
+                    .min(32)
+                    .max(42)
+                    .superRefine((value, context) => {
+                      const matches = [
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                          .safeParse(value).success,
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          )
+                          .safeParse(value).success,
+                      ].filter(Boolean).length;
+                      if (matches !== 1)
+                        context.addIssue({
+                          code: 'custom',
+                          message: 'Value must match exactly one canonical variant',
+                        });
+                    })
+                    .optional(),
+                })
+                .passthrough()
+                .safeParse(value),
+            ]) {
+              if (!result.success) {
+                for (const issue of result.error.issues)
+                  context.addIssue({
+                    code: 'custom',
+                    path: issue.path as (string | number)[],
+                    message: issue.message,
+                  });
+              }
+            }
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     factors: z.array(
       z.unknown().superRefine((value, context) => {
         for (const result of [
@@ -6925,18 +7779,34 @@ export const ProvenanceSchema = z
           z
             .object({
               id: z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .optional(),
             })
             .passthrough()
@@ -6953,46 +7823,68 @@ export const ProvenanceSchema = z
         }
       }),
     ),
-    cost_model: z.union([
-      z.unknown().superRefine((value, context) => {
-        for (const result of [
-          VersionedHashRefSchema.safeParse(value),
-          z
-            .object({
-              id: z
-                .union([
-                  z
+    cost_model: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .unknown()
+          .superRefine((value, context) => {
+            for (const result of [
+              VersionedHashRefSchema.safeParse(value),
+              z
+                .object({
+                  id: z
                     .string()
                     .min(31)
-                    .max(31)
-                    .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(41)
                     .max(41)
-                    .regex(
-                      new RegExp(
-                        '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
-                .optional(),
-            })
-            .passthrough()
-            .safeParse(value),
-        ]) {
-          if (!result.success) {
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-          }
-        }
-      }),
-      z.null().nullable(),
-    ]),
+                    .superRefine((value, context) => {
+                      const matches = [
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                          .safeParse(value).success,
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          )
+                          .safeParse(value).success,
+                      ].filter(Boolean).length;
+                      if (matches !== 1)
+                        context.addIssue({
+                          code: 'custom',
+                          message: 'Value must match exactly one canonical variant',
+                        });
+                    })
+                    .optional(),
+                })
+                .passthrough()
+                .safeParse(value),
+            ]) {
+              if (!result.success) {
+                for (const issue of result.error.issues)
+                  context.addIssue({
+                    code: 'custom',
+                    path: issue.path as (string | number)[],
+                    message: issue.message,
+                  });
+              }
+            }
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     parameters_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')).nullable(),
     input_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     output_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -7001,199 +7893,463 @@ export const ProvenanceSchema = z
   .strict();
 export const ExperimentDetailSchema = z
   .object({
-    experiment_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    research_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    parent_experiment_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    experiment_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
+    research_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
+    parent_experiment_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    source_experiment_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    source_experiment_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     research_revision_no: z.number().int().min(1),
     objective: z.string(),
     hypothesis: z.string(),
     experiment_type: z.string(),
     status: ExperimentStatusSchema,
     validity_state: ExperimentValidityStateSchema,
-    data_snapshot_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    factor_ref: z.union([
-      z.unknown().superRefine((value, context) => {
-        for (const result of [
-          VersionRefSchema.safeParse(value),
+    data_snapshot_id: z
+      .string()
+      .min(29)
+      .max(39)
+      .superRefine((value, context) => {
+        const matches = [
           z
-            .object({
-              id: z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
-                .optional(),
-            })
-            .passthrough()
-            .safeParse(value),
-        ]) {
-          if (!result.success) {
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-          }
-        }
+            .string()
+            .min(29)
+            .max(29)
+            .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(39)
+            .max(39)
+            .regex(
+              new RegExp(
+                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
       }),
-      z.null().nullable(),
-    ]),
-    strategy_ref: z.union([
-      z.unknown().superRefine((value, context) => {
-        for (const result of [
-          VersionRefSchema.safeParse(value),
-          z
-            .object({
-              id: z
-                .union([
-                  z
+    factor_ref: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .unknown()
+          .superRefine((value, context) => {
+            for (const result of [
+              VersionRefSchema.safeParse(value),
+              z
+                .object({
+                  id: z
+                    .string()
+                    .min(30)
+                    .max(40)
+                    .superRefine((value, context) => {
+                      const matches = [
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                          .safeParse(value).success,
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          )
+                          .safeParse(value).success,
+                      ].filter(Boolean).length;
+                      if (matches !== 1)
+                        context.addIssue({
+                          code: 'custom',
+                          message: 'Value must match exactly one canonical variant',
+                        });
+                    })
+                    .optional(),
+                })
+                .passthrough()
+                .safeParse(value),
+            ]) {
+              if (!result.success) {
+                for (const issue of result.error.issues)
+                  context.addIssue({
+                    code: 'custom',
+                    path: issue.path as (string | number)[],
+                    message: issue.message,
+                  });
+              }
+            }
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    strategy_ref: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .unknown()
+          .superRefine((value, context) => {
+            for (const result of [
+              VersionRefSchema.safeParse(value),
+              z
+                .object({
+                  id: z
                     .string()
                     .min(32)
-                    .max(32)
-                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(42)
                     .max(42)
-                    .regex(
-                      new RegExp(
-                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
-                .optional(),
-            })
-            .passthrough()
-            .safeParse(value),
-        ]) {
-          if (!result.success) {
-            for (const issue of result.error.issues)
-              context.addIssue({
-                code: 'custom',
-                path: issue.path as (string | number)[],
-                message: issue.message,
-              });
-          }
-        }
+                    .superRefine((value, context) => {
+                      const matches = [
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                          .safeParse(value).success,
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          )
+                          .safeParse(value).success,
+                      ].filter(Boolean).length;
+                      if (matches !== 1)
+                        context.addIssue({
+                          code: 'custom',
+                          message: 'Value must match exactly one canonical variant',
+                        });
+                    })
+                    .optional(),
+                })
+                .passthrough()
+                .safeParse(value),
+            ]) {
+              if (!result.success) {
+                for (const issue of result.error.issues)
+                  context.addIssue({
+                    code: 'custom',
+                    path: issue.path as (string | number)[],
+                    message: issue.message,
+                  });
+              }
+            }
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    cost_model_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
       }),
-      z.null().nullable(),
-    ]),
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
     parameters: z.array(ParameterSchema),
     parameters_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     search_space: z.array(ExperimentSearchDimensionSchema),
-    search_configuration: z.union([ExperimentSearchConfigurationSchema, z.null().nullable()]),
+    search_configuration: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ExperimentSearchConfigurationSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     search_result: ExperimentSearchResultSchema,
     metrics: z.array(MetricSchema),
     artifacts: z.array(ArtifactReadModelSchema),
     engine: NamedVersionSchema,
-    adapter: z.union([NamedVersionSchema, z.null().nullable()]),
+    adapter: z.unknown().superRefine((value, context) => {
+      const matches = [
+        NamedVersionSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     code_version: z.string(),
-    job_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    job_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    provenance: z.union([ProvenanceSchema, z.null().nullable()]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     action_capabilities: z.array(ActionCapabilitySchema),
     started_at: z.iso.datetime({ offset: true }).nullable(),
     finished_at: z.iso.datetime({ offset: true }).nullable(),
     created_at: z.iso.datetime({ offset: true }),
     invalidated_at: z.iso.datetime({ offset: true }).nullable(),
-    invalid_reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
+    invalid_reason_code: z.unknown().superRefine((value, context) => {
+      const matches = [
+        CanonicalErrorCodeSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     invalid_reason_detail: z.string().nullable(),
   })
   .strict();
 export const StrategySignalSchema = z
   .object({
-    factor_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    factor_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     factor_version: z.number().int().min(1),
     direction: z.union([z.literal('LONG'), z.literal('SHORT')]),
     weight: z.string(),
@@ -7216,31 +8372,69 @@ export const StrategyRulesSchema = z
   .strict();
 export const StrategyCreateRequestSchema = z
   .object({
-    research_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    research_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     name: z.string(),
     thesis: z.string(),
     universe: UniverseSpecSchema,
     signals: z.array(StrategySignalSchema).min(1),
     rules: StrategyRulesSchema,
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    cost_model_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     benchmark: z.string(),
     research_period: DateRangeSchema,
     validation_period: DateRangeSchema,
@@ -7253,26 +8447,64 @@ export const FreezeStrategyRequestSchema = z
   .strict();
 export const BacktestRequestSchema = z
   .object({
-    snapshot_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    snapshot_id: z
+      .string()
+      .min(29)
+      .max(39)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(29)
+            .max(29)
+            .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(39)
+            .max(39)
+            .regex(
+              new RegExp(
+                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
+    cost_model_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     engine_key: z.string(),
     engine_version: z.string(),
     parameters: z.array(ParameterSchema),
@@ -7284,16 +8516,35 @@ export const StrategySpecificationSchema = z
     universe: UniverseSpecSchema,
     signals: z.array(StrategySignalSchema),
     rules: StrategyRulesSchema,
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    cost_model_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     benchmark: z.string(),
     research_period: DateRangeSchema,
     validation_period: DateRangeSchema,
@@ -7308,19 +8559,46 @@ export const StrategyBacktestResultSummarySchema = z
     status: ExperimentStatusSchema,
     validity_state: ExperimentValidityStateSchema,
     result_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    job_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    job_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     provenance: ProvenanceRefSchema,
     started_at: z.iso.datetime({ offset: true }).nullable(),
     finished_at: z.iso.datetime({ offset: true }),
@@ -7342,10 +8620,14 @@ export const StrategyLatestBacktestUnavailableSchema = z
     chart: z.null().nullable(),
   })
   .strict();
-export const StrategyLatestBacktestSchema = z.union([
-  StrategyLatestBacktestAvailableSchema,
-  StrategyLatestBacktestUnavailableSchema,
-]);
+export const StrategyLatestBacktestSchema = z.unknown().superRefine((value, context) => {
+  const matches = [
+    StrategyLatestBacktestAvailableSchema.safeParse(value).success,
+    StrategyLatestBacktestUnavailableSchema.safeParse(value).success,
+  ].filter(Boolean).length;
+  if (matches !== 1)
+    context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' });
+});
 export const ValidationResultCountsSchema = z
   .object({
     pending: z.number().int().min(0),
@@ -7380,22 +8662,51 @@ export const StrategyValidationSummarySchema = z
       z.literal('FAILED'),
     ]),
     test_counts: ValidationResultCountsSchema,
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     revision: z.number().int().min(1),
   })
   .strict();
 export const StrategyVersionDetailSchema = z
   .object({
-    strategy_id: z.union([
-      z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(42)
-        .max(42)
-        .regex(
-          new RegExp('^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    strategy_id: z
+      .string()
+      .min(32)
+      .max(42)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(32)
+            .max(32)
+            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(42)
+            .max(42)
+            .regex(
+              new RegExp(
+                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     name: z.string(),
     version: z.number().int().min(1),
     lifecycle_state: z.union([
@@ -7412,16 +8723,35 @@ export const StrategyVersionDetailSchema = z
     universe: UniverseSpecSchema,
     signals: z.array(StrategySignalSchema),
     rules: StrategyRulesSchema,
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    cost_model_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     benchmark: z.string(),
     research_period: DateRangeSchema,
     validation_period: DateRangeSchema,
@@ -7430,7 +8760,17 @@ export const StrategyVersionDetailSchema = z
     spec_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     specification: StrategySpecificationSchema,
     latest_backtest: StrategyLatestBacktestSchema,
-    validation_summary: z.union([StrategyValidationSummarySchema, z.null().nullable()]),
+    validation_summary: z.unknown().superRefine((value, context) => {
+      const matches = [
+        StrategyValidationSummarySchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     artifacts: z.array(ArtifactReadModelSchema),
     provenance: z.array(ProvenanceRefSchema),
     frozen_at: z.iso.datetime({ offset: true }).nullable(),
@@ -7443,45 +8783,102 @@ export const StrategyVersionDetailSchema = z
 export const NewExperimentResourceRefSchema = z
   .object({
     type: z.literal('experiment'),
-    id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     version: z.null().nullable(),
     revision: z.literal(1),
   })
   .strict();
 export const ExperimentReproduceAcceptedSchema = z
   .object({
-    job_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    job_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     status: z.union([z.literal('QUEUED'), z.literal('RUNNING')]),
     progress: JobProgressSchema,
     resource_ref: NewExperimentResourceRefSchema,
-    source_experiment_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    source_experiment_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     source_provenance: ProvenanceRefSchema,
     reproduce_mode: z.union([z.literal('EXACT'), z.literal('CONTROLLED_OVERRIDE')]),
     created_at: z.iso.datetime({ offset: true }),
@@ -7489,27 +8886,65 @@ export const ExperimentReproduceAcceptedSchema = z
   .strict();
 export const ValidationCreateRequestSchema = z
   .object({
-    strategy_id: z.union([
-      z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(42)
-        .max(42)
-        .regex(
-          new RegExp('^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    strategy_id: z
+      .string()
+      .min(32)
+      .max(42)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(32)
+            .max(32)
+            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(42)
+            .max(42)
+            .regex(
+              new RegExp(
+                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     strategy_version: z.number().int().min(1),
-    policy_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    policy_id: z
+      .string()
+      .min(29)
+      .max(39)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(29)
+            .max(29)
+            .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(39)
+            .max(39)
+            .regex(
+              new RegExp(
+                '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     strict_engine_key: z.string(),
     strict_engine_version: z.string(),
     test_suite_version: z.string(),
@@ -7533,55 +8968,129 @@ export const ValidationTestResultSchema = z
     configuration_summary: z.string(),
     calculated_result: z.string().nullable(),
     interpretation: z.string().nullable(),
-    failure_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
+    failure_code: z.unknown().superRefine((value, context) => {
+      const matches = [
+        CanonicalErrorCodeSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     failure_detail: z.string().nullable(),
     warning_codes: z.array(z.string()),
     artifact_ids: z.array(
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
+      z
+        .string()
+        .min(30)
+        .max(40)
+        .superRefine((value, context) => {
+          const matches = [
+            z
+              .string()
+              .min(30)
+              .max(30)
+              .regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+              .safeParse(value).success,
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              )
+              .safeParse(value).success,
+          ].filter(Boolean).length;
+          if (matches !== 1)
+            context.addIssue({
+              code: 'custom',
+              message: 'Value must match exactly one canonical variant',
+            });
+        }),
     ),
-    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
+    provenance: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ProvenanceRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     override_permitted: z.literal(false),
   })
   .strict();
 export const ValidationDetailSchema = z
   .object({
-    validation_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    validation_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     strategy: z.unknown().superRefine((value, context) => {
       for (const result of [
         VersionRefSchema.safeParse(value),
         z
           .object({
             id: z
-              .union([
-                z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                z
-                  .string()
-                  .min(42)
-                  .max(42)
-                  .regex(
-                    new RegExp(
-                      '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                    ),
-                  ),
-              ])
+              .string()
+              .min(32)
+              .max(42)
+              .superRefine((value, context) => {
+                const matches = [
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                    .safeParse(value).success,
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    )
+                    .safeParse(value).success,
+                ].filter(Boolean).length;
+                if (matches !== 1)
+                  context.addIssue({
+                    code: 'custom',
+                    message: 'Value must match exactly one canonical variant',
+                  });
+              })
               .optional(),
           })
           .passthrough()
@@ -7597,16 +9106,35 @@ export const ValidationDetailSchema = z
         }
       }
     }),
-    policy_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    policy_id: z
+      .string()
+      .min(29)
+      .max(39)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(29)
+            .max(29)
+            .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(39)
+            .max(39)
+            .regex(
+              new RegExp(
+                '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     strict_engine: NamedVersionSchema,
     status: z.union([
       z.literal('QUEUED'),
@@ -7631,32 +9159,86 @@ export const ValidationDetailSchema = z
       z.literal('EXPOSED'),
       z.literal('FAILED'),
     ]),
-    red_team_run_id: z.union([
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    red_team_run_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(39)
+          .min(29)
           .max(39)
-          .regex(
-            new RegExp('^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    job_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(29)
+                .max(29)
+                .regex(new RegExp('^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(39)
+                .max(39)
+                .regex(
+                  new RegExp(
+                    '^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    job_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     started_at: z.iso.datetime({ offset: true }).nullable(),
@@ -7666,16 +9248,35 @@ export const ValidationDetailSchema = z
   .strict();
 export const ApprovalSummarySchema = z
   .object({
-    approval_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    approval_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     status: z.union([
       z.literal('PENDING'),
       z.literal('APPROVED'),
@@ -7688,16 +9289,35 @@ export const ApprovalSummarySchema = z
   .strict();
 export const HoldoutGateSchema = z
   .object({
-    validation_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    validation_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     state: z.union([
       z.literal('LOCKED'),
       z.literal('APPROVAL_PENDING'),
@@ -7708,7 +9328,17 @@ export const HoldoutGateSchema = z
     ]),
     exposure_count: z.number().int().min(0),
     period: DateRangeSchema,
-    approval: z.union([ApprovalSummarySchema, z.null().nullable()]),
+    approval: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ApprovalSummarySchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     action_capabilities: z.array(ActionCapabilitySchema),
     revision: z.number().int().min(1),
     validation: ValidationDetailSchema.optional(),
@@ -7716,26 +9346,64 @@ export const HoldoutGateSchema = z
   .strict();
 export const HoldoutResultSchema = z
   .object({
-    validation_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    exposure_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    validation_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
+    exposure_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     result: z.union([z.literal('PASS'), z.literal('WARN'), z.literal('FAIL')]),
     metrics: z.array(MetricSchema),
     provenance: ProvenanceSchema,
@@ -7745,57 +9413,139 @@ export const HoldoutResultSchema = z
 export const HoldoutApprovalRequestSchema = z.object({ reason: z.string().min(1) }).strict();
 export const HoldoutRunRequestSchema = z
   .object({
-    approval_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    approval_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
   })
   .strict();
 export const ApprovalSubjectSchema = z
   .object({
     type: z.union([z.literal('STRATEGY_VERSION'), z.literal('VALIDATION'), z.literal('PAPER')]),
-    id: z.union([
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(42)
+          .min(32)
           .max(42)
-          .regex(
-            new RegExp(
-              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
         z
           .string()
-          .min(42)
+          .min(32)
           .max(42)
-          .regex(
-            new RegExp(
-              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     version: z.number().int().min(1).nullable(),
     revision: z.number().int().min(1),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -7815,22 +9565,34 @@ export const ApprovalSubjectSchema = z
               ? z
                   .object({
                     id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -7857,22 +9619,34 @@ export const ApprovalSubjectSchema = z
               ? z
                   .object({
                     id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -7899,22 +9673,34 @@ export const ApprovalSubjectSchema = z
               ? z
                   .object({
                     id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -7942,16 +9728,35 @@ export const ApprovalSubjectSchema = z
   });
 export const ApprovalListItemSchema = z
   .object({
-    approval_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    approval_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     type: z.union([
       z.literal('HOLDOUT_UNLOCK'),
       z.literal('PAPER_DEPLOYMENT'),
@@ -7998,16 +9803,35 @@ export const RiskSummarySchema = z
 export const ApprovalEffectSchema = z.object({ code: z.string(), detail: z.string() }).strict();
 export const ApprovalDetailSchema = z
   .object({
-    approval_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    approval_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     type: z.union([
       z.literal('HOLDOUT_UNLOCK'),
       z.literal('PAPER_DEPLOYMENT'),
@@ -8044,19 +9868,48 @@ export const ApprovalRejectRequestSchema = z
   .strict();
 export const JobAcceptedSchema = z
   .object({
-    job_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    job_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     status: z.union([z.literal('QUEUED'), z.literal('RUNNING')]),
     progress: JobProgressSchema,
-    resource_ref: z.union([ObjectRefSchema, z.null().nullable()]),
+    resource_ref: z.unknown().superRefine((value, context) => {
+      const matches = [
+        ObjectRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -8064,36 +9917,84 @@ export const ApprovalDecisionResultSchema = z
   .object({
     approval: ApprovalDetailSchema,
     subject_ref: ObjectRefSchema,
-    next_job: z.union([JobAcceptedSchema, z.null().nullable()]),
+    next_job: z.unknown().superRefine((value, context) => {
+      const matches = [
+        JobAcceptedSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
   })
   .strict();
 export const MemoGenerateRequestSchema = z
   .object({
-    strategy_id: z.union([
-      z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(42)
-        .max(42)
-        .regex(
-          new RegExp('^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    strategy_id: z
+      .string()
+      .min(32)
+      .max(42)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(32)
+            .max(32)
+            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(42)
+            .max(42)
+            .regex(
+              new RegExp(
+                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     strategy_version: z.number().int().min(1),
   })
   .strict();
 export const MemoEvidenceLinkSchema = z
   .object({
-    experiment_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    experiment_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     provenance: ProvenanceRefSchema,
   })
   .strict();
@@ -8107,34 +10008,69 @@ export const MemoSectionSchema = z
   .strict();
 export const MemoDetailSchema = z
   .object({
-    memo_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    memo_id: z
+      .string()
+      .min(31)
+      .max(41)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(31)
+            .max(31)
+            .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(41)
+            .max(41)
+            .regex(
+              new RegExp(
+                '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     strategy: z.unknown().superRefine((value, context) => {
       for (const result of [
         VersionRefSchema.safeParse(value),
         z
           .object({
             id: z
-              .union([
-                z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                z
-                  .string()
-                  .min(42)
-                  .max(42)
-                  .regex(
-                    new RegExp(
-                      '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                    ),
-                  ),
-              ])
+              .string()
+              .min(32)
+              .max(42)
+              .superRefine((value, context) => {
+                const matches = [
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                    .safeParse(value).success,
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    )
+                    .safeParse(value).success,
+                ].filter(Boolean).length;
+                if (matches !== 1)
+                  context.addIssue({
+                    code: 'custom',
+                    message: 'Value must match exactly one canonical variant',
+                  });
+              })
               .optional(),
           })
           .passthrough()
@@ -8192,32 +10128,41 @@ export const AgentConfigUpdateSchema = z
   });
 export const JobResultRefSchema = z
   .object({
-    object_type: z.union([
-      z.union([
-        z.literal('job'),
-        z.literal('research'),
-        z.literal('conclusion'),
-        z.literal('experiment'),
-        z.literal('factor'),
-        z.literal('strategy_version'),
-        z.literal('validation'),
-        z.literal('approval'),
-        z.literal('paper'),
-        z.literal('paper_run'),
-        z.literal('review'),
-        z.literal('capability'),
-        z.literal('snapshot'),
-        z.literal('agent_run'),
-        z.literal('tool_call'),
-        z.literal('memo'),
-        z.literal('notification'),
-        z.literal('settings'),
-        z.literal('provider_connection'),
-        z.literal('agent_config'),
-        z.literal('event_stream'),
-      ]),
-      z.null().nullable(),
-    ]),
+    object_type: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .union([
+            z.literal('job'),
+            z.literal('research'),
+            z.literal('conclusion'),
+            z.literal('experiment'),
+            z.literal('factor'),
+            z.literal('strategy_version'),
+            z.literal('validation'),
+            z.literal('approval'),
+            z.literal('paper'),
+            z.literal('paper_run'),
+            z.literal('review'),
+            z.literal('capability'),
+            z.literal('snapshot'),
+            z.literal('agent_run'),
+            z.literal('tool_call'),
+            z.literal('memo'),
+            z.literal('notification'),
+            z.literal('settings'),
+            z.literal('provider_connection'),
+            z.literal('agent_config'),
+            z.literal('event_stream'),
+          ])
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     object_id: z.unknown().superRefine((value, context) => {
       const matches = [
         z
@@ -8225,278 +10170,514 @@ export const JobResultRefSchema = z
           .superRefine((value, context) => {
             const matches = [
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(31)
-                    .max(31)
-                    .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(41)
-                    .max(41)
-                    .regex(
-                      new RegExp(
-                        '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(31)
+                .max(41)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(31)
-                    .max(31)
-                    .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(41)
-                    .max(41)
-                    .regex(
-                      new RegExp(
-                        '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(31)
+                .max(41)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(32)
-                    .max(32)
-                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(42)
-                    .max(42)
-                    .regex(
-                      new RegExp(
-                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(32)
+                .max(42)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(32)
-                    .max(32)
-                    .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(42)
-                    .max(42)
-                    .regex(
-                      new RegExp(
-                        '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(32)
+                .max(42)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(31)
-                    .max(31)
-                    .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(41)
-                    .max(41)
-                    .regex(
-                      new RegExp(
-                        '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(31)
+                .max(41)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(39)
-                    .max(39)
-                    .regex(
-                      new RegExp(
-                        '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(29)
+                .max(39)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(29)
+                      .max(29)
+                      .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(39)
+                      .max(39)
+                      .regex(
+                        new RegExp(
+                          '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(31)
-                    .max(31)
-                    .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(41)
-                    .max(41)
-                    .regex(
-                      new RegExp(
-                        '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(31)
+                .max(41)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(32)
-                    .max(32)
-                    .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(42)
-                    .max(42)
-                    .regex(
-                      new RegExp(
-                        '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(32)
+                .max(42)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(31)
-                    .max(31)
-                    .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(41)
-                    .max(41)
-                    .regex(
-                      new RegExp(
-                        '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(31)
+                .max(41)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z
-                .union([
-                  z
-                    .string()
-                    .min(32)
-                    .max(32)
-                    .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(42)
-                    .max(42)
-                    .regex(
-                      new RegExp(
-                        '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(32)
+                .max(42)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
               z.literal('SETTINGS-DEFAULT').safeParse(value).success,
               z
@@ -8518,18 +10699,34 @@ export const JobResultRefSchema = z
                 ])
                 .safeParse(value).success,
               z
-                .union([
-                  z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                  z
-                    .string()
-                    .min(40)
-                    .max(40)
-                    .regex(
-                      new RegExp(
-                        '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                      ),
-                    ),
-                ])
+                .string()
+                .min(30)
+                .max(40)
+                .superRefine((value, context) => {
+                  const matches = [
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                      .safeParse(value).success,
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .safeParse(value).success,
+                  ].filter(Boolean).length;
+                  if (matches !== 1)
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Value must match exactly one canonical variant',
+                    });
+                })
                 .safeParse(value).success,
             ].filter(Boolean).length;
             if (matches === 0)
@@ -8549,19 +10746,46 @@ export const JobResultRefSchema = z
     }),
     object_version: z.number().int().min(1).nullable(),
     object_revision: z.number().int().min(1).nullable(),
-    artifact_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    artifact_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
   })
   .strict()
   .superRefine((value, context) => {
@@ -8578,22 +10802,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8620,22 +10856,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8662,22 +10910,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8704,22 +10964,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8746,22 +11018,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8788,22 +11072,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.number().int().min(1),
                     object_revision: z.number().int().min(1),
@@ -8832,22 +11128,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8874,22 +11182,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8916,22 +11236,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -8958,22 +11290,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9000,22 +11344,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9042,22 +11398,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9084,22 +11452,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(29)
+                      .max(39)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(29)
+                            .max(29)
+                            .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(39)
+                            .max(39)
+                            .regex(
+                              new RegExp(
+                                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9126,22 +11506,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9168,22 +11560,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9210,22 +11614,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9252,22 +11668,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -9391,22 +11819,34 @@ export const JobResultRefSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.null().nullable().optional(),
                     object_revision: z.number().int().min(1),
@@ -10009,16 +12449,35 @@ export const JobResultRefSchema = z
   });
 export const JobDetailSchema = z
   .object({
-    job_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    job_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     job_type: z.string(),
     status: z.union([
       z.literal('QUEUED'),
@@ -10029,8 +12488,28 @@ export const JobDetailSchema = z
       z.literal('CANCELLED'),
     ]),
     progress: JobProgressSchema,
-    error_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
-    result_ref: z.union([JobResultRefSchema, z.null().nullable()]),
+    error_code: z.unknown().superRefine((value, context) => {
+      const matches = [
+        CanonicalErrorCodeSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    result_ref: z.unknown().superRefine((value, context) => {
+      const matches = [
+        JobResultRefSchema.safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     queued_at: z.iso.datetime({ offset: true }),
     started_at: z.iso.datetime({ offset: true }).nullable(),
     finished_at: z.iso.datetime({ offset: true }).nullable(),
@@ -10078,23 +12557,55 @@ export const EventTypeSchema = z.union([
 export const EventWaitingOnSchema = z
   .object({
     type: z.literal('JOB'),
-    job_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    job_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
   })
   .strict();
 export const EventPayloadSchema = z
   .object({
     status: z.string().nullable().optional(),
     state: z.string().nullable().optional(),
-    reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]).optional(),
+    reason_code: z
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          CanonicalErrorCodeSchema.safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
+      .optional(),
     resync_from_sequence: z.number().int().min(1).nullable().optional(),
     progress_mode: z
       .union([z.literal('NONE'), z.literal('UNITS'), z.literal(null)])
@@ -10104,68 +12615,143 @@ export const EventPayloadSchema = z
     total_units: z.number().int().min(1).nullable().optional(),
     current_step_key: z.string().nullable().optional(),
     agent_run_id: z
-      .union([
-        z.union([
-          z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
             .string()
-            .min(41)
+            .min(31)
             .max(41)
-            .regex(
-              new RegExp(
-                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.null().nullable(),
-      ])
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .string()
+                  .min(31)
+                  .max(31)
+                  .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                  .safeParse(value).success,
+                z
+                  .string()
+                  .min(41)
+                  .max(41)
+                  .regex(
+                    new RegExp(
+                      '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches !== 1)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match exactly one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
-    role: z.union([AgentRoleKeySchema, z.null().nullable()]).optional(),
+    role: z
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          AgentRoleKeySchema.safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
+      .optional(),
     objective: z.string().nullable().optional(),
     research_id: z
-      .union([
-        z.union([
-          z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
             .string()
-            .min(41)
+            .min(31)
             .max(41)
-            .regex(
-              new RegExp(
-                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.null().nullable(),
-      ])
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .string()
+                  .min(31)
+                  .max(31)
+                  .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                  .safeParse(value).success,
+                z
+                  .string()
+                  .min(41)
+                  .max(41)
+                  .regex(
+                    new RegExp(
+                      '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches !== 1)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match exactly one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
     object_type: z
-      .union([
-        z.union([
-          z.literal('job'),
-          z.literal('research'),
-          z.literal('conclusion'),
-          z.literal('experiment'),
-          z.literal('factor'),
-          z.literal('strategy_version'),
-          z.literal('validation'),
-          z.literal('approval'),
-          z.literal('paper'),
-          z.literal('paper_run'),
-          z.literal('review'),
-          z.literal('capability'),
-          z.literal('snapshot'),
-          z.literal('agent_run'),
-          z.literal('tool_call'),
-          z.literal('memo'),
-          z.literal('notification'),
-          z.literal('settings'),
-          z.literal('provider_connection'),
-          z.literal('agent_config'),
-          z.literal('event_stream'),
-        ]),
-        z.null().nullable(),
-      ])
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .union([
+              z.literal('job'),
+              z.literal('research'),
+              z.literal('conclusion'),
+              z.literal('experiment'),
+              z.literal('factor'),
+              z.literal('strategy_version'),
+              z.literal('validation'),
+              z.literal('approval'),
+              z.literal('paper'),
+              z.literal('paper_run'),
+              z.literal('review'),
+              z.literal('capability'),
+              z.literal('snapshot'),
+              z.literal('agent_run'),
+              z.literal('tool_call'),
+              z.literal('memo'),
+              z.literal('notification'),
+              z.literal('settings'),
+              z.literal('provider_connection'),
+              z.literal('agent_config'),
+              z.literal('event_stream'),
+            ])
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
       .optional(),
     object_id: z
       .unknown()
@@ -10176,310 +12762,514 @@ export const EventPayloadSchema = z
             .superRefine((value, context) => {
               const matches = [
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(29)
-                      .max(29)
-                      .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(39)
-                      .max(39)
-                      .regex(
-                        new RegExp(
-                          '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(29)
+                  .max(39)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(29)
+                        .max(29)
+                        .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(39)
+                        .max(39)
+                        .regex(
+                          new RegExp(
+                            '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(31)
-                      .max(31)
-                      .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(41)
-                      .max(41)
-                      .regex(
-                        new RegExp(
-                          '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(31)
+                  .max(41)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(31)
+                        .max(31)
+                        .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(41)
+                        .max(41)
+                        .regex(
+                          new RegExp(
+                            '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(32)
-                      .max(32)
-                      .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(42)
-                      .max(42)
-                      .regex(
-                        new RegExp(
-                          '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(32)
+                  .max(42)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(32)
+                        .max(32)
+                        .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(42)
+                        .max(42)
+                        .regex(
+                          new RegExp(
+                            '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
                 z.literal('SETTINGS-DEFAULT').safeParse(value).success,
                 z
@@ -10501,22 +13291,34 @@ export const EventPayloadSchema = z
                   ])
                   .safeParse(value).success,
                 z
-                  .union([
-                    z
-                      .string()
-                      .min(30)
-                      .max(30)
-                      .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                    z
-                      .string()
-                      .min(40)
-                      .max(40)
-                      .regex(
-                        new RegExp(
-                          '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                        ),
-                      ),
-                  ])
+                  .string()
+                  .min(30)
+                  .max(40)
+                  .superRefine((value, context) => {
+                    const matches = [
+                      z
+                        .string()
+                        .min(30)
+                        .max(30)
+                        .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                        .safeParse(value).success,
+                      z
+                        .string()
+                        .min(40)
+                        .max(40)
+                        .regex(
+                          new RegExp(
+                            '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                          ),
+                        )
+                        .safeParse(value).success,
+                    ].filter(Boolean).length;
+                    if (matches !== 1)
+                      context.addIssue({
+                        code: 'custom',
+                        message: 'Value must match exactly one canonical variant',
+                      });
+                  })
                   .safeParse(value).success,
               ].filter(Boolean).length;
               if (matches === 0)
@@ -10537,7 +13339,20 @@ export const EventPayloadSchema = z
       .optional(),
     object_version: z.number().int().min(1).nullable().optional(),
     object_revision: z.number().int().min(1).nullable().optional(),
-    waiting_on: z.union([EventWaitingOnSchema, z.null().nullable()]).optional(),
+    waiting_on: z
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          EventWaitingOnSchema.safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
+      .optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -10554,22 +13369,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10596,22 +13423,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10638,22 +13477,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10680,22 +13531,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10722,22 +13585,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10764,22 +13639,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.number().int().min(1),
                     object_revision: z.number().int().min(1),
@@ -10808,22 +13695,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10850,22 +13749,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10892,22 +13803,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10934,22 +13857,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -10976,22 +13911,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -11018,22 +13965,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -11060,22 +14019,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(29)
+                      .max(39)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(29)
+                            .max(29)
+                            .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(39)
+                            .max(39)
+                            .regex(
+                              new RegExp(
+                                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -11102,22 +14073,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -11144,22 +14127,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -11186,22 +14181,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -11228,22 +14235,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -11367,22 +14386,34 @@ export const EventPayloadSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.null().nullable().optional(),
                     object_revision: z.number().int().min(1),
@@ -11984,6 +15015,46 @@ export const EventPayloadSchema = z
     }
   })
   .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_type'))
+      for (const key of ['object_id', 'object_version', 'object_revision'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
+  })
+  .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_id'))
+      for (const key of ['object_type', 'object_version', 'object_revision'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
+  })
+  .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_version'))
+      for (const key of ['object_type', 'object_id', 'object_revision'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
+  })
+  .superRefine((value, context) => {
+    if (Object.hasOwn(value, 'object_revision'))
+      for (const key of ['object_type', 'object_id', 'object_version'] as string[])
+        if (!Object.hasOwn(value, key))
+          context.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'Dependent property is required',
+          });
+  })
+  .superRefine((value, context) => {
     const locatorKeys = ['object_type', 'object_id', 'object_version', 'object_revision'] as const;
     const present = locatorKeys.filter((key) => value[key] !== undefined);
     if (present.length > 0 && present.length !== locatorKeys.length)
@@ -12012,16 +15083,35 @@ export const EventPayloadSchema = z
 export const SseEnvelopeSchema = z
   .object({
     schema_version: z.literal(1),
-    event_id: z.union([
-      z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(40)
-        .max(40)
-        .regex(
-          new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    event_id: z
+      .string()
+      .min(30)
+      .max(40)
+      .superRefine((value, context) => {
+        const matches = [
+          z
+            .string()
+            .min(30)
+            .max(30)
+            .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+            .safeParse(value).success,
+          z
+            .string()
+            .min(40)
+            .max(40)
+            .regex(
+              new RegExp(
+                '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+              ),
+            )
+            .safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      }),
     sequence: z.number().int().min(1),
     event_type: EventTypeSchema,
     occurred_at: z.iso.datetime({ offset: true }),
@@ -12051,242 +15141,514 @@ export const SseEnvelopeSchema = z
     object_id: z.unknown().superRefine((value, context) => {
       const matches = [
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(31)
+          .max(41)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(31)
+          .max(41)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(32)
+          .max(42)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(32)
+          .max(42)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(31)
+          .max(41)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(39)
-              .max(39)
-              .regex(
-                new RegExp(
-                  '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(29)
+          .max(39)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(29)
+                .max(29)
+                .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(39)
+                .max(39)
+                .regex(
+                  new RegExp(
+                    '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(31)
+          .max(41)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(32)
+          .max(42)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(31)
+          .max(41)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(32)
+          .max(42)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
         z.literal('SETTINGS-DEFAULT').safeParse(value).success,
         z
@@ -12306,18 +15668,34 @@ export const SseEnvelopeSchema = z
           ])
           .safeParse(value).success,
         z
-          .union([
-            z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ])
+          .string()
+          .min(30)
+          .max(40)
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
           .safeParse(value).success,
       ].filter(Boolean).length;
       if (matches === 0)
@@ -12329,49 +15707,126 @@ export const SseEnvelopeSchema = z
     object_version: z.number().int().min(1).nullable(),
     object_revision: z.number().int().min(1).nullable(),
     request_id: z.string().nullable(),
-    job_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    job_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(40)
+          .min(30)
           .max(40)
-          .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    agent_run_id: z.union([
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(30)
+                .max(30)
+                .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(40)
+                .max(40)
+                .regex(
+                  new RegExp(
+                    '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    agent_run_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(41)
+          .min(31)
           .max(41)
-          .regex(
-            new RegExp(
-              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
-    tool_call_id: z.union([
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(31)
+                .max(31)
+                .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(41)
+                .max(41)
+                .regex(
+                  new RegExp(
+                    '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
+    tool_call_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
           .string()
-          .min(42)
+          .min(32)
           .max(42)
-          .regex(
-            new RegExp(
-              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.null().nullable(),
-    ]),
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .string()
+                .min(32)
+                .max(32)
+                .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                .safeParse(value).success,
+              z
+                .string()
+                .min(42)
+                .max(42)
+                .regex(
+                  new RegExp(
+                    '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches !== 1)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match exactly one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches !== 1)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match exactly one canonical variant',
+        });
+    }),
     payload: EventPayloadSchema,
   })
   .strict()
@@ -12389,22 +15844,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12431,22 +15898,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12473,22 +15952,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12515,22 +16006,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12557,22 +16060,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12599,22 +16114,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.number().int().min(1),
                     object_revision: z.number().int().min(1),
@@ -12643,22 +16170,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12685,22 +16224,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12727,22 +16278,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12769,22 +16332,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12811,22 +16386,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12853,22 +16440,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12895,22 +16494,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(29)
-                          .max(29)
-                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(39)
-                          .max(39)
-                          .regex(
-                            new RegExp(
-                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(29)
+                      .max(39)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(29)
+                            .max(29)
+                            .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(39)
+                            .max(39)
+                            .regex(
+                              new RegExp(
+                                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12937,22 +16548,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -12979,22 +16602,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -13021,22 +16656,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(31)
-                          .max(31)
-                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(41)
-                          .max(41)
-                          .regex(
-                            new RegExp(
-                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(31)
+                      .max(41)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(31)
+                            .max(31)
+                            .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(41)
+                            .max(41)
+                            .regex(
+                              new RegExp(
+                                '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -13063,22 +16710,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(32)
-                          .max(32)
-                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(42)
-                          .max(42)
-                          .regex(
-                            new RegExp(
-                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(32)
+                      .max(42)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(32)
+                            .max(32)
+                            .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(42)
+                            .max(42)
+                            .regex(
+                              new RegExp(
+                                '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                   })
                   .passthrough()
@@ -13202,22 +16861,34 @@ export const SseEnvelopeSchema = z
               ? z
                   .object({
                     object_id: z
-                      .union([
-                        z
-                          .string()
-                          .min(30)
-                          .max(30)
-                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                        z
-                          .string()
-                          .min(40)
-                          .max(40)
-                          .regex(
-                            new RegExp(
-                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                            ),
-                          ),
-                      ])
+                      .string()
+                      .min(30)
+                      .max(40)
+                      .superRefine((value, context) => {
+                        const matches = [
+                          z
+                            .string()
+                            .min(30)
+                            .max(30)
+                            .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$'))
+                            .safeParse(value).success,
+                          z
+                            .string()
+                            .min(40)
+                            .max(40)
+                            .regex(
+                              new RegExp(
+                                '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                              ),
+                            )
+                            .safeParse(value).success,
+                        ].filter(Boolean).length;
+                        if (matches !== 1)
+                          context.addIssue({
+                            code: 'custom',
+                            message: 'Value must match exactly one canonical variant',
+                          });
+                      })
                       .optional(),
                     object_version: z.null().nullable().optional(),
                     object_revision: z.number().int().min(1),

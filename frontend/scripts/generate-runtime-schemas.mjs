@@ -124,7 +124,13 @@ const addArrayConstraints = (expression, schema) => {
 
 const zodFor = (schema, schemaName) => {
   if (!schema) return 'z.unknown()';
-  if (schema.$ref) return `${refName(schema.$ref)}Schema`;
+  if (schema.$ref) {
+    const reference = refName(schema.$ref);
+    const siblings = { ...schema };
+    delete siblings.$ref;
+    if (Object.keys(siblings).length === 0) return `${reference}Schema`;
+    return zodFor({ ...schemas[reference], ...siblings }, schemaName);
+  }
   const {
     allOf = [],
     anyOf = [],
@@ -167,8 +173,9 @@ const zodFor = (schema, schemaName) => {
     const required = new Set(baseSchema.required ?? []);
     const propertyNames = new Set([...Object.keys(baseSchema.properties ?? {}), ...required]);
     const properties = [...propertyNames].map((name) => {
-      const value =
-        zodFor(baseSchema.properties?.[name]) + (required.has(name) ? '' : '.optional()');
+      const propertySchema =
+        schemaName === 'ObjectRef' && name === 'id' ? {} : baseSchema.properties?.[name];
+      const value = zodFor(propertySchema) + (required.has(name) ? '' : '.optional()');
       return `${quote(name)}: ${value}`;
     });
     const composedObject =
@@ -185,7 +192,7 @@ const zodFor = (schema, schemaName) => {
 
   const addBranchIssues = (condition) =>
     `.superRefine((value, context) => { ${condition} for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path as (string | number)[], message: issue.message }); } } })`;
-  if (allOf.length) {
+  if (allOf.length && schemaName !== 'ObjectRef') {
     const branches = allOf.map((branch) => zodFor(branch));
     expression += addBranchIssues(
       `for (const result of [${branches.map((branch) => `${branch}.safeParse(value)`).join(', ')}]) { if (!result.success) {`,
@@ -201,16 +208,15 @@ const zodFor = (schema, schemaName) => {
   }
   if (oneOf.length) {
     const branches = oneOf.map((branch) => zodFor(branch));
-    if (
-      oneOf.every((branch) => !branch.properties && branch.type !== 'object' && !branch.required)
-    ) {
-      expression = `z.union([${branches.join(', ')}])`;
-    } else {
-      expression += `.superRefine((value, context) => { const matches = [${branches
-        .map((branch) => `${branch}.safeParse(value).success`)
-        .join(
-          ', ',
-        )}].filter(Boolean).length; if (matches !== 1) context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' }); })`;
+    expression += `.superRefine((value, context) => { const matches = [${branches
+      .map((branch) => `${branch}.safeParse(value).success`)
+      .join(
+        ', ',
+      )}].filter(Boolean).length; if (matches !== 1) context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' }); })`;
+  }
+  if (baseSchema.dependentRequired) {
+    for (const [trigger, dependencies] of Object.entries(baseSchema.dependentRequired)) {
+      expression += `.superRefine((value, context) => { if (Object.hasOwn(value, ${quote(trigger)})) for (const key of ${quote(dependencies)} as string[]) if (!Object.hasOwn(value, key)) context.addIssue({ code: 'custom', path: [key], message: 'Dependent property is required' }); })`;
     }
   }
   if (condition) {
@@ -274,7 +280,8 @@ const zodFor = (schema, schemaName) => {
     })`;
   if (schemaName === 'ObjectRef')
     expression += `.superRefine((value, context) => {
-      if (!PublicIdSchemas[value.type].safeParse(value.id).success)
+      const schema = PublicIdSchemas[value.type as keyof typeof PublicIdSchemas];
+      if (schema && !schema.safeParse(value.id).success)
         context.addIssue({ code: 'custom', path: ['id'], message: 'ObjectRef type and ID prefix must agree' });
     })`;
   if (schemaName === 'EventPayload')

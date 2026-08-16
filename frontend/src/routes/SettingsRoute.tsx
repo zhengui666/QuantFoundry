@@ -82,9 +82,29 @@ export function SettingsPage() {
     host: '',
     port: '5432',
     database: '',
+    tls_mode: 'VERIFY_FULL' as 'DISABLED' | 'VERIFY_CA' | 'VERIFY_FULL',
     username: '',
     password: '',
   });
+  const [dbDraftIdentity, setDbDraftIdentity] = useState<string>();
+  const [dbCandidateRevision, setDbCandidateRevision] = useState<number>();
+  const [dbValidatedRevision, setDbValidatedRevision] = useState<number>();
+  useEffect(() => {
+    const current = database.data?.body.active;
+    if (!current) return;
+    const identity = `${database.data?.etag}:${current.revision}`;
+    if (dbDraftIdentity === identity) return;
+    setDbForm((draft) => ({
+      ...draft,
+      host: current.host,
+      port: String(current.port),
+      database: current.database,
+      tls_mode: current.tls_mode,
+      username: '',
+      password: '',
+    }));
+    setDbDraftIdentity(identity);
+  }, [database.data, dbDraftIdentity]);
   const saveDatabase = useMutation({
     mutationFn: () => {
       const etag = database.data?.etag;
@@ -96,30 +116,43 @@ export function SettingsPage() {
             host: dbForm.host.trim(),
             port: Number(dbForm.port),
             database: dbForm.database.trim(),
-            tls_mode: 'VERIFY_FULL',
-            username: dbForm.username.trim(),
+            tls_mode: dbForm.tls_mode,
+            ...(dbForm.username.trim() ? { username: dbForm.username.trim() } : {}),
             ...(dbForm.password ? { password: dbForm.password } : {}),
           },
         },
         etag,
       );
     },
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') }),
+    onSuccess: ({ body }) => {
+      setDbCandidateRevision(body.revision);
+      setDbValidatedRevision(undefined);
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
+    },
   });
   const validateDatabase = useMutation({
-    mutationFn: () => api.validateDatabaseConnectionCandidate(),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') }),
+    mutationFn: () => {
+      const revision = dbCandidateRevision ?? database.data?.body.candidate?.revision;
+      if (!revision) throw new Error('Database candidate revision is unavailable.');
+      return api.validateDatabaseConnectionCandidate(revision);
+    },
+    onSuccess: ({ body }) => {
+      setDbValidatedRevision(body.revision);
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
+    },
   });
   const activateDatabase = useMutation({
     mutationFn: () => {
       const etag = database.data?.etag;
       if (!etag) throw new Error('Database connection ETag is unavailable.');
-      return api.activateDatabaseConnection(etag);
+      if (!dbValidatedRevision) throw new Error('Validated database candidate is unavailable.');
+      return api.activateDatabaseConnection(etag, dbValidatedRevision);
     },
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') }),
+    onSuccess: () => {
+      setDbCandidateRevision(undefined);
+      setDbValidatedRevision(undefined);
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
+    },
   });
   const [keyForm, setKeyForm] = useState(initialSecret);
   const [issuedSecret, setIssuedSecret] = useState<string>();
@@ -372,7 +405,9 @@ export function SettingsPage() {
             <label key={field}>
               {t(`settings.${field === 'database' ? 'databaseName' : field}`)}
               <input
-                required={field !== 'password'}
+                required={
+                  field !== 'password' && (field !== 'username' || !database.data?.body.active)
+                }
                 type={field === 'password' ? 'password' : field === 'port' ? 'number' : 'text'}
                 value={dbForm[field]}
                 onChange={(event) =>
@@ -386,12 +421,13 @@ export function SettingsPage() {
           </button>
         </form>
         {saveDatabase.error && <Problem error={saveDatabase.error} />}
-        {database.data?.body.candidate?.state === 'CANDIDATE' && (
+        {(database.data?.body.candidate?.state === 'CANDIDATE' ||
+          (dbCandidateRevision !== undefined && dbValidatedRevision === undefined)) && (
           <button disabled={validateDatabase.isPending} onClick={() => validateDatabase.mutate()}>
             {t('settings.validateDatabase')}
           </button>
         )}
-        {database.data?.body.candidate?.state === 'VALIDATED' && (
+        {dbValidatedRevision !== undefined && (
           <button disabled={activateDatabase.isPending} onClick={() => activateDatabase.mutate()}>
             {t('settings.activateDatabase')}
           </button>

@@ -109,7 +109,9 @@ def _artifact_state() -> str:
         now = datetime.now(UTC)
         return (
             "HEALTHY"
-            if now - timedelta(seconds=120) <= occurred_at <= now + timedelta(seconds=30)
+            if now - timedelta(seconds=120)
+            <= occurred_at
+            <= now + timedelta(seconds=30)
             else "DEGRADED"
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):

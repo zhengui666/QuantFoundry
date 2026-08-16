@@ -202,6 +202,7 @@ def test_activation_and_fill_rules_fail_closed() -> None:
         account_switch="ACTIVE",
         deployment_switch="ACTIVE",
         capabilities=capabilities,
+        submission_account_id="acct-1",
     )
     with pytest.raises(LivePolicyError, match="confirmation"):
         evidence.validate(
@@ -211,6 +212,7 @@ def test_activation_and_fill_rules_fail_closed() -> None:
             account_switch="ACTIVE",
             deployment_switch="ACTIVE",
             capabilities=capabilities,
+            submission_account_id="acct-1",
         )
     status, ids, changed = apply_fill(
         current="ACKNOWLEDGED",
@@ -226,7 +228,28 @@ def test_activation_and_fill_rules_fail_closed() -> None:
         known_fill_ids=ids,
         cumulative_quantity="0.5",
         order_quantity="1",
+        previous_cumulative_quantity="0.5",
     ) == (status, ids, False)
+    with pytest.raises(LivePolicyError, match="previous cumulative"):
+        apply_fill(
+            current="PARTIALLY_FILLED",
+            fill_id="fill-2",
+            known_fill_ids=ids,
+            cumulative_quantity="0.75",
+            order_quantity="1",
+        )
+    assert (
+        apply_fill(
+            current="PARTIALLY_FILLED",
+            fill_id="fill-3",
+            known_fill_ids=ids,
+            cumulative_quantity="0.75",
+            order_quantity="1",
+            previous_cumulative_quantity="0.5",
+            terminal=True,
+        )[0]
+        == "EXPIRED"
+    )
     with pytest.raises(LivePolicyError, match="illegal order transition"):
         transition_order("FILLED", "CANCELLED")
     stale = ActivationEvidence(
@@ -240,4 +263,5 @@ def test_activation_and_fill_rules_fail_closed() -> None:
             account_switch="ACTIVE",
             deployment_switch="ACTIVE",
             capabilities=capabilities,
+            submission_account_id="acct-1",
         )

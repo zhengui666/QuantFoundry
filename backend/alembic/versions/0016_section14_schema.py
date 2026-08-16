@@ -425,8 +425,8 @@ def _sqlite_source_schema(bind: Any) -> list[str]:
     rows = bind.execute(
         text(
             "SELECT type, name, sql FROM sqlite_master "
-            "WHERE sql IS NOT NULL AND type IN ('table', 'index') "
-            "ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, name"
+            "WHERE sql IS NOT NULL AND type IN ('table', 'index', 'trigger') "
+            "ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name"
         )
     ).mappings()
     return [
@@ -595,7 +595,12 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
     if isinstance(column_type, Numeric) and not isinstance(value, Decimal):
         return Decimal(str(value))
     if isinstance(column_type, Boolean) and not isinstance(value, bool):
-        return bool(value)
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "f", "no", "n", "off"}:
+            return False
+        raise ValueError(f"0016 cannot coerce boolean {value!r}")
     if isinstance(column_type, LargeBinary) and isinstance(value, str):
         return value.encode()
     return value
@@ -1513,6 +1518,70 @@ def _install_guards() -> None:
         "domain_events WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN SELECT "
         "RAISE(ABORT, 'unexpired event cannot be deleted'); END"
     )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE "
+        "ON strategy_versions WHEN OLD.state != 'CANDIDATE' BEGIN SELECT RAISE(ABORT, "
+        "'non-candidate strategy version cannot be deleted'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN "
+        "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND ("
+        "NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR "
+        "NEW.spec_sha256 != OLD.spec_sha256 OR NEW.frozen_at != OLD.frozen_at OR "
+        "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
+        "(NEW.state = OLD.state AND NEW.detail != OLD.detail))) OR NOT ("
+        "NEW.state = OLD.state OR "
+        "(OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
+        "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
+        "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
+        "(OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR "
+        "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) BEGIN SELECT RAISE(ABORT, "
+        "'illegal or mutable strategy transition'); END"
+    )
+    for table, predicate, message in (
+        (
+            "experiments",
+            "OLD.immutable = 1",
+            "completed experiment cannot be changed",
+        ),
+        (
+            "approval_requests",
+            "OLD.status != 'PENDING'",
+            "terminal approval cannot be changed",
+        ),
+    ):
+        for action in ("UPDATE", "DELETE"):
+            op.execute(
+                f"CREATE TRIGGER qf_{table}_{action.lower()}_immutable BEFORE {action} "
+                f"ON {table} WHEN {predicate} BEGIN SELECT RAISE(ABORT, "
+                f"'{message}'); END"
+            )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE ON "
+        "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND ("
+        "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
+        "NEW.revision IS NOT OLD.revision) BEGIN SELECT RAISE(ABORT, "
+        "'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE ON "
+        "approval_requests WHEN OLD.status = 'PENDING' AND NEW.status != 'PENDING' AND ("
+        "NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR "
+        "NEW.subject_type IS NOT OLD.subject_type OR NEW.subject_id IS NOT OLD.subject_id OR "
+        "NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256) BEGIN SELECT RAISE(ABORT, "
+        "'approval evidence cannot change while resolving'); END"
+    )
+    for action in ("UPDATE", "DELETE"):
+        op.execute(
+            f"CREATE TRIGGER qf_records_{action.lower()}_immutable BEFORE {action} "
+            f"ON records WHEN OLD.kind IN ('artifact', 'provenance') BEGIN SELECT "
+            "RAISE(ABORT, 'immutable record cannot be changed'); END"
+        )
     op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_transition")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_transition BEFORE UPDATE OF "
@@ -1642,8 +1711,6 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         if bind.dialect.name == "sqlite":
             _drop_application_tables()
             _restore_sqlite_source_schema(bind, source_schema, source_rows)
-            if guards:
-                _install_guards()
             _drop_backup_set(bind, _SOURCE_BACKUP_PREFIX)
             if not target_is_current:
                 _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)

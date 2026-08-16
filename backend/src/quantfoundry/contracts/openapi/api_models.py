@@ -94,8 +94,14 @@ class LiveConnectorValidationResult(BaseModel):
     @model_validator(mode="after")
     def validate_outcome(self) -> LiveConnectorValidationResult:
         if self.state == "SUCCESS":
-            if self.error_code is not None or not self.connector_id or not self.protocol_version:
-                raise ValueError("successful connector validation must contain capabilities")
+            if (
+                self.error_code is not None
+                or not self.connector_id
+                or not self.protocol_version
+            ):
+                raise ValueError(
+                    "successful connector validation must contain capabilities"
+                )
         elif self.error_code is None:
             raise ValueError("failed connector validation must contain an error code")
         return self

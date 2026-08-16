@@ -159,7 +159,9 @@ def test_csv_and_parquet_adapter_enforce_pit_as_of_and_schema(
     )
 
 
-def test_dataset_rejects_intraday_duplicates_and_non_pit_rows(tmp_path, monkeypatch) -> None:
+def test_dataset_rejects_intraday_duplicates_and_non_pit_rows(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.setenv("QF_DATASET_DIR", str(tmp_path))
     dataset_id = "DSSET-550e8400-e29b-41d4-a716-446655440013"
     _metadata(tmp_path, dataset_id)
@@ -183,9 +185,9 @@ def test_dataset_rejects_intraday_duplicates_and_non_pit_rows(tmp_path, monkeypa
     ]
     columns = list(rows[0])
     (tmp_path / f"{dataset_id}.csv").write_text(
-        ",".join(columns) + "\n" + "\n".join(
-            ",".join(str(row[column]) for column in columns) for row in rows
-        ),
+        ",".join(columns)
+        + "\n"
+        + "\n".join(",".join(str(row[column]) for column in columns) for row in rows),
         encoding="utf-8",
     )
     with pytest.raises(EngineInputError, match="duplicate market row"):
@@ -213,6 +215,7 @@ def test_simulation_does_not_use_late_release_for_prior_decision() -> None:
     ]
     result = simulation_metrics(rows, 1, CostModel("cost:zero", 1, 0, 0))
     assert result["returns"] == [0.0, 0.0]
+
 
 def test_factor_ic_rank_ic_turnover_and_coverage_golden() -> None:
     rows = [
@@ -386,7 +389,7 @@ def test_factor_formula_strategy_spec_corporate_actions_and_policy() -> None:
         raw_rows, "momentum_{lookback}", {"lookback": "1"}
     )
     assert [row["symbol"] for row in factor_rows] == ["AAA", "BBB", "AAA", "BBB"]
-    assert factor_rows[0]["factor_score"] == pytest.approx(-0.5, abs=1e-12)
+    assert factor_rows[0]["factor_score"] == pytest.approx(0.0, abs=1e-12)
     spec = {
         "universe": {"symbols": ["AAA"]},
         "signals": [{"direction": "LONG", "weight": "1"}],

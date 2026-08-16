@@ -66,7 +66,7 @@ def main() -> int:
 
     assert bootstrap["status"] == "TARGET_SCHEMA_FROZEN"
     assert bootstrap["authority"]["physical_source"].startswith("SQLAlchemy")
-    assert len(bootstrap["relations"]) == 10
+    assert len(bootstrap["relations"]) == 11
     assert bootstrap["domain_transition"]["target_status"] == "TARGET_TRANSITION_FROZEN"
 
     assert matrix["status"] == "FROZEN"

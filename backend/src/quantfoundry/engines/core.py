@@ -79,6 +79,20 @@ def _parse_timestamp(value: Any, field: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+def _parse_bool(value: Any, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    raise EngineInputError(f"invalid {field}")
+
+
 def _dataset_paths(dataset_id: str) -> tuple[Path, Path]:
     root_value = os.getenv("QF_DATASET_DIR")
     if not root_value:
@@ -215,8 +229,10 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
                 "partition": partition,
                 "split_factor": split_factor,
                 "dividend": dividend,
-                "in_universe": bool(
-                    True if raw.get("in_universe") is None else raw["in_universe"]
+                "in_universe": (
+                    True
+                    if raw.get("in_universe") is None
+                    else _parse_bool(raw["in_universe"], "in_universe")
                 ),
                 "sector": str(raw.get("sector") or "UNCLASSIFIED"),
             }
@@ -525,10 +541,7 @@ def compute_factor_rows(
     for history in by_symbol.values():
         for index in range(lookback, len(history)):
             current = history[index]
-            knowledge_time = max(
-                _parse_timestamp(current["event_time"], "event_time"),
-                _parse_timestamp(current["available_at"], "available_at"),
-            )
+            knowledge_time = _parse_timestamp(current["event_time"], "event_time")
             available_history = [
                 item
                 for item in history[:index]
@@ -538,7 +551,13 @@ def compute_factor_rows(
             if len(available_history) < lookback:
                 continue
             prior = available_history[-lookback]
-            score = float(current["close"]) / float(prior["close"]) - 1.0
+            current_price = float(current["close"]) * float(
+                current.get("split_factor", 1.0)
+            ) + float(current.get("dividend", 0.0))
+            prior_price = float(prior["close"]) * float(
+                prior.get("split_factor", 1.0)
+            ) + float(prior.get("dividend", 0.0))
+            score = current_price / prior_price - 1.0
             if operation == "mean_reversion":
                 score *= -1
             calculated.append({**current, "factor_score": score})
@@ -701,7 +720,9 @@ def _portfolio_returns(
 
     def signal_score(row: dict[str, Any]) -> float:
         value = row.get("strategy_score")
-        score = float(value) if value is not None else signal_scale * float(row["close"])
+        score = (
+            float(value) if value is not None else signal_scale * float(row["close"])
+        )
         if not math.isfinite(score):
             raise EngineInputError("strategy score must be finite")
         return score
@@ -733,9 +754,14 @@ def _portfolio_returns(
         today_rows = {
             symbol: row
             for symbol, row in by_date[today].items()
-            if _parse_timestamp(row["available_at"], "available_at")
+            if max(
+                _parse_timestamp(row["event_time"], "event_time"),
+                _parse_timestamp(row["available_at"], "available_at"),
+            )
             <= next_event_time
         }
+        if not today_rows:
+            continue
         for symbol, market_row in today_rows.items():
             price_history[symbol].append(float(market_row["close"]))
         ranked = sorted(
@@ -743,7 +769,9 @@ def _portfolio_returns(
                 symbol
                 for symbol in today_rows
                 if symbol in next_rows
-                and bool(today_rows[symbol].get("in_universe", True))
+                and _parse_bool(
+                    today_rows[symbol].get("in_universe", True), "in_universe"
+                )
                 and (not universe_symbols or symbol in universe_symbols)
             ),
             key=lambda symbol: (
@@ -754,6 +782,10 @@ def _portfolio_returns(
         selected = ranked[:selection_count]
         if not selected:
             continue
+        if long_short and len(ranked) < selection_count * 2:
+            raise EngineInputError(
+                "long-short simulation requires disjoint long and short selections"
+            )
         if not rebalance_due(index) and previous_weights:
             target = {
                 symbol: weight
@@ -763,8 +795,7 @@ def _portfolio_returns(
         else:
             if weighting == "SCORE":
                 raw = {
-                    symbol: abs(signal_score(today_rows[symbol]))
-                    for symbol in selected
+                    symbol: abs(signal_score(today_rows[symbol])) for symbol in selected
                 }
             elif weighting == "VOLATILITY":
                 raw = {}
@@ -782,7 +813,9 @@ def _portfolio_returns(
                 raise EngineInputError("unsupported strategy weighting")
             raw_total = sum(raw.values())
             if not math.isfinite(raw_total) or raw_total <= 0:
-                raise EngineInputError("strategy weights must have a positive finite total")
+                raise EngineInputError(
+                    "strategy weights must have a positive finite total"
+                )
             target = {
                 symbol: min(position_limit, leverage_limit * value / raw_total)
                 for symbol, value in raw.items()
@@ -803,12 +836,9 @@ def _portfolio_returns(
                     }
                 )
         universe = set(previous_weights) | set(target)
-        turnover = 0.5 * sum(
+        turnover = sum(
             abs(target.get(symbol, 0.0) - previous_weights.get(symbol, 0.0))
             for symbol in universe
-        )
-        turnover += 0.5 * abs(
-            (1.0 - sum(target.values())) - (1.0 - sum(previous_weights.values()))
         )
         asset_returns = {
             symbol: (
@@ -817,7 +847,10 @@ def _portfolio_returns(
                     * float(next_rows[symbol].get("split_factor", 1.0))
                     + float(next_rows[symbol].get("dividend", 0.0))
                 )
-                / float(today_rows[symbol]["close"])
+                / (
+                    float(today_rows[symbol]["close"])
+                    + float(today_rows[symbol].get("dividend", 0.0))
+                )
                 - 1.0
             )
             for symbol in target
@@ -833,7 +866,9 @@ def _portfolio_returns(
             or gross <= -1
             or net <= -1
         ):
-            raise EngineInputError("simulation produced an insolvent or non-finite return")
+            raise EngineInputError(
+                "simulation produced an insolvent or non-finite return"
+            )
         net_returns.append(net)
         benchmark_today = statistics.fmean(
             float(value["benchmark_close"]) for value in today_rows.values()

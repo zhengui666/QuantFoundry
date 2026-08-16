@@ -400,7 +400,10 @@ export const api = {
       GeneralAccessKeyListSchema,
       'GeneralAccessKeyList',
     ),
-  createAccessKey: async (body: Schema<'GeneralAccessKeyCreateRequest'>) => {
+  createAccessKey: async (
+    body: Schema<'GeneralAccessKeyCreateRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'GeneralAccessKeyCreateRequest'>>(
       body,
       GeneralAccessKeyCreateRequestSchema,
@@ -408,7 +411,7 @@ export const api = {
     );
     return validateResult<Schema<'GeneralAccessKeyIssued'>>(
       await request<unknown>('createGeneralAccessKey', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       GeneralAccessKeyIssuedSchema,
@@ -434,11 +437,11 @@ export const api = {
       'GeneralAccessKeyMetadata',
     );
   },
-  rotateAccessKey: async (keyId: string, etag: string) =>
+  rotateAccessKey: async (keyId: string, etag: string, idempotencyKey = idempotency()) =>
     validateResult<Schema<'GeneralAccessKeyIssued'>>(
       await request<unknown>(
         'rotateGeneralAccessKey',
-        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() } },
+        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey } },
         { key_id: keyId },
       ),
       GeneralAccessKeyIssuedSchema,
@@ -471,6 +474,7 @@ export const api = {
   putConfigurationCandidate: async (
     body: Schema<'ConfigurationCandidateRequest'>,
     etag: string,
+    idempotencyKey = idempotency(),
   ) => {
     const canonicalBody = validateInput(
       body,
@@ -479,25 +483,25 @@ export const api = {
     );
     return validateResult<Schema<'ConfigurationCandidate'>>(
       await request<unknown>('putConfigurationCandidate', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       ConfigurationCandidateSchema,
       'ConfigurationCandidate',
     );
   },
-  validateConfigurationCandidate: async () =>
+  validateConfigurationCandidate: async (idempotencyKey = idempotency()) =>
     validateResult<Schema<'ConfigurationValidationResult'>>(
       await request<unknown>('validateConfigurationCandidate', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
       }),
       ConfigurationValidationResultSchema,
       'ConfigurationValidationResult',
     ),
-  activateConfiguration: async (revision: number, etag: string) =>
+  activateConfiguration: async (revision: number, etag: string, idempotencyKey = idempotency()) =>
     validateResult<Schema<'ConfigurationActive'>>(
       await request<unknown>('activateConfiguration', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ revision }),
       }),
       ConfigurationActiveSchema,
@@ -512,6 +516,7 @@ export const api = {
   putDatabaseConnectionCandidate: async (
     body: Schema<'DatabaseConnectionCandidateRequest'>,
     etag: string,
+    idempotencyKey = idempotency(),
   ) => {
     const canonicalBody = validateInput(
       body,
@@ -520,25 +525,39 @@ export const api = {
     );
     return validateResult<Schema<'DatabaseConnectionCandidate'>>(
       await request<unknown>('putDomainDatabaseConnectionCandidate', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       DatabaseConnectionCandidateSchema,
       'DatabaseConnectionCandidate',
     );
   },
-  validateDatabaseConnectionCandidate: async () =>
+  validateDatabaseConnectionCandidate: async (
+    candidateRevision: number,
+    idempotencyKey = idempotency(),
+  ) =>
     validateResult<Schema<'DatabaseConnectionValidationResult'>>(
       await request<unknown>('validateDomainDatabaseConnectionCandidate', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+          'X-Candidate-Revision': String(candidateRevision),
+        },
       }),
       DatabaseConnectionValidationResultSchema,
       'DatabaseConnectionValidationResult',
     ),
-  activateDatabaseConnection: async (etag: string) =>
+  activateDatabaseConnection: async (
+    etag: string,
+    candidateRevision: number,
+    idempotencyKey = idempotency(),
+  ) =>
     validateResult<Schema<'DatabaseConnectionStatus'>>(
       await request<unknown>('activateDomainDatabaseConnection', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: {
+          'If-Match': etag,
+          'Idempotency-Key': idempotencyKey,
+          'X-Candidate-Revision': String(candidateRevision),
+        },
       }),
       DatabaseConnectionStatusSchema,
       'DatabaseConnectionStatus',
@@ -555,7 +574,10 @@ export const api = {
       SetupCapabilityCatalogSchema,
       'SetupCapabilityCatalog',
     ),
-  validateSetupConnection: async (body: Schema<'SetupProviderConnectionValidationRequest'>) => {
+  validateSetupConnection: async (
+    body: Schema<'SetupProviderConnectionValidationRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'SetupProviderConnectionValidationRequest'>>(
       body,
       SetupProviderConnectionValidationRequestSchema,
@@ -563,14 +585,17 @@ export const api = {
     );
     return validateResult<Schema<'SetupProviderConnectionValidationResult'>>(
       await request<unknown>('validateSetupProviderConnection', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       SetupProviderConnectionValidationResultSchema,
       'SetupProviderConnectionValidationResult',
     );
   },
-  validateLiveConnector: async (body: Schema<'LiveConnectorValidationRequest'>) => {
+  validateLiveConnector: async (
+    body: Schema<'LiveConnectorValidationRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'LiveConnectorValidationRequest'>>(
       body,
       LiveConnectorValidationRequestSchema,
@@ -578,7 +603,7 @@ export const api = {
     );
     return validateResult<Schema<'LiveConnectorValidationResult'>>(
       await request<unknown>('validateLiveConnector', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       LiveConnectorValidationResultSchema,
@@ -634,7 +659,7 @@ export const api = {
       'ResearchDetail',
     );
   },
-  createResearch: async (body: Schema<'ResearchCreateRequest'>) => {
+  createResearch: async (body: Schema<'ResearchCreateRequest'>, idempotencyKey = idempotency()) => {
     const canonicalBody = validateInput<Schema<'ResearchCreateRequest'>>(
       body,
       ResearchCreateRequestSchema,
@@ -642,14 +667,19 @@ export const api = {
     );
     return validateResult<Schema<'ResearchDetail'>>(
       await request<unknown>('createResearch', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       ResearchDetailSchema,
       'ResearchDetail',
     );
   },
-  startResearch: async (id: string, etag: string, body: Schema<'ResearchStartRequest'>) => {
+  startResearch: async (
+    id: string,
+    etag: string,
+    body: Schema<'ResearchStartRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const researchId = parsePublicId('research', id);
     const canonicalBody = validateInput<Schema<'ResearchStartRequest'>>(
       body,
@@ -660,7 +690,7 @@ export const api = {
       await request<unknown>(
         'startResearch',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { research_id: researchId },
@@ -681,7 +711,10 @@ export const api = {
       'ExperimentDetail',
     );
   },
-  createExperiment: async (body: Schema<'ExperimentCreateRequest'>) => {
+  createExperiment: async (
+    body: Schema<'ExperimentCreateRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'ExperimentCreateRequest'>>(
       body,
       ExperimentCreateRequestSchema,
@@ -689,7 +722,7 @@ export const api = {
     );
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>('createExperiment', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       JobAcceptedSchema,
@@ -767,7 +800,7 @@ export const api = {
       true,
     );
   },
-  createStrategy: async (body: Schema<'StrategyCreateRequest'>) => {
+  createStrategy: async (body: Schema<'StrategyCreateRequest'>, idempotencyKey = idempotency()) => {
     const canonicalBody = validateInput<Schema<'StrategyCreateRequest'>>(
       body,
       StrategyCreateRequestSchema,
@@ -775,7 +808,7 @@ export const api = {
     );
     return validateStrategyDetail(
       await request<unknown>('createStrategy', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
     );
@@ -785,6 +818,7 @@ export const api = {
     version: number,
     etag: string,
     body: Schema<'FreezeStrategyRequest'>,
+    idempotencyKey = idempotency(),
   ) => {
     const strategyId = parsePublicId('strategy', id);
     const strategyVersion = positiveVersion(version);
@@ -797,7 +831,7 @@ export const api = {
       await request<unknown>(
         'freezeStrategy',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { strategy_id: strategyId, version: strategyVersion },
@@ -806,7 +840,12 @@ export const api = {
       strategyVersion,
     );
   },
-  runFastBacktest: async (id: string, version: number, body: Schema<'BacktestRequest'>) => {
+  runFastBacktest: async (
+    id: string,
+    version: number,
+    body: Schema<'BacktestRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const strategyId = parsePublicId('strategy', id);
     const strategyVersion = positiveVersion(version);
     const canonicalBody = validateInput<Schema<'BacktestRequest'>>(
@@ -818,7 +857,7 @@ export const api = {
       await request<unknown>(
         'runFastBacktest',
         {
-          headers: { 'Idempotency-Key': idempotency() },
+          headers: { 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { strategy_id: strategyId, version: strategyVersion },
@@ -827,7 +866,10 @@ export const api = {
       'JobAccepted',
     );
   },
-  createValidation: async (body: Schema<'ValidationCreateRequest'>) => {
+  createValidation: async (
+    body: Schema<'ValidationCreateRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'ValidationCreateRequest'>>(
       body,
       ValidationCreateRequestSchema,
@@ -835,7 +877,7 @@ export const api = {
     );
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>('createValidation', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       JobAcceptedSchema,
@@ -882,6 +924,7 @@ export const api = {
     id: string,
     etag: string,
     body: Schema<'HoldoutApprovalRequest'>,
+    idempotencyKey = idempotency(),
   ) => {
     const validationId = parsePublicId('validation', id);
     const canonicalBody = validateInput<Schema<'HoldoutApprovalRequest'>>(
@@ -893,7 +936,7 @@ export const api = {
       await request<unknown>(
         'requestHoldoutApproval',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { validation_id: validationId },
@@ -902,7 +945,12 @@ export const api = {
       'ApprovalDetail',
     );
   },
-  runHoldout: async (id: string, etag: string, body: Schema<'HoldoutRunRequest'>) => {
+  runHoldout: async (
+    id: string,
+    etag: string,
+    body: Schema<'HoldoutRunRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const validationId = parsePublicId('validation', id);
     const canonicalBody = validateInput<Schema<'HoldoutRunRequest'>>(
       body,
@@ -913,7 +961,7 @@ export const api = {
       await request<unknown>(
         'runHoldout',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { validation_id: validationId },
@@ -940,7 +988,12 @@ export const api = {
       'ApprovalDetail',
     );
   },
-  approveApproval: async (id: string, etag: string, body: Schema<'ApprovalDecisionRequest'>) => {
+  approveApproval: async (
+    id: string,
+    etag: string,
+    body: Schema<'ApprovalDecisionRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const approvalId = parsePublicId('approval', id);
     const canonicalBody = validateInput<Schema<'ApprovalDecisionRequest'>>(
       body,
@@ -951,7 +1004,7 @@ export const api = {
       await request<unknown>(
         'approveApproval',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { approval_id: approvalId },
@@ -960,7 +1013,12 @@ export const api = {
       'ApprovalDecisionResult',
     );
   },
-  rejectApproval: async (id: string, etag: string, body: Schema<'ApprovalRejectRequest'>) => {
+  rejectApproval: async (
+    id: string,
+    etag: string,
+    body: Schema<'ApprovalRejectRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const approvalId = parsePublicId('approval', id);
     const canonicalBody = validateInput<Schema<'ApprovalRejectRequest'>>(
       body,
@@ -971,7 +1029,7 @@ export const api = {
       await request<unknown>(
         'rejectApproval',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { approval_id: approvalId },
@@ -980,7 +1038,7 @@ export const api = {
       'ApprovalDecisionResult',
     );
   },
-  generateMemo: async (body: Schema<'MemoGenerateRequest'>) => {
+  generateMemo: async (body: Schema<'MemoGenerateRequest'>, idempotencyKey = idempotency()) => {
     const canonicalBody = validateInput<Schema<'MemoGenerateRequest'>>(
       body,
       MemoGenerateRequestSchema,
@@ -988,7 +1046,7 @@ export const api = {
     );
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>('generateMemo', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       JobAcceptedSchema,
@@ -1265,7 +1323,7 @@ export function splitCanonicalSseFrames(buffer: string): {
 
 export function streamEvents(
   onEvent: (event: EventEnvelope) => void,
-  onResync: () => void,
+  onResync: () => void | Promise<void>,
   onState?: (state: EventStreamState) => void,
   onProblem?: (error: ApiError) => void,
 ): () => void {
@@ -1327,7 +1385,7 @@ export function streamEvents(
               event = decodeCanonicalSseFrame(rawFrame)?.event;
             } catch {
               consecutiveContractSkews += 1;
-              onResync();
+              await onResync();
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
                 onState?.('client-update-required');
@@ -1339,7 +1397,7 @@ export function streamEvents(
             }
             if (!event || !isSafeHoldoutNotification(event)) {
               consecutiveContractSkews += 1;
-              onResync();
+              await onResync();
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
                 onState?.('client-update-required');
@@ -1353,21 +1411,26 @@ export function streamEvents(
             if (event.sequence <= last) continue;
             const hasGap = last > 0 && event.sequence > last + 1;
             if (event.event_type === 'system.resync_required') {
-              onResync();
+              await onResync();
               last = event.sequence;
               transientStorage.set(cursorKey(), String(last));
               continue;
             }
+            if (hasGap) await onResync();
             onEvent(event);
-            if (hasGap) onResync();
             last = event.sequence;
             transientStorage.set(cursorKey(), String(last));
           }
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ApiError && !error.problem.retryable) {
+          onProblem?.(error);
+          onState?.('degraded');
+          return;
+        }
         if (!stopped && !controller.signal.aborted) {
           onState?.('degraded');
-          onResync();
+          await onResync();
         }
       }
       if (!stopped && !authorizationBlocked && !contractBlocked && !controller.signal.aborted) {

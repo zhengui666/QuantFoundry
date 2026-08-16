@@ -100,11 +100,12 @@ def _parse_schedule(value: object) -> Schedule:
             raise InvalidExecutionAssumption(
                 "execution_assumption is not valid JSON"
             ) from error
-    if not isinstance(value, dict) or set(value) < {
+    required = {
         "schedule_timezone",
         "daily_due_time",
         "trading_calendar",
-    }:
+    }
+    if not isinstance(value, dict) or not required.issubset(value):
         raise InvalidExecutionAssumption("execution_assumption is incomplete")
     timezone = value["schedule_timezone"]
     due = value["daily_due_time"]
@@ -120,6 +121,10 @@ def _parse_schedule(value: object) -> Schedule:
         raise InvalidExecutionAssumption(
             "schedule timezone/due-time is invalid"
         ) from error
+    if parsed_due.tzinfo is not None:
+        raise InvalidExecutionAssumption(
+            "daily_due_time must not contain a timezone offset"
+        )
     if parsed_due.second or parsed_due.microsecond:
         raise InvalidExecutionAssumption("daily_due_time must be minute-precise")
     return Schedule(timezone, parsed_due, calendar)
@@ -127,6 +132,24 @@ def _parse_schedule(value: object) -> Schedule:
 
 def _invalid_schedule() -> Schedule:
     return Schedule("UTC", time(0), "INVALID")
+
+
+def _wall_time_to_utc(day: date, due_time: time, timezone: str) -> datetime:
+    """Resolve exactly one valid local wall time; reject DST gaps/folds."""
+    zone = ZoneInfo(timezone)
+    local_naive = datetime.combine(day, due_time)
+    candidates = []
+    for fold in (0, 1):
+        local = local_naive.replace(tzinfo=zone, fold=fold)
+        instant = local.astimezone(UTC)
+        if instant.astimezone(zone).replace(tzinfo=None) == local_naive:
+            candidates.append(instant)
+    unique = sorted(set(candidates))
+    if len(unique) != 1:
+        raise InvalidExecutionAssumption(
+            "daily_due_time is nonexistent or ambiguous in schedule timezone"
+        )
+    return unique[0]
 
 
 def _calendar_label(schedule: Schedule, version: str) -> dict[str, str] | str:
@@ -402,9 +425,7 @@ class PaperScheduler:
         for _ in range(16):
             is_open, version = self._is_trading_day(schedule, probe)
             if is_open:
-                due_utc = datetime.combine(
-                    probe, schedule.due_time, ZoneInfo(schedule.timezone)
-                ).astimezone(UTC)
+                due_utc = _wall_time_to_utc(probe, schedule.due_time, schedule.timezone)
                 if due_utc <= _utc(watermark):
                     return None, version
                 existing = session.execute(
@@ -1162,9 +1183,9 @@ class PaperScheduler:
         if calendar_version is None:
             try:
                 schedule = _parse_schedule(deployment["execution_assumption"])
-                calendar_version = self._is_trading_day(
-                    schedule, run["trading_date"]
-                )[1]
+                calendar_version = self._is_trading_day(schedule, run["trading_date"])[
+                    1
+                ]
             except InvalidExecutionAssumption:
                 schedule = _invalid_schedule()
                 calendar_version = "UNAVAILABLE"
@@ -1220,11 +1241,51 @@ class PaperScheduler:
                 )
             )
             .mappings()
-            .one()
+            .one_or_none()
         )
+        if found_deployment is None:
+            deployment: Mapping[str, Any] = {
+                "workspace_id": job.workspace_id,
+                "paper_id": run["paper_id"],
+                "execution_assumption": None,
+            }
+            self._finish_run(
+                session,
+                deployment,
+                run,
+                job,
+                "FAILED",
+                "SCHEDULER_RECOVERY_INVALID",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                now=now,
+                lease_snapshot=lease_snapshot,
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
+            )
+            return
         deployment = cast(Mapping[str, Any], dict(found_deployment))
-        schedule = _parse_schedule(deployment["execution_assumption"])
-        _, calendar_version = self._is_trading_day(schedule, run["trading_date"])
+        try:
+            schedule = _parse_schedule(deployment["execution_assumption"])
+            _, calendar_version = self._is_trading_day(schedule, run["trading_date"])
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
+            self._finish_run(
+                session,
+                deployment,
+                run,
+                job,
+                "FAILED",
+                "SCHEDULER_RECOVERY_INVALID",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                now=now,
+                lease_snapshot=lease_snapshot,
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
+            )
+            return
         self._transition_evidence(
             session,
             deployment,

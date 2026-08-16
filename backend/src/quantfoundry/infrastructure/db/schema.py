@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -42,6 +42,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import DATERANGE, JSONB
 from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.schema import ColumnDefault
 from sqlalchemy.types import TypeDecorator
 
 from quantfoundry.contracts.events.locator import (
@@ -232,18 +233,35 @@ class DateRangeCompat(TypeDecorator[Any]):
             if value.startswith("{"):
                 value = json.loads(value)
         if isinstance(value, dict):
-            start = date.fromisoformat(value["start"])
-            end = date.fromisoformat(value["end"])
+            start = (
+                date.fromisoformat(value["start"])
+                if value.get("start") is not None
+                else None
+            )
+            end = (
+                date.fromisoformat(value["end"])
+                if value.get("end") is not None
+                else None
+            )
             if dialect.name == "postgresql":
-                return Range(start, end, bounds="[]")
+                return Range(
+                    start,
+                    end + timedelta(days=1) if end is not None else None,
+                    bounds="[)",
+                )
             return json.dumps(value, separators=(",", ":"), sort_keys=True)
         return value
 
     def process_result_value(self, value: Any, _dialect: Any) -> Any:
         if isinstance(value, Range):
+            if getattr(value, "isempty", False):
+                return None
+            upper = value.upper
+            if upper is not None and not value.upper_inc:
+                upper -= timedelta(days=1)
             return {
                 "start": value.lower.isoformat() if value.lower is not None else None,
-                "end": value.upper.isoformat() if value.upper is not None else None,
+                "end": upper.isoformat() if upper is not None else None,
             }
         if isinstance(value, str) and value.startswith("{"):
             return json.loads(value)
@@ -342,42 +360,33 @@ def _existing_contract_type(current: Any, pg_type: str) -> Any:
 def _default_value(column: dict[str, Any]) -> Any:
     raw = column["default"]
     pg_type = column["postgres_type"]
-    constraints = column["constraints"]
-    if raw in {"NULL", "-"} and column["nullable"]:
+    if raw in {"NULL", "-"}:
         return None
-    if raw in {"uuidv7()", "identity"} or pg_type == "uuid":
-        return uuid.uuid4
-    if raw == "now()" or pg_type == "timestamptz":
+    if raw == "uuidv7()":
+        uuid7 = getattr(uuid, "uuid7", None)
+        if uuid7 is None:
+            raise RuntimeError("uuid.uuid7 is required by the section-14 contract")
+        return uuid7
+    if raw == "now()":
         return lambda: datetime.now(UTC)
-    if pg_type == "date":
-        return date(1970, 1, 1)
-    if pg_type == "daterange":
-        return None
-    if pg_type == "jsonb":
-        return list if raw == "[]" else dict
-    if pg_type == "boolean":
-        return raw.lower() != "false"
-    if pg_type in {"integer", "bigint", "smallint"}:
-        try:
-            return int(raw)
-        except ValueError:
-            return 1 if "> 0" in constraints or ">0" in constraints else 0
+    if raw == "'[]'":
+        return list
+    if raw == "'{}'":
+        return dict
+    if raw.lower() in {"true", "false"}:
+        return raw.lower() == "true"
+    if re.fullmatch(r"-?\d+", raw):
+        return int(raw)
     if pg_type.startswith("numeric"):
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return (
-                Decimal("1")
-                if "> 0" in constraints or ">0" in constraints
-                else Decimal("0")
-            )
-    if pg_type == "bytea":
-        return b""
+        except InvalidOperation as error:
+            raise ValueError(f"unsupported manifest default {raw!r}") from error
     if raw.startswith("'") and raw.endswith("'"):
         return raw[1:-1]
     if raw not in {"", "-"}:
         return raw
-    return ""
+    raise ValueError(f"unsupported manifest default {raw!r}")
 
 
 def _constraint_name(table: str, suffix: str) -> str:
@@ -734,13 +743,19 @@ def augment_section14_metadata(metadata: MetaData) -> None:
         for column in spec["columns"]:
             name = column["name"]
             if name in table.c:
-                current_type = table.c[name].type
-                table.c[name].type = (
+                existing = table.c[name]
+                current_type = existing.type
+                existing.type = (
                     WorkspaceScopeId()
                     if name == "workspace_id"
                     else _existing_contract_type(current_type, column["postgres_type"])
                 )
-                table.c[name].nullable = column["nullable"]
+                existing.nullable = column["nullable"]
+                default = _default_value(column)
+                existing.default = (
+                    ColumnDefault(default) if default is not None else None
+                )
+                existing.info = {"section14": column}
                 continue
             constraints = column["constraints"]
             is_primary = constraints == "PK" or constraints.startswith("PK ")
@@ -752,7 +767,7 @@ def augment_section14_metadata(metadata: MetaData) -> None:
                     else sqlalchemy_type(column["postgres_type"]),
                     primary_key=is_primary,
                     nullable=False if is_primary else column["nullable"],
-                    default=None if column["nullable"] else _default_value(column),
+                    default=_default_value(column),
                     info={"section14": column},
                 )
             )

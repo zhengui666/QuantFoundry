@@ -61,9 +61,7 @@ def _add_workspace_column(table: str) -> None:
     column = sa.Column(
         "workspace_id",
         sa.String(),
-        sa.ForeignKey(
-            "workspaces.id", name=f"fk_{table}_workspace_id_workspaces"
-        ),
+        sa.ForeignKey("workspaces.id", name=f"fk_{table}_workspace_id_workspaces"),
         nullable=False,
     )
     if op.get_bind().dialect.name != "sqlite":
@@ -273,9 +271,7 @@ def upgrade() -> None:
         )
         batch_op.create_primary_key("agent_configs_pkey", ["workspace_id", "role"])
     if dialect == "sqlite":
-        with op.batch_alter_table(
-            "agent_runs", naming_convention=naming
-        ) as batch_op:
+        with op.batch_alter_table("agent_runs", naming_convention=naming) as batch_op:
             batch_op.create_foreign_key(
                 "fk_agent_runs_workspace_role_agent_configs",
                 "agent_configs",

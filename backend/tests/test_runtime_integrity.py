@@ -59,7 +59,9 @@ from quantfoundry.api.app import (
     app,
     content_hash,
     create_provenance,
+    experiment_storage_fields,
     job,
+    strategy_storage_fields,
 )
 from quantfoundry.api.sse.stream import durable_event_stream
 from quantfoundry.contracts.events.locator import register_sqlite_functions
@@ -158,6 +160,74 @@ def _seed_strategy_version(
     research_id = f"RSCH-{suffix}"
     strategy_id = f"STRAT-{suffix}"
     strategy_version_id = f"SV-{suffix}"
+    strategy_detail = {
+        "strategy_id": strategy_id,
+        "name": "Runtime integrity fixture",
+        "version": 1,
+        "lifecycle_state": state,
+        "is_frozen": state != "CANDIDATE",
+        "thesis": "A deterministic runtime integrity strategy",
+        "universe": {
+            "asset_class": "EQUITY",
+            "symbols": [],
+            "universe_id": "TEST",
+        },
+        "signals": [],
+        "rules": {
+            "selection_count": 1,
+            "weighting": "EQUAL",
+            "rebalance_frequency": "DAILY",
+            "long_short": False,
+            "leverage_limit": "1",
+            "position_limit": "1",
+        },
+        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
+        "benchmark": "TEST",
+        "research_period": {"start": "2020-01-01", "end": "2020-06-30"},
+        "validation_period": {"start": "2020-07-01", "end": "2020-09-30"},
+        "holdout_period": {"start": "2020-10-01", "end": "2020-12-31"},
+        "known_failure_modes": [],
+        "spec_sha256": spec_sha256 or content_hash({"strategy": suffix}),
+        "specification": {},
+        "latest_backtest": {
+            "state": "EMPTY",
+            "result": None,
+            "metrics": [],
+            "chart": None,
+        },
+        "validation_summary": None,
+        "artifacts": [],
+        "provenance": [],
+        "frozen_at": datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        if state != "CANDIDATE"
+        else None,
+        "frozen_by": "test-owner" if state != "CANDIDATE" else None,
+        "revision": 1,
+        "action_capabilities": [],
+        "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    }
+    if detail is not None:
+        strategy_detail.update(json.loads(detail))
+    strategy_detail["strategy_id"] = strategy_id
+    strategy_detail["name"] = "Runtime integrity fixture"
+    strategy_detail["lifecycle_state"] = state
+    strategy_detail["is_frozen"] = state != "CANDIDATE"
+    strategy_detail["specification"] = {
+        key: strategy_detail[key]
+        for key in (
+            "thesis",
+            "universe",
+            "signals",
+            "rules",
+            "cost_model_id",
+            "benchmark",
+            "research_period",
+            "validation_period",
+            "holdout_period",
+            "known_failure_modes",
+        )
+    }
+    detail_json = json.dumps(strategy_detail)
     session.add(
         ResearchRow(
             id=research_id,
@@ -165,6 +235,9 @@ def _seed_strategy_version(
             status="DRAFT",
             revision=1,
             title="Runtime integrity fixture",
+            original_user_prompt="Runtime integrity fixture",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
             detail="{}",
         )
     )
@@ -174,6 +247,7 @@ def _seed_strategy_version(
             id=strategy_id,
             workspace_id="test-workspace",
             research_id=research_id,
+            name="Runtime integrity fixture",
             revision=1,
             detail="{}",
         )
@@ -187,25 +261,13 @@ def _seed_strategy_version(
             version=1,
             state=state,
             spec_sha256=spec_sha256 or content_hash({"strategy": suffix}),
-            frozen_at=datetime.now(UTC),
+            frozen_at=datetime.now(UTC) if state != "CANDIDATE" else None,
             revision=2,
-            detail=detail
-            or json.dumps(
-                {
-                    "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-                    "research_period": {
-                        "start": "2020-01-01",
-                        "end": "2020-06-30",
-                    },
-                    "validation_period": {
-                        "start": "2020-07-01",
-                        "end": "2020-09-30",
-                    },
-                    "holdout_period": {
-                        "start": "2020-10-01",
-                        "end": "2020-12-31",
-                    },
-                }
+            detail=detail_json,
+            **strategy_storage_fields(
+                strategy_detail,
+                lifecycle_state=state,
+                is_frozen=state != "CANDIDATE",
             ),
         )
     )
@@ -229,6 +291,9 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             status="DRAFT",
             revision=1,
             title="Immutable evidence parent",
+            original_user_prompt="Immutable evidence parent",
+            created_at=now,
+            updated_at=now,
             detail="{}",
         )
     )
@@ -237,6 +302,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             id=f"STRAT-{suffix}",
             workspace_id="test-workspace",
             research_id=f"RSCH-{suffix}",
+            name="Immutable evidence parent",
             revision=1,
             detail="{}",
         )
@@ -336,6 +402,33 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             detail="{}",
         )
     )
+    experiment_detail = {
+        "experiment_id": f"EXP-{suffix}",
+        "research_id": f"RSCH-{suffix}",
+        "research_revision_no": 1,
+        "objective": "Immutable evidence fixture",
+        "hypothesis": "The fixture remains immutable",
+        "experiment_type": "FACTOR_ANALYSIS",
+        "status": "COMPLETED",
+        "validity_state": "VALID",
+        "data_snapshot_id": f"DS-{suffix}",
+        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
+        "factor_ref": None,
+        "strategy_ref": None,
+        "parameters": [],
+        "parameters_sha256": content_hash([]),
+        "search_space": [],
+        "search_configuration": None,
+        "engine": {"name": "test-engine", "version": "1.0"},
+        "adapter": None,
+        "code_version": "test",
+        "started_at": now.isoformat().replace("+00:00", "Z"),
+        "finished_at": now.isoformat().replace("+00:00", "Z"),
+        "created_at": now.isoformat().replace("+00:00", "Z"),
+        "invalidated_at": None,
+        "invalid_reason_code": None,
+        "invalid_reason_detail": None,
+    }
     session.add(
         ExperimentRow(
             id=f"EXP-{suffix}",
@@ -343,14 +436,31 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             research_id=f"RSCH-{suffix}",
             immutable=True,
             revision=2,
-            detail=json.dumps(
-                {
-                    "data_snapshot_id": f"DS-{suffix}",
-                    "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-                }
-            ),
+            detail=json.dumps(experiment_detail),
+            **experiment_storage_fields(experiment_detail),
         )
     )
+    strategy_detail = {
+        "strategy_id": f"STRAT-{suffix}",
+        "name": "Immutable evidence strategy",
+        "thesis": "The fixture remains immutable",
+        "universe": {"asset_class": "EQUITY", "symbols": [], "universe_id": "TEST"},
+        "signals": [],
+        "rules": {
+            "selection_count": 1,
+            "weighting": "EQUAL",
+            "rebalance_frequency": "DAILY",
+            "long_short": False,
+            "leverage_limit": "1",
+            "position_limit": "1",
+        },
+        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
+        "benchmark": "TEST",
+        "research_period": {"start": "2020-01-01", "end": "2020-06-30"},
+        "validation_period": {"start": "2020-07-01", "end": "2020-09-30"},
+        "holdout_period": {"start": "2020-10-01", "end": "2020-12-31"},
+        "known_failure_modes": [],
+    }
     session.add(
         StrategyVersionRow(
             id=f"SV-{suffix}",
@@ -361,22 +471,9 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             spec_sha256=content_hash({"strategy": suffix}),
             frozen_at=now,
             revision=2,
-            detail=json.dumps(
-                {
-                    "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-                    "research_period": {
-                        "start": "2020-01-01",
-                        "end": "2020-06-30",
-                    },
-                    "validation_period": {
-                        "start": "2020-07-01",
-                        "end": "2020-09-30",
-                    },
-                    "holdout_period": {
-                        "start": "2020-10-01",
-                        "end": "2020-12-31",
-                    },
-                }
+            detail=json.dumps(strategy_detail),
+            **strategy_storage_fields(
+                strategy_detail, lifecycle_state="FROZEN", is_frozen=True
             ),
         )
     )
@@ -505,6 +602,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
                 object_type="event_stream",
                 object_id=f"EVT-{suffix}",
                 object_revision=1,
+                result="SUCCESS",
                 payload="{}",
                 event_sha256=content_hash({"audit": suffix}),
                 occurred_at=now,

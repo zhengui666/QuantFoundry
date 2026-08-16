@@ -28,6 +28,12 @@ checkout_head="$(git -C "$repo_root" rev-parse HEAD)"
   exit 1
 }
 
+worktree_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
+[[ -z "$worktree_status" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"release check requires a clean worktree"}' >&2
+  exit 1
+}
+
 remote_tag_object="$(git -C "$repo_root" ls-remote --exit-code --refs origin "refs/tags/$tag" | awk 'NR == 1 {print $1}')" || {
   printf '{"result":"invalid","reason":"remote controlled tag is missing","tag":"%s"}\n' "$tag" >&2
   exit 1

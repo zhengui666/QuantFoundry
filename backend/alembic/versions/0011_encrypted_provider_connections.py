@@ -18,6 +18,8 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        bind.execute(sa.text("LOCK TABLE setup_bindings IN ACCESS EXCLUSIVE MODE"))
     existing_bindings = bind.execute(
         sa.text("SELECT COUNT(*) FROM setup_bindings")
     ).scalar_one()
@@ -67,8 +69,17 @@ def upgrade() -> None:
             "status IN ('VALIDATED', 'ACTIVE', 'REVOKED')",
             name="provider_connection_status",
         ),
+        sa.CheckConstraint(
+            "(status = 'VALIDATED' AND consumed_at IS NULL AND expires_at IS NOT NULL) OR "
+            "(status = 'ACTIVE' AND consumed_at IS NOT NULL AND expires_at IS NULL) OR "
+            "(status = 'REVOKED' AND consumed_at IS NOT NULL AND expires_at IS NULL)",
+            name="provider_connection_lifecycle",
+        ),
         sa.UniqueConstraint(
-            "workspace_id", "id", name="uq_model_provider_connections_workspace_id_id"
+            "workspace_id",
+            "id",
+            "kind",
+            name="uq_model_provider_connections_workspace_id_id_kind",
         ),
     )
     op.create_index(
@@ -105,8 +116,14 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column(
+            "ai_connection_kind", sa.String(8), nullable=False, server_default="AI"
+        ),
+        sa.Column(
             "data_connection_id",
             sa.String(),
+        ),
+        sa.Column(
+            "data_connection_kind", sa.String(8), nullable=False, server_default="DATA"
         ),
         sa.Column(
             "research_policy_version_id",
@@ -132,14 +149,26 @@ def upgrade() -> None:
             name="fk_setup_bindings_settings_record_records",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "ai_connection_id"],
-            ["model_provider_connections.workspace_id", "model_provider_connections.id"],
+            ["workspace_id", "ai_connection_id", "ai_connection_kind"],
+            [
+                "model_provider_connections.workspace_id",
+                "model_provider_connections.id",
+                "model_provider_connections.kind",
+            ],
             name="fk_setup_bindings_ai_connection_model_provider_connections",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "data_connection_id"],
-            ["model_provider_connections.workspace_id", "model_provider_connections.id"],
+            ["workspace_id", "data_connection_id", "data_connection_kind"],
+            [
+                "model_provider_connections.workspace_id",
+                "model_provider_connections.id",
+                "model_provider_connections.kind",
+            ],
             name="fk_setup_bindings_data_connection_model_provider_connections",
+        ),
+        sa.CheckConstraint("ai_connection_kind = 'AI'", name="setup_bindings_ai_kind"),
+        sa.CheckConstraint(
+            "data_connection_kind = 'DATA'", name="setup_bindings_data_kind"
         ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "research_policy_version_id"],

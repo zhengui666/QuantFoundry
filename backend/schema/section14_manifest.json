@@ -4,7 +4,7 @@
   "domain_table_count": 50,
   "manifest_version": 1,
   "source_path": "docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md",
-  "source_section_sha256": "e429bb50efd04faa540ffa67977a37243b9e0046b5c368241a8faf701292ce1e",
+  "source_section_sha256": "2019dea9b60673727be356175f557834a4169b482063dc3ef567c902774a1249",
   "support_column_count": 78,
   "support_table_count": 13,
   "support_tables": [
@@ -3767,7 +3767,7 @@
           "semantics": "归属 Validation public locator；与 internal validation FK 同 workspace"
         },
         {
-          "constraints": "CHECK closed `STRAT-ID@version` locator",
+          "constraints": "CHECK closed `STRAT-ID@version` locator <!-- reject_fixture STRAT-ID -->",
           "default": "-",
           "name": "strategy_version_public_id",
           "nullable": false,

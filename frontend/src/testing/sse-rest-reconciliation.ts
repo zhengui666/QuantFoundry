@@ -22,7 +22,10 @@ export class SseRestReconciliationWitness {
     const mapped = planner(frame.event).some(
       (key) => key[1] === this.resourceType && key[2] === this.resourceId,
     );
-    if (mapped) this.matchingEvent = frame;
+    if (mapped) {
+      this.matchingEvent = frame;
+      this.matchingRestReads = 0;
+    }
   }
 
   observeRest(path: string) {

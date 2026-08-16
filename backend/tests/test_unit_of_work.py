@@ -61,9 +61,13 @@ def test_failure_rolls_back_domain_audit_event_and_idempotency_result() -> None:
         session.add(
             ResearchRow(
                 id=research_id,
+                workspace_id="test-workspace",
                 status="DRAFT",
                 revision=1,
                 title="Must roll back",
+                original_user_prompt="Must roll back",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
                 detail="{}",
             )
         )

@@ -28,9 +28,11 @@ from quantfoundry.api.app import (
     cap,
     content_hash,
     emit,
+    experiment_storage_fields,
     job,
     new_id,
     strategy_action_capabilities,
+    strategy_storage_fields,
     validation_action_capabilities,
 )
 from quantfoundry.contracts.openapi.api_models import (
@@ -42,6 +44,7 @@ from quantfoundry.engines.core import (
     EngineInputError,
     load_cost_model,
     load_dataset,
+    load_validation_policy,
     snapshot_content_sha256,
     snapshot_rows,
 )
@@ -93,6 +96,9 @@ def _define_factor(
             id=factor_id,
             workspace_id=run.workspace_id,
             research_id=research.id,
+            name=payload["name"],
+            category=payload["category"],
+            created_by=run.role,
             revision=1,
             detail=json.dumps(detail),
         )
@@ -127,12 +133,14 @@ def _define_strategy(
     ):
         raise ToolExecutionError("strategy references an unavailable factor")
     cost = session.execute(
-        select(CostModelVersionRow).where(
+        select(CostModelVersionRow)
+        .where(
             CostModelVersionRow.workspace_id == run.workspace_id,
             CostModelVersionRow.cost_model_id == payload["cost_model_id"],
-            CostModelVersionRow.version == 1,
             CostModelVersionRow.status == "ACTIVE",
         )
+        .order_by(CostModelVersionRow.version.desc())
+        .limit(1)
     ).scalar_one_or_none()
     if cost is None:
         raise ToolExecutionError("strategy references an unavailable cost model")
@@ -201,6 +209,7 @@ def _define_strategy(
             id=strategy_id,
             workspace_id=run.workspace_id,
             research_id=research.id,
+            name=payload["name"],
             revision=1,
             detail=json.dumps(detail),
         )
@@ -211,6 +220,10 @@ def _define_strategy(
             id=new_id("SV"),
             workspace_id=run.workspace_id,
             strategy_id=strategy_id,
+            cost_model_ref_id=cost.internal_id,
+            **strategy_storage_fields(
+                detail, lifecycle_state="CANDIDATE", is_frozen=False
+            ),
             version=1,
             state="CANDIDATE",
             spec_sha256=digest,
@@ -251,6 +264,7 @@ def _queue_factor_analysis_experiment(
         or factor.workspace_id != run.workspace_id
         or snapshot.workspace_id != run.workspace_id
         or research.workspace_id != run.workspace_id
+        or factor.research_id != research.id
         or cost.workspace_id != run.workspace_id
         or not snapshot.immutable
         or arguments["factor_version"] != 1
@@ -332,6 +346,7 @@ def _queue_factor_analysis_experiment(
             source_experiment_id=None,
             immutable=False,
             revision=1,
+            **experiment_storage_fields(detail),
             detail=json.dumps(detail),
         )
     )
@@ -452,8 +467,7 @@ def execute_tool(
                 for factor in factors
             )
             or any(
-                not isinstance(item, dict)
-                or item.get("version") != 1
+                not isinstance(item, dict) or item.get("version") != 1
                 for item in factor_refs
             )
         ):
@@ -475,14 +489,29 @@ def execute_tool(
             or snapshot is None
             or version.workspace_id != run.workspace_id
             or snapshot.workspace_id != run.workspace_id
+            or not snapshot.immutable
             or version.state != "CANDIDATE"
         ):
             raise ToolExecutionError("strategy or snapshot is unavailable")
+        version_detail = json.loads(cast(str, version.detail))
+        cost = session.execute(
+            select(CostModelVersionRow).where(
+                CostModelVersionRow.internal_id == version.cost_model_ref_id
+            )
+        ).scalar_one_or_none()
+        if (
+            cost is None
+            or cost.workspace_id != run.workspace_id
+            or cost.cost_model_id != version_detail["cost_model_id"]
+        ):
+            raise ToolExecutionError("strategy cost model binding is unavailable")
         inputs = {
             **arguments,
             "strategy_version_id": version.id,
             "strategy_spec_sha256": version.spec_sha256,
-            "cost_model_id": json.loads(cast(str, version.detail))["cost_model_id"],
+            "cost_model_id": cost.cost_model_id,
+            "cost_model_version": cost.version,
+            "cost_model_sha256": cost.content_sha256,
             "engine_key": "qf-simulation-v1",
             "engine_version": "1.0.0",
             "parameters": [],
@@ -523,20 +552,39 @@ def execute_tool(
             or version.state != "FROZEN"
         ):
             raise ToolExecutionError("frozen strategy is unavailable")
-        policy_table = ResearchPolicyVersionRow.__table__
-        policy_id = session.execute(
-            select(policy_table.c.policy_id)
+        policy = session.execute(
+            select(ResearchPolicyVersionRow)
             .where(
-                policy_table.c.workspace_id == run.workspace_id,
-                policy_table.c.policy_family == "validation",
-                policy_table.c.status == "ACTIVE",
+                ResearchPolicyVersionRow.workspace_id == run.workspace_id,
+                ResearchPolicyVersionRow.policy_family == "validation",
+                ResearchPolicyVersionRow.status == "ACTIVE",
             )
-            .order_by(policy_table.c.version.desc())
+            .order_by(ResearchPolicyVersionRow.version.desc())
             .limit(1)
         ).scalar_one_or_none()
-        if policy_id is None:
+        if policy is None:
             raise ToolExecutionError("active validation policy is unavailable")
-        policy_id = cast(str, policy_id)
+        policy_id = cast(str, policy.policy_id)
+        try:
+            loaded_policy = load_validation_policy(policy_id)
+        except EngineInputError as error:
+            raise ToolExecutionError("validation policy is invalid") from error
+        if (
+            loaded_policy.version != policy.version
+            or content_hash(policy.rules) != policy.content_sha256
+        ):
+            raise ToolExecutionError("validation policy version is inconsistent")
+        version_detail = json.loads(cast(str, version.detail))
+        latest_backtest = version_detail.get("latest_backtest")
+        if (
+            not isinstance(latest_backtest, dict)
+            or latest_backtest.get("state") != "AVAILABLE"
+            or not isinstance(latest_backtest.get("result"), dict)
+            or latest_backtest["result"].get("status") != "COMPLETED"
+        ):
+            raise ToolExecutionError(
+                "completed deterministic fast backtest is required"
+            )
         validation_id = new_id("VAL")
         accepted = _accepted_job(
             session,
@@ -545,6 +593,8 @@ def execute_tool(
                 "validation_id": validation_id,
                 **arguments,
                 "policy_id": policy_id,
+                "policy_version": policy.version,
+                "policy_sha256": policy.content_sha256,
                 "strict_engine_key": "qf-validation-v1",
                 "strict_engine_version": "1.0.0",
                 "test_suite_version": "1.0.0",

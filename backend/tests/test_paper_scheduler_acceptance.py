@@ -61,6 +61,7 @@ EXPECTED_STATE_KEYS = {
     "suppressed_since_utc",
     "resume_watermark_utc",
     "initialization_utc",
+    "domain_event_sequence",
     "revision",
     "reason_code",
     "actor",

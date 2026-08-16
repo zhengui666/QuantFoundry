@@ -94,6 +94,7 @@ _EVIDENCE_FIELDS = {
     "suppressed_since_utc",
     "resume_watermark_utc",
     "initialization_utc",
+    "domain_event_sequence",
     "revision",
     "reason_code",
     "actor",
@@ -163,7 +164,7 @@ def _persist_quarantine(bind: Connection, error: SchedulerInitializationError) -
     own_connection = bind.dialect.name == "postgresql" or (
         bind.dialect.name == "sqlite" and ":memory:" not in str(bind.engine.url)
     )
-    engine = create_engine(str(bind.engine.url)) if own_connection else None
+    engine = create_engine(bind.engine.url) if own_connection else None
     connection = engine.connect() if engine is not None else bind
     table_name = _quarantine_table_name(bind)
     try:
@@ -325,6 +326,7 @@ def _validate_evidence(
     domain_events: Table,
     event_stream_watermarks: Table,
     deployment: Mapping[str, Any],
+    baseline: Mapping[str, Any],
 ) -> None:
     audits = (
         bind.execute(
@@ -355,15 +357,24 @@ def _validate_evidence(
     evidence_watermark = _utc_timestamp(
         bind, evidence["resume_watermark_utc"], "resume_watermark_utc"
     )
+    baseline_watermark = _utc_timestamp(
+        bind, baseline["resume_watermark_utc"], "baseline resume_watermark_utc"
+    )
     evidence_suppressed = evidence["suppressed_since_utc"]
+    baseline_suppressed = baseline["suppressed_since_utc"]
+    baseline_suppressed_at = (
+        _utc_timestamp(bind, baseline_suppressed, "baseline suppressed_since_utc")
+        if baseline_suppressed is not None
+        else None
+    )
     valid = (
         isinstance(evidence["state_transition_id"], str)
         and is_public_id("domain_event", evidence["state_transition_id"])
         and str(evidence["workspace_id"]) == str(deployment["workspace_id"])
         and evidence["paper_id"] == deployment["paper_id"]
         and evidence["from_state"] is None
-        and evidence["to_state"] in _STATUS_MAP.values()
-        and effective == initialization == evidence_watermark
+        and evidence["to_state"] == baseline["scheduler_status"]
+        and effective == initialization == evidence_watermark == baseline_watermark
         and (
             (evidence["to_state"] == "ACTIVE" and evidence_suppressed is None)
             or (
@@ -371,11 +382,15 @@ def _validate_evidence(
                 and evidence_suppressed is not None
                 and _utc_timestamp(bind, evidence_suppressed, "suppressed_since_utc")
                 == effective
+                == baseline_suppressed_at
             )
         )
         and isinstance(evidence["revision"], int)
         and not isinstance(evidence["revision"], bool)
-        and evidence["revision"] >= 1
+        and evidence["revision"] == baseline["revision"]
+        and isinstance(evidence["domain_event_sequence"], int)
+        and not isinstance(evidence["domain_event_sequence"], bool)
+        and evidence["domain_event_sequence"] >= 1
         and evidence["reason_code"] == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY"
     )
     if not valid:
@@ -395,7 +410,6 @@ def _validate_evidence(
         domain_events.c.object_id == deployment["paper_id"],
     ]
     events = bind.execute(select(domain_events).where(*event_filters)).mappings().all()
-    audit_sequence = audits[0]["sequence"]
     retention = (
         bind.execute(
             select(event_stream_watermarks).where(
@@ -407,12 +421,12 @@ def _validate_evidence(
     )
     expired_canonical_event = (
         len(events) == 0
-        and isinstance(audit_sequence, int)
-        and not isinstance(audit_sequence, bool)
+        and isinstance(evidence["domain_event_sequence"], int)
+        and not isinstance(evidence["domain_event_sequence"], bool)
         and retention is not None
         and isinstance(retention["expired_through_sequence"], int)
         and not isinstance(retention["expired_through_sequence"], bool)
-        and retention["expired_through_sequence"] >= audit_sequence
+        and retention["expired_through_sequence"] >= evidence["domain_event_sequence"]
     )
     if expired_canonical_event:
         return
@@ -432,6 +446,7 @@ def _validate_evidence(
         and event.get("object_revision") >= 1
         and event.get("revision") == event.get("object_revision")
         and event.get("schema_version") == 1
+        and event.get("sequence") == evidence["domain_event_sequence"]
         and event_instant == initialization
         and _utc_timestamp(bind, event["expires_at"], "event expires_at")
         == initialization + timedelta(days=7)
@@ -575,6 +590,7 @@ def _validate_baselines(bind: Connection) -> None:
             domain_events,
             watermarks,
             dict(deployment),
+            baseline,
         )
     for workspace_id in {row["workspace_id"] for row in rows}:
         _validate_support_rows(
@@ -627,6 +643,28 @@ def _insert_baseline(
     deployment_id = deployment["id"]
     revision = int(deployment["revision"])
     suppressed = instant if target != "ACTIVE" else None
+    if bind.dialect.name == "postgresql":
+        bind.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:workspace_id))"),
+            {"workspace_id": str(workspace_id)},
+        )
+    watermark = (
+        bind.execute(
+            select(event_stream_watermarks)
+            .where(event_stream_watermarks.c.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if watermark is None:
+        bind.execute(
+            event_stream_watermarks.insert().values(
+                workspace_id=workspace_id,
+                last_sequence=0,
+                expired_through_sequence=0,
+            )
+        )
     state = {
         "id": str(uuid.uuid4()),
         "workspace_id": workspace_id,
@@ -641,6 +679,7 @@ def _insert_baseline(
     state_values = {key: value for key, value in state.items() if key in states.c}
     bind.execute(states.insert().values(**state_values))
 
+    domain_event_sequence = _next_sequence(domain_events, bind, workspace_id)
     state_transition_id = f"EVT-{uuid.uuid4()}"
     evidence = {
         "state_transition_id": state_transition_id,
@@ -652,6 +691,7 @@ def _insert_baseline(
         "suppressed_since_utc": suppressed.isoformat() if suppressed else None,
         "resume_watermark_utc": instant.isoformat(),
         "initialization_utc": instant.isoformat(),
+        "domain_event_sequence": domain_event_sequence,
         "revision": revision,
         "reason_code": "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
         "actor": {"type": "SYSTEM", "id": "alembic:0017"},
@@ -689,7 +729,7 @@ def _insert_baseline(
     bind.execute(audit_events.insert().values(**audit))
 
     event = {
-        "sequence": _next_sequence(domain_events, bind, workspace_id),
+        "sequence": domain_event_sequence,
         "event_id": state_transition_id,
         "workspace_id": workspace_id,
         "actor_id": "alembic:0017",
@@ -746,20 +786,11 @@ def _insert_baseline(
         .one_or_none()
     )
     event_sequence = event["sequence"]
-    if watermark is None:
-        bind.execute(
-            event_stream_watermarks.insert().values(
-                workspace_id=workspace_id,
-                last_sequence=event_sequence,
-                expired_through_sequence=0,
-            )
-        )
-    else:
-        bind.execute(
-            event_stream_watermarks.update()
-            .where(event_stream_watermarks.c.workspace_id == workspace_id)
-            .values(last_sequence=event_sequence)
-        )
+    bind.execute(
+        event_stream_watermarks.update()
+        .where(event_stream_watermarks.c.workspace_id == workspace_id)
+        .values(last_sequence=event_sequence)
+    )
 
 
 def _initialize_missing_baselines(bind: Connection) -> None:
@@ -833,6 +864,8 @@ def _run_upgrade(bind: Connection) -> None:
     except SchedulerInitializationError as error:
         if transaction.is_active:
             transaction.rollback()
+        if bind.dialect.name == "sqlite" and bind.in_transaction():
+            bind.commit()
         _persist_quarantine(bind, error)
         raise
     except Exception:

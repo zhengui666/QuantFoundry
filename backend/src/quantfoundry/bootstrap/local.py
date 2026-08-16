@@ -9,6 +9,7 @@ import os
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -252,6 +253,32 @@ def seed_local(
                 }
                 if model is ResearchPolicyVersionRow:
                     row_values["rules"] = value
+                    row_values["max_research_steps"] = 25
+                    row_values["max_tool_calls"] = 50
+                elif model is RiskPolicyVersionRow:
+                    row_values.update(
+                        {
+                            "max_single_position": Decimal(
+                                str(value["max_position_weight"])
+                            ),
+                            "max_strategy_weight": Decimal(
+                                str(value["max_gross_exposure"])
+                            ),
+                            "max_paper_drawdown": Decimal(str(value["max_drawdown"])),
+                            "rules": value,
+                        }
+                    )
+                elif model is CostModelVersionRow:
+                    row_values.update(
+                        {
+                            "commission_model": {
+                                "commission_bps": value["commission_bps"]
+                            },
+                            "slippage_model": {"slippage_bps": value["slippage_bps"]},
+                            "rebalance_timing": "NEXT_OPEN",
+                            "fill_assumption": "NEXT_OPEN",
+                        }
+                    )
                 session.add(model(**row_values))
                 continue
             expected = {
@@ -264,6 +291,30 @@ def seed_local(
             }
             if model is ResearchPolicyVersionRow:
                 expected["rules"] = value
+                expected["max_research_steps"] = 25
+                expected["max_tool_calls"] = 50
+            elif model is RiskPolicyVersionRow:
+                expected.update(
+                    {
+                        "max_single_position": Decimal(
+                            str(value["max_position_weight"])
+                        ),
+                        "max_strategy_weight": Decimal(
+                            str(value["max_gross_exposure"])
+                        ),
+                        "max_paper_drawdown": Decimal(str(value["max_drawdown"])),
+                        "rules": value,
+                    }
+                )
+            elif model is CostModelVersionRow:
+                expected.update(
+                    {
+                        "commission_model": {"commission_bps": value["commission_bps"]},
+                        "slippage_model": {"slippage_bps": value["slippage_bps"]},
+                        "rebalance_timing": "NEXT_OPEN",
+                        "fill_assumption": "NEXT_OPEN",
+                    }
+                )
             if any(
                 getattr(existing, field) != expected_value
                 for field, expected_value in expected.items()

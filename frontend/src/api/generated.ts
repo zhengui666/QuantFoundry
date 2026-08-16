@@ -58,7 +58,9 @@ export interface paths {
     "/auth/logout": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -75,7 +77,9 @@ export interface paths {
     "/auth/access-keys": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -93,7 +97,9 @@ export interface paths {
     "/auth/access-keys/{key_id}": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -110,7 +116,9 @@ export interface paths {
     "/auth/access-keys/{key_id}/rotate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -127,7 +135,9 @@ export interface paths {
     "/auth/access-keys/{key_id}/revoke": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -144,7 +154,9 @@ export interface paths {
     "/auth/access-keys/{key_id}/expire": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -195,7 +207,9 @@ export interface paths {
     "/configuration/candidate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -212,7 +226,9 @@ export interface paths {
     "/configuration/candidate/validate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -229,7 +245,9 @@ export interface paths {
     "/configuration/activate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -246,7 +264,9 @@ export interface paths {
     "/configuration/rollback": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -280,7 +300,9 @@ export interface paths {
     "/database/connection/candidate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -297,7 +319,9 @@ export interface paths {
     "/database/connection/candidate/validate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -314,7 +338,9 @@ export interface paths {
     "/database/connection/activate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -331,7 +357,9 @@ export interface paths {
     "/database/connection/revert": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -365,7 +393,9 @@ export interface paths {
     "/setup/complete": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -399,7 +429,9 @@ export interface paths {
     "/setup/live-connectors/validate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -416,7 +448,9 @@ export interface paths {
     "/setup/provider-connections/validate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -467,7 +501,9 @@ export interface paths {
     "/data/capabilities/evaluate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -484,7 +520,9 @@ export interface paths {
     "/data/datasets/{dataset_id}/validate": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -501,7 +539,9 @@ export interface paths {
     "/data/datasets/{dataset_id}/snapshots": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -535,7 +575,9 @@ export interface paths {
     "/research": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -570,7 +612,9 @@ export interface paths {
     "/research/{research_id}/start": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -587,7 +631,9 @@ export interface paths {
     "/experiments": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -621,7 +667,9 @@ export interface paths {
     "/experiments/{experiment_id}/reproduce": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -638,7 +686,9 @@ export interface paths {
     "/factors": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -655,7 +705,9 @@ export interface paths {
     "/factors/{factor_id}/analyses": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -672,7 +724,9 @@ export interface paths {
     "/strategies": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -723,7 +777,9 @@ export interface paths {
     "/strategies/{strategy_id}/versions/{version}/backtests": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -740,7 +796,9 @@ export interface paths {
     "/strategies/{strategy_id}/versions/{version}/freeze": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -757,7 +815,9 @@ export interface paths {
     "/validations": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -808,7 +868,9 @@ export interface paths {
     "/validations/{validation_id}/holdout-approval-requests": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -825,7 +887,9 @@ export interface paths {
     "/validations/{validation_id}/holdout-runs": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -859,7 +923,9 @@ export interface paths {
     "/memos": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -944,7 +1010,9 @@ export interface paths {
     "/approvals/{approval_id}/approve": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -961,7 +1029,9 @@ export interface paths {
     "/approvals/{approval_id}/reject": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -995,7 +1065,9 @@ export interface paths {
     "/agents/{role}/config": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1152,21 +1224,37 @@ export interface components {
             consumers: string[];
             dependencies: string[];
             /** @description Closed JSON Schema for this key; it is immutable catalog data */
-            schema: Record<string, never>;
+            schema: {
+                [key: string]: unknown;
+            };
             validator: string;
-            safe_range?: Record<string, never> | null;
+            safe_range?: {
+                [key: string]: unknown;
+            } | null;
         };
         ConfigurationValueWrite: {
             key: string;
-            value?: string | number | boolean | Record<string, never> | unknown[] | null;
+            value?: string | number | boolean | {
+                [key: string]: unknown;
+            } | unknown[] | null;
             secret?: string;
-        } & (unknown | unknown);
+        } & ({
+            key: string;
+            value: string | number | boolean | {
+                [key: string]: unknown;
+            } | unknown[] | null;
+        } | {
+            key: string;
+            secret: string;
+        });
         ConfigurationValueView: {
             key: string;
             /** @enum {unknown} */
             sensitivity: "PUBLIC" | "MASKED" | "SECRET";
             configured: boolean;
-            value: string | number | boolean | Record<string, never> | unknown[] | null;
+            value: string | number | boolean | {
+                [key: string]: unknown;
+            } | unknown[] | null;
             masked_hint: string | null;
         };
         ConfigurationCandidateRequest: {
@@ -1257,7 +1345,7 @@ export interface components {
                 database: string;
                 /** @enum {unknown} */
                 tls_mode: "DISABLED" | "VERIFY_CA" | "VERIFY_FULL";
-                username: string;
+                username?: string;
                 password?: string;
                 client_key_pem?: string;
                 ca_certificate_pem?: string;
@@ -3203,8 +3291,10 @@ export interface components {
         };
     };
     parameters: {
+        CsrfHeader: string;
         IdempotencyKey: string;
         IfMatch: string;
+        DatabaseCandidateRevision: number;
         ResearchId: string;
         /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Resolution is always bound to the installation's fixed singleton namespace. */
         DatasetId: string;
@@ -3303,7 +3393,9 @@ export interface operations {
     logoutOwnerSession: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -3323,7 +3415,9 @@ export interface operations {
     listGeneralAccessKeys: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -3345,6 +3439,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -3376,6 +3471,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
@@ -3409,6 +3505,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -3440,6 +3537,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
@@ -3467,6 +3565,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
@@ -3539,6 +3638,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -3572,6 +3672,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -3599,6 +3700,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -3633,6 +3735,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -3689,6 +3792,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -3722,7 +3826,9 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Candidate-Revision": components["parameters"]["DatabaseCandidateRevision"];
             };
             path?: never;
             cookie?: never;
@@ -3749,8 +3855,10 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                "X-Candidate-Revision": components["parameters"]["DatabaseCandidateRevision"];
             };
             path?: never;
             cookie?: never;
@@ -3779,6 +3887,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -3831,6 +3940,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 "If-Match": components["parameters"]["IfMatch"];
             };
@@ -3889,6 +3999,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -3920,6 +4031,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -3998,7 +4110,9 @@ export interface operations {
     evaluateDataCapabilities: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4027,6 +4141,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
@@ -4061,6 +4176,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
@@ -4121,7 +4237,9 @@ export interface operations {
     listResearch: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4145,6 +4263,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -4204,6 +4323,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 "If-Match": components["parameters"]["IfMatch"];
             };
@@ -4240,6 +4360,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -4298,6 +4419,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
@@ -4334,6 +4456,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -4366,6 +4489,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
@@ -4399,6 +4523,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -4487,6 +4612,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
@@ -4521,6 +4647,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 "If-Match": components["parameters"]["IfMatch"];
             };
@@ -4559,6 +4686,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -4644,6 +4772,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 "If-Match": components["parameters"]["IfMatch"];
             };
@@ -4681,6 +4810,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 "If-Match": components["parameters"]["IfMatch"];
             };
@@ -4744,6 +4874,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -4882,6 +5013,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 "If-Match": components["parameters"]["IfMatch"];
             };
@@ -4919,6 +5051,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 "If-Match": components["parameters"]["IfMatch"];
             };
@@ -4978,7 +5111,9 @@ export interface operations {
     getAgentConfig: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-CSRF-Token"?: string;
+            };
             path: {
                 role: components["parameters"]["AgentRole"];
             };
@@ -5006,6 +5141,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                "X-CSRF-Token"?: string;
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {

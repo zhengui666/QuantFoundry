@@ -153,14 +153,12 @@ export function Shell() {
         for (const queryKey of queryKeysForEvent(event))
           void client.invalidateQueries({ queryKey, exact: true, type: 'active' });
       },
-      () => {
+      async () => {
         setStreamState(translationRef.current('stream.resynchronizing'));
-        void (async () => {
-          const predicate = (query: { queryKey: readonly unknown[] }) =>
-            isMutableEventQueryKey(query.queryKey);
-          await client.invalidateQueries({ type: 'active', refetchType: 'none', predicate });
-          await client.refetchQueries({ type: 'active', predicate });
-        })();
+        const predicate = (query: { queryKey: readonly unknown[] }) =>
+          isMutableEventQueryKey(query.queryKey);
+        await client.invalidateQueries({ type: 'active', refetchType: 'none', predicate });
+        await client.refetchQueries({ type: 'active', predicate });
       },
       (state) => {
         setStreamState(
@@ -351,10 +349,14 @@ export function SetupPage() {
   const [aiCredential, setAiCredential] = useState('');
   const [dataCredential, setDataCredential] = useState('');
   const [dataSkipped, setDataSkipped] = useState(false);
+  const [aiValidationSelection, setAiValidationSelection] = useState<
+    { providerId: string; modelName: string } | null | undefined
+  >();
   const setupRestored = useRef(false);
   const resumeSetup = useRef(transientStorage.get('qf.setup.started') === 'true');
   const completeIntent = useRef<{ payload: string; key: string } | undefined>(undefined);
   const completeSubmitting = useRef(false);
+  const formHydrated = useRef(false);
   const [aiConnection, setAiConnection] =
     useState<Schema<'SetupProviderConnectionValidationResult'>>();
   const [dataConnection, setDataConnection] =
@@ -376,16 +378,19 @@ export function SetupPage() {
         credential: variables.credential,
       }),
     onSuccess: async ({ body }, variables) => {
-      if (providerId !== variables.providerId) return;
-      setAiCredential('');
+      if (providerId !== variables.providerId || modelName !== variables.modelName) return;
       if (body.state === 'FAILED') {
         setAiConnection(body);
         return;
       }
       const refreshed = await status.refetch();
-      setAiConnection(
-        refreshed.data?.body.ai_connection_id === body.connection_id ? body : undefined,
-      );
+      if (refreshed.data?.body.ai_connection_id !== body.connection_id) {
+        setAiConnection(undefined);
+        return;
+      }
+      setAiCredential('');
+      setAiValidationSelection(variables);
+      setAiConnection(body);
     },
   });
   const validateData = useMutation({
@@ -512,7 +517,14 @@ export function SetupPage() {
     step === 1
       ? Boolean(readiness?.owner_session_ready)
       : step === 2
-        ? Boolean(readiness?.ai_provider_configured && readiness.ai_connection_id)
+        ? Boolean(
+            readiness?.ai_provider_configured &&
+            readiness.ai_connection_id &&
+            aiValidationSelection !== null &&
+            (!aiValidationSelection ||
+              (aiValidationSelection.providerId === providerId &&
+                aiValidationSelection.modelName === modelName)),
+          )
         : step === 3
           ? dataStepComplete
           : step === 4
@@ -522,6 +534,10 @@ export function SetupPage() {
     readiness?.owner_session_ready &&
     readiness.ai_provider_configured &&
     readiness.ai_connection_id &&
+    aiValidationSelection !== null &&
+    (!aiValidationSelection ||
+      (aiValidationSelection.providerId === providerId &&
+        aiValidationSelection.modelName === modelName)) &&
     policyReady &&
     readiness.fallback_step === null &&
     !readiness.completed,
@@ -539,6 +555,46 @@ export function SetupPage() {
   useEffect(() => {
     if (readiness && step > recoveryStep && readiness.fallback_step !== null) setStep(recoveryStep);
   }, [readiness, recoveryStep, step]);
+  useEffect(() => {
+    if (!configuration.data || formHydrated.current) return;
+    formHydrated.current = true;
+    const values = new Map(configuration.data.body.values.map((entry) => [entry.key, entry.value]));
+    const locale = values.get('appearance.locale');
+    const defaults = values.get('research.defaults');
+    setForm((current) => ({
+      ...current,
+      ...(locale && typeof locale === 'object' && !Array.isArray(locale)
+        ? {
+            language:
+              locale.language === 'en' || locale.language === 'zh-CN'
+                ? locale.language
+                : current.language,
+            timezone: typeof locale.timezone === 'string' ? locale.timezone : current.timezone,
+            number_format_locale:
+              typeof locale.number_format_locale === 'string'
+                ? locale.number_format_locale
+                : current.number_format_locale,
+          }
+        : {}),
+      ...(defaults && typeof defaults === 'object' && !Array.isArray(defaults)
+        ? {
+            default_benchmark:
+              typeof defaults.benchmark === 'string'
+                ? defaults.benchmark
+                : current.default_benchmark,
+            default_research_start:
+              typeof defaults.research_start === 'string'
+                ? defaults.research_start
+                : current.default_research_start,
+            initial_paper_capital:
+              typeof defaults.initial_paper_capital === 'number' ||
+              typeof defaults.initial_paper_capital === 'string'
+                ? String(defaults.initial_paper_capital)
+                : current.initial_paper_capital,
+          }
+        : {}),
+    }));
+  }, [configuration.data]);
   if (status.isLoading || capabilities.isLoading || configuration.isLoading)
     return <State kind="loading">{t('setup.loading')}</State>;
   if (status.error) return <Problem error={status.error} />;
@@ -559,7 +615,7 @@ export function SetupPage() {
         className="panel setup-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (completeSubmitting.current) return;
+          if (step !== 5 || !canFinish || complete.isPending || completeSubmitting.current) return;
           completeSubmitting.current = true;
           complete.mutate();
         }}
@@ -616,6 +672,7 @@ export function SetupPage() {
                   setProviderId(event.target.value);
                   setModelName('');
                   setAiConnection(undefined);
+                  setAiValidationSelection(null);
                 }}
               >
                 <option value="">{t('setup.selectProvider')}</option>
@@ -628,7 +685,14 @@ export function SetupPage() {
             </label>
             <label>
               {t('setup.model')}
-              <select value={modelName} onChange={(event) => setModelName(event.target.value)}>
+              <select
+                value={modelName}
+                onChange={(event) => {
+                  setModelName(event.target.value);
+                  setAiConnection(undefined);
+                  setAiValidationSelection(null);
+                }}
+              >
                 <option value="">{t('setup.providerDefault')}</option>
                 {selectedProvider?.models.map((model) => (
                   <option key={model.model_name}>{model.model_name}</option>
@@ -2634,6 +2698,14 @@ export function ValidationPage() {
     queryFn: ({ signal }) => api.holdoutResult(validationId, signal),
     enabled: validValidationId && gate.data?.body.state === 'EXPOSED',
   });
+  useEffect(() => {
+    if (gate.data?.body.state !== 'EXPOSED') {
+      client.removeQueries({
+        queryKey: workspaceQueryKey('holdout-result', validationId),
+        exact: true,
+      });
+    }
+  }, [client, gate.data?.body.state, validationId]);
   const action = useMutation({
     mutationFn: async (actionName: string) => {
       if (actionName === 'request_holdout_approval') {
@@ -2792,7 +2864,7 @@ export function ValidationPage() {
           <State kind="permission">{t('validation.protectedMetrics')}</State>
         )}
         {result.error && <Problem error={result.error} />}
-        {result.data && (
+        {holdout.state === 'EXPOSED' && result.data && (
           <>
             <Badge>{result.data.body.result}</Badge>
             <p>

@@ -64,14 +64,14 @@ async function handleMessage(event) {
 
   switch (event.data) {
     case 'KEEPALIVE_REQUEST': {
-      void sendToClient(client, {
+      await sendToClient(client, {
         type: 'KEEPALIVE_RESPONSE',
       }).catch(() => {})
       break
     }
 
     case 'INTEGRITY_CHECK_REQUEST': {
-      void sendToClient(client, {
+      await sendToClient(client, {
         type: 'INTEGRITY_CHECK_RESPONSE',
         payload: {
           packageVersion: PACKAGE_VERSION,
@@ -84,7 +84,7 @@ async function handleMessage(event) {
     case 'MOCK_ACTIVATE': {
       activeClientIds.add(clientId)
 
-      void sendToClient(client, {
+      await sendToClient(client, {
         type: 'MOCKING_ENABLED',
         payload: {
           client: {
@@ -170,7 +170,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
     // Clone the response so both the client and the library could consume it.
     const responseClone = isEventStreamResponse ? null : response.clone()
 
-    void sendToClient(
+    await sendToClient(
       client,
       {
         type: 'RESPONSE',
@@ -210,28 +210,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
 async function resolveMainClient(event) {
   const client = await self.clients.get(event.clientId)
 
-  if (activeClientIds.has(event.clientId)) {
-    return client
-  }
-
-  if (client?.frameType === 'top-level') {
-    return client
-  }
-
-  const allClients = await self.clients.matchAll({
-    type: 'window',
-  })
-
-  return allClients
-    .filter((client) => {
-      // Get only those clients that are currently visible.
-      return client.visibilityState === 'visible'
-    })
-    .find((client) => {
-      // Find the client ID that's recorded in the
-      // set of clients that have registered the worker.
-      return activeClientIds.has(client.id)
-    })
+  return activeClientIds.has(event.clientId) ? client : undefined
 }
 
 /**

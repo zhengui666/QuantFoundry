@@ -11,12 +11,13 @@ import re
 import secrets
 import tempfile
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from threading import RLock
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from urllib.parse import quote
 
 import yaml
@@ -26,6 +27,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi import Path as ApiPath
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator
 from sqlalchemy import (
@@ -38,6 +40,7 @@ from sqlalchemy import (
     LargeBinary,
     MetaData,
     String,
+    UniqueConstraint,
     create_engine,
     desc,
     inspect,
@@ -264,6 +267,30 @@ class BootstrapAuditEvent(ControlBase):
     created_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class ControlIdempotencyRecord(ControlBase):
+    __tablename__ = "control_idempotency_records"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    principal = Column(String(128), nullable=False)
+    operation = Column(String(128), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    request_sha256 = Column(String(64), nullable=False)
+    status = Column(String(16), nullable=False, default="PENDING")
+    response_status = Column(Integer)
+    response_body = Column(JSON)
+    response_headers = Column(JSON)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True))
+    lease_expires_at = Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "principal",
+            "operation",
+            "idempotency_key",
+            name="uq_control_idempotency_principal_operation_key",
+        ),
+    )
+
+
 def _control_path() -> Path:
     test_root = os.getenv("QF_TEST_RUNTIME_ROOT")
     if os.getenv("QF_ENV", "production") == "test" and test_root:
@@ -303,6 +330,157 @@ def _json_hash(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
     ).hexdigest()
+
+
+def _idempotency_fingerprint(values: dict[str, Any]) -> str:
+    def normalize(value: Any) -> Any:
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json", by_alias=True)
+        if isinstance(value, dict):
+            return {str(key): normalize(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [normalize(item) for item in value]
+        if isinstance(value, (Request, Response, Session)):
+            return None
+        return value
+
+    return _json_hash(
+        {
+            key: normalize(value)
+            for key, value in values.items()
+            if key not in {"request", "response", "idempotency_key"}
+        }
+    )
+
+
+def _encode_idempotent_result(
+    result: Any, default_status: int
+) -> tuple[int, Any, dict[str, str]]:
+    status = int(getattr(result, "status_code", default_status))
+    headers: dict[str, str] = {}
+    if isinstance(result, Response):
+        for name in ("etag", "location"):
+            value = result.headers.get(name)
+            if value is not None:
+                headers[name] = value
+        body = getattr(result, "body", None)
+        if body in (None, b""):
+            return status, None, headers
+        if isinstance(body, memoryview):
+            body = body.tobytes()
+        try:
+            return status, json.loads(body), headers
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+            return status, body.decode("utf-8"), headers
+    if hasattr(result, "model_dump"):
+        return status, result.model_dump(mode="json", by_alias=True), headers
+    return status, jsonable_encoder(result), headers
+
+
+def _replay_idempotent(record: ControlIdempotencyRecord) -> Response:
+    if record.response_status == 204 or record.response_body is None:
+        return Response(
+            status_code=record.response_status or 200,
+            headers=record.response_headers or {},
+        )
+    return JSONResponse(
+        content=record.response_body,
+        status_code=record.response_status or 200,
+        headers=record.response_headers or {},
+    )
+
+
+def _with_idempotency(operation: str, success_status: int = 200):
+    def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(function)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            request = kwargs.get("request")
+            key = kwargs.get("idempotency_key")
+            if not isinstance(request, Request) or not isinstance(key, str):
+                return function(*args, **kwargs)
+            cookie = request.cookies.get(SESSION_COOKIE)
+            principal = (
+                hashlib.sha256(cookie.encode()).hexdigest()
+                if cookie
+                else str(getattr(request.state, "actor", None) or "anonymous")
+            )
+            fingerprint = _idempotency_fingerprint(kwargs)
+            now = _now()
+            with ControlSessionLocal.begin() as db:
+                record = db.scalar(
+                    select(ControlIdempotencyRecord)
+                    .where(
+                        ControlIdempotencyRecord.principal == principal,
+                        ControlIdempotencyRecord.operation == operation,
+                        ControlIdempotencyRecord.idempotency_key == key,
+                    )
+                    .with_for_update()
+                )
+                if record is not None:
+                    if record.request_sha256 != fingerprint:
+                        return _problem(
+                            409,
+                            "IDEMPOTENCY_CONFLICT",
+                            "idempotency key was reused for another request",
+                        )
+                    if record.status == "COMPLETED":
+                        return _replay_idempotent(record)
+                    lease_expires_at = _aware(record.lease_expires_at)
+                    if lease_expires_at is not None and lease_expires_at > now:
+                        return _problem(
+                            409,
+                            "IDEMPOTENCY_IN_PROGRESS",
+                            "idempotent request is already in progress",
+                        )
+                    record.status = "PENDING"
+                    record.lease_expires_at = now + timedelta(minutes=5)
+                else:
+                    record = ControlIdempotencyRecord(
+                        principal=principal,
+                        operation=operation,
+                        idempotency_key=key,
+                        request_sha256=fingerprint,
+                        status="PENDING",
+                        created_at=now,
+                        lease_expires_at=now + timedelta(minutes=5),
+                    )
+                    db.add(record)
+            try:
+                result = function(*args, **kwargs)
+            except Exception:
+                with ControlSessionLocal.begin() as db:
+                    failed = db.scalar(
+                        select(ControlIdempotencyRecord).where(
+                            ControlIdempotencyRecord.principal == principal,
+                            ControlIdempotencyRecord.operation == operation,
+                            ControlIdempotencyRecord.idempotency_key == key,
+                        )
+                    )
+                    if failed is not None:
+                        failed.status = "ABANDONED"
+                        failed.lease_expires_at = _now()
+                raise
+            status, body, headers = _encode_idempotent_result(result, success_status)
+            with ControlSessionLocal.begin() as db:
+                completed = db.scalar(
+                    select(ControlIdempotencyRecord).where(
+                        ControlIdempotencyRecord.principal == principal,
+                        ControlIdempotencyRecord.operation == operation,
+                        ControlIdempotencyRecord.idempotency_key == key,
+                    )
+                )
+                if completed is not None:
+                    completed.status = "COMPLETED"
+                    completed.response_status = status
+                    completed.response_body = body
+                    completed.response_headers = headers
+                    completed.completed_at = _now()
+                    completed.lease_expires_at = completed.completed_at
+            return result
+
+        return wrapped
+
+    return decorate
 
 
 def _catalog_path() -> Path:
@@ -354,8 +532,9 @@ def init_control_db() -> None:
             "BOOTSTRAP_LOCKED: control database is unreadable"
         ) from error
     expected_tables = set(CONTROL_METADATA.tables)
-    if existing_tables and not expected_tables.issubset(existing_tables):
-        missing = ", ".join(sorted(expected_tables - existing_tables))
+    missing = expected_tables - existing_tables
+    if existing_tables and missing - {"control_idempotency_records"}:
+        missing = ", ".join(sorted(missing - {"control_idempotency_records"}))
         raise RuntimeError(
             f"BOOTSTRAP_LOCKED: control schema is incomplete ({missing})"
         )
@@ -525,41 +704,65 @@ def _audit(
     key_id: str | None,
     summary: dict[str, Any],
     *,
+    session_id: str | None = None,
+    actor_principal: str | None = None,
     config_revision: int | None = None,
     db_revision: int | None = None,
 ) -> None:
-    previous = (
+    with _DOMAIN_SWITCH_LOCK:
         session.execute(
-            select(BootstrapAuditEvent).order_by(desc(BootstrapAuditEvent.sequence))
+            select(BootstrapState)
+            .where(BootstrapState.singleton_key == "BOOTSTRAP-DEFAULT")
+            .with_for_update()
+        ).scalar_one_or_none()
+        previous = session.execute(
+            select(BootstrapAuditEvent)
+            .order_by(desc(BootstrapAuditEvent.sequence))
+            .limit(1)
+        ).scalar_one_or_none()
+        sequence = (previous.sequence if previous is not None else 0) + 1
+        previous_hash = previous.event_hash if previous else None
+        now = _now()
+        event_id = "BAUD-" + secrets.token_urlsafe(20).lower().replace(
+            "_", "a"
+        ).replace("-", "b")
+        session_hash = (
+            hashlib.sha256(session_id.encode()).hexdigest()
+            if session_id is not None
+            else None
         )
-        .scalars()
-        .first()
-    )
-    previous_hash = previous.event_hash if previous else None
-    now = _now()
-    payload = {
-        "event_type": event_type,
-        "key_id": key_id,
-        "summary": summary,
-        "previous": previous_hash,
-        "created_at": now.isoformat(),
-    }
-    event_hash = _json_hash(payload)
-    session.add(
-        BootstrapAuditEvent(
-            event_id="BAUD-"
-            + secrets.token_urlsafe(20).lower().replace("_", "a").replace("-", "b"),
-            event_type=event_type,
-            actor_principal="OWNER" if key_id else "SYSTEM",
-            access_key_id=key_id,
-            configuration_revision=config_revision,
-            database_connection_revision=db_revision,
-            masked_summary=summary,
-            previous_event_hash=previous_hash,
-            event_hash=event_hash,
-            created_at=now,
+        event = {
+            "sequence": sequence,
+            "event_id": event_id,
+            "event_type": event_type,
+            "actor_principal": actor_principal or ("OWNER" if key_id else "SYSTEM"),
+            "access_key_id": key_id,
+            "session_id_sha256": session_hash,
+            "configuration_revision": config_revision,
+            "database_connection_revision": db_revision,
+            "before_sha256": None,
+            "after_sha256": None,
+            "masked_summary": summary,
+            "previous_event_hash": previous_hash,
+            "created_at": now.isoformat(),
+        }
+        event_hash = _json_hash(event)
+        session.add(
+            BootstrapAuditEvent(
+                sequence=sequence,
+                event_id=event_id,
+                event_type=event_type,
+                actor_principal=event["actor_principal"],
+                access_key_id=key_id,
+                session_id_sha256=session_hash,
+                configuration_revision=config_revision,
+                database_connection_revision=db_revision,
+                masked_summary=summary,
+                previous_event_hash=previous_hash,
+                event_hash=event_hash,
+                created_at=now,
+            )
         )
-    )
 
 
 def _metadata(row: GeneralAccessKey) -> GeneralAccessKeyMetadata:
@@ -744,26 +947,29 @@ def _value_view(
     )
 
 
-def _effective_values(session: Session, revision: int) -> list[ConfigurationValueView]:
-    active = session.scalar(
-        select(ActiveConfiguration).where(
-            ActiveConfiguration.singleton_key == "CONFIGURATION-DEFAULT"
-        )
-    )
-    revision_row = session.get(ConfigurationRevision, revision)
-    base = revision_row.base_revision if revision_row else None
-    if base is None and active and revision != active.active_revision:
-        base = active.active_revision
+def _effective_value_rows(
+    session: Session, revision: int
+) -> dict[str, ConfigurationValue]:
     rows: dict[str, ConfigurationValue] = {}
-    if base is not None:
+    seen: set[int] = set()
+    current: int | None = revision
+    while current is not None:
+        if current in seen:
+            raise RuntimeError("configuration revision base cycle detected")
+        seen.add(current)
+        revision_row = session.get(ConfigurationRevision, current)
+        if revision_row is None:
+            raise RuntimeError("configuration revision base is missing")
         for row in session.scalars(
-            select(ConfigurationValue).where(ConfigurationValue.revision == base)
+            select(ConfigurationValue).where(ConfigurationValue.revision == current)
         ):
-            rows[row.key] = row
-    for row in session.scalars(
-        select(ConfigurationValue).where(ConfigurationValue.revision == revision)
-    ):
-        rows[row.key] = row
+            rows.setdefault(row.key, row)
+        current = revision_row.base_revision
+    return rows
+
+
+def _effective_values(session: Session, revision: int) -> list[ConfigurationValueView]:
+    rows = _effective_value_rows(session, revision)
     catalogs = {
         row.key: row for row in session.scalars(select(ConfigurationCatalogRow))
     }
@@ -930,7 +1136,7 @@ def activate_configuration_revision(
         bootstrap = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
         if bootstrap is not None:
             bootstrap.active_configuration_revision = revision
-            bootstrap.last_known_good_configuration_revision = revision
+            bootstrap.last_known_good_configuration_revision = old_revision
             bootstrap.updated_at = _now()
         _audit(
             db,
@@ -954,7 +1160,7 @@ def active_runtime_snapshot() -> dict[str, Any]:
         ) or ("0" * 64)
         model = "unconfigured"
         provider = "unconfigured"
-        row = session.get(ConfigurationValue, (revision, "ai.remote_codex"))
+        row = _effective_value_rows(session, revision).get("ai.remote_codex")
         catalog = session.get(ConfigurationCatalogRow, "ai.remote_codex")
         if row is not None and row.ciphertext is not None and catalog is not None:
             try:
@@ -962,7 +1168,7 @@ def active_runtime_snapshot() -> dict[str, Any]:
                     _open(
                         row.ciphertext,
                         aad=_configuration_aad(
-                            session, revision, row.key, catalog.schema_version
+                            session, row.revision, row.key, catalog.schema_version
                         ),
                         key_id=row.secret_key_id,
                     )
@@ -991,8 +1197,8 @@ def active_remote_codex_connection() -> dict[str, Any] | None:
         active = session.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
         if active is None:
             return None
-        row = session.get(
-            ConfigurationValue, (active.active_revision, "ai.remote_codex")
+        row = _effective_value_rows(session, active.active_revision).get(
+            "ai.remote_codex"
         )
         catalog = session.get(ConfigurationCatalogRow, "ai.remote_codex")
         if row is None or catalog is None or row.ciphertext is None:
@@ -1499,7 +1705,13 @@ def build_router() -> APIRouter:
         )
         key.last_used_at = now
         session.add(owner_session)
-        _audit(session, "LOGIN_SUCCESS", key.key_id, {"session": "created"})
+        _audit(
+            session,
+            "LOGIN_SUCCESS",
+            key.key_id,
+            {"session": "created"},
+            session_id=owner_session.session_id,
+        )
         session.commit()
         # Local/development smoke runs use plain HTTP; production remains Secure.
         secure = request.app.state.environment not in {"local", "development", "test"}
@@ -1551,7 +1763,13 @@ def build_router() -> APIRouter:
             if row is not None:
                 row.revoked_at = _now()
                 row.revoke_reason = "LOGOUT"
-                _audit(db, "SESSION_REVOKED", row.access_key_id, {"reason": "LOGOUT"})
+                _audit(
+                    db,
+                    "SESSION_REVOKED",
+                    row.access_key_id,
+                    {"reason": "LOGOUT"},
+                    session_id=session.session_id,
+                )
         response.delete_cookie(SESSION_COOKIE, path="/")
         response.status_code = 204
         return response
@@ -1580,6 +1798,7 @@ def build_router() -> APIRouter:
         status_code=201,
         operation_id="createGeneralAccessKey",
     )
+    @_with_idempotency("createGeneralAccessKey", 201)
     def create_key(
         data: GeneralAccessKeyCreateRequest,
         request: Request,
@@ -1612,7 +1831,13 @@ def build_router() -> APIRouter:
                 revision=1,
             )
             db.add(row)
-            _audit(db, "KEY_CREATED", key_id, {"label": data.label})
+            _audit(
+                db,
+                "KEY_CREATED",
+                current.access_key_id if current else None,
+                {"created_key_id": key_id, "label": data.label},
+                session_id=current.session_id if current else None,
+            )
         return GeneralAccessKeyIssued(key=_metadata(row), secret=raw)
 
     @router.patch(
@@ -1638,7 +1863,13 @@ def build_router() -> APIRouter:
                 return mismatch
             row.label = data.label
             row.revision += 1
-            _audit(db, "KEY_RENAMED", key_id, {"revision": row.revision})
+            _audit(
+                db,
+                "KEY_RENAMED",
+                current.access_key_id if current else None,
+                {"key_id": key_id, "revision": row.revision},
+                session_id=current.session_id if current else None,
+            )
             return _metadata(row)
 
     def _revoke_key(key_id: str, request: Request, status: str, if_match: str | None):
@@ -1654,7 +1885,9 @@ def build_router() -> APIRouter:
                 return mismatch
             active = list(
                 db.scalars(
-                    select(GeneralAccessKey).where(GeneralAccessKey.status == "ACTIVE")
+                    select(GeneralAccessKey)
+                    .where(GeneralAccessKey.status == "ACTIVE")
+                    .with_for_update()
                 )
             )
             if row.status == "ACTIVE" and len(active) <= 1:
@@ -1673,8 +1906,9 @@ def build_router() -> APIRouter:
             _audit(
                 db,
                 "KEY_REVOKED" if status == "REVOKED" else "KEY_EXPIRED",
-                key_id,
-                {"status": status},
+                current.access_key_id if current else None,
+                {"key_id": key_id, "status": status},
+                session_id=current.session_id if current else None,
             )
         return Response(status_code=204)
 
@@ -1708,6 +1942,7 @@ def build_router() -> APIRouter:
         status_code=201,
         operation_id="rotateGeneralAccessKey",
     )
+    @_with_idempotency("rotateGeneralAccessKey", 201)
     def rotate_key(
         key_id: Annotated[str, ApiPath(pattern=KEY_ID_RE.pattern)],
         request: Request,
@@ -1755,7 +1990,13 @@ def build_router() -> APIRouter:
                 OwnerSession.access_key_id == old.key_id,
                 OwnerSession.revoked_at.is_(None),
             ).update({"revoked_at": now, "revoke_reason": "ROTATED"})
-            _audit(db, "KEY_ROTATED", new_id, {"replaced_key_id": old.key_id})
+            _audit(
+                db,
+                "KEY_ROTATED",
+                current.access_key_id if current else None,
+                {"new_key_id": new_id, "replaced_key_id": old.key_id},
+                session_id=current.session_id if current else None,
+            )
         return GeneralAccessKeyIssued(
             key=_metadata(new), secret=f"qfk_{new_id}.{secret}"
         )
@@ -1783,6 +2024,7 @@ def build_router() -> APIRouter:
         return payload
 
     @router.put("/configuration/candidate", operation_id="putConfigurationCandidate")
+    @_with_idempotency("putConfigurationCandidate")
     def put_candidate(
         data: ConfigurationCandidateRequest,
         request: Request,
@@ -1809,7 +2051,8 @@ def build_router() -> APIRouter:
                     "base revision does not match active configuration",
                 )
             catalog = {
-                row.key: row for row in db.scalars(select(ConfigurationCatalogRow))
+                cast(str, row.key): row
+                for row in db.scalars(select(ConfigurationCatalogRow))
             }
             seen: set[str] = set()
             revision = ConfigurationRevision(
@@ -1824,11 +2067,7 @@ def build_router() -> APIRouter:
             db.add(revision)
             db.flush()
             snapshot: dict[str, Any] = {}
-            for row in db.scalars(
-                select(ConfigurationValue).where(
-                    ConfigurationValue.revision == active.active_revision
-                )
-            ):
+            for row in _effective_value_rows(db, active.active_revision).values():
                 snapshot[row.key] = (
                     {"configured": True, "secret": True}
                     if row.ciphertext is not None
@@ -1883,8 +2122,9 @@ def build_router() -> APIRouter:
             _audit(
                 db,
                 "CONFIG_CANDIDATE",
-                None,
+                current.access_key_id if current else None,
                 {"keys": sorted(seen)},
+                session_id=current.session_id if current else None,
                 config_revision=revision.revision,
             )
             result = _candidate_view(db, revision)
@@ -1896,6 +2136,7 @@ def build_router() -> APIRouter:
         response_model=ConfigurationValidationResult,
         operation_id="validateConfigurationCandidate",
     )
+    @_with_idempotency("validateConfigurationCandidate")
     def validate_candidate(
         request: Request,
         idempotency_key: str = Header(
@@ -1916,7 +2157,8 @@ def build_router() -> APIRouter:
                     404, "RESOURCE_NOT_FOUND", "candidate configuration not found"
                 )
             catalog = {
-                row.key: row for row in db.scalars(select(ConfigurationCatalogRow))
+                cast(str, row.key): row
+                for row in db.scalars(select(ConfigurationCatalogRow))
             }
             errors: list[dict[str, Any]] = []
             candidate_rows = list(
@@ -1927,21 +2169,10 @@ def build_router() -> APIRouter:
                 )
             )
             active = db.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
-            effective_rows = {
-                row.key: row
-                for row in (
-                    list(
-                        db.scalars(
-                            select(ConfigurationValue).where(
-                                ConfigurationValue.revision == active.active_revision
-                            )
-                        )
-                    )
-                    if active
-                    else []
-                )
-            }
-            effective_rows.update({row.key: row for row in candidate_rows})
+            effective_rows = (
+                _effective_value_rows(db, active.active_revision) if active else {}
+            )
+            effective_rows.update({cast(str, row.key): row for row in candidate_rows})
             for row in candidate_rows:
                 entry = catalog[row.key]
                 if row.ciphertext is None and row.typed_value is not None:
@@ -1997,8 +2228,9 @@ def build_router() -> APIRouter:
             _audit(
                 db,
                 "CONFIG_VALIDATED" if not errors else "CONFIG_FAILED",
-                None,
+                current.access_key_id if current else None,
                 {"status": candidate.validation_status},
+                session_id=current.session_id if current else None,
                 config_revision=candidate.revision,
             )
             return ConfigurationValidationResult.model_validate(
@@ -2012,6 +2244,7 @@ def build_router() -> APIRouter:
             )
 
     @router.post("/configuration/activate", operation_id="activateConfiguration")
+    @_with_idempotency("activateConfiguration")
     def activate_configuration(
         data: ConfigurationActivateRequest,
         request: Request,
@@ -2098,13 +2331,14 @@ def build_router() -> APIRouter:
             bootstrap = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
             if bootstrap is not None:
                 bootstrap.active_configuration_revision = candidate.revision
-                bootstrap.last_known_good_configuration_revision = candidate.revision
+                bootstrap.last_known_good_configuration_revision = old
                 bootstrap.updated_at = _now()
             _audit(
                 db,
                 "CONFIG_ACTIVATED",
-                None,
+                current.access_key_id if current else None,
                 {"revision": candidate.revision},
+                session_id=current.session_id if current else None,
                 config_revision=candidate.revision,
             )
             payload = _config_active(db)
@@ -2116,6 +2350,7 @@ def build_router() -> APIRouter:
         response_model=ConfigurationActive,
         operation_id="completeSetup",
     )
+    @_with_idempotency("completeSetup")
     def complete_setup(
         data: SetupCompleteRequest,
         request: Request,
@@ -2146,6 +2381,7 @@ def build_router() -> APIRouter:
         return result
 
     @router.post("/configuration/rollback", operation_id="rollbackConfiguration")
+    @_with_idempotency("rollbackConfiguration")
     def rollback_configuration(
         data: ConfigurationRollbackRequest,
         request: Request,
@@ -2169,13 +2405,16 @@ def build_router() -> APIRouter:
             source = db.get(ConfigurationRevision, source_revision)
             if source is None:
                 return _problem(404, "RESOURCE_NOT_FOUND", "source revision not found")
-            source_rows = list(
-                db.scalars(
-                    select(ConfigurationValue).where(
-                        ConfigurationValue.revision == source.revision
-                    )
+            if (
+                source.state not in {"ACTIVE", "SUPERSEDED"}
+                or source.activated_at is None
+            ):
+                return _problem(
+                    409,
+                    "CONFIGURATION_VALIDATION_FAILED",
+                    "source revision was not previously activated",
                 )
-            )
+            source_rows = list(_effective_value_rows(db, source.revision).values())
             copied_values: list[
                 tuple[ConfigurationValue, bytes | None, str | None]
             ] = []
@@ -2298,13 +2537,16 @@ def build_router() -> APIRouter:
             bootstrap = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
             if bootstrap is not None:
                 bootstrap.active_configuration_revision = revision.revision
-                bootstrap.last_known_good_configuration_revision = revision.revision
+                bootstrap.last_known_good_configuration_revision = (
+                    active.active_revision if active else revision.revision
+                )
                 bootstrap.updated_at = _now()
             _audit(
                 db,
                 "CONFIG_ROLLED_BACK",
-                None,
+                current.access_key_id if current else None,
                 {"source_revision": source.revision},
+                session_id=current.session_id if current else None,
                 config_revision=revision.revision,
             )
             payload = _config_active(db)
@@ -2359,6 +2601,7 @@ def build_router() -> APIRouter:
         response_model=DatabaseConnectionCandidate,
         operation_id="putDomainDatabaseConnectionCandidate",
     )
+    @_with_idempotency("putDomainDatabaseConnectionCandidate")
     def put_database_candidate(
         data: DatabaseConnectionCandidateRequest,
         request: Request,
@@ -2378,19 +2621,35 @@ def build_router() -> APIRouter:
             for key in ("password", "client_key_pem", "ca_certificate_pem")
             if key in connection_dict
         }
-        nonsecret = {
-            **connection_dict,
-            "username": connection.username,
-            "username_masked": f"{connection.username[:1]}***",
-            "password_configured": "password" in secret_payload,
-            "client_key_configured": "client_key_pem" in secret_payload,
-        }
+        username = connection_dict.pop("username", None)
         with ControlSessionLocal.begin() as db:
             active = db.scalar(
                 select(DomainDatabaseConnectionRevision)
                 .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
                 .order_by(desc(DomainDatabaseConnectionRevision.revision))
             )
+            try:
+                active_secret = _database_secret(active) if active else {}
+            except (ValueError, TypeError, json.JSONDecodeError):
+                return _problem(
+                    409,
+                    "DATABASE_CONNECTION_FAILED",
+                    "active database secret is unavailable",
+                )
+            if username is None:
+                username = active.nonsecret_payload.get("username") if active else None
+            if not isinstance(username, str) or not username:
+                return _problem(422, "INVALID_REQUEST", "database username is required")
+            for key in ("password", "client_key_pem", "ca_certificate_pem"):
+                if key not in secret_payload and key in active_secret:
+                    secret_payload[key] = active_secret[key]
+            nonsecret = {
+                **connection_dict,
+                "username": username,
+                "username_masked": f"{username[:1]}***",
+                "password_configured": "password" in secret_payload,
+                "client_key_configured": "client_key_pem" in secret_payload,
+            }
             current_revision = active.revision if active else 0
             if data.base_revision != max(current_revision, 1):
                 return _problem(
@@ -2413,8 +2672,9 @@ def build_router() -> APIRouter:
             _audit(
                 db,
                 "DATABASE_CANDIDATE",
-                None,
+                current.access_key_id if current else None,
                 {"revision": row.revision},
+                session_id=current.session_id if current else None,
                 db_revision=row.revision,
             )
             payload = {
@@ -2439,20 +2699,23 @@ def build_router() -> APIRouter:
         response_model=DatabaseConnectionValidationResult,
         operation_id="validateDomainDatabaseConnectionCandidate",
     )
+    @_with_idempotency("validateDomainDatabaseConnectionCandidate")
     def validate_database_candidate(
         request: Request,
         idempotency_key: str = Header(
             ..., alias="Idempotency-Key", min_length=20, max_length=128
         ),
+        candidate_revision: int = Header(..., alias="X-Candidate-Revision", ge=1),
     ):
         current, error = _csrf_session(request)
         if error is not None:
             return error
         with ControlSessionLocal.begin() as db:
             row = db.scalar(
-                select(DomainDatabaseConnectionRevision)
-                .where(DomainDatabaseConnectionRevision.state == "CANDIDATE")
-                .order_by(desc(DomainDatabaseConnectionRevision.revision))
+                select(DomainDatabaseConnectionRevision).where(
+                    DomainDatabaseConnectionRevision.revision == candidate_revision,
+                    DomainDatabaseConnectionRevision.state == "CANDIDATE",
+                )
             )
             if row is None:
                 return _problem(
@@ -2468,8 +2731,9 @@ def build_router() -> APIRouter:
             _audit(
                 db,
                 "DATABASE_FAILED" if failure else "DATABASE_VALIDATED",
-                None,
+                current.access_key_id if current else None,
                 {"status": row.state},
+                session_id=current.session_id if current else None,
                 db_revision=row.revision,
             )
             return DatabaseConnectionValidationResult(
@@ -2484,6 +2748,7 @@ def build_router() -> APIRouter:
         response_model=DatabaseConnectionStatus,
         operation_id="activateDomainDatabaseConnection",
     )
+    @_with_idempotency("activateDomainDatabaseConnection")
     @_serialize_domain_switch
     def activate_database_candidate(
         request: Request,
@@ -2492,6 +2757,7 @@ def build_router() -> APIRouter:
         idempotency_key: str = Header(
             ..., alias="Idempotency-Key", min_length=20, max_length=128
         ),
+        candidate_revision: int = Header(..., alias="X-Candidate-Revision", ge=1),
     ):
         current, error = _csrf_session(request)
         if error is not None:
@@ -2508,9 +2774,10 @@ def build_router() -> APIRouter:
                     .order_by(desc(DomainDatabaseConnectionRevision.revision))
                 )
                 candidate = db.scalar(
-                    select(DomainDatabaseConnectionRevision)
-                    .where(DomainDatabaseConnectionRevision.state == "VALIDATED")
-                    .order_by(desc(DomainDatabaseConnectionRevision.revision))
+                    select(DomainDatabaseConnectionRevision).where(
+                        DomainDatabaseConnectionRevision.revision == candidate_revision,
+                        DomainDatabaseConnectionRevision.state == "VALIDATED",
+                    )
                 )
                 current_revision = active.revision if active else 0
                 mismatch = _if_match(if_match, "database", max(current_revision, 0))
@@ -2530,7 +2797,9 @@ def build_router() -> APIRouter:
                         409, probe_failure, "database candidate is no longer valid"
                     )
                 try:
-                    previous_engine, candidate_engine = _rebind_domain_database(candidate)
+                    previous_engine, candidate_engine = _rebind_domain_database(
+                        candidate
+                    )
                     switched = True
                 except (
                     SQLAlchemyError,
@@ -2542,7 +2811,9 @@ def build_router() -> APIRouter:
                 ):
                     candidate.state = "FAILED"
                     candidate.failure_code = "DATABASE_SWITCH_FAILED"
-                    return _problem(409, "DATABASE_SWITCH_FAILED", "database canary failed")
+                    return _problem(
+                        409, "DATABASE_SWITCH_FAILED", "database canary failed"
+                    )
                 try:
                     now = _now()
                     if active is not None:
@@ -2560,8 +2831,9 @@ def build_router() -> APIRouter:
                     _audit(
                         db,
                         "DATABASE_ACTIVATED",
-                        None,
+                        current.access_key_id if current else None,
                         {"revision": candidate.revision},
+                        session_id=current.session_id if current else None,
                         db_revision=candidate.revision,
                     )
                     payload = {
@@ -2596,7 +2868,12 @@ def build_router() -> APIRouter:
             TypeError,
             RuntimeError,
         ):
-            if switched and not restored and previous_engine is not None and candidate_engine is not None:
+            if (
+                switched
+                and not restored
+                and previous_engine is not None
+                and candidate_engine is not None
+            ):
                 _restore_domain_database(previous_engine, candidate_engine)
             raise
         if previous_engine is not None:
@@ -2608,6 +2885,7 @@ def build_router() -> APIRouter:
         response_model=DatabaseConnectionStatus,
         operation_id="revertDomainDatabaseConnection",
     )
+    @_with_idempotency("revertDomainDatabaseConnection")
     @_serialize_domain_switch
     def revert_database_connection(
         request: Request,
@@ -2620,49 +2898,58 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
-            active = db.scalar(
-                select(DomainDatabaseConnectionRevision)
-                .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
-                .order_by(desc(DomainDatabaseConnectionRevision.revision))
-            )
-            state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
-            lkg_revision = (
-                state.last_known_good_database_connection_revision if state else None
-            )
-            lkg = (
-                db.get(DomainDatabaseConnectionRevision, lkg_revision)
-                if lkg_revision
-                else None
-            )
-            mismatch = _if_match(if_match, "database", active.revision if active else 0)
-            if mismatch is not None:
-                return mismatch
-            if active is None or lkg is None or lkg.revision == active.revision:
-                return _problem(
-                    409,
-                    "DATABASE_SWITCH_FAILED",
-                    "last-known-good connection is unavailable",
+        previous_engine = None
+        candidate_engine = None
+        switched = False
+        restored = False
+        try:
+            with ControlSessionLocal.begin() as db:
+                active = db.scalar(
+                    select(DomainDatabaseConnectionRevision)
+                    .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
+                    .order_by(desc(DomainDatabaseConnectionRevision.revision))
                 )
-            _checks, probe_failure = _probe_database(lkg)
-            if probe_failure is not None:
-                return _problem(
-                    409, probe_failure, "last-known-good database is unavailable"
+                state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+                lkg_revision = (
+                    state.last_known_good_database_connection_revision
+                    if state
+                    else None
                 )
-            try:
-                previous_engine, candidate_engine = _rebind_domain_database(lkg)
-            except (
-                SQLAlchemyError,
-                OSError,
-                ValueError,
-                KeyError,
-                TypeError,
-                RuntimeError,
-            ):
-                return _problem(
-                    409, "DATABASE_SWITCH_FAILED", "last-known-good canary failed"
+                lkg = (
+                    db.get(DomainDatabaseConnectionRevision, lkg_revision)
+                    if lkg_revision
+                    else None
                 )
-            try:
+                mismatch = _if_match(
+                    if_match, "database", active.revision if active else 0
+                )
+                if mismatch is not None:
+                    return mismatch
+                if active is None or lkg is None or lkg.revision == active.revision:
+                    return _problem(
+                        409,
+                        "DATABASE_SWITCH_FAILED",
+                        "last-known-good connection is unavailable",
+                    )
+                _checks, probe_failure = _probe_database(lkg)
+                if probe_failure is not None:
+                    return _problem(
+                        409, probe_failure, "last-known-good database is unavailable"
+                    )
+                try:
+                    previous_engine, candidate_engine = _rebind_domain_database(lkg)
+                    switched = True
+                except (
+                    SQLAlchemyError,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                ):
+                    return _problem(
+                        409, "DATABASE_SWITCH_FAILED", "last-known-good canary failed"
+                    )
                 active.state = "SUPERSEDED"
                 lkg.state = "ACTIVE"
                 now = _now()
@@ -2673,8 +2960,9 @@ def build_router() -> APIRouter:
                 _audit(
                     db,
                     "DATABASE_REVERTED",
-                    None,
+                    current.access_key_id if current else None,
                     {"revision": lkg.revision},
+                    session_id=current.session_id if current else None,
                     db_revision=lkg.revision,
                 )
                 payload = {
@@ -2688,17 +2976,26 @@ def build_router() -> APIRouter:
                     "checked_at": now,
                 }
                 response.headers["ETag"] = f'W/"database:{lkg.revision}"'
-                return payload
-            except (
-                SQLAlchemyError,
-                OSError,
-                ValueError,
-                KeyError,
-                TypeError,
-                RuntimeError,
+        except (
+            SQLAlchemyError,
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+        ):
+            if (
+                switched
+                and not restored
+                and previous_engine is not None
+                and candidate_engine is not None
             ):
                 _restore_domain_database(previous_engine, candidate_engine)
-                raise
+                restored = True
+            raise
+        if previous_engine is not None:
+            previous_engine.dispose()
+        return payload
 
     return router
 

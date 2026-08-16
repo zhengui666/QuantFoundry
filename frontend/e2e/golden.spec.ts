@@ -1054,7 +1054,12 @@ test('P14 412 revision mismatch stays in the complete confirmation modal', async
         request_id: 'REQ-STALE-1',
         retryable: false,
         field_errors: [],
-        context: { object_type: 'approval', object_id: 'APR-0T71YPB60APYFY39FY75RYTVZB' },
+        context: {
+          object_type: 'approval',
+          object_id: 'APR-0T71YPB60APYFY39FY75RYTVZB',
+          object_version: null,
+          object_revision: null,
+        },
       },
     });
   });

@@ -239,6 +239,8 @@ def configured_test_principals() -> None:
                         version=1,
                         status="ACTIVE",
                         rules={"kind": "research_policy", "version": 1},
+                        max_research_steps=25,
+                        max_tool_calls=50,
                         content_sha256=content_hash(
                             {"kind": "research_policy", "version": 1}
                         ),
@@ -268,6 +270,8 @@ def configured_test_principals() -> None:
                         version=1,
                         status="ACTIVE",
                         rules=validation_rules,
+                        max_research_steps=25,
+                        max_tool_calls=50,
                         content_sha256=content_hash(validation_rules),
                         created_by=owner_id,
                         created_at=now,
@@ -287,6 +291,10 @@ def configured_test_principals() -> None:
                         policy_id=risk_policy_id,
                         version=1,
                         status="ACTIVE",
+                        max_single_position=1,
+                        max_strategy_weight=1,
+                        max_paper_drawdown=1,
+                        rules={},
                         content_sha256=content_hash(
                             {"kind": "risk_policy", "version": 1}
                         ),
@@ -307,6 +315,10 @@ def configured_test_principals() -> None:
                         cost_model_id=cost_model_id,
                         version=1,
                         status="ACTIVE",
+                        commission_model={"type": "BPS", "value": 1},
+                        slippage_model={"type": "BPS", "value": 2},
+                        rebalance_timing="NEXT_OPEN",
+                        fill_assumption="NEXT_OPEN",
                         content_sha256=content_hash(
                             {"kind": "cost_model", "version": 1}
                         ),

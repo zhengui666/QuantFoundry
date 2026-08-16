@@ -84,7 +84,7 @@ printf '%s\n' \
   'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"workflow_id\":300}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml@refs/heads/main}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
-  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=main" ]]; then printf "{\"sha\":\"106fe374a92e902b4f0e119533680b51a640822d\"}\n"; exit 0; fi' \
+  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"106fe374a92e902b4f0e119533680b51a640822d\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then if [[ -n "$output" ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; else cat "$QF_REVIEW_MOCK_ARCHIVE"; fi; exit 0; fi' \
   'exit 1' > "$mock_gh"

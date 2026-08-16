@@ -14,6 +14,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as parquet
 from sqlalchemy import event, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 
@@ -203,7 +204,7 @@ def _finalize_staged_artifacts(session: Session) -> None:
                 raise ArtifactStoreError("committed artifact read-back mismatch")
         if publications:
             published_at = datetime.now(UTC).isoformat()
-            with session.get_bind().begin() as connection:
+            def publish(connection: Connection) -> None:
                 for storage_key, digest in publications:
                     target = (_root().resolve() / storage_key).resolve()
                     if not target.is_file() or hashlib.sha256(
@@ -226,6 +227,13 @@ def _finalize_staged_artifacts(session: Session) -> None:
                             "digest": digest,
                         },
                     )
+            bind = session.get_bind()
+            if isinstance(bind, Connection):
+                with bind.begin():
+                    publish(bind)
+            else:
+                with bind.begin() as connection:
+                    publish(connection)
     except (ArtifactStoreError, OSError):
         logger.exception("artifact publication deferred to reconciliation")
 

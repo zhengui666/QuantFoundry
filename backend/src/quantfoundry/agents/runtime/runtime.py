@@ -366,7 +366,7 @@ def _active_setup_provider(
     try:
         return (
             decrypt_credential(
-            connection.ciphertext, connection.nonce, connection.key_id, aad=aad
+                connection.ciphertext, connection.nonce, connection.key_id, aad=aad
             ),
             connection.model_name,
         )
@@ -432,8 +432,7 @@ def configured_model(config: AgentConfigRow, session: Session | None = None) -> 
             session is not None
             and not api_key
             and not (
-                os.getenv("QF_ENV") == "test"
-                and os.getenv("QF_TEST_RUNTIME_ROOT")
+                os.getenv("QF_ENV") == "test" and os.getenv("QF_TEST_RUNTIME_ROOT")
             )
         ):
             raise AgentRuntimeError(
@@ -621,11 +620,10 @@ def _graph_resume(row: AgentRunRow, result: dict[str, Any]) -> dict[str, Any]:
         saved = graph.get_state(config)
         values = saved.values if saved is not None else {}
         cached = values.get("resume_result") if isinstance(values, dict) else None
-        cached_job_id = values.get("resume_job_id") if isinstance(values, dict) else None
-        if (
-            isinstance(cached, dict)
-            and cached_job_id == result.get("job_id")
-        ):
+        cached_job_id = (
+            values.get("resume_job_id") if isinstance(values, dict) else None
+        )
+        if isinstance(cached, dict) and cached_job_id == result.get("job_id"):
             if cached != result:
                 raise AgentRuntimeError("Agent checkpoint result mismatch")
             return cached
@@ -1577,6 +1575,7 @@ def advance_agent_run(
         if row.research_id is not None
         else f"run:{row.id}"
     )
+
     def replay(existing: ToolCallRow) -> None:
         checkpoint["semantic_call_hashes"].append(semantic_hash)
         checkpoint["result_refs"].append(json.loads(existing.result_summary or "{}"))
@@ -1594,6 +1593,7 @@ def advance_agent_run(
                 tool_version=definition["version"],
                 status="RUNNING",
                 input_payload=json.dumps(arguments),
+                input=arguments,
                 input_sha256=semantic_hash,
                 semantic_scope=f"wait:{row.id}:{semantic_hash[:12]}",
                 objective=row.objective,
@@ -1640,6 +1640,7 @@ def advance_agent_run(
             tool_version=definition["version"],
             status="RUNNING",
             input_payload=json.dumps(arguments),
+            input=arguments,
             input_sha256=semantic_hash,
             semantic_scope=semantic_scope,
             objective=row.objective,
@@ -1885,6 +1886,7 @@ def persist_tool_failure(
             tool_version=error.tool_version,
             status="ERROR",
             input_payload=error.input_payload,
+            input=json.loads(error.input_payload),
             input_sha256=error.input_sha256,
             semantic_scope=error.semantic_scope,
             objective=error.objective,

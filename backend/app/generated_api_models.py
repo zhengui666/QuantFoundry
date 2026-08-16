@@ -233,7 +233,7 @@ class Connection(BaseModel):
     port: int = Field(..., ge=1, le=65535)
     database: str = Field(..., max_length=63, min_length=1)
     tls_mode: Literal["DISABLED", "VERIFY_CA", "VERIFY_FULL"]
-    username: str = Field(..., max_length=128, min_length=1)
+    username: str | None = Field(default=None, max_length=128, min_length=1)
     password: str | None = Field(default=None, max_length=4096, min_length=1)
     client_key_pem: str | None = Field(default=None, max_length=16384, min_length=1)
     ca_certificate_pem: str | None = Field(default=None, max_length=16384, min_length=1)
@@ -20898,7 +20898,10 @@ class SettingsDetail(RootModel[ConfigurationActive]):
                                                 {"type": "string"},
                                                 {"type": "number"},
                                                 {"type": "boolean"},
-                                                {"type": "object"},
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": True,
+                                                },
                                                 {"type": "array"},
                                                 {"type": "null"},
                                             ]
@@ -21106,7 +21109,10 @@ class ResearchSummary(BaseModel):
                                             {"type": "string"},
                                             {"type": "number"},
                                             {"type": "boolean"},
-                                            {"type": "object"},
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": True,
+                                            },
                                             {"type": "array"},
                                             {"type": "null"},
                                         ]

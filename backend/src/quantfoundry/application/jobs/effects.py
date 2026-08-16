@@ -14,6 +14,7 @@ from quantfoundry.api.app import (
     ApprovalRow,
     ArtifactRow,
     Base,
+    CostModelVersionRow,
     DataSource,
     ExperimentRow,
     FactorRow,
@@ -118,6 +119,8 @@ def _persist_section14_validation_run(
             version=policy.version,
             status="ACTIVE",
             rules=policy_content,
+            max_research_steps=25,
+            max_tool_calls=50,
             content_sha256=content_hash(policy_content),
             created_by="system:validation-engine",
             created_at=finished_at,
@@ -913,8 +916,9 @@ def _complete_experiment(
         }
     )
     row.detail = json.dumps(validated_payload("ExperimentDetail", detail))
-    row.immutable = True
     row.revision += 1
+    session.flush()
+    row.immutable = True
     emit(
         session,
         "experiment",
@@ -1387,9 +1391,38 @@ def _completed_backtest(
             result_ref = json.loads(candidate.result_ref)
             artifact_id = result_ref.get("artifact_id")
             if isinstance(artifact_id, str):
-                return candidate, _artifact_payload(
+                if (
+                    result_ref.get("object_type") != "strategy_version"
+                    or result_ref.get("object_id") != strategy.strategy_id
+                    or result_ref.get("object_version") != strategy.version
+                ):
+                    continue
+                artifact = session.execute(
+                    select(ArtifactRow).where(
+                        ArtifactRow.workspace_id == strategy.workspace_id,
+                        ArtifactRow.artifact_id == artifact_id,
+                        ArtifactRow.job_id == candidate.id,
+                        ArtifactRow.kind == "fast_backtest",
+                        ArtifactRow.publication_state == "PUBLISHED",
+                        ArtifactRow.immutable.is_(True),
+                    )
+                ).scalar_one_or_none()
+                if artifact is None:
+                    continue
+                evidence = _artifact_payload(
                     session, artifact_id, strategy.workspace_id
                 )
+                if (
+                    evidence.get("strategy_id") != strategy.strategy_id
+                    or evidence.get("strategy_version") != strategy.version
+                    or evidence.get("strategy_spec_sha256") != strategy.spec_sha256
+                    or evidence.get("snapshot_id")
+                    != candidate_inputs.get("snapshot_id")
+                    or evidence.get("cost_model_id")
+                    != candidate_inputs.get("cost_model_id")
+                ):
+                    continue
+                return candidate, evidence
     raise InvalidJobState("completed deterministic fast backtest is required")
 
 
@@ -1433,6 +1466,21 @@ def _complete_validation(
     )
     cost = load_cost_model(strategy_detail["cost_model_id"])
     policy = load_validation_policy(inputs["policy_id"])
+    policy_row = session.execute(
+        select(ResearchPolicyVersionRow).where(
+            ResearchPolicyVersionRow.workspace_id == job.workspace_id,
+            ResearchPolicyVersionRow.policy_id == inputs["policy_id"],
+            ResearchPolicyVersionRow.policy_family == "validation",
+            ResearchPolicyVersionRow.version == inputs.get("policy_version"),
+            ResearchPolicyVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if "policy_version" in inputs and (
+        policy_row is None
+        or policy.version != inputs["policy_version"]
+        or content_hash(policy_row.rules) != inputs.get("policy_sha256")
+    ):
+        raise InvalidJobState("validation policy binding changed")
     metrics = simulation_metrics(
         validation_rows,
         int(strategy_detail["rules"]["selection_count"]),
@@ -1956,6 +2004,21 @@ def _run_backtest(
         "RESEARCH",
     )
     cost = load_cost_model(inputs["cost_model_id"])
+    if "cost_model_version" in inputs or "cost_model_sha256" in inputs:
+        cost_row = session.execute(
+            select(CostModelVersionRow).where(
+                CostModelVersionRow.workspace_id == job.workspace_id,
+                CostModelVersionRow.cost_model_id == inputs["cost_model_id"],
+                CostModelVersionRow.version == inputs.get("cost_model_version"),
+                CostModelVersionRow.status == "ACTIVE",
+            )
+        ).scalar_one_or_none()
+        if (
+            cost_row is None
+            or cost_row.content_sha256 != inputs.get("cost_model_sha256")
+            or cost.version != cost_row.version
+        ):
+            raise InvalidJobState("strategy cost model binding changed")
     calculated = simulation_metrics(
         market_rows,
         int(strategy_detail["rules"]["selection_count"]),
@@ -2277,6 +2340,8 @@ def apply_job_effect(session: Session, job: JobRow) -> dict[str, Any] | None:
 def apply_job_failure(session: Session, job: JobRow) -> None:
     """Atomically close domain state when a deterministic effect cannot complete."""
     inputs = json.loads(job.input_payload)
+    if content_hash(inputs) != job.payload_sha256:
+        raise InvalidJobState("job input payload hash mismatch")
     if job.job_type == "PAPER_DAILY_RUN":
         # queue.fail_job owns the fenced Job transition and invokes the Paper
         # failure transition after the durable Job row has reached FAILED.
@@ -2318,6 +2383,24 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             }
         )
         validation.detail = json.dumps(validated_payload("ValidationDetail", detail))
+        validation_runs = Base.metadata.tables["validation_runs"]
+        session.execute(
+            validation_runs.update()
+            .where(
+                validation_runs.c.workspace_id == job.workspace_id,
+                validation_runs.c.validation_id == validation.id,
+            )
+            .values(
+                status="FAILED",
+                result="FAIL" if job.job_type == "VALIDATION" else detail.get("result"),
+                failures=failures,
+                holdout_state="FAILED",
+                revision=validation.revision,
+                finished_at=datetime.fromisoformat(
+                    detail["finished_at"].replace("Z", "+00:00")
+                ),
+            )
+        )
         if job.job_type == "VALIDATION":
             strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
             if (

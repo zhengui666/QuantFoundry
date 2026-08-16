@@ -25,7 +25,7 @@ export const patchWorker = (source) => {
 
   const messageBody = source.slice(listenerStart + listenerPrefix.length, listenerEnd);
   let safeMessageBody = messageBody
-    .replaceAll('    sendToClient(', '    void sendToClient(')
+    .replaceAll('    sendToClient(', '    await sendToClient(')
     .replaceAll('      })\n      break', '      }).catch(() => {})\n      break');
   if (safeMessageBody === messageBody)
     throw new Error('MSW worker notification calls were not found');
@@ -95,7 +95,7 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     responseCallStart,
-    responseCallStart.replace('sendToClient', 'void sendToClient'),
+    responseCallStart.replace('sendToClient', 'await sendToClient'),
     'response notification start',
   );
   patched = replaceOnce(
@@ -130,6 +130,34 @@ export const patchWorker = (source) => {
     '  return passthrough()\n}\n\n/**\n * @param {Client} client',
     '  return failClosed()\n}\n\n/**\n * @param {Client} client',
     'unknown request message fail-closed',
+  );
+
+  patched = replaceOnce(
+    patched,
+    `  if (activeClientIds.has(event.clientId)) {
+    return client
+  }
+
+  if (client?.frameType === 'top-level') {
+    return client
+  }
+
+  const allClients = await self.clients.matchAll({
+    type: 'window',
+  })
+
+  return allClients
+    .filter((client) => {
+      // Get only those clients that are currently visible.
+      return client.visibilityState === 'visible'
+    })
+    .find((client) => {
+      // Find the client ID that's recorded in the
+      // set of clients that have registered the worker.
+      return activeClientIds.has(client.id)
+    })`,
+    `  return activeClientIds.has(event.clientId) ? client : undefined`,
+    'arbitrary active client fallback',
   );
 
   const sendStart = '/**\n * @param {Client} client\n';

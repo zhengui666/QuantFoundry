@@ -64,6 +64,55 @@ def _insert(connection: Any, table: Table, values: dict[str, Any]) -> None:
     connection.execute(table.insert().values(values))
 
 
+def _rechain_audit_events(connection: Any, table: Table) -> None:
+    """Recompute the disposable fixture's audit chain after row surgery."""
+    workspaces = connection.execute(
+        select(table.c.workspace_id).distinct()
+    ).scalars()
+    for workspace_id in workspaces:
+        previous: str | None = None
+        rows = connection.execute(
+            select(table)
+            .where(table.c.workspace_id == workspace_id)
+            .order_by(table.c.sequence)
+        ).mappings()
+        for row in rows:
+            occurred_at = row["occurred_at"]
+            if occurred_at.tzinfo is None:
+                occurred_at = occurred_at.replace(tzinfo=UTC)
+            payload = {
+                "event_id": row["event_id"],
+                "object_version": row["object_version"],
+                "object_revision": row["object_revision"],
+                "correlation_id": row.get("correlation_id"),
+                "causation_id": row.get("causation_id"),
+                "job_id": row.get("job_id"),
+                "agent_run_id": row.get("agent_run_id"),
+                "tool_call_id": row.get("tool_call_id"),
+            }
+            event_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "previous_sha256": previous,
+                        "actor_id": row["actor_id"],
+                        "action": row["action_type"],
+                        "object_type": row["object_type"],
+                        "object_id": row["object_id"],
+                        "payload": payload,
+                        "occurred_at": occurred_at.isoformat(),
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            connection.execute(
+                table.update()
+                .where(table.c.id == row["id"])
+                .values(prev_event_hash=previous, event_hash=event_hash)
+            )
+            previous = event_hash
+
+
 def _clone(connection: Any, table: Table, source: dict[str, Any], index: int) -> dict[str, Any]:
     values = {name: value for name, value in source.items() if name in table.c}
     if "id" in values:
@@ -446,6 +495,7 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
                 connection.execute(
                     event_table.delete().where(event_table.c.event_id.in_(event_ids))
                 )
+            _rechain_audit_events(connection, audit_table)
         finally:
             connection.exec_driver_sql("ALTER TABLE audit_events ENABLE TRIGGER USER")
             connection.exec_driver_sql("ALTER TABLE domain_events ENABLE TRIGGER USER")
@@ -469,6 +519,7 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
         for row in connection.execute(select(deployments.c.workspace_id)).all()
     }
     for workspace_id in workspace_ids:
+        _rechain_audit_events(connection, audits)
         latest_audit = connection.execute(
             select(audits.c.event_hash, audits.c.sequence)
             .where(audits.c.workspace_id == workspace_id)
@@ -729,6 +780,7 @@ def populate(database_url: str) -> dict[str, int]:
             events = metadata.tables["domain_events"]
             heads = metadata.tables["audit_chain_heads"]
             watermarks = metadata.tables["event_stream_watermarks"]
+            _rechain_audit_events(connection, audits)
             for workspace_id in workspaces:
                 latest_audit = connection.execute(
                     select(audits.c.event_hash, audits.c.sequence)

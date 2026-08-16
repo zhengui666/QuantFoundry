@@ -17,9 +17,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    null_count = op.get_bind().execute(
-        sa.text("SELECT COUNT(*) FROM data_sources WHERE workspace_id IS NULL")
-    ).scalar_one()
+    null_count = (
+        op.get_bind()
+        .execute(
+            sa.text("SELECT COUNT(*) FROM data_sources WHERE workspace_id IS NULL")
+        )
+        .scalar_one()
+    )
     if null_count:
         raise RuntimeError(
             "0009 refuses to invent data-source ownership for unscoped rows"

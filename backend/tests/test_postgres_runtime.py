@@ -39,6 +39,7 @@ from quantfoundry.api.app import (
     content_hash,
     decide,
     emit,
+    strategy_storage_fields,
 )
 from quantfoundry.infrastructure.jobs.queue import (
     LostLease,
@@ -159,6 +160,9 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                     policy_id=f"RP-{public_uuid}",
                     version=1,
                     status="ACTIVE",
+                    rules={},
+                    max_research_steps=25,
+                    max_tool_calls=50,
                     content_sha256=content_hash({"policy": suffix}),
                     created_by=owner_id,
                     created_at=now,
@@ -170,6 +174,10 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                     cost_model_id=f"COST-{public_uuid}",
                     version=1,
                     status="ACTIVE",
+                    commission_model={"type": "BPS", "value": 1},
+                    slippage_model={"type": "BPS", "value": 2},
+                    rebalance_timing="NEXT_OPEN",
+                    fill_assumption="NEXT_OPEN",
                     content_sha256=content_hash({"cost": suffix}),
                     created_at=now,
                     activated_at=now,
@@ -184,6 +192,9 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                 status="DRAFT",
                 revision=1,
                 title="PG immutable",
+                original_user_prompt="PG immutable",
+                created_at=now,
+                updated_at=now,
                 detail="{}",
             )
         )
@@ -192,10 +203,36 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                 id=strategy_id,
                 workspace_id=workspace_id,
                 research_id=research_id,
+                name="PG immutable",
                 revision=1,
                 detail="{}",
             )
         )
+        strategy_detail = {
+            "strategy_id": strategy_id,
+            "name": "PG immutable",
+            "thesis": "A deterministic PostgreSQL strategy",
+            "universe": {
+                "asset_class": "EQUITY",
+                "symbols": [],
+                "universe_id": "TEST",
+            },
+            "signals": [],
+            "rules": {
+                "selection_count": 1,
+                "weighting": "EQUAL",
+                "rebalance_frequency": "DAILY",
+                "long_short": False,
+                "leverage_limit": "1",
+                "position_limit": "1",
+            },
+            "cost_model_id": f"COST-{public_uuid}",
+            "benchmark": "TEST",
+            "research_period": {"start": "2020-01-01", "end": "2020-06-30"},
+            "validation_period": {"start": "2020-07-01", "end": "2020-09-30"},
+            "holdout_period": {"start": "2020-10-01", "end": "2020-12-31"},
+            "known_failure_modes": [],
+        }
         session.add(
             StrategyVersionRow(
                 id=version_id,
@@ -206,22 +243,9 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                 spec_sha256=content_hash({"strategy": suffix}),
                 frozen_at=datetime.now(UTC),
                 revision=2,
-                detail=json.dumps(
-                    {
-                        "cost_model_id": f"COST-{public_uuid}",
-                        "research_period": {
-                            "start": "2020-01-01",
-                            "end": "2020-06-30",
-                        },
-                        "validation_period": {
-                            "start": "2020-07-01",
-                            "end": "2020-09-30",
-                        },
-                        "holdout_period": {
-                            "start": "2020-10-01",
-                            "end": "2020-12-31",
-                        },
-                    }
+                detail=json.dumps(strategy_detail),
+                **strategy_storage_fields(
+                    strategy_detail, lifecycle_state="FROZEN", is_frozen=True
                 ),
             )
         )
@@ -370,12 +394,38 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
         concurrency_validation_id = f"VAL-{concurrency_uuid}"
         concurrency_approval_id = f"APR-{concurrency_uuid}"
         concurrency_spec_sha256 = content_hash({"concurrent": suffix})
+        concurrency_detail = {
+            "strategy_id": concurrency_strategy_id,
+            "name": "PG concurrency",
+            "thesis": "A deterministic PostgreSQL strategy",
+            "universe": {
+                "asset_class": "EQUITY",
+                "symbols": [],
+                "universe_id": "TEST",
+            },
+            "signals": [],
+            "rules": {
+                "selection_count": 1,
+                "weighting": "EQUAL",
+                "rebalance_frequency": "DAILY",
+                "long_short": False,
+                "leverage_limit": "1",
+                "position_limit": "1",
+            },
+            "cost_model_id": f"COST-{public_uuid}",
+            "benchmark": "TEST",
+            "research_period": {"start": "2020-01-01", "end": "2020-06-30"},
+            "validation_period": {"start": "2020-07-01", "end": "2020-09-30"},
+            "holdout_period": {"start": "2020-10-01", "end": "2020-12-31"},
+            "known_failure_modes": [],
+        }
         session = sessions()
         session.add(
             StrategyRow(
                 id=concurrency_strategy_id,
                 workspace_id=workspace_id,
                 research_id=research_id,
+                name="PG concurrency",
                 revision=1,
                 detail="{}",
             )
@@ -390,22 +440,9 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                 spec_sha256=concurrency_spec_sha256,
                 frozen_at=now,
                 revision=4,
-                detail=json.dumps(
-                    {
-                        "cost_model_id": f"COST-{public_uuid}",
-                        "research_period": {
-                            "start": "2020-01-01",
-                            "end": "2020-06-30",
-                        },
-                        "validation_period": {
-                            "start": "2020-07-01",
-                            "end": "2020-09-30",
-                        },
-                        "holdout_period": {
-                            "start": "2020-10-01",
-                            "end": "2020-12-31",
-                        },
-                    }
+                detail=json.dumps(concurrency_detail),
+                **strategy_storage_fields(
+                    concurrency_detail, lifecycle_state="VALIDATED", is_frozen=True
                 ),
             )
         )

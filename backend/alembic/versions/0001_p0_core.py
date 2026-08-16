@@ -248,7 +248,9 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "model_call_count >= 0", name="ck_agent_runs_model_call_count_valid"
         ),
-        sa.CheckConstraint("input_tokens >= 0", name="ck_agent_runs_input_tokens_valid"),
+        sa.CheckConstraint(
+            "input_tokens >= 0", name="ck_agent_runs_input_tokens_valid"
+        ),
         sa.CheckConstraint(
             "output_tokens >= 0", name="ck_agent_runs_output_tokens_valid"
         ),

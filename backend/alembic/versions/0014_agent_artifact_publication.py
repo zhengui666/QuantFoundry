@@ -6,6 +6,8 @@ Revises: 0013_metadata_alignment
 
 from __future__ import annotations
 
+import uuid
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -24,23 +26,37 @@ def _json_type() -> sa.TypeEngine[object]:
 
 
 def upgrade() -> None:
-    dialect = op.get_bind().dialect.name
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+    owns_checkpoint_schema = False
     if dialect == "postgresql":
+        owns_checkpoint_schema = not bool(
+            bind.execute(
+                sa.text("SELECT to_regnamespace('agent_checkpoint') IS NOT NULL")
+            ).scalar_one()
+        )
         op.execute("CREATE SCHEMA IF NOT EXISTS agent_checkpoint")
-    uuid_default = (
-        sa.text("gen_random_uuid()")
-        if dialect == "postgresql"
-        else sa.text("lower(hex(randomblob(16)))")
-    )
+        if owns_checkpoint_schema:
+            op.execute("CREATE TABLE agent_checkpoint._qf_owned_0014 (marker integer)")
     op.add_column(
         "jobs",
         sa.Column(
             "internal_id",
             sa.Uuid(),
-            nullable=False,
-            server_default=uuid_default,
+            nullable=dialect == "sqlite",
+            server_default=sa.text("gen_random_uuid()")
+            if dialect == "postgresql"
+            else None,
         ),
     )
+    if dialect == "sqlite":
+        for job_id in bind.execute(sa.text("SELECT id FROM jobs")).scalars():
+            bind.execute(
+                sa.text("UPDATE jobs SET internal_id = :internal_id WHERE id = :id"),
+                {"id": job_id, "internal_id": str(uuid.uuid4())},
+            )
+        with op.batch_alter_table("jobs") as batch:
+            batch.alter_column("internal_id", nullable=False)
     op.create_index("uq_jobs_internal_id", "jobs", ["internal_id"], unique=True)
     op.add_column("jobs", sa.Column("resume_token_hash", sa.String(64)))
     op.create_index(
@@ -140,6 +156,15 @@ def upgrade() -> None:
             "publication_state IN ('STAGED', 'PUBLISHED', 'FAILED')",
             name="artifacts_publication_state_check",
         ),
+        sa.CheckConstraint(
+            "(publication_state = 'STAGED' AND published_at IS NULL AND "
+            "publication_error IS NULL) OR "
+            "(publication_state = 'PUBLISHED' AND published_at IS NOT NULL AND "
+            "publication_error IS NULL) OR "
+            "(publication_state = 'FAILED' AND published_at IS NULL AND "
+            "publication_error IS NOT NULL)",
+            name="artifacts_publication_lifecycle_check",
+        ),
     )
     op.create_index("ix_artifacts_workspace_id", "artifacts", ["workspace_id"])
     op.create_index("ix_artifacts_job_id", "artifacts", ["job_id"])
@@ -164,4 +189,23 @@ def downgrade() -> None:
     op.drop_index("uq_jobs_internal_id", table_name="jobs")
     op.drop_column("jobs", "internal_id")
     if op.get_bind().dialect.name == "postgresql":
-        op.execute("DROP SCHEMA IF EXISTS agent_checkpoint")
+        marker = (
+            op.get_bind()
+            .execute(sa.text("SELECT to_regclass('agent_checkpoint._qf_owned_0014')"))
+            .scalar_one_or_none()
+        )
+        if marker is not None:
+            other_objects = (
+                op.get_bind()
+                .execute(
+                    sa.text(
+                        "SELECT count(*) FROM pg_class c "
+                        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        "WHERE n.nspname = 'agent_checkpoint' "
+                        "AND c.relname <> '_qf_owned_0014'"
+                    )
+                )
+                .scalar_one()
+            )
+            if other_objects == 0:
+                op.execute("DROP SCHEMA agent_checkpoint")

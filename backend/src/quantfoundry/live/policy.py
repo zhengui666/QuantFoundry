@@ -27,7 +27,14 @@ OrderStatus = Literal[
 _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     "CREATED": frozenset({"SUBMITTING", "CANCELLED"}),
     "SUBMITTING": frozenset(
-        {"ACKNOWLEDGED", "PARTIALLY_FILLED", "FILLED", "UNKNOWN", "RECONCILING", "REJECTED"}
+        {
+            "ACKNOWLEDGED",
+            "PARTIALLY_FILLED",
+            "FILLED",
+            "UNKNOWN",
+            "RECONCILING",
+            "REJECTED",
+        }
     ),
     "ACKNOWLEDGED": frozenset(
         {
@@ -40,7 +47,7 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
         }
     ),
     "PARTIALLY_FILLED": frozenset(
-        {"PARTIALLY_FILLED", "FILLED", "CANCEL_PENDING", "UNKNOWN"}
+        {"PARTIALLY_FILLED", "FILLED", "CANCEL_PENDING", "EXPIRED", "UNKNOWN"}
     ),
     "FILLED": frozenset(),
     "CANCEL_PENDING": frozenset({"CANCELLED", "FILLED", "PARTIALLY_FILLED", "UNKNOWN"}),
@@ -86,6 +93,7 @@ class ActivationEvidence:
         account_switch: KillSwitch,
         deployment_switch: KillSwitch,
         capabilities: ConnectorCapabilities,
+        submission_account_id: str,
         order: OrderRequest | None = None,
     ) -> None:
         if confirmation != f"ENABLE LIVE {self.live_id}":
@@ -110,6 +118,8 @@ class ActivationEvidence:
             raise LivePolicyError("connector validation has expired")
         if self.account_id not in capabilities.account_ids:
             raise LivePolicyError("approved account is not in connector capabilities")
+        if submission_account_id != self.account_id:
+            raise LivePolicyError("submission account does not match activation")
         if order is not None:
             capabilities.validate_order(order)
 
@@ -179,6 +189,16 @@ def apply_fill(
             raise LivePolicyError("previous cumulative quantity is invalid") from error
         if not previous.is_finite() or previous < 0 or cumulative <= previous:
             raise LivePolicyError("cumulative fill is not increasing")
-    target: OrderStatus = "FILLED" if cumulative == quantity else "PARTIALLY_FILLED"
+    if current == "PARTIALLY_FILLED" and previous_cumulative_quantity is None:
+        raise LivePolicyError(
+            "previous cumulative quantity is required after a partial fill"
+        )
+    target: OrderStatus = (
+        "FILLED"
+        if cumulative == quantity
+        else "EXPIRED"
+        if terminal
+        else "PARTIALLY_FILLED"
+    )
     next_status = transition_order(current, target)
     return next_status, known_fill_ids | {fill_id}, True

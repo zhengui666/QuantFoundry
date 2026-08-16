@@ -35,6 +35,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -416,6 +417,13 @@ class ResearchPolicyVersionRow(Base):
     rules = Column(
         JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
     )
+    require_cost_test = Column(Boolean, nullable=False, default=True)
+    require_parameter_stability = Column(Boolean, nullable=False, default=True)
+    require_oos = Column(Boolean, nullable=False, default=True)
+    require_holdout = Column(Boolean, nullable=False, default=True)
+    require_red_team = Column(Boolean, nullable=False, default=True)
+    max_research_steps = Column(Integer, nullable=False)
+    max_tool_calls = Column(Integer, nullable=False)
     content_sha256 = Column(String(64), nullable=False)
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
@@ -453,6 +461,14 @@ class RiskPolicyVersionRow(Base):
     policy_family = Column(String(32), nullable=False, default="risk")
     version = Column(Integer, nullable=False)
     status = Column(String, nullable=False)
+    max_single_position = Column(Numeric(20, 12), nullable=False)
+    max_strategy_weight = Column(Numeric(20, 12), nullable=False)
+    target_portfolio_vol = Column(Numeric(20, 12))
+    max_paper_drawdown = Column(Numeric(20, 12), nullable=False)
+    max_turnover = Column(Numeric(20, 12))
+    rules = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
+    )
     content_sha256 = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     activated_at = Column(DateTime(timezone=True))
@@ -490,6 +506,14 @@ class CostModelVersionRow(Base):
     cost_model_id = Column(String, nullable=False)
     version = Column(Integer, nullable=False)
     status = Column(String, nullable=False)
+    commission_model = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    slippage_model = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    spread_model = Column(JSON().with_variant(JSONB(), "postgresql"))
+    rebalance_timing = Column(String(32), nullable=False)
+    fill_assumption = Column(String(32), nullable=False)
+    currency = Column(String(3), nullable=False, default="USD")
     content_sha256 = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     activated_at = Column(DateTime(timezone=True))
@@ -934,16 +958,27 @@ class ResearchRow(Base):
     __tablename__ = "research_cases"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("research_id", String(40), nullable=False, unique=True)
-    workspace_id = Column(String, ForeignKey("workspaces.id"))
+    workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=False)
     status = Column(String, nullable=False)
     revision = Column(BigInteger, nullable=False, default=1)
     title = Column(String, nullable=False)
+    original_user_prompt = Column(Text, nullable=False)
+    normalized_question = Column(Text)
+    evidence_status = Column(String, nullable=False, default="INSUFFICIENT")
+    current_revision_no = Column(Integer, nullable=False, default=1)
+    active_plan_version = Column(Integer)
     research_policy_ref_id = Column(
         "research_policy_id",
         Uuid(as_uuid=True),
         ForeignKey("research_policy_versions.id"),
         nullable=False,
     )
+    director_agent_version = Column(String(64))
+    current_agent_run_id = Column(Uuid(as_uuid=True))
+    current_job_id = Column(Uuid(as_uuid=True))
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True))
     detail = Column(Text, nullable=False, default="{}")
     __mapper_args__ = {"primary_key": [id]}
 
@@ -952,7 +987,7 @@ class ExperimentRow(Base):
     __tablename__ = "experiments"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("experiment_id", String(48), nullable=False, unique=True)
-    workspace_id = Column(String, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
     research_ref_id = Column(
         "research_id",
         Uuid(as_uuid=True),
@@ -968,6 +1003,15 @@ class ExperimentRow(Base):
         index=True,
     )
     source_experiment_id = Column("source_experiment_public_id", String(48), index=True)
+    parent_experiment_ref_id = Column(
+        "parent_experiment_id", Uuid(as_uuid=True), ForeignKey("experiments.id")
+    )
+    research_revision_no = Column(Integer, nullable=False)
+    objective = Column(Text, nullable=False)
+    hypothesis = Column(Text, nullable=False)
+    experiment_type = Column(String(64), nullable=False)
+    status = Column(String(24), nullable=False, default="QUEUED")
+    validity_state = Column(String(24), nullable=False, default="PENDING")
     data_snapshot_ref_id = Column(
         "data_snapshot_id",
         Uuid(as_uuid=True),
@@ -980,6 +1024,27 @@ class ExperimentRow(Base):
         ForeignKey("cost_model_versions.id"),
         nullable=False,
     )
+    factor_version_ref_id = Column("factor_version_id", Uuid(as_uuid=True))
+    strategy_version_ref_id = Column("strategy_version_id", Uuid(as_uuid=True))
+    parameters = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    parameters_sha256 = Column(String(64), nullable=False)
+    search_space = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list
+    )
+    search_configuration = Column(JSON().with_variant(JSONB(), "postgresql"))
+    engine_key = Column(String(64), nullable=False)
+    engine_version = Column(String(64), nullable=False)
+    adapter_key = Column(String(64))
+    adapter_version = Column(String(64))
+    code_version = Column(String(64), nullable=False)
+    job_ref_id = Column("job_id", Uuid(as_uuid=True))
+    provenance_ref_id = Column("provenance_id", Uuid(as_uuid=True))
+    started_at = Column(DateTime(timezone=True))
+    finished_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    invalidated_at = Column(DateTime(timezone=True))
+    invalid_reason_code = Column(String(64))
+    invalid_reason_detail = Column(Text)
     research_policy_ref_id = Column(
         "research_policy_id",
         Uuid(as_uuid=True),
@@ -992,14 +1057,53 @@ class ExperimentRow(Base):
     __mapper_args__ = {"primary_key": [id]}
 
 
+def experiment_storage_fields(detail: dict[str, Any]) -> dict[str, Any]:
+    engine = detail["engine"]
+    created_at = _detail_datetime(detail["created_at"])
+    if created_at is None:
+        raise RuntimeError("experiment detail has no valid creation timestamp")
+    return {
+        "research_revision_no": detail["research_revision_no"],
+        "objective": detail["objective"],
+        "hypothesis": detail["hypothesis"],
+        "experiment_type": detail["experiment_type"],
+        "status": detail["status"],
+        "validity_state": detail["validity_state"],
+        "parameters": detail["parameters"],
+        "parameters_sha256": detail["parameters_sha256"],
+        "search_space": detail["search_space"],
+        "search_configuration": detail["search_configuration"],
+        "engine_key": engine["name"],
+        "engine_version": engine["version"],
+        "adapter_key": (detail["adapter"]["name"] if detail.get("adapter") else None),
+        "adapter_version": (
+            detail["adapter"]["version"] if detail.get("adapter") else None
+        ),
+        "code_version": detail["code_version"],
+        "started_at": _detail_datetime(detail["started_at"]),
+        "finished_at": _detail_datetime(detail["finished_at"]),
+        "created_at": created_at,
+        "invalidated_at": _detail_datetime(detail["invalidated_at"]),
+        "invalid_reason_code": detail["invalid_reason_code"],
+        "invalid_reason_detail": detail["invalid_reason_detail"],
+    }
+
+
 class FactorRow(Base):
     __tablename__ = "factors"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("factor_id", String(40), nullable=False, unique=True)
-    workspace_id = Column(String, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
     research_id = Column(
         String(40), ForeignKey("research_cases.research_id"), nullable=False, index=True
     )
+    name = Column(String(128), nullable=False)
+    category = Column(String(64), nullable=False)
+    current_version = Column(Integer, nullable=False, default=1)
+    status = Column(String(24), nullable=False, default="DRAFT")
+    created_by = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
     revision = Column(BigInteger, nullable=False, default=1)
     detail = Column(Text, nullable=False, default="{}")
     __mapper_args__ = {"primary_key": [id]}
@@ -1009,11 +1113,17 @@ class StrategyRow(Base):
     __tablename__ = "strategies"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("strategy_id", String(40), nullable=False, unique=True)
-    workspace_id = Column(String, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
     research_id = Column(
         String(40), ForeignKey("research_cases.research_id"), nullable=False, index=True
     )
+    name = Column(String(160), nullable=False)
+    current_version = Column(Integer, nullable=False, default=1)
+    status = Column(String(24), nullable=False, default="IDEA")
+    origin_research_id = Column(Uuid(as_uuid=True))
     revision = Column(BigInteger, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
     detail = Column(Text, nullable=False, default="{}")
     __mapper_args__ = {"primary_key": [id]}
 
@@ -1033,6 +1143,28 @@ class StrategyVersionRow(Base):
         ForeignKey("cost_model_versions.id"),
         nullable=False,
     )
+    lifecycle_state = Column(String(24), nullable=False, default="CANDIDATE")
+    is_frozen = Column(Boolean, nullable=False, default=False)
+    thesis = Column(Text, nullable=False)
+    universe_spec = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    signals = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    selection_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    position_sizing = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    portfolio_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    rebalance_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    exit_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    benchmark_ref = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    risk_constraints = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    required_dataset_refs = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    known_failure_modes = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    expected_turnover = Column(Numeric(20, 12))
+    frozen_by = Column(String(64))
     version = Column(Integer, nullable=False)
     state = Column(String, nullable=False, default="CANDIDATE")
     spec_sha256 = Column(String(64), nullable=False)
@@ -1056,6 +1188,37 @@ class StrategyVersionRow(Base):
         CheckConstraint("version >= 1", name="strategy_versions_version_check"),
     )
     __mapper_args__ = {"primary_key": [id]}
+
+
+def strategy_storage_fields(
+    detail: dict[str, Any], *, lifecycle_state: str, is_frozen: bool
+) -> dict[str, Any]:
+    rules = detail["rules"]
+    return {
+        "lifecycle_state": lifecycle_state,
+        "is_frozen": is_frozen,
+        "thesis": detail["thesis"],
+        "universe_spec": detail["universe"],
+        "signals": detail["signals"],
+        "selection_rules": {
+            "selection_count": rules["selection_count"],
+            "long_short": rules["long_short"],
+        },
+        "position_sizing": {
+            "weighting": rules["weighting"],
+            "position_limit": rules["position_limit"],
+        },
+        "portfolio_rules": {"leverage_limit": rules["leverage_limit"]},
+        "rebalance_rules": {"rebalance_frequency": rules["rebalance_frequency"]},
+        "exit_rules": {},
+        "benchmark_ref": {"symbol": detail["benchmark"]},
+        "risk_constraints": {
+            "leverage_limit": rules["leverage_limit"],
+            "position_limit": rules["position_limit"],
+        },
+        "required_dataset_refs": [],
+        "known_failure_modes": detail["known_failure_modes"],
+    }
 
 
 class ValidationRow(Base):
@@ -1406,6 +1569,9 @@ class ToolCallRow(Base):
     tool_version = Column(String, nullable=False)
     status = Column(String, nullable=False)
     input_payload = Column(Text, nullable=False, default="{}")
+    input = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
+    )
     input_sha256 = Column(String(64), nullable=False)
     semantic_scope = Column(String, nullable=False, default="")
     objective = Column(Text)
@@ -3962,6 +4128,9 @@ def create_research(
         )
         i = new_id("RSCH")
         created_at = NOW()
+        created_at_value = _detail_datetime(created_at)
+        if created_at_value is None:
+            raise RuntimeError("runtime clock returned an invalid timestamp")
         created_date = created_at[:10]
         brief_without_hash = {
             "revision_no": 1,
@@ -4025,7 +4194,18 @@ def create_research(
                 status="DRAFT",
                 revision=1,
                 title=d["title"],
+                original_user_prompt=d["original_user_prompt"],
+                normalized_question=d["normalized_question"],
+                evidence_status=d["evidence_status"],
+                current_revision_no=d["current_revision_no"],
+                active_plan_version=d["active_plan_version"],
                 research_policy_ref_id=research_policy.internal_id,
+                director_agent_version=d["director_agent_version"],
+                current_agent_run_id=d["current_agent_run_id"],
+                current_job_id=d["current_job_id"],
+                created_at=created_at_value,
+                updated_at=created_at_value,
+                completed_at=d["completed_at"],
                 detail=json.dumps(d),
             )
         )
@@ -4294,6 +4474,7 @@ def create_experiment(
                 source_experiment_id=None,
                 immutable=False,
                 revision=1,
+                **experiment_storage_fields(detail),
                 detail=json.dumps(detail),
             )
         )
@@ -4350,6 +4531,9 @@ def create_factor(
                 id=factor_id,
                 workspace_id=actor.workspace_id,
                 research_id=payload["research_id"],
+                name=payload["name"],
+                category=payload["category"],
+                created_by=actor.id,
                 revision=1,
                 detail=json.dumps(detail),
             )
@@ -4447,6 +4631,7 @@ def create_strategy(
                 id=strategy_id,
                 workspace_id=actor.workspace_id,
                 research_id=payload["research_id"],
+                name=payload["name"],
                 revision=1,
                 detail=json.dumps(detail),
             )
@@ -4456,6 +4641,9 @@ def create_strategy(
                 id=new_id("SV"),
                 workspace_id=actor.workspace_id,
                 strategy_id=strategy_id,
+                **strategy_storage_fields(
+                    detail, lifecycle_state="CANDIDATE", is_frozen=False
+                ),
                 version=1,
                 state="CANDIDATE",
                 spec_sha256=digest,
@@ -4731,6 +4919,7 @@ def reproduce_experiment(
                 source_experiment_id=source.id,
                 immutable=False,
                 revision=1,
+                **experiment_storage_fields(child_detail),
                 detail=json.dumps(child_detail),
             )
         )

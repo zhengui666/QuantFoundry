@@ -62,7 +62,19 @@ def _segment(value: str, field_name: str) -> str:
     return quote(value, safe="")
 
 
-def _validate_order_response(result: dict[str, Any], client_order_id: str) -> dict[str, Any]:
+def _header_value(value: str, field_name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or any(ord(character) < 0x20 or ord(character) > 0x7E for character in value)
+    ):
+        raise ValueError(f"{field_name} header value is invalid")
+    return value
+
+
+def _validate_order_response(
+    result: dict[str, Any], client_order_id: str
+) -> dict[str, Any]:
     statuses = {
         "CREATED",
         "SUBMITTING",
@@ -88,10 +100,14 @@ def _validate_order_response(result: dict[str, Any], client_order_id: str) -> di
         not required.issubset(result)
         or result.get("client_order_id") != client_order_id
         or not isinstance(result.get("broker_order_id"), str)
+        or not result["broker_order_id"]
         or result.get("status") not in statuses
         or not isinstance(result.get("accepted_at"), str)
+        or not result["accepted_at"]
         or not isinstance(result.get("updated_at"), str)
+        or not result["updated_at"]
         or not isinstance(result.get("fills"), list)
+        or not all(isinstance(fill, dict) for fill in result["fills"])
     ):
         raise ConnectorProtocolError("order response is invalid")
     return result
@@ -126,7 +142,10 @@ def _decimal(value: str | Decimal, *, field_name: str, positive: bool = False) -
 
 
 def _decimal_places(value: str | Decimal) -> int:
-    return max(0, -Decimal(str(value)).as_tuple().exponent)
+    exponent = Decimal(str(value)).as_tuple().exponent
+    if not isinstance(exponent, int):
+        raise ValueError("decimal value is not finite")
+    return max(0, -exponent)
 
 
 @dataclass(frozen=True)
@@ -162,6 +181,12 @@ class Instrument:
             )
         ):
             raise ValueError("option contract fields are required")
+        if self.asset_class == "OPTION":
+            if self.right not in {"CALL", "PUT"}:
+                raise ValueError("option right is invalid")
+            if self.style not in {"AMERICAN", "EUROPEAN"}:
+                raise ValueError("option style is invalid")
+            _decimal(self.strike or "", field_name="strike", positive=True)
         if self.asset_class == "FUTURE" and not all(
             (self.expiry, self.multiplier, self.currency)
         ):
@@ -396,7 +421,10 @@ class ConnectorCapabilities:
             raise ConnectorProtocolError("margin preview is required for this asset")
         if _decimal_places(order.quantity) > self.quantity_scale:
             raise ConnectorProtocolError("order quantity exceeds connector scale")
-        if order.limit_price is not None and _decimal_places(order.limit_price) > self.price_scale:
+        if (
+            order.limit_price is not None
+            and _decimal_places(order.limit_price) > self.price_scale
+        ):
             raise ConnectorProtocolError("order price exceeds connector scale")
 
 
@@ -425,8 +453,14 @@ class ConnectorClient:
             or parsed.password
         ):
             raise ValueError("connector endpoint must be an HTTPS origin")
-        if not key_id or not credential:
+        if (
+            not isinstance(key_id, str)
+            or not key_id
+            or not isinstance(credential, str)
+            or not credential
+        ):
             raise ValueError("connector key_id and credential are required")
+        _header_value(key_id, "key_id")
         self._base_url = endpoint.rstrip("/")
         self._key_id = key_id
         self._credential = credential.encode("utf-8")
@@ -470,7 +504,7 @@ class ConnectorClient:
             )
         )
         timestamp = str(int(self._clock()))
-        nonce = str(self._nonce_factory())
+        nonce = _header_value(self._nonce_factory(), "nonce")
         body_hash = hashlib.sha256(body).hexdigest()
         canonical = "\n".join((method.upper(), path, body_hash, timestamp, nonce))
         signature = hmac.new(
@@ -485,7 +519,9 @@ class ConnectorClient:
             "X-QF-Signature": f"v1={signature}",
         }
         if idempotency_key is not None:
-            headers["Idempotency-Key"] = idempotency_key
+            headers["Idempotency-Key"] = _header_value(
+                idempotency_key, "idempotency_key"
+            )
         try:
             response = self._client.request(
                 method,
@@ -495,6 +531,14 @@ class ConnectorClient:
                 timeout=self._timeout,
                 follow_redirects=False,
             )
+        except (
+            httpx.InvalidURL,
+            httpx.LocalProtocolError,
+            httpx.UnsupportedProtocol,
+        ) as error:
+            raise ConnectorProtocolError(
+                "connector transport protocol is invalid"
+            ) from error
         except httpx.HTTPError as error:
             raise ConnectorUnavailable(
                 "live connector request outcome is unknown"

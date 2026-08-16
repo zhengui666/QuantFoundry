@@ -48,6 +48,7 @@ from app.main import (
     app,
     content_hash,
     job,
+    strategy_storage_fields,
     validation_action_capabilities,
 )
 from workers.main import run_agent_once, run_once
@@ -394,11 +395,11 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         ("2020-06-01", "RESEARCH"),
         ("2020-06-02", "VALIDATION"),
         ("2020-07-01", "VALIDATION"),
-            ("2020-09-01", "VALIDATION"),
-            ("2020-09-02", "HOLDOUT"),
-            ("2020-10-01", "HOLDOUT"),
-            ("2020-11-02", "HOLDOUT"),
-            ("2020-12-31", "HOLDOUT"),
+        ("2020-09-01", "VALIDATION"),
+        ("2020-09-02", "HOLDOUT"),
+        ("2020-10-01", "HOLDOUT"),
+        ("2020-11-02", "HOLDOUT"),
+        ("2020-12-31", "HOLDOUT"),
     ]
     market_rows = [
         {
@@ -1063,6 +1064,9 @@ def test_45_canonical_operation_ids_execute_real_handlers(
             id=second_factor_id,
             workspace_id="matrix-workspace",
             research_id=research_id,
+            name=factor_detail["name"],
+            category=factor_detail["category"],
+            created_by="test-owner",
             revision=1,
             detail=json.dumps(factor_detail),
         )
@@ -1085,6 +1089,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
                 id=seeded_strategy_id,
                 workspace_id="matrix-workspace",
                 research_id=research_id,
+                name=seeded_detail["name"],
                 revision=1,
                 detail=json.dumps(seeded_detail),
             )
@@ -1100,6 +1105,9 @@ def test_45_canonical_operation_ids_execute_real_handlers(
                 spec_sha256=source_strategy.spec_sha256,
                 revision=1,
                 detail=json.dumps(seeded_detail),
+                **strategy_storage_fields(
+                    seeded_detail, lifecycle_state="CANDIDATE", is_frozen=False
+                ),
             )
         )
     session.commit()

@@ -25,10 +25,12 @@ for index, issue in enumerate(data["issues"]):
     required = ("id", "severity", "status", "scope")
     if any(not isinstance(issue.get(key), str) or not issue[key].strip() for key in required):
         raise SystemExit(f"issues[{index}] requires non-empty id, severity, status, and scope")
-    if issue["severity"] == "S1" and issue["status"] != "closed" and issue["scope"] == "V1_P0_PATH":
+    if issue["severity"] == "S0" and issue["status"] != "closed":
+        blocking.append(issue["id"])
+    elif issue["severity"] == "S1" and issue["status"] != "closed" and issue["scope"] == "V1_P0_PATH":
         blocking.append(issue["id"])
 
 if blocking:
-    raise SystemExit("unresolved S1 issue(s) on V1 P0 path: " + ", ".join(blocking))
+    raise SystemExit("unresolved blocking known issue(s): " + ", ".join(blocking))
 print(json.dumps({"result": "pass", "gate": "known-issue-review", "issues": len(data["issues"]), "blocking": []}, sort_keys=True))
 PY

@@ -57,7 +57,9 @@ def _event_object_types() -> dict[str, str]:
         for value in values:
             if isinstance(value, str):
                 if value in result and result[value] != object_type:
-                    raise RuntimeError(f"event type {value} has conflicting object types")
+                    raise RuntimeError(
+                        f"event type {value} has conflicting object types"
+                    )
                 result[value] = object_type
     if set(result) != set(EVENT_TYPES):
         raise RuntimeError("generated SSE event/object mapping is incomplete")

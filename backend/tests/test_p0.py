@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
@@ -10,6 +11,7 @@ from quantfoundry.api.app import (
     StrategyVersionRow,
     ValidationRow,
     app,
+    strategy_storage_fields,
 )
 from quantfoundry.contracts.openapi.runtime import now
 
@@ -38,6 +40,7 @@ def test_holdout_cannot_run_without_approval():
     research_id = f"RSCH-{uuid.uuid4()}"
     strategy_id = f"STRAT-{uuid.uuid4()}"
     created_at = now()
+    created_at_value = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     research_detail = {
         "research_id": research_id,
         "title": "Holdout fixture",
@@ -65,6 +68,9 @@ def test_holdout_cannot_run_without_approval():
             status="DRAFT",
             revision=1,
             title="Holdout fixture",
+            original_user_prompt="Holdout fixture",
+            created_at=created_at_value,
+            updated_at=created_at_value,
             detail=json.dumps(research_detail),
         )
     )
@@ -73,37 +79,44 @@ def test_holdout_cannot_run_without_approval():
             id=strategy_id,
             workspace_id="test-workspace",
             research_id=research_id,
+            name="Holdout fixture",
             revision=1,
             detail="{}",
         )
     )
     strategy_version_id = f"SV-{uuid.uuid4()}"
+    strategy_detail = {
+        "thesis": "holdout fixture",
+        "universe": {"asset_class": "EQUITY", "symbols": ["AAA"]},
+        "signals": [],
+        "rules": {
+            "selection_count": 1,
+            "weighting": "EQUAL",
+            "rebalance_frequency": "DAILY",
+            "long_short": False,
+            "leverage_limit": "1",
+            "position_limit": "1",
+        },
+        "benchmark": "SPY",
+        "known_failure_modes": [],
+        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
+        "research_period": {"start": "2020-01-01", "end": "2020-06-30"},
+        "validation_period": {"start": "2020-07-01", "end": "2020-09-30"},
+        "holdout_period": {"start": "2020-10-01", "end": "2020-12-31"},
+    }
     session.add(
         StrategyVersionRow(
             id=strategy_version_id,
             workspace_id="test-workspace",
             strategy_id=strategy_id,
+            **strategy_storage_fields(
+                strategy_detail, lifecycle_state="FROZEN", is_frozen=True
+            ),
             version=1,
             state="FROZEN",
             spec_sha256="0" * 64,
             revision=1,
-            detail=json.dumps(
-                {
-                    "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-                    "research_period": {
-                        "start": "2020-01-01",
-                        "end": "2020-06-30",
-                    },
-                    "validation_period": {
-                        "start": "2020-07-01",
-                        "end": "2020-09-30",
-                    },
-                    "holdout_period": {
-                        "start": "2020-10-01",
-                        "end": "2020-12-31",
-                    },
-                }
-            ),
+            detail=json.dumps(strategy_detail),
         )
     )
     validation_id = f"VAL-{uuid.uuid4()}"
