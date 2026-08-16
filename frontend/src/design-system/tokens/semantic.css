@@ -6,8 +6,14 @@
   --qf-color-text-primary: #17202a;
   --qf-color-text-secondary: #536170;
   --qf-color-border: #d7dde4;
-  --qf-color-brand: #106b62;
-  --qf-color-brand-hover: #0b514b;
+  --qf-color-action: #2557d6;
+  --qf-color-action-hover: #1f46aa;
+  --qf-color-evidence: #087a72;
+  --qf-color-evidence-hover: #05635c;
+  --qf-color-ai: #6553c7;
+  --qf-color-ai-hover: #4c3da0;
+  --qf-color-brand: var(--qf-color-action);
+  --qf-color-brand-hover: var(--qf-color-action-hover);
   --qf-color-focus: #1769e0;
   --qf-color-success: #15803d;
   --qf-color-danger: #b42318;
@@ -38,7 +44,10 @@
   --color-qf-text: var(--qf-color-text-primary);
   --color-qf-muted: var(--qf-color-text-secondary);
   --color-qf-border: var(--qf-color-border);
-  --color-qf-primary: var(--qf-color-brand);
+  --color-qf-primary: var(--qf-color-action);
+  --color-qf-action: var(--qf-color-action);
+  --color-qf-evidence: var(--qf-color-evidence);
+  --color-qf-ai: var(--qf-color-ai);
   --color-qf-success: var(--qf-color-success);
   --color-qf-warning: var(--qf-color-warning);
   --color-qf-danger: var(--qf-color-danger);

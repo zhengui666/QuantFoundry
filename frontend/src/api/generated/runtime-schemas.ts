@@ -2926,7 +2926,7 @@ export const ProblemContextSchema = z
   });
 export const ApiProblemSchema = z
   .object({
-    type: z.string(),
+    type: z.url(),
     title: z.string(),
     status: z.number().int().min(400).max(599),
     code: CanonicalErrorCodeSchema,
@@ -2953,17 +2953,20 @@ export const GeneralAccessKeyMetadataSchema = z
     label: z.string().min(1).max(80),
     masked_hint: z.string().min(3).max(32),
     status: z.union([z.literal('ACTIVE'), z.literal('REVOKED'), z.literal('EXPIRED')]),
-    expires_at: z.iso.datetime().nullable(),
-    last_used_at: z.iso.datetime().nullable(),
+    expires_at: z.iso.datetime({ offset: true }).nullable(),
+    last_used_at: z.iso.datetime({ offset: true }).nullable(),
     revision: z.number().int().min(1),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const GeneralAccessKeyListSchema = z
   .object({ items: z.array(GeneralAccessKeyMetadataSchema) })
   .strict();
 export const GeneralAccessKeyCreateRequestSchema = z
-  .object({ label: z.string().min(1).max(80), expires_at: z.iso.datetime().nullable().optional() })
+  .object({
+    label: z.string().min(1).max(80),
+    expires_at: z.iso.datetime({ offset: true }).nullable().optional(),
+  })
   .strict();
 export const GeneralAccessKeyIssuedSchema = z
   .object({
@@ -2980,9 +2983,9 @@ export const OwnerSessionViewSchema = z
     principal: z.literal('OWNER'),
     auth_method: z.literal('GENERAL_ACCESS_KEY'),
     key_id: z.string().regex(new RegExp('^gak_[a-z0-9]{16,32}$')),
-    issued_at: z.iso.datetime(),
-    last_seen_at: z.iso.datetime(),
-    expires_at: z.iso.datetime(),
+    issued_at: z.iso.datetime({ offset: true }),
+    last_seen_at: z.iso.datetime({ offset: true }),
+    expires_at: z.iso.datetime({ offset: true }),
     csrf_token: z.string().min(32).max(256),
   })
   .strict();
@@ -3060,7 +3063,7 @@ export const ConfigurationCandidateSchema = z
     catalog_version: z.string(),
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ConfigurationValidationResultSchema = z
@@ -3069,7 +3072,7 @@ export const ConfigurationValidationResultSchema = z
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     errors: z.array(FieldErrorSchema),
     warnings: z.array(FieldErrorSchema),
-    validated_at: z.iso.datetime(),
+    validated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ConfigurationActivateRequestSchema = z
@@ -3097,7 +3100,7 @@ export const DatabaseConnectionCandidateSchema = z
     password_configured: z.boolean(),
     client_key_configured: z.boolean(),
     pool_profile: z.string().max(64).nullable().optional(),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const DatabaseConnectionStatusSchema = z
@@ -3120,7 +3123,7 @@ export const DatabaseConnectionStatusSchema = z
       z.literal('READ_ONLY_RECOVERY'),
       z.literal('UNAVAILABLE'),
     ]),
-    checked_at: z.iso.datetime(),
+    checked_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const DatabaseConnectionCandidateRequestSchema = z
@@ -3165,7 +3168,7 @@ export const DatabaseConnectionValidationResultSchema = z
     revision: z.number().int().min(1),
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     checks: z.array(DatabaseConnectionCheckSchema).min(1),
-    validated_at: z.iso.datetime(),
+    validated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const SetupStatusSchema = z
@@ -3647,7 +3650,7 @@ export const DataCapabilitySchema = z
     point_in_time: PointInTimeCapabilitySchema,
     fields: z.array(z.string()),
     limitations: z.array(CapabilityLimitationSchema),
-    checked_at: z.iso.datetime(),
+    checked_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const SetupProviderCapabilitySchema = z
@@ -3663,13 +3666,13 @@ export const SetupProviderCapabilitySchema = z
 export const SetupCapabilityCatalogSchema = z
   .object({
     providers: z.array(SetupProviderCapabilitySchema),
-    server_checked_at: z.iso.datetime(),
+    server_checked_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const LiveConnectorValidationRequestSchema = z
   .object({
     connection_id: z.string().min(1).max(80).regex(new RegExp('^[A-Za-z0-9._-]+$')),
-    endpoint: z.string().min(1).max(2048).regex(new RegExp('^https://')),
+    endpoint: z.url().min(1).max(2048).regex(new RegExp('^https://')),
     key_id: z.string().min(1).max(160),
     credential: z.string().min(1).max(16384),
     expected_account_id: z.string().min(1).max(160).nullable().optional(),
@@ -3694,7 +3697,7 @@ export const LiveConnectorValidationResultSchema = z
         z.literal('CRYPTO_PERPETUAL'),
       ]),
     ),
-    checked_at: z.iso.datetime(),
+    checked_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const SetupProviderConnectionValidationRequestSchema = z
@@ -3713,7 +3716,7 @@ export const SetupProviderConnectionValidationSuccessSchema = z
     state: z.literal('SUCCESS'),
     detail: z.string().nullable(),
     data_capabilities: z.array(DataCapabilitySchema),
-    checked_at: z.iso.datetime(),
+    checked_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const SetupProviderConnectionValidationFailureSchema = z
@@ -3724,7 +3727,7 @@ export const SetupProviderConnectionValidationFailureSchema = z
     detail: z.string().min(1),
     error_code: CanonicalErrorCodeSchema,
     data_capabilities: z.array(DataCapabilitySchema),
-    checked_at: z.iso.datetime(),
+    checked_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const SetupProviderConnectionValidationResultSchema = z.union([
@@ -3741,7 +3744,7 @@ export const ConfigurationConsumerStateSchema = z
     applied_revision: z.number().int().min(1).nullable(),
     ack: z.union([z.literal('PENDING'), z.literal('ACKED'), z.literal('FAILED')]),
     error_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
-    heartbeat_at: z.iso.datetime(),
+    heartbeat_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ConfigurationActiveSchema = z
@@ -3752,7 +3755,7 @@ export const ConfigurationActiveSchema = z
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     consumer_states: z.array(ConfigurationConsumerStateSchema),
-    updated_at: z.iso.datetime(),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const SettingsDetailSchema = z
@@ -5753,7 +5756,7 @@ export const OverviewActiveResearchItemSchema = z
     current_agent: z.union([OverviewCurrentAgentSchema, z.null().nullable()]),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
-    updated_at: z.iso.datetime(),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const OverviewStrategyPipelineSchema = z
@@ -5869,7 +5872,7 @@ export const ChartAggregateSchema = z
     summary: ChartSummarySchema,
     downsampling: ChartDownsamplingSchema,
     provenance: ProvenanceRefSchema,
-    generated_at: z.iso.datetime(),
+    generated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const OverviewRecentFindingSchema = z
@@ -5885,7 +5888,7 @@ export const OverviewRecentFindingSchema = z
     finding: z.string(),
     research: ObjectRefSchema,
     provenance: ProvenanceRefSchema,
-    updated_at: z.iso.datetime(),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const OverviewAgentActivityItemSchema = z
@@ -5912,7 +5915,7 @@ export const OverviewAgentActivityItemSchema = z
     ]),
     decision_summary: z.string().nullable(),
     next_action: z.string().nullable(),
-    updated_at: z.iso.datetime(),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const OverviewDataHealthSchema = z
@@ -5925,13 +5928,13 @@ export const OverviewDataHealthSchema = z
     ]),
     blocker_count: z.number().int().min(0),
     warning_count: z.number().int().min(0),
-    checked_at: z.iso.datetime(),
+    checked_at: z.iso.datetime({ offset: true }),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
   .strict();
 export const OverviewReadModelSchema = z
   .object({
-    as_of: z.iso.datetime(),
+    as_of: z.iso.datetime({ offset: true }),
     revision: z.number().int().min(1),
     needs_attention: z.array(OverviewAttentionItemSchema),
     active_research: z.array(OverviewActiveResearchItemSchema),
@@ -5969,7 +5972,7 @@ export const ResearchSummarySchema = z
     ]),
     current_revision_no: z.number().int().min(1),
     revision: z.number().int().min(1),
-    updated_at: z.iso.datetime(),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const PageInfoSchema = z
@@ -6054,7 +6057,7 @@ export const ResearchConclusionReadModelSchema = z
     uncertainties: z.array(z.string()),
     recommendation: z.string().nullable(),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchPlanNodeReadModelSchema = z
@@ -6094,7 +6097,7 @@ export const ResearchEvidenceItemSchema = z
     limitations: z.string().nullable(),
     is_invalidated: z.boolean(),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const NamedVersionSchema = z.object({ name: z.string(), version: z.string() }).strict();
@@ -6124,7 +6127,7 @@ export const ResearchCurrentAgentWorkSchema = z
     tool: z.union([NamedVersionSchema, z.null().nullable()]),
     next_action: z.string().nullable(),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    updated_at: z.iso.datetime(),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchOverviewReadModelSchema = z
@@ -6145,7 +6148,7 @@ export const ResearchPlanReadModelSchema = z
     nodes: z.array(ResearchPlanNodeReadModelSchema),
     content_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchTimelineItemSchema = z
@@ -6168,7 +6171,7 @@ export const ResearchTimelineItemSchema = z
     next_action: z.string().nullable(),
     object: z.union([ObjectRefSchema, z.null().nullable()]),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    occurred_at: z.iso.datetime(),
+    occurred_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchTimelinePageSchema = z
@@ -6216,7 +6219,7 @@ export const ResearchExperimentItemSchema = z
       z.null().nullable(),
     ]),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchExperimentPageSchema = z
@@ -6233,7 +6236,7 @@ export const ArtifactReadModelSchema = z
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     size_bytes: z.number().int().min(0),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ArtifactPageSchema = z
@@ -6262,7 +6265,7 @@ export const ResearchAuditItemSchema = z
     object: ObjectRefSchema,
     request_id: z.string(),
     provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
-    occurred_at: z.iso.datetime(),
+    occurred_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ResearchAuditPageSchema = z
@@ -6341,9 +6344,9 @@ export const ResearchDetailSchema = z
     audit: ResearchAuditPageSchema,
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
-    created_at: z.iso.datetime(),
-    updated_at: z.iso.datetime(),
-    completed_at: z.iso.datetime().nullable(),
+    created_at: z.iso.datetime({ offset: true }),
+    updated_at: z.iso.datetime({ offset: true }),
+    completed_at: z.iso.datetime({ offset: true }).nullable(),
   })
   .strict();
 export const ParameterSchema = z.object({ key: z.string(), value: z.string() }).strict();
@@ -6959,7 +6962,7 @@ export const ProvenanceSchema = z
     parameters_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')).nullable(),
     input_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     output_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    calculated_at: z.iso.datetime(),
+    calculated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ExperimentDetailSchema = z
@@ -7137,10 +7140,10 @@ export const ExperimentDetailSchema = z
     ]),
     provenance: z.union([ProvenanceSchema, z.null().nullable()]),
     action_capabilities: z.array(ActionCapabilitySchema),
-    started_at: z.iso.datetime().nullable(),
-    finished_at: z.iso.datetime().nullable(),
-    created_at: z.iso.datetime(),
-    invalidated_at: z.iso.datetime().nullable(),
+    started_at: z.iso.datetime({ offset: true }).nullable(),
+    finished_at: z.iso.datetime({ offset: true }).nullable(),
+    created_at: z.iso.datetime({ offset: true }),
+    invalidated_at: z.iso.datetime({ offset: true }).nullable(),
     invalid_reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
     invalid_reason_detail: z.string().nullable(),
   })
@@ -7285,8 +7288,8 @@ export const StrategyBacktestResultSummarySchema = z
       z.null().nullable(),
     ]),
     provenance: ProvenanceRefSchema,
-    started_at: z.iso.datetime().nullable(),
-    finished_at: z.iso.datetime(),
+    started_at: z.iso.datetime({ offset: true }).nullable(),
+    finished_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const StrategyLatestBacktestAvailableSchema = z
@@ -7396,11 +7399,11 @@ export const StrategyVersionDetailSchema = z
     validation_summary: z.union([StrategyValidationSummarySchema, z.null().nullable()]),
     artifacts: z.array(ArtifactReadModelSchema),
     provenance: z.array(ProvenanceRefSchema),
-    frozen_at: z.iso.datetime().nullable(),
+    frozen_at: z.iso.datetime({ offset: true }).nullable(),
     frozen_by: z.string().nullable(),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const NewExperimentResourceRefSchema = z
@@ -7447,7 +7450,7 @@ export const ExperimentReproduceAcceptedSchema = z
     ]),
     source_provenance: ProvenanceRefSchema,
     reproduce_mode: z.union([z.literal('EXACT'), z.literal('CONTROLLED_OVERRIDE')]),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ValidationCreateRequestSchema = z
@@ -7622,9 +7625,9 @@ export const ValidationDetailSchema = z
     ]),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
-    started_at: z.iso.datetime().nullable(),
-    finished_at: z.iso.datetime().nullable(),
-    created_at: z.iso.datetime(),
+    started_at: z.iso.datetime({ offset: true }).nullable(),
+    finished_at: z.iso.datetime({ offset: true }).nullable(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ApprovalSummarySchema = z
@@ -7702,7 +7705,7 @@ export const HoldoutResultSchema = z
     result: z.union([z.literal('PASS'), z.literal('WARN'), z.literal('FAIL')]),
     metrics: z.array(MetricSchema),
     provenance: ProvenanceSchema,
-    exposed_at: z.iso.datetime(),
+    exposed_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const HoldoutApprovalRequestSchema = z.object({ reason: z.string().min(1) }).strict();
@@ -7931,8 +7934,8 @@ export const ApprovalListItemSchema = z
       z.literal('STALE'),
       z.literal('CANCELLED'),
     ]),
-    requested_at: z.iso.datetime(),
-    decided_at: z.iso.datetime().nullable(),
+    requested_at: z.iso.datetime({ offset: true }),
+    decided_at: z.iso.datetime({ offset: true }).nullable(),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
@@ -7990,8 +7993,8 @@ export const ApprovalDetailSchema = z
       z.literal('STALE'),
       z.literal('CANCELLED'),
     ]),
-    requested_at: z.iso.datetime(),
-    decided_at: z.iso.datetime().nullable(),
+    requested_at: z.iso.datetime({ offset: true }),
+    decided_at: z.iso.datetime({ offset: true }).nullable(),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
@@ -8020,7 +8023,7 @@ export const JobAcceptedSchema = z
     status: z.union([z.literal('QUEUED'), z.literal('RUNNING')]),
     progress: JobProgressSchema,
     resource_ref: z.union([ObjectRefSchema, z.null().nullable()]),
-    created_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const ApprovalDecisionResultSchema = z
@@ -8118,8 +8121,8 @@ export const MemoDetailSchema = z
     provenance: z.array(ProvenanceRefSchema),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
-    created_at: z.iso.datetime(),
-    updated_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const AgentConfigSchema = z
@@ -8136,8 +8139,8 @@ export const AgentConfigSchema = z
     max_tool_calls_override: z.number().int().min(1).nullable(),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
-    created_at: z.iso.datetime(),
-    updated_at: z.iso.datetime(),
+    created_at: z.iso.datetime({ offset: true }),
+    updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const AgentConfigListSchema = z.array(AgentConfigSchema);
@@ -9994,10 +9997,10 @@ export const JobDetailSchema = z
     progress: JobProgressSchema,
     error_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
     result_ref: z.union([JobResultRefSchema, z.null().nullable()]),
-    queued_at: z.iso.datetime(),
-    started_at: z.iso.datetime().nullable(),
-    finished_at: z.iso.datetime().nullable(),
-    last_updated_at: z.iso.datetime(),
+    queued_at: z.iso.datetime({ offset: true }),
+    started_at: z.iso.datetime({ offset: true }).nullable(),
+    finished_at: z.iso.datetime({ offset: true }).nullable(),
+    last_updated_at: z.iso.datetime({ offset: true }),
     revision: z.number().int().min(1),
   })
   .strict();
@@ -11987,7 +11990,7 @@ export const SseEnvelopeSchema = z
     ]),
     sequence: z.number().int().min(1),
     event_type: EventTypeSchema,
-    occurred_at: z.iso.datetime(),
+    occurred_at: z.iso.datetime({ offset: true }),
     object_type: z.union([
       z.literal('job'),
       z.literal('research'),

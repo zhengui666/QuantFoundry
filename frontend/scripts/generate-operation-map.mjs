@@ -1,6 +1,7 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { load } from 'js-yaml';
 import { format, resolveConfig } from 'prettier';
 
@@ -25,19 +26,68 @@ const parameter = (entry) => {
   if (entry?.$ref) return resolveReference(entry.$ref, '#/components/parameters');
   return entry;
 };
-const operations = Object.entries(document.paths ?? {}).flatMap(([path, pathItem]) =>
-  Object.entries(pathItem)
+const schema = (entry) => {
+  if (entry?.$ref) return resolveReference(entry.$ref, '#/components/schemas');
+  return entry;
+};
+const fixedConst = (entry) => {
+  const resolved = schema(entry);
+  if (resolved?.const !== undefined) return resolved.const;
+  const variants = [
+    ...(resolved?.allOf ?? []),
+    ...(resolved?.oneOf ?? []),
+    ...(resolved?.anyOf ?? []),
+  ]
+    .map((variant) => fixedConst(variant))
+    .filter((value) => value !== undefined);
+  if (variants.length && variants.every((value) => value === variants[0])) return variants[0];
+  if (variants.length) throw new Error('Ambiguous fixed query parameter schema');
+  return undefined;
+};
+const securityMetadata = (security, operationId) => {
+  if (security === undefined) return false;
+  if (!Array.isArray(security)) throw new Error(`Malformed security for ${operationId}`);
+  const schemes = document.components?.securitySchemes ?? {};
+  for (const requirement of security) {
+    if (!requirement || typeof requirement !== 'object' || Array.isArray(requirement))
+      throw new Error(`Malformed security requirement for ${operationId}`);
+    for (const [name, scopes] of Object.entries(requirement)) {
+      if (!Object.hasOwn(schemes, name) || !Array.isArray(scopes))
+        throw new Error(`Unknown security scheme for ${operationId}: ${name}`);
+    }
+  }
+  return (
+    security.length > 0 && security.every((requirement) => Object.keys(requirement).length > 0)
+  );
+};
+const parameterEntries = (entries, scope) => {
+  const result = new Map();
+  for (const entry of entries) {
+    const resolved = parameter(entry);
+    if (!resolved?.in || !resolved.name) throw new Error(`Parameter in ${scope} is malformed`);
+    const key = `${resolved.in}\0${resolved.name}`;
+    if (result.has(key)) throw new Error(`Duplicate parameter in ${scope}: ${key}`);
+    result.set(key, resolved);
+  }
+  return result;
+};
+const operations = Object.entries(document.paths ?? {}).flatMap(([path, rawPathItem]) => {
+  if (rawPathItem?.$ref && Object.keys(rawPathItem).some((key) => key !== '$ref'))
+    throw new Error(`Path Item reference has siblings: ${path}`);
+  const pathItem = rawPathItem?.$ref
+    ? resolveReference(rawPathItem.$ref, '#/components/pathItems')
+    : rawPathItem;
+  return Object.entries(pathItem)
     .filter(([method]) => methods.has(method))
     .map(([method, operation]) => {
       if (!operation.operationId)
         throw new Error(`Operation at ${method.toUpperCase()} ${path} has no id`);
-      const parametersByKey = new Map();
-      for (const entry of [...(pathItem.parameters ?? []), ...(operation.parameters ?? [])]) {
-        const resolved = parameter(entry);
-        if (!resolved?.in || !resolved.name)
-          throw new Error(`Parameter at ${method.toUpperCase()} ${path} is malformed`);
-        parametersByKey.set(`${resolved.in}\0${resolved.name}`, resolved);
-      }
+      const parametersByKey = parameterEntries(pathItem.parameters ?? [], `path ${path}`);
+      for (const [key, resolved] of parameterEntries(
+        operation.parameters ?? [],
+        `${method.toUpperCase()} ${path}`,
+      ))
+        parametersByKey.set(key, resolved);
       const parameters = [...parametersByKey.values()];
       const headers = parameters
         .filter((entry) => entry?.in === 'header')
@@ -48,13 +98,10 @@ const operations = Object.entries(document.paths ?? {}).flatMap(([path, pathItem
         .map((entry) => ({
           name: entry.name,
           required: entry.required === true,
-          value: entry.schema?.const,
+          value: fixedConst(entry.schema),
         }));
       const security = operation.security === undefined ? document.security : operation.security;
-      const authenticated =
-        Array.isArray(security) &&
-        security.length > 0 &&
-        security.every((requirement) => Object.keys(requirement ?? {}).length > 0);
+      const authenticated = securityMetadata(security, operation.operationId);
       return {
         id: operation.operationId,
         method: method.toUpperCase(),
@@ -63,8 +110,8 @@ const operations = Object.entries(document.paths ?? {}).flatMap(([path, pathItem
         query,
         authenticated,
       };
-    }),
-);
+    });
+});
 if (operations.length !== 66)
   throw new Error(`Expected 66 canonical operations, found ${operations.length}`);
 const ids = new Set(operations.map((operation) => operation.id));
@@ -88,4 +135,12 @@ if (process.argv.includes('--check')) {
   const existing = await readFile(outputPath, 'utf8');
   if (existing !== formatted)
     throw new Error('Generated operation map is stale. Run pnpm codegen.');
-} else await writeFile(outputPath, formatted);
+} else {
+  const temporaryPath = `${outputPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, formatted);
+    await rename(temporaryPath, outputPath);
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
+}

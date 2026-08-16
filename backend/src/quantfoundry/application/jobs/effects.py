@@ -59,6 +59,7 @@ from quantfoundry.infrastructure.artifacts.store import (
     read_parquet,
     stage_json,
     stage_parquet,
+    staged_artifact_is_available,
 )
 
 
@@ -400,8 +401,6 @@ def _artifact(
     session.add(metadata)
     session.flush()
     publish_staged(session, storage_key, digest)
-    metadata.publication_state = "PUBLISHED"
-    metadata.published_at = datetime.now(UTC)
     save(
         session,
         "artifact",
@@ -455,8 +454,6 @@ def _parquet_artifact(
     session.add(metadata)
     session.flush()
     publish_staged(session, storage_key, digest)
-    metadata.publication_state = "PUBLISHED"
-    metadata.published_at = datetime.now(UTC)
     save(
         session,
         "artifact",
@@ -497,7 +494,11 @@ def _artifact_read_model(
     if (
         row is None
         or row.workspace_id != workspace_id
-        or row.publication_state != "PUBLISHED"
+        or row.publication_state not in {"STAGED", "PUBLISHED"}
+        or (
+            row.publication_state == "STAGED"
+            and not staged_artifact_is_available(session, row.storage_key, row.sha256)
+        )
     ):
         raise InvalidJobState("artifact metadata is missing")
     created_at = row.created_at

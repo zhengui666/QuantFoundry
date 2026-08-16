@@ -85,7 +85,7 @@ blockers:
     source:
       - docs/PRD/V1.0.0.md#521-p0-日调度可执行契约
       - docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md#23-paper-trading
-      - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#27-paper-acceptance--qf-e2e-060full-v1-future-staged
+      - docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md#27-paper-acceptance--qf-e2e-060full-v1-future-staged # public-id-prose
     owner_role: Backend Agent
     closure_criteria: &criteria_paper_scheduler
       - Scheduler uses deployment execution_assumption due-time/timezone/calendar, derives trading_date deterministically, and fails closed on invalid configuration/calendar.

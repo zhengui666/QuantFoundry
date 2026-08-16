@@ -1399,7 +1399,14 @@ class PaperScheduler:
             kind="JSON",
             media_type="application/json",
             storage_key=storage_key,
-            size_bytes=len(json.dumps(payload, sort_keys=True).encode()),
+            size_bytes=len(
+                json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ),
             sha256=digest,
             schema_name="paper_scheduler_evidence",
             schema_version=1,
@@ -1410,8 +1417,7 @@ class PaperScheduler:
                 "transition": transition,
                 "reason_code": reason_code,
             },
-            publication_state="PUBLISHED",
-            published_at=now,
+            publication_state="STAGED",
             created_at=now,
             immutable=True,
         )

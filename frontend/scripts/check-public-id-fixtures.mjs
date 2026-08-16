@@ -56,6 +56,12 @@ export const formalPublicIdSources = [
     path: 'docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md',
     kind: 'file',
   },
+  { path: 'docs/治理', kind: 'directory' },
+  {
+    path: 'docs/UI设计方案/QuantFoundry_UI_Interaction_Redesign_Brief_V1.0.0.md',
+    kind: 'file',
+  },
+  { path: 'docs/后端系统技术方案/contracts', kind: 'directory' },
   { path: 'docs/后端系统技术方案/contracts/openapi-v1.yaml', kind: 'file' },
   { path: 'docs/后端系统技术方案/contracts/tools', kind: 'directory' },
   { path: 'frontend', kind: 'directory' },
@@ -69,6 +75,8 @@ const collect = async (path) => {
     const child = resolve(path, entry.name);
     if (entry.isFile()) files.push(child);
     else if (entry.isDirectory()) files.push(...(await collect(child)));
+    else if (entry.isSymbolicLink())
+      throw new Error(`Formal public-ID source contains an unsupported symlink: ${child}`);
   }
   return files;
 };
@@ -101,11 +109,13 @@ export const collectFormalPublicIdFiles = async (
   return { files: [...files].sort(), coverage };
 };
 
-const tokenPattern = /\b(?:[A-Z][A-Z0-9]{1,7})-[A-Za-z0-9][A-Za-z0-9-]*\b/g;
+const tokenPattern = /\b([A-Za-z][A-Za-z0-9]*)-([A-Za-z0-9_-]+)/g;
+const emptyFixturePattern =
+  /\b(?:fixture|example|value|id|token|input)\b\s*[:=]\s*[`'"]([A-Za-z][A-Za-z0-9]*)-[`'"]/gi;
 const intentionalRejection = (token, context) => {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(
-    `(?:reject_fixture|must\\s+reject)[^\\n]*${escaped}|${escaped}[^\\n]*(?:reject_fixture|must\\s+reject)`,
+    `(?:reject_fixture|must\\s+reject|public-id-prose)[^\\n]*${escaped}|${escaped}[^\\n]*(?:reject_fixture|must\\s+reject|public-id-prose)`,
     'i',
   ).test(context);
 };
@@ -116,11 +126,36 @@ const jsonProseKeys = new Set(['constraint', 'constraints', 'description', 'desc
 
 const invalidTokens = (text, context, location, matchers) => {
   const failures = [];
-  for (const match of text.matchAll(tokenPattern)) {
+  const matches = [
+    ...text.matchAll(tokenPattern),
+    ...text.matchAll(emptyFixturePattern).map((match) => {
+      match[0] = `${match[1]}-`;
+      match[2] = '';
+      return match;
+    }),
+  ];
+  for (const match of matches) {
     const token = match[0];
-    const prefix = token.split('-')[0];
+    const nextCharacter = text[match.index + token.length] ?? '';
+    if (
+      match[2] === '' &&
+      (/[()[\]{}?*+\\%]/.test(nextCharacter) ||
+        /\b(?:like|regexp|glob|pattern|prefix|substr|length|startswith|replace|public[- ]id|exact grammar)\b|\|\||\+/i.test(
+          context,
+        ))
+    )
+      continue;
+    const rawPrefix = match[1] ?? '';
+    const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
-    const recognized = canonical !== undefined || prefix === 'MEM';
+    const looksLikeLowercaseId =
+      rawPrefix !== prefix &&
+      match[2].length >= 20 &&
+      /^[0-9a-f]/i.test(match[2]) &&
+      /[0-9]/.test(match[2]);
+    const recognized =
+      (canonical !== undefined && (rawPrefix === prefix || looksLikeLowercaseId)) ||
+      (prefix === 'MEM' && rawPrefix === prefix);
     if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
     if (!intentionalRejection(token, context))
       failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
@@ -131,9 +166,12 @@ const invalidTokens = (text, context, location, matchers) => {
 const scanLines = (file, content, matchers) => {
   const failures = [];
   const lines = content.split(/\r?\n/);
+  let marker = '';
   for (const [index, line] of lines.entries()) {
-    const context = lines.slice(Math.max(0, index - 1), index + 2).join(' ');
-    failures.push(...invalidTokens(line, context, `${file}:${index + 1}`, matchers));
+    failures.push(
+      ...invalidTokens(line, marker ? `${marker} ${line}` : line, `${file}:${index + 1}`, matchers),
+    );
+    marker = /(?:reject_fixture|must\s+reject|public-id-prose)/i.test(line) ? line : '';
   }
   return failures;
 };
@@ -148,23 +186,22 @@ const scanJson = (file, content, matchers) => {
 
   const failures = [];
   const skipProse = schemaOrManifestJson(file);
-  const visit = (node, path, parentContext) => {
+  const visit = (node, path, key = '') => {
     if (typeof node === 'string') {
-      failures.push(...invalidTokens(node, parentContext, `${file}:${path}`, matchers));
+      failures.push(...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers));
       return;
     }
     if (Array.isArray(node)) {
-      node.forEach((entry, index) => visit(entry, `${path}[${index}]`, JSON.stringify(node)));
+      node.forEach((entry, index) => visit(entry, `${path}[${index}]`, String(index)));
       return;
     }
     if (!node || typeof node !== 'object') return;
-    const context = JSON.stringify(node);
     for (const [key, entry] of Object.entries(node)) {
       if (skipProse && jsonProseKeys.has(key.toLowerCase())) continue;
-      visit(entry, `${path}.${key}`, context);
+      visit(entry, `${path}.${key}`, key);
     }
   };
-  visit(value, '$', content);
+  visit(value, '$');
   return failures;
 };
 
@@ -201,7 +238,15 @@ const main = async () => {
     if (!prefix || examples.length !== 2 || schema.oneOf?.length !== 2)
       throw new Error(`Malformed public-ID schema ${name}`);
     const patterns = schema.oneOf.map((branch) => new RegExp(branch.pattern));
-    if (prefixes.size !== 1 || patterns.some((pattern) => examples.filter((example) => pattern.test(example)).length !== 1))
+    const matches = patterns.map(
+      (pattern) => examples.map((example) => pattern.test(example)).filter(Boolean).length,
+    );
+    if (prefixes.size !== 1 || matches.some((count) => count !== 1))
+      throw new Error(`Public-ID schema ${name} has inconsistent examples/patterns`);
+    const matchedExampleIndexes = patterns.map((pattern) =>
+      examples.findIndex((example) => pattern.test(example)),
+    );
+    if (new Set(matchedExampleIndexes).size !== examples.length)
       throw new Error(`Public-ID schema ${name} has inconsistent examples/patterns`);
     if (matchers.has(prefix)) throw new Error(`Duplicate public-ID prefix ${prefix}`);
     matchers.set(prefix, patterns);

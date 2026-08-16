@@ -147,10 +147,12 @@ const zodFor = (schema, schemaName) => {
   if (!expression && type === 'string') {
     expression =
       baseSchema.format === 'date-time'
-        ? 'z.iso.datetime()'
+        ? 'z.iso.datetime({ offset: true })'
         : baseSchema.format === 'date'
           ? 'z.iso.date()'
-          : 'z.string()';
+          : baseSchema.format === 'uri'
+            ? 'z.url()'
+            : 'z.string()';
     if (baseSchema.minLength !== undefined) expression += `.min(${baseSchema.minLength})`;
     if (baseSchema.maxLength !== undefined) expression += `.max(${baseSchema.maxLength})`;
     if (baseSchema.pattern) expression += `.regex(new RegExp(${quote(baseSchema.pattern)}))`;
@@ -453,6 +455,15 @@ const publicIdExampleObject = publicIdEntries
   .map(([name, schema]) => {
     if (schema.examples?.length !== 2)
       throw new Error(`${name} must publish exactly one ULID and one UUIDv4 example`);
+    const branches = schema.oneOf ?? [];
+    const matches = schema.examples.map((example) =>
+      branches.map((branch) => new RegExp(branch.pattern).test(example)),
+    );
+    if (
+      matches.some((entry) => entry.filter(Boolean).length !== 1) ||
+      matches[0]?.[0] === matches[1]?.[0]
+    )
+      throw new Error(`${name} examples do not map one-to-one to canonical ID branches`);
     return `${quote(name)}: { ulid: ${quote(schema.examples[0])}, uuid: ${quote(schema.examples[1])} }`;
   })
   .join(',');

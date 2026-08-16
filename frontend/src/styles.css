@@ -2,6 +2,7 @@
 
 :root {
   font-family: var(--qf-font-sans);
+  font-size: var(--qf-text-body-size);
   line-height: var(--qf-text-body-line-height);
   color: var(--qf-color-text-primary);
   background: var(--qf-color-surface-canvas);
@@ -31,8 +32,17 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--qf-color-focus) 38%, transparent);
+  outline: 3px solid var(--qf-color-focus);
   outline-offset: 2px;
+}
+@supports (outline-color: color-mix(in srgb, black 50%, white)) {
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  a:focus-visible {
+    outline-color: color-mix(in srgb, var(--qf-color-focus) 38%, transparent);
+  }
 }
 .app {
   min-height: 100vh;
@@ -454,7 +464,7 @@ code {
     inset: 0 auto 0 0;
     width: min(280px, calc(100vw - 48px));
     padding-inline: 16px;
-    z-index: 30;
+    z-index: 10;
     overflow-y: auto;
     box-shadow: var(--qf-shadow-drawer);
   }
@@ -470,7 +480,7 @@ code {
     display: block;
     border: 0;
     background: var(--qf-color-overlay);
-    z-index: 29;
+    z-index: 9;
   }
   main {
     padding-inline: 16px;
