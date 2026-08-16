@@ -38,6 +38,7 @@ import {
   State,
 } from '../../ui';
 import i18n, { applyServerSettingsLocale, configurationLocale } from '../../i18n';
+import { transientStorage } from '../../shared/transient-storage';
 import { ServerTime } from '../../format';
 
 function assertNever(value: never): never {
@@ -140,7 +141,7 @@ export function Shell() {
   useEffect(() => {
     if (sessionReady && !auth.get() && !isLogin) {
       const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (returnTo !== '/login') sessionStorage.setItem('qf.auth.return_to', returnTo);
+      if (returnTo !== '/login') transientStorage.set('qf.auth.return_to', returnTo);
       void navigate({ to: '/login', replace: true });
     }
   }, [isLogin, navigate, sessionReady]);
@@ -319,7 +320,7 @@ export function SetupPage() {
   const [dataCredential, setDataCredential] = useState('');
   const [dataSkipped, setDataSkipped] = useState(false);
   const setupRestored = useRef(false);
-  const resumeSetup = useRef(sessionStorage.getItem('qf.setup.started') === 'true');
+  const resumeSetup = useRef(transientStorage.get('qf.setup.started') === 'true');
   const completeIntent = useRef<{ payload: string; key: string } | undefined>(undefined);
   const completeSubmitting = useRef(false);
   const [aiConnection, setAiConnection] =
@@ -397,7 +398,7 @@ export function SetupPage() {
       const refreshed = await status.refetch();
       if (refreshed.data?.body.completed) {
         completeIntent.current = undefined;
-        sessionStorage.removeItem('qf.setup.started');
+        transientStorage.remove('qf.setup.started');
         void navigate({ to: '/overview', replace: true });
       } else if (refreshed.data) setStep(setupRecoveryStep(refreshed.data.body));
     },
@@ -405,7 +406,7 @@ export function SetupPage() {
       const refreshed = await status.refetch();
       if (refreshed.data?.body.completed) {
         completeIntent.current = undefined;
-        sessionStorage.removeItem('qf.setup.started');
+        transientStorage.remove('qf.setup.started');
         void navigate({ to: '/overview', replace: true });
       } else if (refreshed.data) setStep(setupRecoveryStep(refreshed.data.body));
     },
@@ -451,9 +452,9 @@ export function SetupPage() {
   useEffect(() => {
     if (!readiness || setupRestored.current) return;
     setupRestored.current = true;
-    sessionStorage.setItem('qf.setup.started', 'true');
+    transientStorage.set('qf.setup.started', 'true');
     if (readiness.completed) {
-      sessionStorage.removeItem('qf.setup.started');
+      transientStorage.remove('qf.setup.started');
       void navigate({ to: '/overview', replace: true });
     } else if (resumeSetup.current) setStep(recoveryStep);
   }, [navigate, readiness, recoveryStep]);

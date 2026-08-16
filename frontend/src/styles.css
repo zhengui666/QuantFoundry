@@ -474,13 +474,21 @@ code {
   .mobile-nav-trigger {
     display: inline-flex;
   }
-  .mobile-nav-backdrop {
+  button.mobile-nav-backdrop {
     position: fixed;
     inset: 0;
     display: block;
     border: 0;
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
     background: var(--qf-color-overlay);
     z-index: 9;
+  }
+  button.mobile-nav-backdrop:hover {
+    background: var(--qf-color-overlay);
   }
   main {
     padding-inline: 16px;

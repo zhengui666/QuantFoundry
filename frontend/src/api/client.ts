@@ -1,5 +1,6 @@
 import type { components, operations } from './generated';
 import { operationMap, type CanonicalOperationId } from './generated/operation-map';
+import { transientStorage } from '../shared/transient-storage';
 import {
   ApiProblemSchema,
   ConfigurationCandidateRequestSchema,
@@ -94,26 +95,11 @@ export function isPublicId<T extends PublicIdType>(type: T, value: string): bool
 
 const eventCursorPrefix = 'qf.sse.cursor:';
 const nextOpaqueScope = (): string => `owner:${crypto.randomUUID()}`;
-// The API module is also imported by Playwright's Node-side test discovery. Cursor
-// persistence is browser-only and must never make that import depend on DOM globals.
-const eventCursorStorage = (): Storage | undefined => {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    return window.sessionStorage;
-  } catch {
-    return undefined;
-  }
-};
 const clearEventCursor = (scope: string): void => {
-  eventCursorStorage()?.removeItem(`${eventCursorPrefix}${scope}`);
+  transientStorage.remove(`${eventCursorPrefix}${scope}`);
 };
 const clearStaleEventCursors = (): void => {
-  const storage = eventCursorStorage();
-  if (!storage) return;
-  for (let index = storage.length - 1; index >= 0; index -= 1) {
-    const key = storage.key(index);
-    if (key?.startsWith(eventCursorPrefix)) storage.removeItem(key);
-  }
+  transientStorage.removeByPrefix(eventCursorPrefix);
 };
 
 // A browser reload creates a fresh, non-reusable memory epoch. Persisted cursors from the
@@ -1285,7 +1271,7 @@ export function streamEvents(
 ): () => void {
   let streamScope = auth.scope();
   const cursorKey = () => `qf.sse.cursor:${streamScope}`;
-  let last = Number(eventCursorStorage()?.getItem(cursorKey()) ?? '0');
+  let last = Number(transientStorage.get(cursorKey()) ?? '0');
   let active: AbortController | undefined;
   let stopped = false;
   let authorizationBlocked = false;
@@ -1366,7 +1352,7 @@ export function streamEvents(
             if (event.sequence <= last) continue;
             const hasGap = last > 0 && event.sequence > last + 1;
             last = event.sequence;
-            eventCursorStorage()?.setItem(cursorKey(), String(last));
+            transientStorage.set(cursorKey(), String(last));
             if (event.event_type === 'system.resync_required') {
               onResync();
               continue;
@@ -1391,7 +1377,7 @@ export function streamEvents(
   const unsubscribe = auth.subscribe(() => {
     active?.abort();
     streamScope = auth.scope();
-    last = Number(eventCursorStorage()?.getItem(cursorKey()) ?? '0');
+    last = Number(transientStorage.get(cursorKey()) ?? '0');
     if (!auth.get()) return;
     authorizationBlocked = false;
     reconnect();

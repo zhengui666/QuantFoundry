@@ -1,14 +1,20 @@
 import { useEffect, useRef } from 'react';
 import { LineChart } from 'echarts/charts';
 import { AriaComponent, GridComponent, MarkAreaComponent } from 'echarts/components';
-import { init, use } from 'echarts/core';
+import { init, use as registerChartComponents } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { useTranslation } from 'react-i18next';
 import type { Schema } from './api/client';
 import { formatCanonicalDecimal } from './format';
 import { Provenance } from './ui';
 
-use([LineChart, AriaComponent, GridComponent, MarkAreaComponent, CanvasRenderer]);
+registerChartComponents([
+  LineChart,
+  AriaComponent,
+  GridComponent,
+  MarkAreaComponent,
+  CanvasRenderer,
+]);
 
 export default function CanonicalChart({ chart }: { chart: Schema<'ChartAggregate'> }) {
   const { i18n, t } = useTranslation();

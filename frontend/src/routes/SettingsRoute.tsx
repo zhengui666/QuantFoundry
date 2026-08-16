@@ -49,7 +49,15 @@ export function SettingsPage() {
           const raw = draftValues[entry.key]?.trim();
           if (!raw) return [];
           if (entry.sensitivity === 'SECRET') return [{ key: entry.key, secret: raw }];
-          return [{ key: entry.key, value: JSON.parse(raw) }];
+          return [
+            {
+              key: entry.key,
+              value: JSON.parse(raw) as Exclude<
+                Schema<'ConfigurationCandidateRequest'>['values'][number]['value'],
+                undefined
+              >,
+            },
+          ];
         }) ?? [];
       const candidate = await api.putConfigurationCandidate(
         { base_revision: activeBody.active_revision, values },

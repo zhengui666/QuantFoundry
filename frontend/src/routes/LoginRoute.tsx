@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../api/client';
+import { transientStorage } from '../shared/transient-storage';
 import { Panel, Problem, State } from '../ui';
 
 export function LoginPage() {
@@ -23,8 +24,8 @@ export function LoginPage() {
             try {
               await api.login(key.trim());
               setKey('');
-              const returnTo = sessionStorage.getItem('qf.auth.return_to');
-              sessionStorage.removeItem('qf.auth.return_to');
+              const returnTo = transientStorage.get('qf.auth.return_to');
+              transientStorage.remove('qf.auth.return_to');
               if (
                 returnTo &&
                 returnTo.startsWith('/') &&

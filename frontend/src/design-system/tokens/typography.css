@@ -22,6 +22,22 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Noto Sans CJK SC';
+  src: url('/fonts/noto-sans-cjk-sc-medium-subset.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans CJK SC';
+  src: url('/fonts/noto-sans-cjk-sc-bold-subset.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+}
+
 :root {
   --qf-font-sans:
     'IBM Plex Sans', 'Noto Sans CJK SC', -apple-system, BlinkMacSystemFont, 'PingFang SC',

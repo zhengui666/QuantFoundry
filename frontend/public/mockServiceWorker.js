@@ -11,6 +11,7 @@ const PACKAGE_VERSION = '2.15.0'
 const INTEGRITY_CHECKSUM = '03cb67ac84128e63d7cd722a6e5b7f1e'
 const IS_MOCKED_RESPONSE = Symbol('isMockedResponse')
 const activeClientIds = new Set()
+const MESSAGE_TIMEOUT = 10_000
 
 addEventListener('install', function () {
   self.skipWaiting()
@@ -20,7 +21,11 @@ addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim())
 })
 
-addEventListener('message', async function (event) {
+addEventListener('message', function (event) {
+  event.waitUntil(handleMessage(event))
+})
+
+async function handleMessage(event) {
   const clientId = Reflect.get(event.source || {}, 'id')
 
   if (!clientId || !self.clients) {
@@ -39,27 +44,27 @@ addEventListener('message', async function (event) {
 
   switch (event.data) {
     case 'KEEPALIVE_REQUEST': {
-      sendToClient(client, {
+      void sendToClient(client, {
         type: 'KEEPALIVE_RESPONSE',
-      })
+      }).catch(() => {})
       break
     }
 
     case 'INTEGRITY_CHECK_REQUEST': {
-      sendToClient(client, {
+      void sendToClient(client, {
         type: 'INTEGRITY_CHECK_RESPONSE',
         payload: {
           packageVersion: PACKAGE_VERSION,
           checksum: INTEGRITY_CHECKSUM,
         },
-      })
+      }).catch(() => {})
       break
     }
 
     case 'MOCK_ACTIVATE': {
       activeClientIds.add(clientId)
 
-      sendToClient(client, {
+      void sendToClient(client, {
         type: 'MOCKING_ENABLED',
         payload: {
           client: {
@@ -67,7 +72,7 @@ addEventListener('message', async function (event) {
             frameType: client.frameType,
           },
         },
-      })
+      }).catch(() => {})
       break
     }
 
@@ -86,7 +91,7 @@ addEventListener('message', async function (event) {
       break
     }
   }
-})
+}
 
 addEventListener('fetch', function (event) {
   const requestInterceptedAt = Date.now()
@@ -150,7 +155,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
     // Clone the response so both the client and the library could consume it.
     const responseClone = isEventStreamResponse ? null : response.clone()
 
-    sendToClient(
+    void sendToClient(
       client,
       {
         type: 'RESPONSE',
@@ -172,7 +177,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
       responseClone && responseClone.body
         ? [serializedRequest.body, responseClone.body]
         : [],
-    )
+    ).catch(() => {})
   }
 
   return response
@@ -265,7 +270,9 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
 
   // Notify the client that a request has been intercepted.
   const serializedRequest = await serializeRequest(event.request)
-  const clientMessage = await sendToClient(
+  let clientMessage
+  try {
+    clientMessage = await sendToClient(
     client,
     {
       type: 'REQUEST',
@@ -276,7 +283,10 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
       },
     },
     [serializedRequest.body],
-  )
+    )
+  } catch {
+    return passthrough()
+  }
 
   switch (clientMessage.type) {
     case 'MOCK_RESPONSE': {
@@ -300,19 +310,37 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
 function sendToClient(client, message, transferrables = []) {
   return new Promise((resolve, reject) => {
     const channel = new MessageChannel()
+    let settled = false
+
+    const finish = (callback, value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      channel.port1.close()
+      channel.port2.close()
+      callback(value)
+    }
+
+    const timeout = setTimeout(() => {
+      finish(reject, new Error('MSW client message timed out'))
+    }, MESSAGE_TIMEOUT)
 
     channel.port1.onmessage = (event) => {
       if (event.data && event.data.error) {
-        return reject(event.data.error)
+        return finish(reject, event.data.error)
       }
 
-      resolve(event.data)
+      finish(resolve, event.data)
     }
 
-    client.postMessage(message, [
-      channel.port2,
-      ...transferrables.filter(Boolean),
-    ])
+    try {
+      client.postMessage(message, [
+        channel.port2,
+        ...transferrables.filter(Boolean),
+      ])
+    } catch (error) {
+      finish(reject, error)
+    }
   })
 }
 
