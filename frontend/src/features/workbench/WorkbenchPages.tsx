@@ -6,6 +6,7 @@ import {
   Outlet,
   useNavigate,
   useParams,
+  useLocation,
   useRouterState,
   useSearch,
 } from '@tanstack/react-router';
@@ -45,6 +46,36 @@ function assertNever(value: never): never {
 
 const CanonicalChart = lazy(() => import('../../CanonicalChart'));
 
+const detailRouteTypes = {
+  research: 'research',
+  experiments: 'experiment',
+  strategies: 'strategy',
+  validation: 'validation',
+  approvals: 'approval',
+  memos: 'memo',
+} as const;
+
+const invalidRouteMessages = {
+  research: 'route.invalidResearch',
+  experiment: 'route.invalidExperiment',
+  strategy: 'route.invalidStrategy',
+  validation: 'route.invalidValidation',
+  approval: 'route.invalidApproval',
+  memo: 'route.invalidMemo',
+} as const;
+
+function invalidDetailRoute(pathname: string): keyof typeof invalidRouteMessages | undefined {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts.length !== 2) return undefined;
+  const type = detailRouteTypes[parts[0] as keyof typeof detailRouteTypes];
+  if (!type) return undefined;
+  try {
+    return isPublicId(type, decodeURIComponent(parts[1] ?? '')) ? undefined : type;
+  } catch {
+    return type;
+  }
+}
+
 function setupRecoveryStep(status: Schema<'SetupStatus'>): number {
   switch (status.fallback_step) {
     case 'AI_PROVIDER':
@@ -66,6 +97,7 @@ export function Shell() {
   const translationRef = useRef(t);
   translationRef.current = t;
   const navigate = useNavigate();
+  const location = useLocation();
   const client = useQueryClient();
   const [streamState, setStreamState] = useState('connecting');
   const [streamProblem, setStreamProblem] = useState<ApiError>();
@@ -76,6 +108,7 @@ export function Shell() {
   const [localeReady, setLocaleReady] = useState(() => !auth.get());
   const isSetup = useRouterState({ select: (state) => state.location.pathname === '/setup' });
   const isLogin = useRouterState({ select: (state) => state.location.pathname === '/login' });
+  const invalidRoute = invalidDetailRoute(location.pathname);
   useEffect(() => {
     if (auth.get()) return;
     void api
@@ -233,7 +266,11 @@ export function Shell() {
           </header>
           {reauthRequired && <State kind="error">{t('auth.expired')}</State>}
           {streamProblem && <Problem error={streamProblem} />}
-          <Outlet />
+          {invalidRoute ? (
+            <State kind="error">{t(invalidRouteMessages[invalidRoute])}</State>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </>
