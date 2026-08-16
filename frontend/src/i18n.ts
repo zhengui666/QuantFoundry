@@ -1,7 +1,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-const serverLocaleStorageKey = 'qf.server-settings.locale';
 type ServerLocaleSettings = { language: 'zh-CN' | 'en'; timezone: string };
 
 export const canonicalTimeZone = (timezone: string): string => {
@@ -13,26 +12,10 @@ export const canonicalTimeZone = (timezone: string): string => {
   }
 };
 
-const readServerLocale = (): ServerLocaleSettings | undefined => {
-  try {
-    const value = JSON.parse(localStorage.getItem(serverLocaleStorageKey) ?? 'null') as unknown;
-    if (
-      value &&
-      typeof value === 'object' &&
-      'language' in value &&
-      (value.language === 'zh-CN' || value.language === 'en') &&
-      'timezone' in value &&
-      typeof value.timezone === 'string' &&
-      value.timezone.length > 0
-    )
-      return { language: value.language, timezone: canonicalTimeZone(value.timezone) };
-  } catch {
-    // Ignore malformed local display preferences; server Settings will replace them on success.
-  }
-  return undefined;
-};
+const readServerLocale = (): ServerLocaleSettings | undefined => undefined;
 
 const restoredLocale = readServerLocale();
+let activeLocale: ServerLocaleSettings | undefined = restoredLocale;
 
 void i18n.use(initReactI18next).init({
   lng: restoredLocale?.language ?? 'zh-CN',
@@ -79,10 +62,12 @@ void i18n.use(initReactI18next).init({
         },
         auth: {
           logout: 'Log out',
-          bearerToken: 'Bearer token',
-          memoryOnly: 'Stored in memory only',
-          authenticate: 'Authenticate',
-          expired: 'Authentication expired. Submit a current bearer token.',
+          generalAccessKey: 'General access key',
+          memoryOnly: 'Used once; never stored in the browser',
+          authenticate: 'Sign in',
+          expired: 'Session expired. Sign in with a current general access key.',
+          loginTitle: 'Sign in to QuantFoundry',
+          loginLede: 'Use any active general access key. All keys resolve to the same owner.',
         },
         common: {
           saving: 'Saving…',
@@ -182,7 +167,7 @@ void i18n.use(initReactI18next).init({
           CREDENTIAL_NOT_CONFIGURED: 'Credentials are not configured.',
           CONNECTION_VALIDATION_EXPIRED: 'The validated connection expired; test it again.',
           CONNECTION_KIND_MISMATCH: 'The validated connection is the wrong provider kind.',
-          UNAUTHENTICATED: 'Sign in with a current bearer token.',
+          UNAUTHENTICATED: 'Sign in with a current general access key.',
           PERMISSION_DENIED: 'Your role cannot perform this action.',
           REVISION_MISMATCH: 'This record changed; refresh before acting again.',
           APPROVAL_STALE: 'The approval is stale; review the latest state.',
@@ -198,6 +183,50 @@ void i18n.use(initReactI18next).init({
           data: 'Data',
           agents: 'Agents',
           activity: 'Activity',
+          settings: 'Settings',
+        },
+        settings: {
+          title: 'Settings',
+          lede: 'One owner, one installation. Mutable settings live in the Control DB.',
+          catalog: 'Configuration catalog',
+          catalogVersion: 'Catalog',
+          active: 'Active configuration',
+          editor: 'Edit all mutable configuration',
+          saveConfiguration: 'Validate and activate configuration',
+          validationFailed: 'Configuration validation failed.',
+          saved: 'Configuration activated.',
+          secretPlaceholder: 'Write-only secret; leave blank to keep current value',
+          secretJsonPlaceholder: 'Write-only JSON secret; leave blank to keep current value',
+          revision: 'Revision',
+          key: 'Key',
+          group: 'Group',
+          apply: 'Apply',
+          sensitivity: 'Sensitivity',
+          value: 'Value',
+          state: 'State',
+          configured: 'configured',
+          notConfigured: 'not configured',
+          accessKeys: 'General access keys',
+          label: 'Label',
+          hint: 'Hint',
+          status: 'Status',
+          lastUsed: 'Last used',
+          never: 'never',
+          createKey: 'Create key',
+          actions: 'Actions',
+          rotate: 'Rotate',
+          revoke: 'Revoke',
+          revokeConfirm: 'Revoke general access key “{{label}}”? Existing sessions will end.',
+          oneTimeSecret: 'Copy this secret now. It will not be shown again:',
+          database: 'Domain database',
+          host: 'Host',
+          port: 'Port',
+          databaseName: 'Database',
+          username: 'Username',
+          password: 'Password',
+          saveCandidate: 'Save candidate',
+          validateDatabase: 'Validate candidate',
+          activateDatabase: 'Activate database',
         },
         page: {
           setup: 'First run setup',
@@ -733,10 +762,12 @@ void i18n.use(initReactI18next).init({
         },
         auth: {
           logout: '退出登录',
-          bearerToken: 'Bearer 令牌',
-          memoryOnly: '仅保存于内存',
-          authenticate: '认证',
-          expired: '认证已过期。请提交当前有效的 Bearer 令牌。',
+          generalAccessKey: '通用密钥',
+          memoryOnly: '仅使用一次；浏览器不保存',
+          authenticate: '登录',
+          expired: '会话已过期，请使用当前有效的通用密钥登录。',
+          loginTitle: '登录 QuantFoundry',
+          loginLede: '使用任一有效通用密钥；所有密钥都解析为同一 Owner。',
         },
         common: {
           saving: '保存中…',
@@ -836,7 +867,7 @@ void i18n.use(initReactI18next).init({
           CREDENTIAL_NOT_CONFIGURED: '尚未配置凭据。',
           CONNECTION_VALIDATION_EXPIRED: '连接验证已过期，请重新测试。',
           CONNECTION_KIND_MISMATCH: '已验证连接的 Provider 类型不匹配。',
-          UNAUTHENTICATED: '请使用当前有效的 Bearer 令牌登录。',
+          UNAUTHENTICATED: '请使用当前有效的通用密钥登录。',
           PERMISSION_DENIED: '当前角色无权执行此操作。',
           REVISION_MISMATCH: '记录已变更；操作前请刷新。',
           APPROVAL_STALE: '审批已失效；请复核最新状态。',
@@ -852,6 +883,50 @@ void i18n.use(initReactI18next).init({
           data: '数据',
           agents: '智能体',
           activity: '活动',
+          settings: '设置',
+        },
+        settings: {
+          title: '设置',
+          lede: '单一用户、单一安装。可变设置全部存储在 Control DB。',
+          catalog: '配置目录',
+          catalogVersion: '目录',
+          active: '当前配置',
+          editor: '编辑全部可变配置',
+          saveConfiguration: '校验并激活配置',
+          validationFailed: '配置校验失败。',
+          saved: '配置已激活。',
+          secretPlaceholder: '仅写入密钥；留空表示保持当前值',
+          secretJsonPlaceholder: '仅写入 JSON 密钥；留空表示保持当前值',
+          revision: '修订',
+          key: '键',
+          group: '分组',
+          apply: '应用方式',
+          sensitivity: '敏感级别',
+          value: '值',
+          state: '状态',
+          configured: '已配置',
+          notConfigured: '未配置',
+          accessKeys: '通用密钥',
+          label: '标签',
+          hint: '提示',
+          status: '状态',
+          lastUsed: '最后使用',
+          never: '从未',
+          createKey: '创建密钥',
+          actions: '操作',
+          rotate: '轮换',
+          revoke: '撤销',
+          revokeConfirm: '撤销通用密钥“{{label}}”？现有会话将立即失效。',
+          oneTimeSecret: '请立即复制；成功后不再显示：',
+          database: '业务数据库',
+          host: '主机',
+          port: '端口',
+          databaseName: '数据库',
+          username: '用户名',
+          password: '密码',
+          saveCandidate: '保存候选连接',
+          validateDatabase: '校验候选连接',
+          activateDatabase: '激活业务数据库',
         },
         page: {
           setup: '首次运行设置',
@@ -1361,11 +1436,24 @@ export const applyServerSettingsLocale = async (settings: ServerLocaleSettings) 
     ...settings,
     timezone: canonicalTimeZone(settings.timezone),
   };
-  localStorage.setItem(serverLocaleStorageKey, JSON.stringify(canonical));
+  activeLocale = canonical;
   applyDocumentLocale(canonical);
   await i18n.changeLanguage(canonical.language);
 };
 
-export const getRestoredServerLocale = (): ServerLocaleSettings | undefined => readServerLocale();
+export const configurationLocale = (value: unknown): ServerLocaleSettings | undefined => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const language = record.language;
+  const timezone = record.timezone;
+  if ((language !== 'en' && language !== 'zh-CN') || typeof timezone !== 'string') return undefined;
+  return { language, timezone };
+};
+
+export const getRestoredServerLocale = (): ServerLocaleSettings | undefined => activeLocale;
+
+export const resetServerSettingsLocale = (): void => {
+  activeLocale = undefined;
+};
 
 export default i18n;

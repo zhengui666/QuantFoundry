@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 RESEARCH_POLICY_ID = "RP-00000000-0000-4000-8000-000000000001"
 RISK_POLICY_ID = "RISK-00000000-0000-4000-8000-000000000002"
@@ -331,3 +332,46 @@ def configured_test_principals() -> None:
         session.commit()
     finally:
         session.close()
+
+
+@pytest.fixture(autouse=True)
+def isolate_control_plane_between_tests():
+    """Keep one test's activated remote endpoint from leaking into the next."""
+    yield
+    from app.control_plane import (
+        ActiveConfiguration,
+        BootstrapState,
+        ConfigurationRevision,
+        ConfigurationValue,
+        ControlSessionLocal,
+    )
+    from quantfoundry.api.app import AgentConfigRow, SessionLocal
+
+    try:
+        with ControlSessionLocal.begin() as control:
+            baseline = (
+                control.query(ConfigurationRevision)
+                .order_by(ConfigurationRevision.revision)
+                .first()
+            )
+            if baseline is not None:
+                active = control.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
+                if active is not None:
+                    active.active_revision = baseline.revision
+                    active.last_known_good_revision = baseline.revision
+                state = control.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+                if state is not None:
+                    state.active_configuration_revision = baseline.revision
+                    state.last_known_good_configuration_revision = baseline.revision
+            control.query(ConfigurationValue).delete()
+    except SQLAlchemyError:
+        return
+
+    with SessionLocal.begin() as session:
+        session.query(AgentConfigRow).update(
+            {
+                AgentConfigRow.model_provider: "local-deterministic",
+                AgentConfigRow.model_name: "local-test-v1",
+            },
+            synchronize_session=False,
+        )

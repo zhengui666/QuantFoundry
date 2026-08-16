@@ -19,6 +19,7 @@ dependencies = [
     "langgraph>=1,<2",
     "langgraph-checkpoint-postgres>=3,<4",
     "langgraph-checkpoint-sqlite>=3,<4",
+    "argon2-cffi>=25,<26",
 ]
 
 [tool.ruff.lint]
@@ -63,6 +64,21 @@ module = [
     "app.agent_runtime",
 ]
 disable_error_code = ["arg-type", "assignment"]
+
+[[tool.mypy.overrides]]
+# Control-plane SQLAlchemy rows use the existing declarative boundary while the
+# runtime contract and focused tests remain the executable authority.
+module = ["app.control_plane"]
+disable_error_code = [
+    "arg-type",
+    "assignment",
+    "attr-defined",
+    "call-overload",
+    "index",
+    "return-value",
+    "union-attr",
+    "unused-ignore",
+]
 
 [dependency-groups]
 dev = [

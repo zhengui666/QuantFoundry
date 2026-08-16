@@ -354,7 +354,7 @@ describe('P0 UI localization contract', () => {
   });
 
   it('covers every canonical error in both languages without leaking English fallback in Chinese', async () => {
-    expect(Object.keys(errorCopy)).toHaveLength(65);
+    expect(Object.keys(errorCopy)).toHaveLength(75);
     await i18n.changeLanguage('en');
     const english = i18n.getFixedT('en');
     for (const [code, copy] of Object.entries(errorCopy))

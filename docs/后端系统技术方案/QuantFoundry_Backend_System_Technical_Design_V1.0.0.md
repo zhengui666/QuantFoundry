@@ -10,7 +10,7 @@
 **项目治理：** `/QuantFoundry/AGENTS.md`
 **产品阶段：** MVP / First Usable Product
 **部署模式：** Single-human-principal / Self-hosted
-**文档状态：** Final V1.0 + UX-001 D0 target amendment；D1 machine contract/schema pending
+**文档状态：** Final V1.0 + UX-001 D1 contract amendment；D2 runtime implementation slice complete；PG/chaos/release closure pending
 **日期：** 2026-08-13
 **正式路径：** `/QuantFoundry/docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md`
 **架构图路径：** `/QuantFoundry/docs/后端系统技术方案/assets/QuantFoundry 后端系统技术架构总览.png`
@@ -1266,7 +1266,7 @@ V1 正式业务记录不 hard delete。
 
 下列为 V1 逻辑 schema。Migration 可在不改变 API contract 的前提下调整物理 index 名、分区策略和内部 constraint 实现。
 
-本节精确冻结 **63 张正式表 / 953 列**：原 50 张领域表的 875 列与 13 张支撑/运行时表的 78 列（含 `paper_scheduler_states` 的 10 列）均是 normative schema，不存在“implementation extra”或不受约束的临时表。`users`、`workspaces` 是 identity/control-plane 根，`runtime_heartbeats` 是全局运行时租约观测表；其余 workspace-owned 表必须显式保存 non-null internal `workspace_id uuid REFERENCES workspaces(id)` 并建立 index。对 immutable child `snapshot_partitions` 的 ownership 由不可变的 scoped `snapshot_id` 复合 FK 继承，不得脱离父 Snapshot 独立解析。每张含 `id` 的 workspace-owned 表都必须提供 `UNIQUE(workspace_id,id)` 作为复合 FK target（无 `id` 的 join/event 表使用其 workspace 复合 PK）；所有内部 FK 必须以 `(workspace_id,target_id)` 引用同 workspace target。Repository/service 所有 SELECT/INSERT/UPDATE/DELETE/lock/existence check 均必须同时带 `workspace_id`；只按 public ID 或 internal UUID 查询视为越权缺陷。
+本节精确冻结 **63 张正式表 / 967 列**：原 50 张领域表的 889 列与 13 张支撑/运行时表的 78 列（含 `paper_scheduler_states` 的 10 列）均是 normative schema，不存在“implementation extra”或不受约束的临时表。`users`、`workspaces` 是 identity/control-plane 根，`runtime_heartbeats` 是全局运行时租约观测表；其余 workspace-owned 表必须显式保存 non-null internal `workspace_id uuid REFERENCES workspaces(id)` 并建立 index。对 immutable child `snapshot_partitions` 的 ownership 由不可变的 scoped `snapshot_id` 复合 FK 继承，不得脱离父 Snapshot 独立解析。每张含 `id` 的 workspace-owned 表都必须提供 `UNIQUE(workspace_id,id)` 作为复合 FK target（无 `id` 的 join/event 表使用其 workspace 复合 PK）；所有内部 FK 必须以 `(workspace_id,target_id)` 引用同 workspace target。Repository/service 所有 SELECT/INSERT/UPDATE/DELETE/lock/existence check 均必须同时带 `workspace_id`；只按 public ID 或 internal UUID 查询视为越权缺陷。
 
 Public semantic IDs 保留 global `UNIQUE`。Global uniqueness 只用于冲突防护/追踪，不授予任何跨 workspace 可见性；API 存在性、授权与 FK 解析仍必须双 scope。下表 `FK target(id)` 是可读性缩写，DDL 必须实现为 `FK(workspace_id,target_id) → target(workspace_id,id)`；禁止创建仅 target UUID 的非 scoped FK。
 
@@ -2279,6 +2279,17 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 | `agent_version` | `varchar(64)` | NO | — |  | Prompt/tool-policy version |
 | `model_provider` | `varchar(64)` | NO | — |  | Provider |
 | `model_name` | `varchar(128)` | NO | — |  | Model |
+| `ai_connection_id` | `varchar` | NO | `CODEX-DEFAULT` |  | Installation-level Remote Codex connection identity |
+| `ai_connection_revision` | `bigint` | NO | 1 |  | Captured connection revision |
+| `effective_configuration_revision` | `bigint` | NO | 1 |  | Effective installation configuration snapshot |
+| `effective_configuration_sha256` | `varchar(64)` | NO | zero hash | CHECK lowercase hex SHA-256 | Effective configuration snapshot hash |
+| `agent_configuration_revision` | `bigint` | NO | 1 |  | Captured role projection revision |
+| `runtime_profile` | `varchar` | NO | `DEFAULT` |  | Resolved runtime profile |
+| `tool_timeout_seconds` | `integer` | NO | 30 |  | Captured tool timeout |
+| `max_steps` | `integer` | NO | 25 |  | Captured run step cap |
+| `max_tool_calls` | `integer` | NO | 50 |  | Captured tool-call cap |
+| `prompt_manifest_sha256` | `varchar(64)` | NO | zero hash | CHECK lowercase hex SHA-256 | Prompt manifest binding |
+| `tool_registry_sha256` | `varchar(64)` | NO | zero hash | CHECK lowercase hex SHA-256 | Canonical tool registry binding |
 | `research_id` | `uuid` | YES | NULL | FK research_cases(id), INDEX | Research context |
 | `object_type` | `varchar(32)` | YES | NULL | CHECK `ck_agent_runs_locator_quartet` | 主要对象类型；optional quartet 只允许四列同时 NULL |
 | `object_id` | `varchar(42)` | YES | NULL | no standalone index; CHECK `ck_agent_runs_locator_quartet` | public/special locator；type↔id 按 §9.3.1 fail closed |
@@ -2341,6 +2352,9 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 | `job_public_id` | `varchar(40)` | YES | NULL | INDEX, CHECK exact JOB grammar | async Job public locator |
 | `output_artifact_public_id` | `varchar(40)` | YES | NULL | CHECK exact ART grammar | 大输出 artifact public locator |
 | `provenance` | `text` | YES | NULL | closed `ProvenanceRef` serialization | 小型 provenance locator；不复制原始输出 |
+| `effective_configuration_revision` | `bigint` | NO | 1 |  | Captured installation configuration snapshot |
+| `configuration_sha256` | `varchar(64)` | NO | zero hash | CHECK lowercase hex SHA-256 | Captured configuration hash |
+| `tool_registry_sha256` | `varchar(64)` | NO | zero hash | CHECK lowercase hex SHA-256 | Canonical tool registry binding |
 
 ### 14.42 `jobs`
 
@@ -2744,7 +2758,7 @@ R2 schema gate 不得只比较表/列总数。它必须从本文档的 63 个字
 | Gate dimension | R2 frozen inventory | Failure condition |
 |---|---:|---|
 | tables | 63 | missing/extra/renamed table |
-| columns | 953 | missing/extra column or wrong owner table |
+| columns | 967 | missing/extra column or wrong owner table |
 | primary keys | exact table-level signatures; implementation-inventory baseline is 63 PK / 68 PK columns | wrong order, width, member or composite scope |
 | unique constraints | exact named/member/order/predicate signatures; implementation-inventory baseline is 130 | wrong member/order/predicate/scope; global public-ID UNIQUE 不可被 workspace UNIQUE 取代 |
 | foreign keys | exact source/target/order/on-delete signatures; implementation-inventory baseline is 163 | wrong source/target member, target table, composite workspace scope or delete action |
@@ -2771,7 +2785,7 @@ snapshot_partitions, strategies, strategy_versions, tool_calls, users,
 validation_runs, validation_test_results, validations, workspaces
 ```
 
-Checker 还必须比较每列 `postgres_type` 参数、nullability、server default/generation、PK/UNIQUE/FK/INDEX/CHECK 签名与 owner/scope 语义；仅数量相等不通过。上表 constraint/index baseline 仅用于让迁移报告可解释旧 implementation snapshot，不能覆盖本轮新增的 lifecycle/object-locator/workspace/check 签名；实现后的 expected set 必须由 canonical 63-table manifest 重生成并与 metadata 完全相等。当前任何 `expected 50`/`804 columns` 或先前 62-table column-count 硬编码必须 fail，更新为从 canonical manifest 读取 63/953；发现 doc-only 或 implementation-only 签名时输出完整 symmetric diff，不得降级成 warning。
+Checker 还必须比较每列 `postgres_type` 参数、nullability、server default/generation、PK/UNIQUE/FK/INDEX/CHECK 签名与 owner/scope 语义；仅数量相等不通过。上表 constraint/index baseline 仅用于让迁移报告可解释旧 implementation snapshot，不能覆盖本轮新增的 lifecycle/object-locator/workspace/check 签名；实现后的 expected set 必须由 canonical 63-table manifest 重生成并与 metadata 完全相等。当前任何 `expected 50`/`804 columns` 或先前 62-table column-count 硬编码必须 fail，更新为从 canonical manifest 读取 63/967；发现 doc-only 或 implementation-only 签名时输出完整 symmetric diff，不得降级成 warning。
 
 physical snapshot exact gate 必须 fail-closed 比较以下结构化 PostgreSQL catalog signature，禁止以弱化字符串标准化掩盖语义差异：
 
@@ -3118,7 +3132,7 @@ Freeze 同步提交 immutable transaction；不由 Agent/UI optimistic 推导。
 
 read model 来自 `strategy_versions + experiments/experiment_results + validation_runs/validation_test_results + artifacts + provenance_records`；除 `experiments.search_space/search_configuration`、`experiment_results.search_result` 为此轮明确的 typed persistence 外，不新增可写 Tab 副本。
 
-`ResearchDetail`、`ExperimentDetail`、`StrategyVersionDetail` 本轮 required-field 扩展是对尚未发布 `P0_EXECUTABLE_R2` baseline 的 intentional breaking tightening；server projection、generated clients/types、fixtures 与 contract tests 必须同批升级，禁止以 optional 或 untyped fallback 平滑掩盖缺字段。未新增 operation，stage/revision 仍为 `P0_EXECUTABLE` / `P0_EXECUTABLE_R2`。
+`ResearchDetail`、`ExperimentDetail`、`StrategyVersionDetail` 本轮 required-field 扩展属于历史 baseline 兼容说明；UX001_D1_R1 的 server projection、generated clients/types、fixtures 与 contract tests 必须随 D1 machine source 同批升级，禁止以 optional 或 untyped fallback 平滑掩盖缺字段。
 
 ## 17.7 Validation / Holdout / Red Team
 
@@ -3883,12 +3897,12 @@ cursor expired: system.resync_required
 ## 18.12 OpenAPI
 
 - 唯一正式 machine-readable schema：`/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml`；
-- 当前 committed scope 为 `P0_EXECUTABLE`；未在该文件定义的 full-V1 endpoint 不得用于 codegen、fixture 或 runtime contract test；
-- contract stage 固定为 `P0_EXECUTABLE`；contract revision 固定为 `P0_EXECUTABLE_R2`；当前共 **45 operations**。`stage` 表示兼容/交付阶段，`revision` 仅表示该 stage 内 machine-contract completeness revision，两者不得互换或简写成新的 stage；
+- 当前 target scope 为 `UX001_D1`；未在该文件定义的 endpoint 不得用于 codegen、fixture 或 runtime contract test；
+- contract stage=`UX001_D1`；contract revision=`UX001_D1_R1`；当前生成 **65 operations / 186 schemas / 75 canonical errors**。D1 前 `P0_EXECUTABLE_R2` 的 45-operation/65-error 是历史 baseline，不得作为新实现目标；
 - Runtime `/api/v1/openapi.json` 必须与 committed schema CI diff 为零；
 - 前端从此 schema 生成 types；
 - Breaking field removal/semantic change 需要 API version/ADR。
-- `P0_EXECUTABLE` scope is P00 server capability/connection validation → setup → overview projection/closed equity chart → data capability / validation / immutable snapshot → research → experiment create/detail/reproduce / factor → strategy candidate / fast backtest / current-version resolver / explicit version detail / freeze → validation detail/matrix / holdout gate / approval list/detail / authorized result → memo generation/read/Markdown export, plus Job, SSE, Agent config read/mutation/run/tool-call observability. All other catalog endpoints remain future staged until explicitly added to this file.
+- `UX001_D1` adds singleton Owner login/session, general access-key lifecycle, Control DB configuration candidate/validate/activate/rollback, and Domain DB candidate/validate/activate/revert. Auth/config/database operations are control-plane HTTP surfaces, never Agent Semantic Tools.
 
 ### P0 R2 read/mutation invariants
 
@@ -4824,7 +4838,7 @@ Chart is visualization, not calculation engine
 1. **具体 AI Provider / model adapter**：由 Setup 支持清单决定，不影响 Agent/Tool contract；
 2. **Strict Backtest adapter 最终实现**：LEAN direct/container 或其他实现需单独技术 spike，不能改变 `ValidationEngine` contract；
 3. **Data provider 实际集合**：capability schema 已固定，provider 本身可替换；
-4. **部署认证入口（current baseline historical item）**：本项已由 §41 `UX-001` 的单 Owner、多通用密钥与 cookie session 目标规范冻结；在 D1 machine contract 尚未落库前，现有 protected ingress / Bearer 叙述只能用于识别 current baseline，不得作为 UX-001 实现选项；
+4. **部署认证入口（current baseline historical item）**：本项已由 §41 `UX-001` 与 UX001_D1_R1 的单 Owner、多通用密钥与 cookie session contract 冻结；在 Bootstrap schema、generated transport 与 runtime gate 完成前，现有 protected ingress / Bearer 叙述只能用于识别 current baseline，不得作为 UX-001 实现选项；
 5. **Artifact backup medium**：local volume 是 baseline，S3 adapter 为扩展；
 6. **商业发行前第三方库许可审查**：尤其任何非纯 permissive dependency；
 7. **V1 是否让 Research Director 在 Holdout exposure 后看到 raw metrics**：默认本方案禁止 Research Agent raw read，仅允许 Validation summary / Memo 流程获得政策允许的结构化结论；若产品要改变，必须显式修改 Holdout policy，不得在实现中偷偷开放。
@@ -4841,23 +4855,23 @@ Chart is visualization, not calculation engine
 |---|---|
 | Change ID | `UX-001` |
 | 目标状态 | `TARGET_NORMATIVE` |
-| 当前交付阶段 | `D0_DOCS_ONLY` |
-| 机器契约阶段 | `D1_REQUIRED_BEFORE_CODE` |
-| 代码、migration、fixture、codegen | `BLOCKED` until D1 complete |
+| 当前交付阶段 | `D3_FRONTEND_CONTROL_PLANE_IMPLEMENTED` |
+| 机器契约阶段 | `UX001_D1_R1_FROZEN` |
+| 代码、migration、fixture、codegen | `D3_IMPLEMENTATION_COMPLETE_TARGETED` |
 
 本节是 `UX-001` 在身份、认证、配置、数据库自举、Agent 配置消费与运行安全方面的 **target normative**。与本文既有 `users` / email / role、多 workspace 授权、Bearer-only、deployment environment secret 或分散 Settings 叙述冲突时，本节决定 UX-001 的目标语义；既有叙述仅保留为 current baseline 事实，不得继续扩展。
 
-`D0_DOCS_ONLY` 不声称 canonical OpenAPI、PostgreSQL schema、Bootstrap Control DB schema、migration 或 runtime 已实现本节。`D1` 必须先一次性完成：
+`D1_CONTRACT_FROZEN` 表示 Bootstrap Control DB target schema、configuration catalog、canonical OpenAPI 与 executable matrix 已冻结。D2 targeted implementation 已完成 auth/config/database/Agent runtime slice；真实 PostgreSQL、chaos、存量迁移与独立 release evidence 仍需后续 gate：
 
 1. 联动 PRD、UI、Frontend、Backend、Agent 与 Test 有效文档；
-2. 修订 canonical `openapi-v1.yaml` 的 auth/config/database paths、security schemes、closed schemas、events 与 errors；
+2. 继续校验 canonical `openapi-v1.yaml` 的 auth/config/database paths、security schemes、closed schemas、events 与 errors；
 3. 冻结 Bootstrap Control DB 与 Domain PostgreSQL 的字段级 schema、constraints、indexes、encryption envelope 与 migration；
 4. 由生成器重算并校验所有 exact table/column/CHECK/operation/schema/error/auth 计数；
 5. 更新 generated models/clients、fixture manifest、contract tests、migration gates 与 release evidence schema。
 
-在上述 D1 门禁全部完成之前，任何 Agent 均 **MUST NOT** 编写或修改 auth、session、Settings、database connection、Agent config consumption 相关代码、migration 或测试实现。
+D2 implementation Agent 已在上述 D1 machine sources 之上落地 auth、session、Settings、database connection、Agent config consumption 代码、migration 与 targeted tests。
 
-> **Current-baseline count fence:** 本文现有 `63 tables / 953 columns`、其 CHECK/index/FK 计数、OpenAPI `45 operations / 65 errors` 与 Test Plan 的 `44 secured operations / >=12 workspace-role tuples` 都只描述 UX-001 之前的 current baseline。D0 不得把本节的目标逻辑表直接加入旧 manifest 制造假一致，也不得手填新计数；D1 只能从修订后的 canonical machine sources 生成新基线。
+> **Current-baseline count fence:** 本文现有 `63 tables / 953 columns`、其 CHECK/index/FK 计数、OpenAPI `45 operations / 65 errors` 与 Test Plan 的 `44 secured operations / >=12 workspace-role tuples` 都只描述 UX-001 之前的 current baseline。D1 不得把本节的目标逻辑表直接加入旧 manifest 制造假一致，也不得手填数据库计数；Control 与 Domain 目标 counts 只能从各自修订后的 canonical machine sources 生成。
 
 ## 41.2 单 Owner 与 singleton namespace
 
@@ -4886,7 +4900,7 @@ RBAC/user-role management = absent
 
 ### 41.3.1 唯一配置事实源
 
-所有 bootstrap/connection 配置、普通可变配置、closed catalog、global revision 与 active/LKG pointer 必须存入固定的 **Bootstrap Control DB**。它是产品管理的嵌入式数据库，不是 YAML/TOML/JSON/`.env` 配置文件；其位置和打开方式是不可配置的产品启动不变量。需要 domain lineage 的 immutable/versioned Research/Risk Policy、Cost Model 及其他 domain object 继续以 Domain PostgreSQL 为内容事实源；Control DB active revision 只保存其 exact object/revision binding。每个 catalog entry 必须声明唯一 storage authority，同一 value 不得在两库双写或以任一库作 fallback。
+所有 bootstrap/connection 配置、普通可变配置、closed catalog、global revision 与 active/LKG pointer 必须存入固定的 **Bootstrap Control DB**。它是产品管理的嵌入式数据库，不是 YAML/TOML/JSON/`.env` 配置文件；其位置和打开方式是不可配置的产品启动不变量：部署数据目录下固定为 `control.db`（`QF_DATA_ROOT` 仅是该部署目录 locator，不是 effective configuration）。需要 domain lineage 的 immutable/versioned Research/Risk Policy、Cost Model 及其他 domain object 继续以 Domain PostgreSQL 为内容事实源；Control DB active revision 只保存其 exact object/revision binding。每个 catalog entry 必须声明唯一 storage authority，同一 value 不得在两库双写或以任一库作 fallback。
 
 Bootstrap Control DB 至少包含以下逻辑关系；它们是 UX-001 target model，D0 不将其计入现有 63 张 PostgreSQL application table：
 
@@ -5083,7 +5097,7 @@ Tool registry/policy hash
 
 key create/rotate/revoke/expire、login success/failure/rate-limit、session revoke、config candidate/validate/activate/fail/rollback、DB candidate/switch/LKG recovery 必须审计。Domain DB 可用时，bootstrap Audit 的 hash/sequence anchor 必须关联到 Domain Audit；Domain DB 不可用时，bootstrap Audit 独立 append-only 且待恢复后补 anchor，不得伪造原始 Domain transaction 已发生。
 
-D1 必须决定 closed config/auth notification EventType 与 locator；D0 不得将它们塞入现有 31-member EventType 或复用不匹配 locator。任何 event/SSE 都不得携带 key hint、session token、DSN、credential、ciphertext、nonce、pepper/root key locator 或 validation raw detail。
+UX001_D1_R1 已冻结 `configuration.updated`、`configuration.apply_failed`、`database.connection.updated` 与 `database.connection.failed` EventType；generated event locator 与 runtime consumer 仍待 schema/migration gate。任何 event/SSE 都不得携带 key hint、session token、DSN、credential、ciphertext、nonce、pepper/root key locator 或 validation raw detail。
 
 ### Backup / Restore
 

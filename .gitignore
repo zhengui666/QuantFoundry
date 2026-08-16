@@ -44,6 +44,7 @@ coverage/
 *.tsbuildinfo
 
 # Playwright and browser state can contain session tokens or cookies.
+.playwright-mcp/
 frontend/e2e/storage-state.json
 **/storage-state.json
 **/.playwright/

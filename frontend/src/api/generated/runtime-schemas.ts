@@ -547,6 +547,10 @@ export const EventTypeObjectTypeMap = {
   'memo.created': 'memo',
   'memo.updated': 'memo',
   'setup.completed': 'settings',
+  'configuration.updated': 'settings',
+  'configuration.apply_failed': 'settings',
+  'database.connection.updated': 'provider_connection',
+  'database.connection.failed': 'provider_connection',
   'notification.created': 'notification',
   'notification.updated': 'agent_config',
   'system.health.updated': 'event_stream',
@@ -1024,6 +1028,16 @@ export const CanonicalErrorCodeSchema = z.union([
   z.literal('CREDENTIAL_NOT_CONFIGURED'),
   z.literal('CONNECTION_VALIDATION_EXPIRED'),
   z.literal('CONNECTION_KIND_MISMATCH'),
+  z.literal('LAST_ACTIVE_KEY_REQUIRED'),
+  z.literal('CONFIGURATION_VALIDATION_FAILED'),
+  z.literal('CONFIGURATION_APPLY_FAILED'),
+  z.literal('CONFIGURATION_RESTART_REQUIRED'),
+  z.literal('DATABASE_CONNECTION_FAILED'),
+  z.literal('DATABASE_SCHEMA_INCOMPATIBLE'),
+  z.literal('DATABASE_SWITCH_FAILED'),
+  z.literal('BOOTSTRAP_LOCKED'),
+  z.literal('DATABASE_DISCONNECTED'),
+  z.literal('CSRF_REQUIRED'),
 ]);
 export const FieldErrorSchema = z
   .object({ field: z.string(), code: z.string(), message: z.string() })
@@ -1350,6 +1364,251 @@ export const ApiProblemSchema = z
     context: ProblemContextSchema,
   })
   .strict();
+export const GeneralAccessKeyLoginRequestSchema = z
+  .object({
+    key: z
+      .string()
+      .min(60)
+      .max(256)
+      .regex(new RegExp('^qfk_gak_[a-z0-9]{16,32}\\.[A-Za-z0-9_-]{43,}$')),
+  })
+  .strict();
+export const GeneralAccessKeyMetadataSchema = z
+  .object({
+    key_id: z.string().regex(new RegExp('^gak_[a-z0-9]{16,32}$')),
+    label: z.string().min(1).max(80),
+    masked_hint: z.string().min(3).max(32),
+    status: z.union([z.literal('ACTIVE'), z.literal('REVOKED'), z.literal('EXPIRED')]),
+    expires_at: z.iso.datetime().nullable(),
+    last_used_at: z.iso.datetime().nullable(),
+    revision: z.number().int().min(1),
+    created_at: z.iso.datetime(),
+  })
+  .strict();
+export const GeneralAccessKeyListSchema = z
+  .object({ items: z.array(GeneralAccessKeyMetadataSchema) })
+  .strict();
+export const GeneralAccessKeyCreateRequestSchema = z
+  .object({ label: z.string().min(1).max(80), expires_at: z.iso.datetime().nullable().optional() })
+  .strict();
+export const GeneralAccessKeyIssuedSchema = z
+  .object({
+    key: GeneralAccessKeyMetadataSchema,
+    secret: z
+      .string()
+      .min(60)
+      .max(256)
+      .regex(new RegExp('^qfk_gak_[a-z0-9]{16,32}\\.[A-Za-z0-9_-]{43,}$')),
+  })
+  .strict();
+export const OwnerSessionViewSchema = z
+  .object({
+    principal: z.literal('OWNER'),
+    auth_method: z.literal('GENERAL_ACCESS_KEY'),
+    key_id: z.string().regex(new RegExp('^gak_[a-z0-9]{16,32}$')),
+    issued_at: z.iso.datetime(),
+    last_seen_at: z.iso.datetime(),
+    expires_at: z.iso.datetime(),
+    csrf_token: z.string().min(32).max(256),
+  })
+  .strict();
+export const SessionBootstrapResponseSchema = z
+  .object({ session: OwnerSessionViewSchema })
+  .strict();
+export const ConfigurationCatalogEntrySchema = z
+  .object({
+    key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
+    group: z.string().min(1).max(64),
+    schema_version: z.number().int().min(1),
+    scope: z.literal('INSTALLATION'),
+    sensitivity: z.union([z.literal('PUBLIC'), z.literal('MASKED'), z.literal('SECRET')]),
+    apply_mode: z.union([
+      z.literal('LIVE_NEW_WORK'),
+      z.literal('DRAIN_RELOAD'),
+      z.literal('RESTART_REQUIRED'),
+      z.literal('SECURITY_IMMEDIATE'),
+    ]),
+    consumers: z.array(z.string().min(1).max(80)).min(1),
+    dependencies: z.array(z.string().min(1).max(160)),
+    schema: z.object({}).passthrough(),
+    validator: z.string().min(1).max(160),
+    safe_range: z.object({}).passthrough().nullable().optional(),
+  })
+  .strict();
+export const ConfigurationCatalogSchema = z
+  .object({
+    catalog_version: z.string().min(1).max(64),
+    entries: z.array(ConfigurationCatalogEntrySchema),
+  })
+  .strict();
+export const ConfigurationValueWriteSchema = z
+  .object({
+    key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
+    value: z
+      .union([
+        z.string(),
+        z.number(),
+        z.boolean(),
+        z.object({}).passthrough(),
+        z.array(z.unknown()),
+        z.null(),
+      ])
+      .optional(),
+    secret: z.string().min(1).max(16384).optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      [['value'], ['secret']].some((required) =>
+        required.every((key) => (value as Record<string, unknown>)[key] !== undefined),
+      ),
+    { message: 'Object must satisfy one canonical variant' },
+  );
+export const ConfigurationCandidateRequestSchema = z
+  .object({
+    base_revision: z.number().int().min(1),
+    values: z.array(ConfigurationValueWriteSchema).min(1),
+  })
+  .strict();
+export const ConfigurationValueViewSchema = z
+  .object({
+    key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
+    sensitivity: z.union([z.literal('PUBLIC'), z.literal('MASKED'), z.literal('SECRET')]),
+    configured: z.boolean(),
+    value: z.union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.object({}).passthrough(),
+      z.array(z.unknown()),
+      z.null(),
+    ]),
+    masked_hint: z.string().max(80).nullable(),
+  })
+  .strict();
+export const ConfigurationCandidateSchema = z
+  .object({
+    revision: z.number().int().min(1),
+    state: z.union([
+      z.literal('CANDIDATE'),
+      z.literal('VALIDATED'),
+      z.literal('APPLYING'),
+      z.literal('FAILED'),
+      z.literal('ACTIVE'),
+      z.literal('SUPERSEDED'),
+    ]),
+    base_revision: z.number().int().min(1),
+    catalog_version: z.string(),
+    values: z.array(ConfigurationValueViewSchema),
+    snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
+    created_at: z.iso.datetime(),
+  })
+  .strict();
+export const ConfigurationValidationResultSchema = z
+  .object({
+    revision: z.number().int().min(1),
+    status: z.union([z.literal('VALID'), z.literal('INVALID')]),
+    errors: z.array(FieldErrorSchema),
+    warnings: z.array(FieldErrorSchema),
+    validated_at: z.iso.datetime(),
+  })
+  .strict();
+export const ConfigurationActivateRequestSchema = z
+  .object({ revision: z.number().int().min(1) })
+  .strict();
+export const ConfigurationRollbackRequestSchema = z
+  .object({ source_revision: z.number().int().min(1) })
+  .strict();
+export const DatabaseConnectionCandidateSchema = z
+  .object({
+    revision: z.number().int().min(1),
+    state: z.union([
+      z.literal('CANDIDATE'),
+      z.literal('VALIDATED'),
+      z.literal('ACTIVE'),
+      z.literal('FAILED'),
+      z.literal('SUPERSEDED'),
+    ]),
+    base_revision: z.number().int().min(1),
+    host: z.string().min(1).max(253),
+    port: z.number().int().min(1).max(65535),
+    database: z.string().min(1).max(63),
+    tls_mode: z.union([z.literal('DISABLED'), z.literal('VERIFY_CA'), z.literal('VERIFY_FULL')]),
+    username_masked: z.string().min(1).max(80),
+    password_configured: z.boolean(),
+    client_key_configured: z.boolean(),
+    pool_profile: z.string().max(64).nullable().optional(),
+    created_at: z.iso.datetime(),
+  })
+  .strict();
+export const DatabaseConnectionStatusSchema = z
+  .object({
+    state: z.union([
+      z.literal('BOOTSTRAP_LOCKED'),
+      z.literal('DATABASE_DISCONNECTED'),
+      z.literal('VALIDATING'),
+      z.literal('APPLYING'),
+      z.literal('READY'),
+      z.literal('DEGRADED'),
+    ]),
+    active_revision: z.number().int().min(1).nullable(),
+    candidate_revision: z.number().int().min(1).nullable(),
+    last_known_good_revision: z.number().int().min(1).nullable(),
+    active: z.union([DatabaseConnectionCandidateSchema, z.null()]),
+    candidate: z.union([DatabaseConnectionCandidateSchema, z.null()]),
+    domain_operations: z.union([
+      z.literal('AVAILABLE'),
+      z.literal('READ_ONLY_RECOVERY'),
+      z.literal('UNAVAILABLE'),
+    ]),
+    checked_at: z.iso.datetime(),
+  })
+  .strict();
+export const DatabaseConnectionCandidateRequestSchema = z
+  .object({
+    base_revision: z.number().int().min(1),
+    connection: z
+      .object({
+        host: z.string().min(1).max(253),
+        port: z.number().int().min(1).max(65535),
+        database: z.string().min(1).max(63),
+        tls_mode: z.union([
+          z.literal('DISABLED'),
+          z.literal('VERIFY_CA'),
+          z.literal('VERIFY_FULL'),
+        ]),
+        username: z.string().min(1).max(128),
+        password: z.string().min(1).max(4096).optional(),
+        client_key_pem: z.string().min(1).max(16384).optional(),
+        ca_certificate_pem: z.string().min(1).max(16384).optional(),
+        pool_profile: z.string().max(64).nullable().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+export const DatabaseConnectionCheckSchema = z
+  .object({
+    name: z.union([
+      z.literal('NETWORK'),
+      z.literal('TLS'),
+      z.literal('CREDENTIAL'),
+      z.literal('POSTGRES_VERSION'),
+      z.literal('PRIVILEGE'),
+      z.literal('SCHEMA'),
+      z.literal('MIGRATION_COMPATIBILITY'),
+    ]),
+    status: z.union([z.literal('PASS'), z.literal('FAIL'), z.literal('SKIPPED')]),
+    detail: z.string().max(300),
+  })
+  .strict();
+export const DatabaseConnectionValidationResultSchema = z
+  .object({
+    revision: z.number().int().min(1),
+    status: z.union([z.literal('VALID'), z.literal('INVALID')]),
+    checks: z.array(DatabaseConnectionCheckSchema).min(1),
+    validated_at: z.iso.datetime(),
+  })
+  .strict();
 export const SetupStatusSchema = z
   .object({
     completed: z.boolean(),
@@ -1557,97 +1816,30 @@ export const SetupProviderConnectionValidationResultSchema = z.union([
   SetupProviderConnectionValidationFailureSchema,
 ]);
 export const SetupCompleteRequestSchema = z
+  .object({ configuration_revision: z.number().int().min(1) })
+  .strict();
+export const ConfigurationConsumerStateSchema = z
   .object({
-    language: z.union([z.literal('zh-CN'), z.literal('en')]),
-    timezone: z.string(),
-    base_currency: z.string().regex(new RegExp('^[A-Z]{3}$')),
-    number_format_locale: z.string(),
-    ai_connection_id: z.string().min(1),
-    default_data_provider_id: z.string().nullable().optional(),
-    default_benchmark: z.string(),
-    default_frequency: z.literal('DAILY'),
-    default_research_start: z.iso.date().nullable().optional(),
-    initial_paper_capital: z.string().regex(new RegExp('^[0-9]+(\\\\.[0-9]+)?$')),
-    research_policy_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    risk_policy_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
+    consumer: z.string().min(1).max(80),
+    desired_revision: z.number().int().min(1),
+    applied_revision: z.number().int().min(1).nullable(),
+    ack: z.union([z.literal('PENDING'), z.literal('ACKED'), z.literal('FAILED')]),
+    error_code: z.union([CanonicalErrorCodeSchema, z.null()]),
+    heartbeat_at: z.iso.datetime(),
   })
   .strict();
-export const SettingsDetailSchema = z
+export const ConfigurationActiveSchema = z
   .object({
-    settings_id: z.literal('SETTINGS-DEFAULT'),
-    revision: z.number().int().min(1),
-    language: z.union([z.literal('zh-CN'), z.literal('en')]),
-    timezone: z.string(),
-    base_currency: z.string(),
-    number_format_locale: z.string(),
-    ai_connection_id: z.string(),
-    default_data_provider_id: z.string().nullable(),
-    default_benchmark: z.string(),
-    default_frequency: z.literal('DAILY'),
-    default_research_start: z.iso.date().nullable(),
-    initial_paper_capital: z.string(),
-    research_policy_id: z.union([
-      z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(39)
-        .max(39)
-        .regex(
-          new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    risk_policy_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    cost_model_id: z.union([
-      z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-      z
-        .string()
-        .min(41)
-        .max(41)
-        .regex(
-          new RegExp('^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-        ),
-    ]),
-    created_at: z.iso.datetime(),
+    active_revision: z.number().int().min(1),
+    last_known_good_revision: z.number().int().min(1),
+    catalog_version: z.string(),
+    values: z.array(ConfigurationValueViewSchema),
+    snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
+    consumer_states: z.array(ConfigurationConsumerStateSchema),
     updated_at: z.iso.datetime(),
   })
   .strict();
+export const SettingsDetailSchema = ConfigurationActiveSchema;
 export const ObjectRefSchema = z
   .object({
     type: z.union([
@@ -4229,6 +4421,8 @@ export const AgentConfigSchema = z
     enabled: z.boolean(),
     model_provider: z.string(),
     model_name: z.string(),
+    ai_connection_id: z.string(),
+    ai_connection_revision: z.number().int().min(1),
     runtime_profile: z.string(),
     tool_timeout_seconds: z.number().int().min(1),
     max_steps_override: z.number().int().min(1).nullable(),
@@ -4243,8 +4437,6 @@ export const AgentConfigListSchema = z.array(AgentConfigSchema);
 export const AgentConfigUpdateSchema = z
   .object({
     enabled: z.boolean().optional(),
-    model_provider: z.string().min(1).max(64).optional(),
-    model_name: z.string().min(1).max(128).optional(),
     runtime_profile: z.string().min(1).max(32).optional(),
     tool_timeout_seconds: z.number().int().min(1).optional(),
     max_steps_override: z.number().int().min(1).nullable().optional(),
@@ -4593,6 +4785,10 @@ export const EventTypeSchema = z.union([
   z.literal('memo.created'),
   z.literal('memo.updated'),
   z.literal('setup.completed'),
+  z.literal('configuration.updated'),
+  z.literal('configuration.apply_failed'),
+  z.literal('database.connection.updated'),
+  z.literal('database.connection.failed'),
   z.literal('notification.created'),
   z.literal('notification.updated'),
   z.literal('system.health.updated'),

@@ -1,200 +1,187 @@
 import { expect, test, type Page } from 'playwright/test';
 import type { Schema } from '../src/api/client';
-import { readySetupStatus } from './fixture-builders';
 
-const capabilities = {
-  providers: [],
-  server_checked_at: '2026-08-10T00:00:00Z',
-} satisfies Schema<'SetupCapabilityCatalog'>;
+const active = {
+  active_revision: 1,
+  last_known_good_revision: 1,
+  catalog_version: 'UX001_D1_CATALOG_R1',
+  values: [
+    {
+      key: 'appearance.locale',
+      sensitivity: 'PUBLIC',
+      configured: true,
+      value: {
+        language: 'en',
+        timezone: 'UTC',
+        number_format_locale: 'en-US',
+        theme: 'SYSTEM',
+        density: 'COMFORTABLE',
+      },
+      masked_hint: null,
+    },
+  ],
+  snapshot_sha256: '0'.repeat(64),
+  consumer_states: [],
+  updated_at: '2026-08-10T00:00:00Z',
+} as unknown as Schema<'ConfigurationActive'>;
 
-const completedStatus = {
-  ...readySetupStatus,
-  completed: true,
-} satisfies Schema<'SetupStatus'>;
+const catalog = {
+  catalog_version: 'UX001_D1_CATALOG_R1',
+  entries: [
+    {
+      key: 'appearance.locale',
+      group: 'appearance',
+      schema_version: 1,
+      scope: 'INSTALLATION',
+      sensitivity: 'PUBLIC',
+      apply_mode: 'LIVE_NEW_WORK',
+      consumers: ['frontend'],
+      dependencies: [],
+      schema: {},
+      validator: 'appearance.locale',
+      safe_range: null,
+    },
+  ],
+} satisfies Schema<'ConfigurationCatalog'>;
 
-const aiFallback = {
-  ...readySetupStatus,
-  ai_provider_configured: false,
-  ai_connection_id: null,
-  fallback_step: 'AI_PROVIDER',
-} satisfies Schema<'SetupStatus'>;
+const keys = {
+  items: [
+    {
+      key_id: 'gak_e2e0000000000000',
+      label: 'primary',
+      masked_hint: 'qfk_gak_e2e…abcd',
+      status: 'ACTIVE',
+      expires_at: null,
+      last_used_at: '2026-08-10T00:00:00Z',
+      revision: 1,
+      created_at: '2026-08-10T00:00:00Z',
+    },
+  ],
+} satisfies Schema<'GeneralAccessKeyList'>;
 
-const costFallback = {
-  ...readySetupStatus,
-  cost_model_active: false,
-  cost_model_id: null,
-  fallback_step: 'RESEARCH_DEFAULTS',
-} satisfies Schema<'SetupStatus'>;
+const database = {
+  state: 'DATABASE_DISCONNECTED',
+  active_revision: null,
+  candidate_revision: null,
+  last_known_good_revision: null,
+  active: null,
+  candidate: null,
+  domain_operations: 'READ_ONLY_RECOVERY',
+  checked_at: '2026-08-10T00:00:00Z',
+} satisfies Schema<'DatabaseConnectionStatus'>;
 
-const constitutionFallback = {
-  ...readySetupStatus,
-  research_policy_active: false,
-  research_policy_id: null,
-  fallback_step: 'RESEARCH_CONSTITUTION',
-} satisfies Schema<'SetupStatus'>;
-
-async function silenceEvents(page: Page) {
+async function routeSettings(page: Page) {
+  await page.route('**/api/v1/configuration/catalog', (route) => route.fulfill({ json: catalog }));
+  await page.route('**/api/v1/configuration/active', (route) =>
+    route.fulfill({ json: active, headers: { ETag: 'W/"config:1"' } }),
+  );
+  await page.route('**/api/v1/auth/access-keys', (route) => route.fulfill({ json: keys }));
+  await page.route('**/api/v1/database/connection', (route) =>
+    route.fulfill({ json: database, headers: { ETag: 'W/"database:0"' } }),
+  );
   await page.route('**/api/v1/events/stream', (route) =>
     route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }),
   );
 }
 
-async function routeCapabilities(page: Page) {
-  await page.route('**/api/v1/setup/capabilities', (route) =>
-    route.fulfill({ json: capabilities }),
-  );
-}
-
-async function resumeSetup(page: Page) {
-  await page.addInitScript(() => sessionStorage.setItem('qf.setup.started', 'true'));
-}
-
-async function reachReview(page: Page) {
+test('legacy setup entry converges to the single Settings control plane', async ({ page }) => {
+  await routeSettings(page);
   await page.goto('/setup');
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByRole('button', { name: 'Skip optional data provider' }).click();
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByText('Step 5 of 5')).toBeVisible();
-}
-
-for (const [name, status, expectedStep, reason] of [
-  ['AI', aiFallback, 'Step 2 of 5', /No valid AI connection was detected/],
-  ['cost model', costFallback, 'Step 4 of 5', /cost-model binding requires/],
-  ['research constitution', constitutionFallback, 'Step 5 of 5', /bindings are required/],
-] as const) {
-  test(`P00 reload follows the server ${name} fallback`, async ({ page }) => {
-    await silenceEvents(page);
-    await resumeSetup(page);
-    await routeCapabilities(page);
-    await page.route('**/api/v1/setup/status', (route) => route.fulfill({ json: status }));
-    await page.goto('/setup');
-    await expect(page.getByText(expectedStep)).toBeVisible();
-    await expect(page.getByText(reason)).toBeVisible();
-  });
-}
-
-test('P00 reload trusts server completed status and leaves setup', async ({ page }) => {
-  await silenceEvents(page);
-  await routeCapabilities(page);
-  await page.route('**/api/v1/setup/status', (route) => route.fulfill({ json: completedStatus }));
-  await page.route('**/api/v1/overview', (route) =>
-    route.fulfill({
-      status: 401,
-      json: {
-        type: 'about:blank',
-        title: 'Unauthenticated',
-        status: 401,
-        code: 'UNAUTHENTICATED',
-        detail: 'Token required.',
-        instance: null,
-        request_id: 'REQ-AUTH',
-        retryable: false,
-        field_errors: [],
-        context: {},
-      } satisfies Schema<'ApiProblem'>,
-    }),
-  );
-  await page.goto('/setup');
-  await expect(page).toHaveURL(/\/overview$/);
-  await expect(page.getByRole('heading', { name: 'First run setup' })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByText('Configuration catalog')).toBeVisible();
+  await expect(page.getByText('General access keys')).toBeVisible();
 });
 
-for (const [name, etag, message] of [
-  ['missing', null, 'The server response did not match the canonical contract.'],
-  ['malformed', 'SETTINGS-DEFAULT:3', 'The server response did not match the canonical contract.'],
-  [
-    'identity mismatch',
-    'W/"SET-OTHER:3"',
-    'The server response did not match the canonical contract.',
-  ],
-] as const) {
-  test(`P00 ${name} setup ETag fails closed, does not replay, and converges with GET`, async ({
-    page,
-  }) => {
-    await silenceEvents(page);
-    await routeCapabilities(page);
-    let postSeen = false;
-    let posts = 0;
-    let statusReads = 0;
-    await page.route('**/api/v1/setup/status', (route) => {
-      statusReads += 1;
-      return route.fulfill({ json: postSeen ? costFallback : readySetupStatus });
-    });
-    await page.route('**/api/v1/setup/complete', async (route) => {
-      posts += 1;
-      postSeen = true;
-      const request = (await route.request().postDataJSON()) as Schema<'SetupCompleteRequest'>;
-      return route.fulfill({
-        headers: etag ? { ETag: etag } : {},
-        json: {
-          settings_id: 'SETTINGS-DEFAULT',
-          revision: 3,
-          ...request,
-          default_data_provider_id: request.default_data_provider_id ?? null,
-          default_research_start: request.default_research_start ?? null,
-          created_at: '2026-08-10T00:00:00Z',
-          updated_at: '2026-08-10T00:01:00Z',
-        } satisfies Schema<'SettingsDetail'>,
-      });
-    });
-    await reachReview(page);
-    await page.getByRole('button', { name: 'Finish setup' }).dblclick();
-    await expect(page.getByText(message)).toBeVisible();
-    await expect(page.getByText('Step 4 of 5')).toBeVisible();
-    await expect.poll(() => statusReads).toBeGreaterThanOrEqual(3);
-    expect(posts).toBe(1);
-  });
-}
-
-test('P00 explicit replay keeps the exact body and idempotency key, then converges to completed GET', async ({
+test('Settings submits a typed candidate with ETag and activates only after validation', async ({
   page,
 }) => {
-  await silenceEvents(page);
-  await routeCapabilities(page);
-  let posts = 0;
-  const keys: string[] = [];
-  const bodies: unknown[] = [];
-  await page.route('**/api/v1/setup/status', (route) =>
-    route.fulfill({ json: posts >= 2 ? completedStatus : readySetupStatus }),
-  );
-  await page.route('**/api/v1/setup/complete', async (route) => {
-    posts += 1;
-    keys.push(route.request().headers()['idempotency-key'] ?? '');
-    const request = (await route.request().postDataJSON()) as Schema<'SetupCompleteRequest'>;
-    bodies.push(request);
+  await routeSettings(page);
+  let candidateBody: unknown;
+  let activatedRevision = 0;
+  await page.route('**/api/v1/configuration/candidate', async (route) => {
+    candidateBody = await route.request().postDataJSON();
     return route.fulfill({
-      headers: { ETag: posts === 1 ? 'SETTINGS-DEFAULT:3' : 'W/"SETTINGS-DEFAULT:3"' },
       json: {
-        settings_id: 'SETTINGS-DEFAULT',
-        revision: 3,
-        ...request,
-        default_data_provider_id: request.default_data_provider_id ?? null,
-        default_research_start: request.default_research_start ?? null,
+        revision: 2,
+        state: 'CANDIDATE',
+        base_revision: 1,
+        catalog_version: catalog.catalog_version,
+        values: active.values,
+        snapshot_sha256: '1'.repeat(64),
         created_at: '2026-08-10T00:00:00Z',
-        updated_at: '2026-08-10T00:01:00Z',
-      } satisfies Schema<'SettingsDetail'>,
+      } satisfies Schema<'ConfigurationCandidate'>,
     });
   });
-  await page.route('**/api/v1/overview', (route) => route.fulfill({ status: 503, body: '' }));
-  await reachReview(page);
-  await page.getByRole('button', { name: 'Finish setup' }).click();
-  await expect(
-    page.getByText('The server response did not match the canonical contract.'),
-  ).toBeVisible();
-  expect(posts).toBe(1);
-  await page.getByRole('button', { name: 'Skip optional data provider' }).click();
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByRole('button', { name: 'Finish setup' }).click();
-  await expect(page).toHaveURL(/\/overview$/);
-  expect(posts).toBe(2);
-  expect(keys[0]).toBeTruthy();
-  expect(keys[1]).toBe(keys[0]);
-  expect(bodies[1]).toEqual(bodies[0]);
-  expect(bodies[0]).toMatchObject({
-    ai_connection_id: readySetupStatus.ai_connection_id,
-    research_policy_id: readySetupStatus.research_policy_id,
-    risk_policy_id: readySetupStatus.risk_policy_id,
-    cost_model_id: readySetupStatus.cost_model_id,
+  await page.route('**/api/v1/configuration/candidate/validate', (route) =>
+    route.fulfill({
+      json: {
+        revision: 2,
+        status: 'VALID',
+        errors: [],
+        warnings: [],
+        validated_at: '2026-08-10T00:00:00Z',
+      } satisfies Schema<'ConfigurationValidationResult'>,
+    }),
+  );
+  await page.route('**/api/v1/configuration/activate', async (route) => {
+    activatedRevision = (await route.request().postDataJSON()).revision;
+    return route.fulfill({
+      json: { ...active, active_revision: 2, last_known_good_revision: 2 },
+      headers: { ETag: 'W/"config:2"' },
+    });
   });
+  await page.goto('/settings');
+  await page
+    .getByRole('textbox')
+    .first()
+    .fill(
+      '{"language":"zh-CN","timezone":"Asia/Shanghai","number_format_locale":"zh-CN","theme":"SYSTEM","density":"COMFORTABLE"}',
+    );
+  await page.getByRole('button', { name: 'Validate and activate configuration' }).click();
+  await expect(page.getByText('Configuration activated.')).toBeVisible();
+  expect(candidateBody).toMatchObject({ base_revision: 1, values: [{ key: 'appearance.locale' }] });
+  expect(activatedRevision).toBe(2);
+});
+
+test('Settings rotates and revokes an access key without exposing browser persistence', async ({
+  page,
+}) => {
+  await routeSettings(page);
+  let rotateCalls = 0;
+  let revokeCalls = 0;
+  await page.route('**/api/v1/auth/access-keys/gak_e2e0000000000000/rotate', (route) => {
+    rotateCalls += 1;
+    return route.fulfill({
+      status: 201,
+      json: {
+        key: {
+          key_id: 'gak_e2e0000000000000',
+          label: 'primary',
+          masked_hint: 'qfk_gak_e2e…abcd',
+          status: 'ACTIVE',
+          expires_at: null,
+          last_used_at: '2026-08-10T00:00:00Z',
+          revision: 1,
+          created_at: '2026-08-10T00:00:00Z',
+        },
+        secret: 'qfk_gak_e2e0000000000000.' + 'A'.repeat(43),
+      } satisfies Schema<'GeneralAccessKeyIssued'>,
+    });
+  });
+  await page.route('**/api/v1/auth/access-keys/gak_e2e0000000000000/revoke', (route) => {
+    revokeCalls += 1;
+    return route.fulfill({ status: 204 });
+  });
+  page.on('dialog', (dialog) => dialog.accept());
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Rotate' }).click();
+  await expect(page.getByText(/Copy this secret now/)).toBeVisible();
+  await page.getByRole('button', { name: 'Revoke' }).click();
+  expect(rotateCalls).toBe(1);
+  expect(revokeCalls).toBe(1);
+  expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+  expect(await page.evaluate(() => Object.keys(sessionStorage))).not.toContain(
+    'qf.server-settings.locale',
+  );
 });

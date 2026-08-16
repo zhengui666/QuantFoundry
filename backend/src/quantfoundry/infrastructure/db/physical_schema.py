@@ -223,6 +223,10 @@ def load_physical_metadata(
                         raise ValueError(
                             f"unsupported index direction {direction!r} on {index['name']}"
                         )
+                    if not include_sqlite_partial_indexes:
+                        # SQLite rejects PostgreSQL's NULLS FIRST/LAST index
+                        # syntax; ordering remains deterministic for smoke DBs.
+                        nulls = None
                     if nulls == "FIRST":
                         expression = expression.nulls_first()
                     elif nulls == "LAST":

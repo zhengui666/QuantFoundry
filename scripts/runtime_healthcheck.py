@@ -8,8 +8,11 @@ import os
 import sys
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+
+from app import main as domain_main
+from app.main import RuntimeHeartbeat, SessionLocal
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,45 +32,32 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    database_url = os.environ.get("QF_DATABASE_URL")
-    if database_url is None:
-        print(
-            "QF_DATABASE_URL is required for heartbeat health checks", file=sys.stderr
-        )
+    if not domain_main.app.state.domain_database_available:
+        if os.getenv("QF_ENV", "production") in {"local", "development"}:
+            return 0
+        print("domain_database_unavailable", file=sys.stderr)
         return 1
-
     threshold = datetime.now(UTC) - timedelta(seconds=args.max_age_seconds)
-    query = (
-        "SELECT 1 FROM runtime_heartbeats "
-        "WHERE component = :component AND occurred_at >= :threshold"
+    statement = select(RuntimeHeartbeat).where(
+        RuntimeHeartbeat.component == args.component,
+        RuntimeHeartbeat.occurred_at >= threshold,
     )
-    parameters: dict[str, object] = {
-        "component": args.component,
-        "threshold": threshold,
-    }
     if args.queue is not None:
-        query += " AND queue_name = :queue"
-        parameters["queue"] = args.queue
-
-    engine = create_engine(database_url)
+        statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)
+    session = SessionLocal()
     try:
-        with engine.connect() as connection:
-            heartbeat = connection.execute(
-                text(f"{query} LIMIT 1"), parameters
-            ).scalar_one_or_none()
-        if heartbeat is not None:
+        if session.execute(statement.limit(1)).scalar_one_or_none():
             return 0
         print(
-            f"no recent {args.component} heartbeat"
-            + (f" for queue {args.queue}" if args.queue is not None else ""),
+            f"heartbeat_missing component={args.component} queue={args.queue}",
             file=sys.stderr,
         )
         return 1
     except SQLAlchemyError as error:
-        print(f"heartbeat query failed: {error}", file=sys.stderr)
+        print(f"heartbeat_query_failed error={type(error).__name__}", file=sys.stderr)
         return 1
     finally:
-        engine.dispose()
+        session.close()
 
 
 if __name__ == "__main__":

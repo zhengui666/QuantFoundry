@@ -28,11 +28,11 @@ Prerequisites: Docker Compose, Python 3.14.0, Node 24.19.0, and pnpm 10.32.1.
 make bootstrap
 # Replace the local database password and generate the credential-encryption key.
 make bootstrap
-make local-bootstrap
+make owner-bootstrap
 make up
 ```
 
-The local edge is available at `http://localhost:8080`. `make local-bootstrap` prints the only plaintext copy of a local OWNER token; do not save it to files, browser storage, logs, or commits.
+The local edge is available at `http://localhost:8080`. `make owner-bootstrap` prints the only plaintext copy of the first general access key; use it once at `/login`, and do not save it to files, browser storage, logs, or commits.
 
 Useful local checks:
 

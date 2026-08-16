@@ -10,7 +10,7 @@
 **目标终端：** Responsive Web（390px+）；不开发原生 App
 **部署模式：** Single-system / Single-user / Self-hosted
 **默认语言：** 简体中文
-**文档状态：** Final V1.0 + UI Interaction Redesign Amendment；Auth/Configuration OpenAPI rewrite pending
+**文档状态：** Final V1.0 + UI Interaction Redesign Amendment；UX001_D1_R1 auth/configuration wire contract frozen；runtime implementation belongs to D2
 **日期：** 2026-08-13
 **正式目标路径：** `/QuantFoundry/docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md`
 **OpenAPI canonical 路径：** `/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml`
@@ -21,7 +21,7 @@
 
 ## 0.1 后端共建冻结结论
 
-原第 82 节对研究、Validation、Holdout、Approval、SSE、provenance 等既有业务契约继续作为当前事实输入；但旧 bearer、多 workspace、Owner、配置入口与 desktop-only 条款已被本次 Amendment supersede。Login、Access Keys、Database 与全量 Configuration 仍需 PRD、后端与 canonical OpenAPI machine rewrite，当前不得虚构 operation、DTO、error enum 或 operation count，也不得据此开始代码实现。
+原第 82 节对研究、Validation、Holdout、Approval、SSE、provenance 等既有业务契约继续作为当前事实输入；但旧 bearer、多 workspace、Owner、配置入口与 desktop-only 条款已被本次 Amendment supersede。Login、Access Keys、Database 与全量 Configuration 的 operation、DTO、error enum 与 count 已由 UX001_D1_R1 canonical OpenAPI 冻结；runtime code implementation 属于 D2，必须消费 generated types、Bootstrap target schema 与 runtime contract gate。
 
 本文定义 QuantFoundry V1 前端实现的技术基线，解决 UI 设计方案留给前端技术方案确定的以下事项：
 
@@ -69,7 +69,7 @@
 | WCAG 2.1 AA | WCAG 2.2 AA |
 | 仅桌面 screenshot regression | Playwright 390/768/1180/1280/1440/1600 + 人工视觉复核 |
 
-所有 REST/SSE/Auth/Configuration 调用仍必须经 canonical OpenAPI codegen。machine rewrite 完成前，Frontend 不得手写暂定 endpoint、method、header 名、schema、error code 或 fixture。
+所有 REST/SSE/Auth/Configuration 调用仍必须经 UX001_D1_R1 canonical OpenAPI codegen。generated types/schema 与 runtime gate 完成前，Frontend 不得手写 endpoint、method、header 名、schema、error code 或 fixture。
 
 ---
 
@@ -774,7 +774,7 @@ allowedActions
 
 ```text
 /login                     LoginShell
-/setup                     SetupShell
+/setup                     RedirectSettings (legacy compatibility only)
 
 /_app                      MainAppShell
   /overview
@@ -1003,7 +1003,7 @@ GET /api/v1/openapi.json
 
 CI 必须验证 committed schema 与 runtime schema 一致。
 
-当前 committed schema 仍可约束未受本次 Amendment 影响的研究域。Login、Access Keys、Database 与 Configuration 需下一次 canonical machine rewrite；在 rewrite 完成前不得记录暂定 operation count，不得用于 codegen、fixture、client 封装或 runtime contract test。
+当前 committed schema 仍可约束未受本次 Amendment 影响的研究域。Login、Access Keys、Database 与 Configuration 已进入 UX001_D1_R1；在 generated schema、Control/Domain migration 与 runtime gate 完成前不得用于实际 client/fixture/runtime contract test。
 
 前端生成：
 
@@ -1089,7 +1089,7 @@ ETag: "<sha256>"
 - 401 清理 session presentation、旧 `sessionEpoch` cache/SSE 并进入 `/login`；403/domain gate 保留 session，不误导重新登录；
 - Cookie 与 SSE/reconnect 的 exact transport 由 canonical machine contract 生成，不手写降级 query token。
 
-旧 Global Bearer/`Authorization: Bearer` 条款由本节明确 supersede；machine rewrite 完成前不实现临时兼容层。
+旧 Global Bearer/`Authorization: Bearer` 条款由本节明确 supersede；generated cookie-session/CSRF transport 与 runtime gate 完成前不实现临时兼容层。
 
 ### 15.6 Single-system session scope
 
@@ -1924,7 +1924,7 @@ connection test result
 capability result
 ```
 
-五步、Continue/Finish eligibility、Provider/Model options、active refs 与 fallback 全部只消费下一版 canonical generated contract。旧 `Owner/workspace`、固定 request shape、固定 fallback precedence 与 endpoint 描述均由本节 supersede；machine rewrite 完成前不实现、不补临时 DTO。
+五步、Continue/Finish eligibility、Provider/Model options、active refs 与 fallback 全部只消费 UX001_D1_R1 canonical generated contract。旧 `Owner/workspace`、固定 request shape、固定 fallback precedence 与 endpoint 描述均由本节 supersede；generated schema/runtime gate 完成前不实现、不补临时 DTO。
 
 Reload 只从 server/database readback 恢复已提交配置；不从 name、boolean、default、URL、environment display 或 browser storage 合成 ref。null/invalid ref 清除旧 success state并显示 server reason；不暴露 internal identity。
 
@@ -2369,7 +2369,7 @@ Test failure、stale、CSRF/contract failure 或 activate failure 不得覆盖 a
 
 ## 45.3 Agent Config / Disable（P0）
 
-Agent 配置只通过 Settings 与更新后的 canonical OpenAPI。旧固定 endpoint、`workspace_id`、`authScopeKey` 和 workspace-local ETag 条款由本节 supersede；machine rewrite 前不手写 client/fixture。
+Agent 配置只通过 Settings 与 UX001_D1_R1 canonical OpenAPI。旧固定 endpoint、`workspace_id`、`authScopeKey` 和 workspace-local ETag 条款由本节 supersede；generated schema/runtime gate 前不手写 client/fixture。
 
 展示仍必须区分 disabled 对未来 admission、已有 durable/checkpointed run、required role waiting state 与 re-enable 的不同影响；exact state/reason 只消费 generated contract。Agent config 不得编辑 hard tool allowlist、approval authority、holdout access 或 risk authority。
 
@@ -2828,7 +2828,7 @@ conflict
 
 Storybook 与 tests 共用 handlers。
 
-Login、Access Keys、Database 与 Configuration handlers 必须等待 canonical OpenAPI machine rewrite 并从 generated schema 建立；不得先造 success fixture 或暂定 error code。
+Login、Access Keys、Database 与 Configuration handlers 必须等待 UX001_D1_R1 generated schema、Control/Domain migration 与 contract gate；不得先造 success fixture 或暂定 error code。
 
 ---
 
@@ -2951,7 +2951,7 @@ Overview
 → Memo
 ```
 
-研究路径中未受 Amendment 影响的 operation 可继续按现有 canonical contract 验证。Login/Access Keys/Database/Configuration 路径必须等待下一次 canonical OpenAPI machine rewrite；在此之前只保留文档验收场景，不创建临时 success fixture、client 或 E2E 假通过。
+研究路径中未受 Amendment 影响的 operation 可继续按现有 canonical contract 验证。Login/Access Keys/Database/Configuration 路径已按 UX001_D1_R1 冻结 wire shape；在 generated schema、migration 与 runtime gate 完成前只保留文档验收场景，不创建临时 success fixture、client 或 E2E 假通过。
 
 使用 deterministic mocked backend 或 dedicated test backend。
 
@@ -3187,7 +3187,7 @@ hashed assets    immutable long cache
 
 ---
 
-# 70. Backend / Frontend Contract（Auth/Configuration rewrite pending）
+# 70. Backend / Frontend Contract（UX001_D1_R1 frozen; D2/D3 runtime implementation landed）
 
 ### 70.1 OpenAPI
 
@@ -3198,7 +3198,7 @@ committed schema == runtime schema
 exact stage/revision/count = canonical file at validation time
 ```
 
-Frontend generated client/types/runtime schemas/fixtures 只能覆盖 canonical file 当前实际内容；本文不复制 operation/schema/error 数量。Login、Access Keys、Database 与 Configuration 在 machine rewrite 完成前是明确的 blocked scope，不得被前端提前实现。
+Frontend generated client/types/runtime schemas/fixtures 只能覆盖 canonical file 当前实际内容；本文不复制 operation/schema/error 数量。D3 已落地 Login/session、Access Keys、Database status/candidate 与 Configuration catalog/active Settings control plane；完整 PostgreSQL/chaos/存量迁移/release evidence 仍是 closure gate。
 
 ### 70.2 Action Capability
 
@@ -3281,7 +3281,7 @@ Canonical schema + `evaluate`.
 
 ### 70.14 Agent Config
 
-全部 Settings operation 等待 canonical machine rewrite，Frontend 只消费届时 generated client。Agent admission 的 enabled/disabled state 不修改 hard permission，也不删除现有 checkpoint；通用密钥生命周期仍只遵循第 45.1 节。
+全部 Settings operation 只消费 UX001_D1_R1 generated client；在 schema/migration/runtime gate 完成前不实现。Agent admission 的 enabled/disabled state 不修改 hard permission，也不删除现有 checkpoint；通用密钥生命周期仍只遵循第 45.1 节。
 
 ---
 # 71. Frontend 不应该承担的职责
@@ -3347,7 +3347,7 @@ Database candidate-test-activate
 Provider / Agent configuration deep-links
 ```
 
-本 Phase 必须在 canonical OpenAPI machine rewrite 完成后开始，禁止临时 endpoint/fixture。
+本 Phase 必须在 UX001_D1_R1 generated contract、schema/migration 与 runtime gate 完成后开始，禁止临时 endpoint/fixture。
 
 ## Phase 2 — Research Vertical Slice
 

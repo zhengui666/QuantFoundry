@@ -5165,7 +5165,7 @@
         },
         {
           "name": "domain_events_event_type_check",
-          "sql": "event_type IN ('job.updated', 'research.created', 'research.updated', 'research.conclusion.created', 'experiment.created', 'experiment.updated', 'factor.updated', 'strategy.created', 'strategy.updated', 'validation.created', 'validation.updated', 'validation.holdout.updated', 'approval.created', 'approval.updated', 'paper.created', 'paper.updated', 'paper.run.updated', 'review.created', 'review.updated', 'data.provider.updated', 'data.capability.updated', 'data.quality.updated', 'agent.run.updated', 'tool.call.updated', 'memo.created', 'memo.updated', 'setup.completed', 'notification.created', 'notification.updated', 'system.health.updated', 'system.resync_required')"
+          "sql": "event_type IN ('job.updated', 'research.created', 'research.updated', 'research.conclusion.created', 'experiment.created', 'experiment.updated', 'factor.updated', 'strategy.created', 'strategy.updated', 'validation.created', 'validation.updated', 'validation.holdout.updated', 'approval.created', 'approval.updated', 'paper.created', 'paper.updated', 'paper.run.updated', 'review.created', 'review.updated', 'data.provider.updated', 'data.capability.updated', 'data.quality.updated', 'agent.run.updated', 'tool.call.updated', 'memo.created', 'memo.updated', 'setup.completed', 'configuration.updated', 'configuration.apply_failed', 'database.connection.updated', 'database.connection.failed', 'notification.created', 'notification.updated', 'system.health.updated', 'system.resync_required')"
         }
       ],
       "columns": [

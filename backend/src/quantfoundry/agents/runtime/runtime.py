@@ -138,19 +138,23 @@ class CodexRuntimeConfig:
         model_name: str,
         timeout_seconds: int,
         api_key: str | None = None,
+        base_url: str | None = None,
     ) -> CodexRuntimeConfig:
         runtime_key = os.getenv("QF_CODEX_RUNTIME_ID", CODEX_RUNTIME_KEY)
         if runtime_key != CODEX_RUNTIME_KEY:
             raise AgentRuntimeError("only CODEX-DEFAULT remote runtime is supported")
         base_url = (
-            os.getenv("QF_CODEX_BASE_URL") or os.getenv("QF_OPENAI_BASE_URL") or ""
+            base_url
+            or os.getenv("QF_CODEX_BASE_URL")
+            or os.getenv("QF_OPENAI_BASE_URL")
+            or ""
         ).rstrip("/")
         resolved_api_key = (
             api_key
             or os.getenv("QF_CODEX_API_KEY")
             or os.getenv("QF_OPENAI_API_KEY", "")
         )
-        resolved_model = os.getenv("QF_CODEX_MODEL") or model_name
+        resolved_model = model_name or os.getenv("QF_CODEX_MODEL", "")
         if not base_url or not resolved_api_key or not resolved_model:
             raise AgentRuntimeError("Remote Codex runtime credentials are absent")
         try:
@@ -213,11 +217,13 @@ class RemoteCodexModel:
         model_name: str,
         timeout_seconds: int,
         api_key: str | None = None,
+        base_url: str | None = None,
     ):
         self.runtime = CodexRuntimeConfig.from_environment(
             model_name=model_name,
             timeout_seconds=timeout_seconds,
             api_key=api_key,
+            base_url=base_url,
         )
 
     @staticmethod
@@ -363,26 +369,62 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
         ) from error
 
 
+def _active_control_plane_connection() -> dict[str, str] | None:
+    try:
+        from app.control_plane import active_remote_codex_connection
+
+        value = active_remote_codex_connection()
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    endpoint = value.get("endpoint")
+    credential = value.get("credential")
+    model = value.get("model")
+    if not isinstance(endpoint, str) or not endpoint:
+        return None
+    if not isinstance(credential, str) or not credential:
+        return None
+    if not isinstance(model, str) or not model:
+        return None
+    return {"endpoint": endpoint, "credential": credential, "model": model}
+
+
+def _control_plane_remote_mode() -> bool:
+    try:
+        from app.control_plane import active_runtime_snapshot
+
+        snapshot = active_runtime_snapshot()
+        return str(snapshot.get("model_provider") or "").lower() in {
+            "openai-compatible",
+            "remote-codex",
+        }
+    except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        return False
+
+
 def configured_model(config: AgentConfigRow, session: Session | None = None) -> Model:
-    remote_mode = os.getenv("QF_AGENT_PROVIDER", "").lower() in {
-        "openai-compatible",
-        "remote-codex",
-    } or bool(os.getenv("QF_CODEX_BASE_URL"))
-    if remote_mode and config.model_provider not in {
-        "openai-compatible",
-        "remote-codex",
-    }:
-        raise AgentRuntimeError(
-            "agent config provider is incompatible with the Remote Codex runtime"
-        )
-    if config.model_provider in {"openai-compatible", "remote-codex"}:
+    remote_mode = (
+        os.getenv("QF_AGENT_PROVIDER", "").lower()
+        in {
+            "openai-compatible",
+            "remote-codex",
+        }
+        or bool(os.getenv("QF_CODEX_BASE_URL"))
+        or _control_plane_remote_mode()
+    )
+    if remote_mode or config.model_provider in {"openai-compatible", "remote-codex"}:
+        control = _active_control_plane_connection()
         api_key = (
             _active_setup_api_key(session, config) if session is not None else None
         )
+        if control is not None:
+            api_key = control["credential"]
         return RemoteCodexModel(
-            model_name=config.model_name,
+            model_name=control["model"] if control is not None else config.model_name,
             timeout_seconds=config.tool_timeout_seconds,
             api_key=api_key,
+            base_url=control["endpoint"] if control is not None else None,
         )
     if config.model_provider == "local-deterministic":
         if os.getenv("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER") != "1":
@@ -417,9 +459,11 @@ class AgentGraphState(TypedDict, total=False):
 
 @contextmanager
 def _checkpoint_saver() -> Iterator[BaseCheckpointSaver[str]]:
-    database_url = os.getenv("QF_AGENT_CHECKPOINT_URL") or os.getenv("QF_DATABASE_URL")
-    if not database_url:
-        raise AgentRuntimeError("Agent checkpoint database is not configured")
+    from quantfoundry.api import app as domain_main
+
+    if not getattr(domain_main.app.state, "domain_database_available", True):
+        raise AgentRuntimeError("Agent checkpoint database is not ready")
+    database_url = domain_main.engine.url.render_as_string(hide_password=False)
     if database_url.startswith("sqlite"):
         configured = os.getenv("QF_AGENT_CHECKPOINT_SQLITE")
         if configured:

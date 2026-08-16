@@ -1,23 +1,28 @@
 openapi: 3.1.0
 info:
   title: QuantFoundry Core API
-  version: 1.0.0-p0
+  version: 1.0.0-ux001-d1
   license:
     name: Proprietary
     url: https://quantfoundry.local/license
-  description: Canonical field-level HTTP contract for the 45-operation executable V1 P0 research vertical slice (contract revision P0_EXECUTABLE_R2). Full-V1 catalog operations absent here remain future staged and cannot be codegen, fixture, or runtime-contract targets. Public semantic IDs are high-entropy and globally unique for collision prevention and tracing, but every authenticated resolver remains scoped to the caller's server-derived workspace; global uniqueness never grants cross-workspace visibility or access.
-  x-quantfoundry-contract-stage: P0_EXECUTABLE
-  x-quantfoundry-contract-revision: P0_EXECUTABLE_R2
-  x-quantfoundry-operation-count: 45
-  x-quantfoundry-full-v1-status: FUTURE_STAGED
+  description: Canonical field-level HTTP contract for the UX-001 breaking D1 revision. The installation has one fixed OWNER principal, multiple equal general access keys, a short-lived HttpOnly cookie session, a Bootstrap Control DB configuration authority, and a recoverable Domain PostgreSQL connection. The legacy P0 operation set remains in this file only where its domain surface is still required; new codegen, fixtures, migrations, and runtime consumers MUST target this revision and MUST NOT restore Bearer, user, or workspace product semantics.
+  x-quantfoundry-contract-stage: UX001_D1
+  x-quantfoundry-contract-revision: UX001_D1_R1
+  x-quantfoundry-operation-count: 65
+  x-quantfoundry-schema-count: 186
+  x-quantfoundry-error-count: 75
+  x-quantfoundry-configuration-catalog: configuration-catalog-v1.yaml
+  x-quantfoundry-configuration-catalog-version: UX001_D1_CATALOG_R1
+  x-quantfoundry-configuration-entry-count: 15
+  x-quantfoundry-full-v1-status: TARGET_NORMATIVE
   x-quantfoundry-public-id-policy:
     generation: PREFIXED_CANONICAL_CROCKFORD_ULID_OR_LOWERCASE_UUIDV4
     ulid-suffix-pattern: '^[0-7][0-9A-HJKMNP-TV-Z]{25}$'
     uuidv4-suffix-pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
     uniqueness: GLOBAL
-    authorization-scope: SERVER_DERIVED_AUTHENTICATED_WORKSPACE
-    resolution: WORKSPACE_AND_PUBLIC_ID
-    cross-workspace-access-from-global-uniqueness: FORBIDDEN
+    authorization-scope: FIXED_OWNER_SINGLETON_NAMESPACE
+    resolution: INSTALLATION_AND_PUBLIC_ID
+    cross-workspace-access-from-global-uniqueness: NOT_APPLICABLE
   x-quantfoundry-public-id-schemas:
     research_policy: &ResearchPolicyId {type: string, minLength: 29, maxLength: 39, oneOf: [{type: string, minLength: 29, maxLength: 29, pattern: '^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 39, maxLength: 39, pattern: '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [RP-01ARZ3NDEKTSV4RRFFQ69G5FAV, RP-550e8400-e29b-41d4-a716-446655440000]}
     risk_policy: &RiskPolicyId {type: string, minLength: 31, maxLength: 41, oneOf: [{type: string, minLength: 31, maxLength: 31, pattern: '^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$'}, {type: string, minLength: 41, maxLength: 41, pattern: '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}], examples: [RISK-01ARZ3NDEKTSV4RRFFQ69G5FAV, RISK-550e8400-e29b-41d4-a716-446655440000]}
@@ -123,13 +128,29 @@ info:
     - {if: {properties: {event_type: {const: tool.call.updated}}, required: [event_type]}, then: {properties: {object_type: {const: tool_call}}}}
     - {if: {properties: {event_type: {enum: [memo.created, memo.updated]}}, required: [event_type]}, then: {properties: {object_type: {const: memo}}}}
     - {if: {properties: {event_type: {const: setup.completed}}, required: [event_type]}, then: {properties: {object_type: {const: settings}}}}
+    - {if: {properties: {event_type: {enum: [configuration.updated, configuration.apply_failed]}}, required: [event_type]}, then: {properties: {object_type: {const: settings}}}}
+    - {if: {properties: {event_type: {enum: [database.connection.updated, database.connection.failed]}}, required: [event_type]}, then: {properties: {object_type: {const: provider_connection}}}}
     - {if: {properties: {event_type: {const: notification.created}}, required: [event_type]}, then: {properties: {object_type: {const: notification}}}}
     - {if: {properties: {event_type: {const: notification.updated}}, required: [event_type]}, then: {properties: {object_type: {const: agent_config}}}}
     - {if: {properties: {event_type: {enum: [system.health.updated, system.resync_required]}}, required: [event_type]}, then: {properties: {object_type: {const: event_stream}}}}
 servers:
   - url: /api/v1
 security:
-  - bearerAuth: []
+  - cookieSession: []
+x-quantfoundry-authentication:
+  login-credential: GENERAL_ACCESS_KEY
+  login-route: /auth/login
+  session: SERVER_SIDE_OPAQUE_COOKIE
+  cookie: qf_session
+  csrf-header: X-CSRF-Token
+  mutation-protection: COOKIE_AND_CSRF_AND_ORIGIN_OR_FETCH_METADATA
+  raw-key-as-bearer: FORBIDDEN
+x-quantfoundry-security-rules:
+  public-operations: [/system/health, /auth/login]
+  protected-read: [cookieSession]
+  protected-mutation: [cookieSession, csrfHeader]
+  protected-mutation-origin: REQUIRED
+  protected-mutation-fetch-metadata: REQUIRED
 paths:
   /system/health:
     get:
@@ -144,6 +165,445 @@ paths:
               schema: {$ref: '#/components/schemas/SystemHealth'}
         '503': {$ref: '#/components/responses/Problem503'}
         '422': {$ref: '#/components/responses/Problem422'}
+  /auth/login:
+    post:
+      summary: Exchange one general access key for an Owner session
+      operationId: loginWithGeneralAccessKey
+      security: []
+      x-quantfoundry-csrf: NOT_REQUIRED_PUBLIC_EXCHANGE
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GeneralAccessKeyLoginRequest'}
+      responses:
+        '200':
+          description: Session established; the opaque session is set only as a Secure HttpOnly cookie.
+          headers:
+            Set-Cookie:
+              required: true
+              description: qf_session cookie with Secure, HttpOnly, SameSite=Strict and bounded expiry attributes.
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SessionBootstrapResponse'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '429': {$ref: '#/components/responses/Problem429'}
+        '503': {$ref: '#/components/responses/Problem503'}
+  /auth/session:
+    get:
+      summary: Read the current Owner session and CSRF token
+      operationId: getCurrentOwnerSession
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      responses:
+        '200':
+          description: Current session projection without a raw session token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OwnerSessionView'}
+        '401': {$ref: '#/components/responses/Problem401'}
+  /auth/logout:
+    post:
+      summary: Revoke the current Owner session
+      operationId: logoutOwnerSession
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      responses:
+        '204': {description: Session revoked}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+  /auth/access-keys:
+    get:
+      summary: List masked general access key metadata
+      operationId: listGeneralAccessKeys
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      responses:
+        '200':
+          description: Key metadata only; raw secrets are never returned by list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeneralAccessKeyList'}
+        '401': {$ref: '#/components/responses/Problem401'}
+    post:
+      summary: Create a general access key and reveal its secret once
+      operationId: createGeneralAccessKey
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GeneralAccessKeyCreateRequest'}
+      responses:
+        '201':
+          description: Key metadata and one-time raw secret.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeneralAccessKeyIssued'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /auth/access-keys/{key_id}:
+    patch:
+      summary: Rename a general access key
+      operationId: renameGeneralAccessKey
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/GeneralAccessKeyId'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GeneralAccessKeyRenameRequest'}
+      responses:
+        '200':
+          description: Renamed key metadata.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeneralAccessKeyMetadata'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+  /auth/access-keys/{key_id}/rotate:
+    post:
+      summary: Rotate a general access key and reveal the replacement once
+      operationId: rotateGeneralAccessKey
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/GeneralAccessKeyId'}
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201':
+          description: Replacement key metadata and one-time raw secret.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeneralAccessKeyIssued'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /auth/access-keys/{key_id}/revoke:
+    post:
+      summary: Revoke a general access key and its derived sessions
+      operationId: revokeGeneralAccessKey
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/GeneralAccessKeyId'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      responses:
+        '204': {description: Key and derived sessions revoked}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+  /auth/access-keys/{key_id}/expire:
+    post:
+      summary: Expire a general access key and its derived sessions
+      operationId: expireGeneralAccessKey
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/GeneralAccessKeyId'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      responses:
+        '204': {description: Key and derived sessions expired}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+  /configuration/catalog:
+    get:
+      summary: Read the closed installation configuration catalog
+      operationId: getConfigurationCatalog
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      responses:
+        '200':
+          description: Every mutable configuration key and its typed application rules.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConfigurationCatalog'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '503': {$ref: '#/components/responses/Problem503'}
+  /configuration/active:
+    get:
+      summary: Read the active configuration revision and masked values
+      operationId: getActiveConfiguration
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      responses:
+        '200':
+          description: Active Control DB configuration snapshot; secret values are masked.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"config:[1-9][0-9]*"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConfigurationActive'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '503': {$ref: '#/components/responses/Problem503'}
+  /configuration/candidate:
+    put:
+      summary: Replace the immutable candidate configuration change-set
+      operationId: putConfigurationCandidate
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConfigurationCandidateRequest'}
+      responses:
+        '200':
+          description: Candidate revision persisted but not active.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"config:[1-9][0-9]*"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConfigurationCandidate'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+  /configuration/candidate/validate:
+    post:
+      summary: Validate the candidate configuration as one closed change-set
+      operationId: validateConfigurationCandidate
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200':
+          description: Candidate validation result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConfigurationValidationResult'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+  /configuration/activate:
+    post:
+      summary: Activate a validated configuration revision
+      operationId: activateConfiguration
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConfigurationActivateRequest'}
+      responses:
+        '200':
+          description: Active configuration after consumer ACK convergence.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"config:[1-9][0-9]*"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConfigurationActive'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '503': {$ref: '#/components/responses/Problem503'}
+  /configuration/rollback:
+    post:
+      summary: Create a new revision from a prior valid snapshot
+      operationId: rollbackConfiguration
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConfigurationRollbackRequest'}
+      responses:
+        '200':
+          description: New monotonic active configuration revision.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"config:[1-9][0-9]*"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConfigurationActive'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '503': {$ref: '#/components/responses/Problem503'}
+  /database/connection:
+    get:
+      summary: Read Domain PostgreSQL connection state without secrets
+      operationId: getDomainDatabaseConnection
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      responses:
+        '200':
+          description: Active/candidate/last-known-good connection state with masked fields.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"database:(0|[1-9][0-9]*)"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DatabaseConnectionStatus'}
+        '401': {$ref: '#/components/responses/Problem401'}
+  /database/connection/candidate:
+    put:
+      summary: Stage a Domain PostgreSQL connection candidate
+      operationId: putDomainDatabaseConnectionCandidate
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DatabaseConnectionCandidateRequest'}
+      responses:
+        '200':
+          description: Candidate staged; it is not active.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"database:(0|[1-9][0-9]*)"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DatabaseConnectionCandidate'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+  /database/connection/candidate/validate:
+    post:
+      summary: Validate the staged Domain PostgreSQL connection
+      operationId: validateDomainDatabaseConnectionCandidate
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200':
+          description: Network, TLS, privilege, version, and schema compatibility result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DatabaseConnectionValidationResult'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
+  /database/connection/activate:
+    post:
+      summary: Activate the validated Domain PostgreSQL connection
+      operationId: activateDomainDatabaseConnection
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200':
+          description: Activated Domain PostgreSQL connection state.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"database:(0|[1-9][0-9]*)"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DatabaseConnectionStatus'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '422': {$ref: '#/components/responses/Problem422'}
+        '503': {$ref: '#/components/responses/Problem503'}
+  /database/connection/revert:
+    post:
+      summary: Revert to the verified last-known-good Domain PostgreSQL connection
+      operationId: revertDomainDatabaseConnection
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      parameters:
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200':
+          description: Last-known-good connection restored.
+          headers:
+            ETag: {required: true, schema: {type: string, pattern: '^W/"database:(0|[1-9][0-9]*)"$'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DatabaseConnectionStatus'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '412': {$ref: '#/components/responses/Problem412'}
+        '503': {$ref: '#/components/responses/Problem503'}
   /setup/status:
     get:
       summary: Read authenticated setup status
@@ -159,11 +619,18 @@ paths:
         '429': {$ref: '#/components/responses/Problem429'}
   /setup/complete:
     post:
-      summary: Complete required owner setup with the R2 required AI connection reference
+      summary: Complete the installation-only setup transition using the shared configuration revision
       operationId: completeSetup
-      x-quantfoundry-error-codes: [INVALID_REQUEST, CONNECTION_VALIDATION_EXPIRED, CONNECTION_KIND_MISMATCH, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS]
+      security:
+        - cookieSession: []
+          csrfHeader: []
+      x-quantfoundry-csrf: REQUIRED
+      x-quantfoundry-storage-authority: BOOTSTRAP_CONTROL_DB
+      x-quantfoundry-mutation-authority: SHARED_CONFIGURATION_ACTIVATION
+      x-quantfoundry-error-codes: [INVALID_REQUEST, PRECONDITION_REQUIRED, CONFIGURATION_VALIDATION_FAILED, CONFIGURATION_APPLY_FAILED, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS]
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/IfMatch'}
       requestBody:
         required: true
         content:
@@ -171,19 +638,20 @@ paths:
             schema: {$ref: '#/components/schemas/SetupCompleteRequest'}
       responses:
         '200':
-          description: Persisted settings
+          description: Installation transition result; values are read from the shared active configuration revision.
           headers:
             ETag:
               required: true
-              description: 'Exact weak ETag of the persisted SettingsDetail representation. It MUST equal W/"{settings_id}:{revision}" for the response body and must not be derived from request input or client state.'
-              schema: {type: string, pattern: '^W/"[^"]+:[1-9][0-9]*"$'}
+              description: Exact weak ETag of the active configuration representation.
+              schema: {type: string, pattern: '^W/"config:[1-9][0-9]*"$'}
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/SettingsDetail'}
+              schema: {$ref: '#/components/schemas/ConfigurationActive'}
         '401': {$ref: '#/components/responses/Problem401'}
         '403': {$ref: '#/components/responses/Problem403'}
         '409': {$ref: '#/components/responses/Problem409'}
         '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
         '429': {$ref: '#/components/responses/Problem429'}
   /setup/capabilities:
     get:
@@ -1044,10 +1512,16 @@ paths:
 
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: opaque-owner-session
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: qf_session
+      description: Secure, HttpOnly, SameSite=Strict opaque Owner session cookie. The raw general access key is never accepted here.
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: CSRF token issued by the authenticated bootstrap session; required with the cookie for every state-changing browser request.
   parameters:
     IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, minLength: 20, maxLength: 128}}
     IfMatch: {in: header, name: If-Match, required: true, schema: {type: string, minLength: 1}}
@@ -1056,7 +1530,7 @@ components:
       in: path
       name: dataset_id
       required: true
-      description: High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Global uniqueness never grants cross-workspace access.
+      description: High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Resolution is always bound to the installation's fixed singleton namespace.
       schema: *DatasetIdSchema
     SnapshotId: {in: path, name: snapshot_id, required: true, schema: *SnapshotIdSchema}
     ExperimentId: {in: path, name: experiment_id, required: true, schema: *ExperimentIdSchema}
@@ -1068,6 +1542,7 @@ components:
     JobId: {in: path, name: job_id, required: true, schema: *JobIdSchema}
     AgentRunId: {in: path, name: agent_run_id, required: true, schema: *AgentRunIdSchema}
     ToolCallId: {in: path, name: tool_call_id, required: true, schema: *ToolCallIdSchema}
+    GeneralAccessKeyId: {in: path, name: key_id, required: true, schema: {type: string, pattern: '^gak_[a-z0-9]{16,32}$'}}
     Version: {in: path, name: version, required: true, schema: {type: integer, minimum: 1}}
     AgentRole: {in: path, name: role, required: true, schema: {$ref: '#/components/schemas/AgentRoleKey'}}
   responses:
@@ -1081,6 +1556,254 @@ components:
     Problem429: {description: 'Budget, rate, or multiple-testing limit reached', headers: {Retry-After: {schema: {type: integer, minimum: 1}}}, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
     Problem503: {description: Required service unavailable or degraded, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
   schemas:
+    GeneralAccessKeyLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [key]
+      properties:
+        key:
+          type: string
+          minLength: 60
+          maxLength: 256
+          pattern: '^qfk_gak_[a-z0-9]{16,32}\.[A-Za-z0-9_-]{43,}$'
+          description: Raw general access key accepted only by this public exchange. It is never persisted or echoed.
+    GeneralAccessKeyMetadata:
+      type: object
+      additionalProperties: false
+      required: [key_id, label, masked_hint, status, expires_at, last_used_at, revision, created_at]
+      properties:
+        key_id: {type: string, pattern: '^gak_[a-z0-9]{16,32}$'}
+        label: {type: string, minLength: 1, maxLength: 80}
+        masked_hint: {type: string, minLength: 3, maxLength: 32}
+        status: {enum: [ACTIVE, REVOKED, EXPIRED]}
+        expires_at: {type: [string, 'null'], format: date-time}
+        last_used_at: {type: [string, 'null'], format: date-time}
+        revision: {type: integer, format: int64, minimum: 1}
+        created_at: {type: string, format: date-time}
+    GeneralAccessKeyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/GeneralAccessKeyMetadata'}}
+    GeneralAccessKeyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label: {type: string, minLength: 1, maxLength: 80}
+        expires_at: {type: [string, 'null'], format: date-time}
+    GeneralAccessKeyRenameRequest:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label: {type: string, minLength: 1, maxLength: 80}
+    GeneralAccessKeyIssued:
+      type: object
+      additionalProperties: false
+      required: [key, secret]
+      properties:
+        key: {$ref: '#/components/schemas/GeneralAccessKeyMetadata'}
+        secret:
+          type: string
+          minLength: 60
+          maxLength: 256
+          pattern: '^qfk_gak_[a-z0-9]{16,32}\.[A-Za-z0-9_-]{43,}$'
+          description: Raw secret displayed exactly once in the successful create/rotate response; it MUST NOT be logged, persisted, audited, or stored by the browser.
+    OwnerSessionView:
+      type: object
+      additionalProperties: false
+      required: [principal, auth_method, key_id, issued_at, last_seen_at, expires_at, csrf_token]
+      properties:
+        principal: {type: string, const: OWNER}
+        auth_method: {type: string, const: GENERAL_ACCESS_KEY}
+        key_id: {type: string, pattern: '^gak_[a-z0-9]{16,32}$'}
+        issued_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        csrf_token: {type: string, minLength: 32, maxLength: 256, description: Per-session CSRF token; never a bearer credential.}
+    SessionBootstrapResponse:
+      type: object
+      additionalProperties: false
+      required: [session]
+      properties:
+        session: {$ref: '#/components/schemas/OwnerSessionView'}
+    ConfigurationCatalog:
+      type: object
+      additionalProperties: false
+      required: [catalog_version, entries]
+      properties:
+        catalog_version: {type: string, minLength: 1, maxLength: 64}
+        entries: {type: array, items: {$ref: '#/components/schemas/ConfigurationCatalogEntry'}}
+    ConfigurationCatalogEntry:
+      type: object
+      additionalProperties: false
+      required: [key, group, schema_version, scope, sensitivity, apply_mode, consumers, dependencies, schema, validator]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$'}
+        group: {type: string, minLength: 1, maxLength: 64}
+        schema_version: {type: integer, minimum: 1}
+        scope: {type: string, const: INSTALLATION}
+        sensitivity: {enum: [PUBLIC, MASKED, SECRET]}
+        apply_mode: {enum: [LIVE_NEW_WORK, DRAIN_RELOAD, RESTART_REQUIRED, SECURITY_IMMEDIATE]}
+        consumers: {type: array, minItems: 1, items: {type: string, minLength: 1, maxLength: 80}}
+        dependencies: {type: array, items: {type: string, minLength: 1, maxLength: 160}}
+        schema: {type: object, description: Closed JSON Schema for this key; it is immutable catalog data, not a user-supplied override.}
+        validator: {type: string, minLength: 1, maxLength: 160}
+        safe_range: {type: [object, 'null']}
+    ConfigurationValueWrite:
+      type: object
+      additionalProperties: false
+      required: [key]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$'}
+        value: {anyOf: [{type: string}, {type: number}, {type: boolean}, {type: object}, {type: array}, {type: 'null'}]}
+        secret: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+      oneOf:
+        - required: [value]
+        - required: [secret]
+    ConfigurationValueView:
+      type: object
+      additionalProperties: false
+      required: [key, sensitivity, configured, value, masked_hint]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$'}
+        sensitivity: {enum: [PUBLIC, MASKED, SECRET]}
+        configured: {type: boolean}
+        value: {anyOf: [{type: string}, {type: number}, {type: boolean}, {type: object}, {type: array}, {type: 'null'}]}
+        masked_hint: {type: [string, 'null'], maxLength: 80}
+    ConfigurationCandidateRequest:
+      type: object
+      additionalProperties: false
+      required: [base_revision, values]
+      properties:
+        base_revision: {type: integer, format: int64, minimum: 1}
+        values: {type: array, minItems: 1, items: {$ref: '#/components/schemas/ConfigurationValueWrite'}}
+    ConfigurationCandidate:
+      type: object
+      additionalProperties: false
+      required: [revision, state, base_revision, catalog_version, values, snapshot_sha256, created_at]
+      properties:
+        revision: {type: integer, format: int64, minimum: 1}
+        state: {enum: [CANDIDATE, VALIDATED, APPLYING, FAILED, ACTIVE, SUPERSEDED]}
+        base_revision: {type: integer, format: int64, minimum: 1}
+        catalog_version: {type: string}
+        values: {type: array, items: {$ref: '#/components/schemas/ConfigurationValueView'}}
+        snapshot_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        created_at: {type: string, format: date-time}
+    ConfigurationConsumerState:
+      type: object
+      additionalProperties: false
+      required: [consumer, desired_revision, applied_revision, ack, error_code, heartbeat_at]
+      properties:
+        consumer: {type: string, minLength: 1, maxLength: 80}
+        desired_revision: {type: integer, format: int64, minimum: 1}
+        applied_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        ack: {enum: [PENDING, ACKED, FAILED]}
+        error_code: {oneOf: [{$ref: '#/components/schemas/CanonicalErrorCode'}, {type: 'null'}]}
+        heartbeat_at: {type: string, format: date-time}
+    ConfigurationActive:
+      type: object
+      additionalProperties: false
+      required: [active_revision, last_known_good_revision, catalog_version, values, snapshot_sha256, consumer_states, updated_at]
+      properties:
+        active_revision: {type: integer, format: int64, minimum: 1}
+        last_known_good_revision: {type: integer, format: int64, minimum: 1}
+        catalog_version: {type: string}
+        values: {type: array, items: {$ref: '#/components/schemas/ConfigurationValueView'}}
+        snapshot_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        consumer_states: {type: array, items: {$ref: '#/components/schemas/ConfigurationConsumerState'}}
+        updated_at: {type: string, format: date-time}
+    ConfigurationValidationResult:
+      type: object
+      additionalProperties: false
+      required: [revision, status, errors, warnings, validated_at]
+      properties:
+        revision: {type: integer, format: int64, minimum: 1}
+        status: {enum: [VALID, INVALID]}
+        errors: {type: array, items: {$ref: '#/components/schemas/FieldError'}}
+        warnings: {type: array, items: {$ref: '#/components/schemas/FieldError'}}
+        validated_at: {type: string, format: date-time}
+    ConfigurationActivateRequest:
+      type: object
+      additionalProperties: false
+      required: [revision]
+      properties:
+        revision: {type: integer, format: int64, minimum: 1}
+    ConfigurationRollbackRequest:
+      type: object
+      additionalProperties: false
+      required: [source_revision]
+      properties:
+        source_revision: {type: integer, format: int64, minimum: 1}
+    DatabaseConnectionCandidate:
+      type: object
+      additionalProperties: false
+      required: [revision, state, base_revision, host, port, database, tls_mode, username_masked, password_configured, client_key_configured, created_at]
+      properties:
+        revision: {type: integer, format: int64, minimum: 1}
+        state: {enum: [CANDIDATE, VALIDATED, ACTIVE, FAILED, SUPERSEDED]}
+        base_revision: {type: integer, format: int64, minimum: 1}
+        host: {type: string, minLength: 1, maxLength: 253}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        database: {type: string, minLength: 1, maxLength: 63}
+        tls_mode: {enum: [DISABLED, VERIFY_CA, VERIFY_FULL]}
+        username_masked: {type: string, minLength: 1, maxLength: 80}
+        password_configured: {type: boolean}
+        client_key_configured: {type: boolean}
+        pool_profile: {type: [string, 'null'], maxLength: 64}
+        created_at: {type: string, format: date-time}
+    DatabaseConnectionCandidateRequest:
+      type: object
+      additionalProperties: false
+      required: [base_revision, connection]
+      properties:
+        base_revision: {type: integer, format: int64, minimum: 1}
+        connection:
+          type: object
+          additionalProperties: false
+          required: [host, port, database, tls_mode, username]
+          properties:
+            host: {type: string, minLength: 1, maxLength: 253}
+            port: {type: integer, minimum: 1, maximum: 65535}
+            database: {type: string, minLength: 1, maxLength: 63}
+            tls_mode: {enum: [DISABLED, VERIFY_CA, VERIFY_FULL]}
+            username: {type: string, minLength: 1, maxLength: 128}
+            password: {type: string, minLength: 1, maxLength: 4096, writeOnly: true}
+            client_key_pem: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+            ca_certificate_pem: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+            pool_profile: {type: [string, 'null'], maxLength: 64}
+    DatabaseConnectionStatus:
+      type: object
+      additionalProperties: false
+      required: [state, active_revision, candidate_revision, last_known_good_revision, active, candidate, domain_operations, checked_at]
+      properties:
+        state: {enum: [BOOTSTRAP_LOCKED, DATABASE_DISCONNECTED, VALIDATING, APPLYING, READY, DEGRADED]}
+        active_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        candidate_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        last_known_good_revision: {type: [integer, 'null'], format: int64, minimum: 1}
+        active: {oneOf: [{$ref: '#/components/schemas/DatabaseConnectionCandidate'}, {type: 'null'}]}
+        candidate: {oneOf: [{$ref: '#/components/schemas/DatabaseConnectionCandidate'}, {type: 'null'}]}
+        domain_operations: {enum: [AVAILABLE, READ_ONLY_RECOVERY, UNAVAILABLE]}
+        checked_at: {type: string, format: date-time}
+    DatabaseConnectionCheck:
+      type: object
+      additionalProperties: false
+      required: [name, status, detail]
+      properties:
+        name: {enum: [NETWORK, TLS, CREDENTIAL, POSTGRES_VERSION, PRIVILEGE, SCHEMA, MIGRATION_COMPATIBILITY]}
+        status: {enum: [PASS, FAIL, SKIPPED]}
+        detail: {type: string, maxLength: 300}
+    DatabaseConnectionValidationResult:
+      type: object
+      additionalProperties: false
+      required: [revision, status, checks, validated_at]
+      properties:
+        revision: {type: integer, format: int64, minimum: 1}
+        status: {enum: [VALID, INVALID]}
+        checks: {type: array, minItems: 1, items: {$ref: '#/components/schemas/DatabaseConnectionCheck'}}
+        validated_at: {type: string, format: date-time}
     SystemHealth:
       type: object
       additionalProperties: false
@@ -1094,7 +1817,7 @@ components:
         checked_at: {type: string, format: date-time}
     CanonicalErrorCode:
       type: string
-      enum: [INVALID_REQUEST, RESOURCE_NOT_FOUND, PRECONDITION_REQUIRED, REVISION_MISMATCH, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS, RESOURCE_CONFLICT, SERVICE_DEGRADED, INTERNAL_ERROR, UNAUTHENTICATED, PERMISSION_DENIED, HUMAN_APPROVAL_REQUIRED, RESEARCH_NOT_MUTABLE, RESEARCH_WAITING_USER, EXPERIMENT_IMMUTABLE, EXPERIMENT_INVALID, NON_REPRODUCIBLE, MULTIPLE_TESTING_LIMIT_REACHED, STRATEGY_VERSION_FROZEN, STRATEGY_VERSION_MISMATCH, STRATEGY_NOT_FROZEN, STRATEGY_NOT_VALIDATED, VALIDATION_IN_PROGRESS, VALIDATION_FAILED, VALIDATION_PREREQUISITES_INCOMPLETE, VALIDATION_TEST_BLOCKED, HOLDOUT_LOCKED, HOLDOUT_APPROVAL_REQUIRED, HOLDOUT_PREREQUISITES_INCOMPLETE, HOLDOUT_ALREADY_EXPOSED, HOLDOUT_RESULT_FORBIDDEN, APPROVAL_STALE, APPROVAL_ALREADY_RESOLVED, APPROVAL_PREREQUISITES_CHANGED, APPROVAL_TYPE_MISMATCH, DATA_CAPABILITY_MISSING, DATA_QUALITY_BLOCKED, DATA_SNAPSHOT_MISSING, PIT_GUARANTEE_UNAVAILABLE, STALE_DATA, PROVIDER_UNAVAILABLE, JOB_CONFLICT, JOB_NOT_CANCELLABLE, JOB_LEASE_LOST, JOB_FAILED, PAPER_APPROVAL_REQUIRED, PAPER_RISK_BLOCKED, PAPER_DATA_BLOCKED, PAPER_DUPLICATE_RUN, PAPER_VERSION_MISMATCH, RISK_LIMIT_EXCEEDED, AGENT_DISABLED, AGENT_TOOL_FORBIDDEN, AGENT_BUDGET_EXCEEDED, AGENT_OUTPUT_INVALID, AGENT_MODEL_UNAVAILABLE, AGENT_RESUME_CONFLICT, AGENT_CONTEXT_STALE, AGENT_RETRY_EXHAUSTED, TOOL_INPUT_INVALID, TOOL_EXECUTION_FAILED, CREDENTIAL_INVALID, CREDENTIAL_NOT_CONFIGURED, CONNECTION_VALIDATION_EXPIRED, CONNECTION_KIND_MISMATCH]
+      enum: [INVALID_REQUEST, RESOURCE_NOT_FOUND, PRECONDITION_REQUIRED, REVISION_MISMATCH, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS, RESOURCE_CONFLICT, SERVICE_DEGRADED, INTERNAL_ERROR, UNAUTHENTICATED, PERMISSION_DENIED, HUMAN_APPROVAL_REQUIRED, RESEARCH_NOT_MUTABLE, RESEARCH_WAITING_USER, EXPERIMENT_IMMUTABLE, EXPERIMENT_INVALID, NON_REPRODUCIBLE, MULTIPLE_TESTING_LIMIT_REACHED, STRATEGY_VERSION_FROZEN, STRATEGY_VERSION_MISMATCH, STRATEGY_NOT_FROZEN, STRATEGY_NOT_VALIDATED, VALIDATION_IN_PROGRESS, VALIDATION_FAILED, VALIDATION_PREREQUISITES_INCOMPLETE, VALIDATION_TEST_BLOCKED, HOLDOUT_LOCKED, HOLDOUT_APPROVAL_REQUIRED, HOLDOUT_PREREQUISITES_INCOMPLETE, HOLDOUT_ALREADY_EXPOSED, HOLDOUT_RESULT_FORBIDDEN, APPROVAL_STALE, APPROVAL_ALREADY_RESOLVED, APPROVAL_PREREQUISITES_CHANGED, APPROVAL_TYPE_MISMATCH, DATA_CAPABILITY_MISSING, DATA_QUALITY_BLOCKED, DATA_SNAPSHOT_MISSING, PIT_GUARANTEE_UNAVAILABLE, STALE_DATA, PROVIDER_UNAVAILABLE, JOB_CONFLICT, JOB_NOT_CANCELLABLE, JOB_LEASE_LOST, JOB_FAILED, PAPER_APPROVAL_REQUIRED, PAPER_RISK_BLOCKED, PAPER_DATA_BLOCKED, PAPER_DUPLICATE_RUN, PAPER_VERSION_MISMATCH, RISK_LIMIT_EXCEEDED, AGENT_DISABLED, AGENT_TOOL_FORBIDDEN, AGENT_BUDGET_EXCEEDED, AGENT_OUTPUT_INVALID, AGENT_MODEL_UNAVAILABLE, AGENT_RESUME_CONFLICT, AGENT_CONTEXT_STALE, AGENT_RETRY_EXHAUSTED, TOOL_INPUT_INVALID, TOOL_EXECUTION_FAILED, CREDENTIAL_INVALID, CREDENTIAL_NOT_CONFIGURED, CONNECTION_VALIDATION_EXPIRED, CONNECTION_KIND_MISMATCH, LAST_ACTIVE_KEY_REQUIRED, CONFIGURATION_VALIDATION_FAILED, CONFIGURATION_APPLY_FAILED, CONFIGURATION_RESTART_REQUIRED, DATABASE_CONNECTION_FAILED, DATABASE_SCHEMA_INCOMPATIBLE, DATABASE_SWITCH_FAILED, BOOTSTRAP_LOCKED, DATABASE_DISCONNECTED, CSRF_REQUIRED]
     ApiProblem:
       type: object
       additionalProperties: false
@@ -1149,7 +1872,7 @@ components:
     ObjectRef:
       type: object
       additionalProperties: false
-      description: Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST still resolve and authorize it inside the caller's authenticated workspace.
+      description: Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST resolve and authorize it inside the installation's fixed singleton namespace.
       required: [type, id, version, revision]
       properties:
         type: {enum: [research_policy, risk_policy, cost_model, credential, capability, dataset, snapshot, data_quality_run, data_quality_issue, research, evidence, conclusion, experiment, factor, strategy, validation, exposure, red_team_run, portfolio, memo, approval, paper, paper_run, paper_order, paper_fill, review, agent_run, tool_call, job, domain_event, audit_event, artifact, notification, provenance]}
@@ -1231,7 +1954,7 @@ components:
     VersionedHashRef:
       type: object
       additionalProperties: false
-      description: id is globally unique but remains workspace-authorized; hash equality never grants object access.
+      description: id is globally unique but remains authorized to the fixed installation namespace; hash equality never grants object access.
       required: [id, version, sha256]
       properties: {id: {oneOf: [*StrategyIdSchema, *FactorIdSchema, *CostModelId]}, version: {type: integer, minimum: 1}, sha256: {type: string, pattern: '^[0-9a-f]{64}$'}}
     NamedVersion:
@@ -1247,7 +1970,7 @@ components:
     PolicyRef:
       type: object
       additionalProperties: false
-      description: Policy id is globally unique but MUST resolve to an active policy of the required kind in the authenticated workspace.
+      description: Policy id is globally unique but MUST resolve to an active policy of the required kind in the installation namespace.
       required: [type, id, version]
       properties: {type: {enum: [research_policy, risk_policy]}, id: {oneOf: [*ResearchPolicyId, *RiskPolicyId]}, version: {type: integer, minimum: 1}}
       allOf:
@@ -1258,7 +1981,7 @@ components:
     ProvenanceRef:
       type: object
       additionalProperties: false
-      description: provenance_id is globally unique but MUST be resolved and authorized in the authenticated workspace.
+      description: provenance_id is globally unique but MUST be resolved and authorized in the installation namespace.
       required: [provenance_id]
       properties: {provenance_id: *ProvenanceId}
     Provenance:
@@ -1496,15 +2219,15 @@ components:
         research_policy_active: {type: boolean}
         research_policy_id:
           oneOf: [*ResearchPolicyId, {type: 'null'}]
-          description: Stable public research-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+          description: Stable public research-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RESEARCH_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
         risk_policy_active: {type: boolean}
         risk_policy_id:
           oneOf: [*RiskPolicyId, {type: 'null'}]
-          description: Stable public risk-policy reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+          description: Stable public risk-policy reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is RISK_POLICY; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
         cost_model_active: {type: boolean}
         cost_model_id:
           oneOf: [*CostModelId, {type: 'null'}]
-          description: Stable public cost-model reference only when status is ACTIVE, the version is bound to the current Owner/workspace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
+          description: Stable public cost-model reference only when status is ACTIVE, the version is bound to OWNER in the installation namespace, and kind is COST_MODEL; DRAFT, RETIRED, missing, wrong-kind, or cross-scope references are null.
         fallback_step:
           type: [string, 'null']
           enum: [AI_PROVIDER, RESEARCH_DEFAULTS, RESEARCH_CONSTITUTION, null]
@@ -1646,44 +2369,16 @@ components:
     SetupCompleteRequest:
       type: object
       additionalProperties: false
-      description: P0 R2 intentionally tightens the pre-release executable baseline by requiring a successful, unexpired, unconsumed, owner-bound AI connection reference of kind AI.
-      required: [language, timezone, base_currency, number_format_locale, ai_connection_id, default_benchmark, default_frequency, initial_paper_capital, research_policy_id, risk_policy_id, cost_model_id]
+      description: Installation-only transition request. It carries a candidate configuration revision; all field values, validation, secret handling, and activation semantics belong to the shared Configuration API and Bootstrap Control DB.
+      required: [configuration_revision]
       properties:
-        language: {enum: [zh-CN, en]}
-        timezone: {type: string}
-        base_currency: {type: string, pattern: '^[A-Z]{3}$'}
-        number_format_locale: {type: string}
-        ai_connection_id: {type: string, minLength: 1, description: Required in P0_EXECUTABLE_R2; expired refs fail with CONNECTION_VALIDATION_EXPIRED and non-AI refs fail with CONNECTION_KIND_MISMATCH.}
-        default_data_provider_id: {type: [string, 'null']}
-        default_benchmark: {type: string}
-        default_frequency: {const: DAILY}
-        default_research_start: {type: [string, 'null'], format: date}
-        initial_paper_capital: {type: string, pattern: '^[0-9]+(\\.[0-9]+)?$'}
-        research_policy_id: {allOf: [*ResearchPolicyId], description: 'Must resolve to status ACTIVE, current Owner/workspace, and kind RESEARCH_POLICY.'}
-        risk_policy_id: {allOf: [*RiskPolicyId], description: 'Must resolve to status ACTIVE, current Owner/workspace, and kind RISK_POLICY.'}
-        cost_model_id: {allOf: [*CostModelId], description: 'Must resolve to status ACTIVE, current Owner/workspace, and kind COST_MODEL.'}
+        configuration_revision: {type: integer, format: int64, minimum: 1}
     SettingsDetail:
       type: object
       additionalProperties: false
-      required: [settings_id, revision, language, timezone, base_currency, number_format_locale, ai_connection_id, default_data_provider_id, default_benchmark, default_frequency, default_research_start, initial_paper_capital, research_policy_id, risk_policy_id, cost_model_id, created_at, updated_at]
-      properties:
-        settings_id: {type: string, const: SETTINGS-DEFAULT, description: Workspace-local singleton alias; not a public semantic object ID.}
-        revision: {type: integer, minimum: 1}
-        language: {enum: [zh-CN, en]}
-        timezone: {type: string}
-        base_currency: {type: string}
-        number_format_locale: {type: string}
-        ai_connection_id: {type: string}
-        default_data_provider_id: {type: [string, 'null']}
-        default_benchmark: {type: string}
-        default_frequency: {const: DAILY}
-        default_research_start: {type: [string, 'null'], format: date}
-        initial_paper_capital: {type: string}
-        research_policy_id: {allOf: [*ResearchPolicyId], description: 'Exact public RESEARCH_POLICY binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity.'}
-        risk_policy_id: {allOf: [*RiskPolicyId], description: 'Exact public RISK_POLICY binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity.'}
-        cost_model_id: {allOf: [*CostModelId], description: 'Exact public COST_MODEL binding accepted from SetupCompleteRequest and persisted in app_settings; it is never re-resolved to latest. SetupStatus separately reports current ACTIVE validity.'}
-        created_at: {type: string, format: date-time}
-        updated_at: {type: string, format: date-time}
+      description: Backward-compatible schema name for the active configuration projection. It is no longer an app_settings row and contains no user/workspace or file-backed value semantics.
+      allOf:
+        - {$ref: '#/components/schemas/ConfigurationActive'}
     DateCoverage:
       type: object
       additionalProperties: false
@@ -2097,7 +2792,7 @@ components:
     NewExperimentResourceRef:
       type: object
       additionalProperties: false
-      description: The new Experiment id is high-entropy and globally unique; resource access remains restricted to the authenticated workspace that created it.
+      description: The new Experiment id is high-entropy and globally unique; resource access remains restricted to OWNER in the installation namespace.
       required: [type, id, version, revision]
       properties:
         type: {type: string, const: experiment}
@@ -2281,7 +2976,7 @@ components:
     VersionRef:
       type: object
       additionalProperties: false
-      description: id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the authenticated workspace.
+      description: id is a high-entropy globally unique public semantic ID; the version resolver remains scoped to the installation namespace.
       required: [id, version]
       properties: {id: {oneOf: [*FactorIdSchema, *StrategyIdSchema]}, version: {type: integer, minimum: 1}}
     UniverseSpec:
@@ -2803,6 +3498,10 @@ components:
         - memo.created
         - memo.updated
         - setup.completed
+        - configuration.updated
+        - configuration.apply_failed
+        - database.connection.updated
+        - database.connection.failed
         - notification.created
         - notification.updated
         - system.health.updated
@@ -2841,7 +3540,7 @@ components:
     SseEnvelope:
       type: object
       additionalProperties: false
-      description: event_id and referenced public IDs are globally unique, while sequence and replay ordering are local to the authenticated workspace stream; no envelope authorizes cross-workspace resolution.
+      description: event_id and referenced public IDs are globally unique, while sequence and replay ordering are local to the singleton installation stream; no envelope grants a second namespace.
       allOf: *EventObjectPairRules
       required: [schema_version, event_id, sequence, event_type, occurred_at, object_type, object_id, object_version, object_revision, request_id, job_id, agent_run_id, tool_call_id, payload]
       properties:
@@ -2866,8 +3565,6 @@ components:
       minProperties: 1
       properties:
         enabled: {type: boolean}
-        model_provider: {type: string, minLength: 1, maxLength: 64}
-        model_name: {type: string, minLength: 1, maxLength: 128}
         runtime_profile: {type: string, minLength: 1, maxLength: 32}
         tool_timeout_seconds: {type: integer, minimum: 1}
         max_steps_override: {type: [integer, 'null'], minimum: 1}
@@ -2875,12 +3572,14 @@ components:
     AgentConfig:
       type: object
       additionalProperties: false
-      required: [role_key, enabled, model_provider, model_name, runtime_profile, tool_timeout_seconds, max_steps_override, max_tool_calls_override, revision, action_capabilities, created_at, updated_at]
+      required: [role_key, enabled, model_provider, model_name, ai_connection_id, ai_connection_revision, runtime_profile, tool_timeout_seconds, max_steps_override, max_tool_calls_override, revision, action_capabilities, created_at, updated_at]
       properties:
         role_key: {$ref: '#/components/schemas/AgentRoleKey'}
         enabled: {type: boolean}
-        model_provider: {type: string}
-        model_name: {type: string}
+        model_provider: {type: string, readOnly: true, description: Installation-level Remote Codex provider projection; not writable per role.}
+        model_name: {type: string, readOnly: true, description: Installation-level Remote Codex model projection; not writable per role.}
+        ai_connection_id: {type: string, readOnly: true}
+        ai_connection_revision: {type: integer, format: int64, minimum: 1, readOnly: true}
         runtime_profile: {type: string}
         tool_timeout_seconds: {type: integer, minimum: 1}
         max_steps_override: {type: [integer, 'null'], minimum: 1}
@@ -2894,13 +3593,24 @@ components:
       type: object
       additionalProperties: false
       allOf: *EventObjectPairRules
-      required: [agent_run_id, agent_role, agent_version, model_provider, model_name, research_id, object_type, object_id, object_version, object_revision, objective, status, decision_summary, next_action, root_agent_run_id, parent_agent_run_id, context_sha256, model_call_count, input_tokens, output_tokens, tool_call_count, step_count, started_at, ended_at, created_at]
+      required: [agent_run_id, agent_role, agent_version, model_provider, model_name, ai_connection_id, ai_connection_revision, effective_configuration_revision, effective_configuration_sha256, agent_configuration_revision, runtime_profile, tool_timeout_seconds, max_steps, max_tool_calls, prompt_manifest_sha256, tool_registry_sha256, research_id, object_type, object_id, object_version, object_revision, objective, status, decision_summary, next_action, root_agent_run_id, parent_agent_run_id, context_sha256, model_call_count, input_tokens, output_tokens, tool_call_count, step_count, started_at, ended_at, created_at]
       properties:
         agent_run_id: *AgentRunIdSchema
         agent_role: {$ref: '#/components/schemas/AgentRoleKey'}
         agent_version: {type: string}
         model_provider: {type: string}
         model_name: {type: string}
+        ai_connection_id: {type: string}
+        ai_connection_revision: {type: integer, format: int64, minimum: 1}
+        effective_configuration_revision: {type: integer, format: int64, minimum: 1}
+        effective_configuration_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        agent_configuration_revision: {type: integer, format: int64, minimum: 1}
+        runtime_profile: {type: string}
+        tool_timeout_seconds: {type: integer, minimum: 1}
+        max_steps: {type: integer, minimum: 1}
+        max_tool_calls: {type: integer, minimum: 1}
+        prompt_manifest_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        tool_registry_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         research_id: {oneOf: [*ResearchIdSchema, {type: 'null'}]}
         object_type: {oneOf: [*EventObjectType, {type: 'null'}]}
         object_id: {anyOf: [*EventObjectId, {type: 'null'}]}
@@ -2946,7 +3656,7 @@ components:
     ToolCallDetail:
       type: object
       additionalProperties: false
-      required: [tool_call_id, agent_run_id, tool_name, tool_version, objective, research_id, experiment_id, job_id, input_sha256, policy_version_ref, status, result_summary, output_artifact_id, warnings, provenance, started_at, finished_at, duration_ms]
+      required: [tool_call_id, agent_run_id, tool_name, tool_version, objective, research_id, experiment_id, job_id, input_sha256, effective_configuration_revision, configuration_sha256, tool_registry_sha256, policy_version_ref, status, result_summary, output_artifact_id, warnings, provenance, started_at, finished_at, duration_ms]
       properties:
         tool_call_id: *ToolCallIdSchema
         agent_run_id: *AgentRunIdSchema
@@ -2957,6 +3667,9 @@ components:
         experiment_id: {oneOf: [*ExperimentIdSchema, {type: 'null'}]}
         job_id: {oneOf: [*JobIdSchema, {type: 'null'}]}
         input_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        effective_configuration_revision: {type: integer, format: int64, minimum: 1}
+        configuration_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        tool_registry_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         policy_version_ref: {type: string}
         status: {enum: [RUNNING, SUCCESS, ERROR, CANCELLED]}
         result_summary: {oneOf: [{$ref: '#/components/schemas/ToolResultSummary'}, {type: 'null'}]}

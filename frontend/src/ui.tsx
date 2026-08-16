@@ -208,7 +208,7 @@ export const errorCopy: Record<CanonicalErrorCode, string> = {
   RESOURCE_CONFLICT: 'The server rejected this conflicting state.',
   SERVICE_DEGRADED: 'A required service is degraded.',
   INTERNAL_ERROR: 'The service could not complete this request.',
-  UNAUTHENTICATED: 'Sign in with a current bearer token.',
+  UNAUTHENTICATED: 'Sign in with a current general access key.',
   PERMISSION_DENIED: 'Your role cannot perform this action.',
   HUMAN_APPROVAL_REQUIRED: 'A human approval is required.',
   RESEARCH_NOT_MUTABLE: 'This research record is no longer mutable.',
@@ -264,6 +264,16 @@ export const errorCopy: Record<CanonicalErrorCode, string> = {
   CREDENTIAL_NOT_CONFIGURED: 'Credentials are not configured.',
   CONNECTION_VALIDATION_EXPIRED: 'The validated connection expired; test it again.',
   CONNECTION_KIND_MISMATCH: 'The validated connection is the wrong provider kind.',
+  LAST_ACTIVE_KEY_REQUIRED: 'Keep one active general access key before revoking this key.',
+  CONFIGURATION_VALIDATION_FAILED: 'The configuration candidate failed validation.',
+  CONFIGURATION_APPLY_FAILED: 'The configuration could not be applied.',
+  CONFIGURATION_RESTART_REQUIRED: 'Restart is required before this configuration is active.',
+  DATABASE_CONNECTION_FAILED: 'The domain database connection failed.',
+  DATABASE_SCHEMA_INCOMPATIBLE: 'The domain database schema is incompatible.',
+  DATABASE_SWITCH_FAILED: 'The domain database switch failed and was reverted.',
+  BOOTSTRAP_LOCKED: 'Bootstrap control is locked until a valid key is configured.',
+  DATABASE_DISCONNECTED: 'The domain database is disconnected.',
+  CSRF_REQUIRED: 'Refresh the session before retrying this action.',
 };
 
 export function localizedErrorCopy(

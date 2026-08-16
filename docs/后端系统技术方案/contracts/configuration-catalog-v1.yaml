@@ -1,0 +1,308 @@
+schema_version: UX001_D1_R1
+catalog_version: UX001_D1_CATALOG_R1
+status: FROZEN
+authority: CONTROL_DB_CONFIGURATION_CATALOG
+scope: INSTALLATION
+description: >-
+  Closed installation-level mutable configuration catalog. Every entry is a
+  database-backed object value; secret properties are write-only and encrypted
+  by the Bootstrap Control DB. Product/security invariants are intentionally
+  absent because they are not configuration.
+entries:
+  - key: access.session
+    group: Access Keys & Sessions
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: SECURITY_IMMEDIATE
+    consumers: [api, frontend]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [idle_ttl_seconds, absolute_ttl_seconds, rate_limit_per_minute]
+      properties:
+        idle_ttl_seconds: {type: integer, minimum: 300, maximum: 86400}
+        absolute_ttl_seconds: {type: integer, minimum: 3600, maximum: 2592000}
+        rate_limit_per_minute: {type: integer, minimum: 1, maximum: 120}
+    validator: access.session.safe_range_and_idle_le_absolute
+    safe_range: {idle_ttl_seconds: [300, 86400], absolute_ttl_seconds: [3600, 2592000], rate_limit_per_minute: [1, 120]}
+  - key: database.domain
+    group: Domain Database
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: SECRET
+    apply_mode: DRAIN_RELOAD
+    consumers: [api, worker, scheduler, bootstrap]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [host, port, database, tls_mode, username]
+      properties:
+        host: {type: string, minLength: 1, maxLength: 253}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        database: {type: string, minLength: 1, maxLength: 63}
+        tls_mode: {enum: [DISABLED, VERIFY_CA, VERIFY_FULL]}
+        username: {type: string, minLength: 1, maxLength: 80}
+        password: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+        ca_pem: {type: string, minLength: 1, maxLength: 65536, writeOnly: true}
+    validator: database.domain.candidate_probe_schema_and_write
+    safe_range: {port: [1, 65535]}
+  - key: ai.remote_codex
+    group: AI Provider & Model
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: SECRET
+    apply_mode: DRAIN_RELOAD
+    consumers: [api, worker, scheduler, agent]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [endpoint, model, timeout_seconds, max_retries, concurrency]
+      properties:
+        endpoint: {type: string, format: uri, minLength: 1, maxLength: 2048}
+        model: {type: string, minLength: 1, maxLength: 160}
+        credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+        timeout_seconds: {type: integer, minimum: 1, maximum: 600}
+        max_retries: {type: integer, minimum: 0, maximum: 8}
+        concurrency: {type: integer, minimum: 1, maximum: 64}
+    validator: ai.remote_codex.allowlisted_endpoint_and_budget
+    safe_range: {timeout_seconds: [1, 600], max_retries: [0, 8], concurrency: [1, 64]}
+  - key: data.providers
+    group: Data Providers
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: SECRET
+    apply_mode: LIVE_NEW_WORK
+    consumers: [api, worker, scheduler]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [default_provider_id, providers]
+      properties:
+        default_provider_id: {type: [string, 'null'], maxLength: 160}
+        providers:
+          type: array
+          maxItems: 32
+          items:
+            type: object
+            additionalProperties: false
+            required: [provider_id, endpoint, enabled, models, capabilities]
+            properties:
+              provider_id: {type: string, minLength: 1, maxLength: 160}
+              endpoint: {type: string, format: uri, minLength: 1, maxLength: 2048}
+              enabled: {type: boolean}
+              credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+              models: {type: array, items: {type: string, minLength: 1, maxLength: 160}}
+              capabilities: {type: array, items: {type: string, minLength: 1, maxLength: 160}}
+              timeout_seconds: {type: integer, minimum: 1, maximum: 600}
+              max_retries: {type: integer, minimum: 0, maximum: 8}
+    validator: data.providers.adapter_capability_and_secret_validation
+    safe_range: {providers_max_items: 32}
+  - key: agents.runtime
+    group: Agents & Runtime
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: LIVE_NEW_WORK
+    consumers: [agent, worker]
+    dependencies: [ai.remote_codex]
+    schema:
+      type: object
+      additionalProperties: false
+      required: [enabled, runtime_profile, tool_timeout_seconds, max_steps, max_tool_calls]
+      properties:
+        enabled: {type: boolean}
+        runtime_profile: {type: string, minLength: 1, maxLength: 32}
+        tool_timeout_seconds: {type: integer, minimum: 1, maximum: 600}
+        max_steps: {type: integer, minimum: 1, maximum: 200}
+        max_tool_calls: {type: integer, minimum: 1, maximum: 1000}
+    validator: agents.runtime.hard_policy_intersection
+    safe_range: {tool_timeout_seconds: [1, 600], max_steps: [1, 200], max_tool_calls: [1, 1000]}
+  - key: research.defaults
+    group: Research Defaults
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: LIVE_NEW_WORK
+    consumers: [api, worker, scheduler]
+    dependencies: [data.providers]
+    schema:
+      type: object
+      additionalProperties: false
+      required: [benchmark, frequency, initial_paper_capital]
+      properties:
+        benchmark: {type: string, minLength: 1, maxLength: 80}
+        frequency: {enum: [DAILY, WEEKLY, MONTHLY]}
+        research_start: {type: [string, 'null'], format: date}
+        initial_paper_capital: {type: number, exclusiveMinimum: 0}
+        universe: {type: [string, 'null'], maxLength: 160}
+    validator: research.defaults.currency_date_frequency
+    safe_range: {initial_paper_capital_exclusive_minimum: 0}
+  - key: research.policy
+    group: Research Policy
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: LIVE_NEW_WORK
+    consumers: [worker, agent]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [active_policy_id]
+      properties: {active_policy_id: {type: string, minLength: 1, maxLength: 160}}
+    validator: research.policy.immutable_version_and_active_reference
+    safe_range: {}
+  - key: risk.policy
+    group: Risk Policy
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: SECURITY_IMMEDIATE
+    consumers: [worker, agent, scheduler]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [active_policy_id]
+      properties: {active_policy_id: {type: string, minLength: 1, maxLength: 160}}
+    validator: risk.policy.hard_floor_and_immutable_version
+    safe_range: {}
+  - key: cost.model
+    group: Cost Model
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: LIVE_NEW_WORK
+    consumers: [worker, agent]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [active_cost_model_id]
+      properties: {active_cost_model_id: {type: string, minLength: 1, maxLength: 160}}
+    validator: cost.model.immutable_version_and_active_reference
+    safe_range: {}
+  - key: jobs.scheduler
+    group: Jobs & Scheduler
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: DRAIN_RELOAD
+    consumers: [scheduler, worker]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [concurrency, lease_seconds, retry_limit, catch_up_limit]
+      properties:
+        concurrency: {type: integer, minimum: 1, maximum: 64}
+        lease_seconds: {type: integer, minimum: 5, maximum: 3600}
+        retry_limit: {type: integer, minimum: 0, maximum: 20}
+        catch_up_limit: {type: integer, minimum: 0, maximum: 30}
+        timezone: {type: string, minLength: 1, maxLength: 80}
+        calendar: {enum: [WEEKDAY_ONLY, CUSTOM]}
+    validator: jobs.scheduler.lease_retry_calendar_gate
+    safe_range: {concurrency: [1, 64], lease_seconds: [5, 3600], retry_limit: [0, 20], catch_up_limit: [0, 30]}
+  - key: storage.artifacts
+    group: Storage & Artifacts
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: SECRET
+    apply_mode: RESTART_REQUIRED
+    consumers: [api, worker, scheduler]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [backend, location, retention_days]
+      properties:
+        backend: {enum: [LOCAL, S3_COMPATIBLE]}
+        location: {type: string, minLength: 1, maxLength: 2048}
+        credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+        retention_days: {type: integer, minimum: 1, maximum: 3650}
+        quota_bytes: {type: [integer, 'null'], minimum: 1}
+    validator: storage.artifacts.protected_classification_and_quota
+    safe_range: {retention_days: [1, 3650]}
+  - key: notifications.delivery
+    group: Notifications
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: SECRET
+    apply_mode: LIVE_NEW_WORK
+    consumers: [api, worker]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [in_app_categories]
+      properties:
+        in_app_categories: {type: array, minItems: 1, items: {type: string, minLength: 1, maxLength: 80}}
+        integration_endpoint: {type: [string, 'null'], format: uri}
+        integration_credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+        quiet_hours: {type: [object, 'null'], additionalProperties: false}
+    validator: notifications.delivery.critical_category_preservation
+    safe_range: {}
+  - key: appearance.locale
+    group: Appearance & Locale
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: PUBLIC
+    apply_mode: LIVE_NEW_WORK
+    consumers: [api, frontend]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [language, timezone, number_format_locale, theme, density]
+      properties:
+        language: {type: string, minLength: 2, maxLength: 16}
+        timezone: {type: string, minLength: 1, maxLength: 80}
+        number_format_locale: {type: string, minLength: 2, maxLength: 32}
+        theme: {enum: [LIGHT, DARK, SYSTEM]}
+        density: {enum: [COMPACT, COMFORTABLE]}
+        sidebar_collapsed: {type: boolean}
+    validator: appearance.locale.supported_bcp47_timezone
+    safe_range: {}
+  - key: backup.retention
+    group: Backup & Retention
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: SECRET
+    apply_mode: RESTART_REQUIRED
+    consumers: [scheduler, worker]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [schedule, destination, retention_days]
+      properties:
+        schedule: {type: string, minLength: 1, maxLength: 160}
+        destination: {type: string, minLength: 1, maxLength: 2048}
+        credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+        retention_days: {type: integer, minimum: 1, maximum: 3650}
+    validator: backup.retention.root_key_exclusion_and_schedule
+    safe_range: {retention_days: [1, 3650]}
+  - key: observability.runtime
+    group: Observability
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: MASKED
+    apply_mode: LIVE_NEW_WORK
+    consumers: [api, worker, scheduler, agent]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [log_level, retention_days]
+      properties:
+        log_level: {enum: [ERROR, WARN, INFO, DEBUG]}
+        retention_days: {type: integer, minimum: 1, maximum: 3650}
+        metrics_endpoint: {type: [string, 'null'], format: uri}
+        metrics_credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+    validator: observability.runtime.secret_redaction_and_payload_policy
+    safe_range: {retention_days: [1, 3650]}

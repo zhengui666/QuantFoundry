@@ -5,9 +5,33 @@ async function openDataWithServerSettings(
   page: Page,
   settings: { language: 'zh-CN' | 'en'; timezone: string },
 ) {
-  await page.addInitScript((serverSettings) => {
-    localStorage.setItem('qf.server-settings.locale', JSON.stringify(serverSettings));
-  }, settings);
+  await page.route('**/api/v1/configuration/active', (route) =>
+    route.fulfill({
+      headers: { ETag: 'W/"config:1"' },
+      json: {
+        active_revision: 1,
+        last_known_good_revision: 1,
+        catalog_version: 'UX001_D1_CATALOG_R1',
+        values: [
+          {
+            key: 'appearance.locale',
+            sensitivity: 'PUBLIC',
+            configured: true,
+            value: {
+              ...settings,
+              number_format_locale: settings.language === 'en' ? 'en-US' : 'zh-CN',
+              theme: 'SYSTEM',
+              density: 'COMFORTABLE',
+            },
+            masked_hint: null,
+          },
+        ],
+        snapshot_sha256: '0'.repeat(64),
+        consumer_states: [],
+        updated_at: '2026-08-10T00:00:00Z',
+      },
+    }),
+  );
   await page.route('**/api/v1/events/stream', (route) =>
     route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }),
   );

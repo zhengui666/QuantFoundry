@@ -16430,6 +16430,8 @@ class AgentConfig(BaseModel):
     ]
     enabled: bool
     model_provider: str
+    ai_connection_id: str
+    ai_connection_revision: int = Field(..., ge=1)
     model_name: str
     runtime_profile: str
     tool_timeout_seconds: int = Field(..., ge=1)
@@ -20048,6 +20050,9 @@ class ToolCallDetail(BaseModel):
     experiment_id: ExperimentId7 | None
     job_id: JobId15 | None
     input_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    effective_configuration_revision: int = Field(..., ge=1)
+    configuration_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    tool_registry_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     policy_version_ref: str
     status: Literal["RUNNING", "SUCCESS", "ERROR", "CANCELLED"]
     result_summary: ToolResultSummary | None
@@ -25806,6 +25811,17 @@ class AgentRunDetail(BaseModel):
     agent_version: str
     model_provider: str
     model_name: str
+    ai_connection_id: str
+    ai_connection_revision: int = Field(..., ge=1)
+    effective_configuration_revision: int = Field(..., ge=1)
+    effective_configuration_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    agent_configuration_revision: int = Field(..., ge=1)
+    runtime_profile: str
+    tool_timeout_seconds: int = Field(..., ge=1)
+    max_steps: int = Field(..., ge=1)
+    max_tool_calls: int = Field(..., ge=1)
+    prompt_manifest_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    tool_registry_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     research_id: ResearchId15 | None
     object_type: (
         Literal[
@@ -27077,6 +27093,10 @@ class EventType(
             "memo.created",
             "memo.updated",
             "setup.completed",
+            "configuration.updated",
+            "configuration.apply_failed",
+            "database.connection.updated",
+            "database.connection.failed",
             "notification.created",
             "notification.updated",
             "system.health.updated",
@@ -27112,6 +27132,10 @@ class EventType(
         "memo.created",
         "memo.updated",
         "setup.completed",
+        "configuration.updated",
+        "configuration.apply_failed",
+        "database.connection.updated",
+        "database.connection.failed",
         "notification.created",
         "notification.updated",
         "system.health.updated",

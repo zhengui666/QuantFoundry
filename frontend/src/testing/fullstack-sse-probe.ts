@@ -9,10 +9,10 @@ export {
 import { splitCanonicalSseFrames } from '../api/client';
 import type { DecodedSseFrame } from '../api/client';
 
-export async function startCanonicalSseProbe(url: URL, bearerToken: string) {
+export async function startCanonicalSseProbe(url: URL, sessionCookie: string) {
   const controller = new AbortController();
   const response = await fetch(url, {
-    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${bearerToken}` },
+    headers: { Accept: 'text/event-stream', Cookie: sessionCookie },
     signal: controller.signal,
   });
   const responseBody = response.body;

@@ -52,7 +52,7 @@
 | 仅 1180/1280/1440 screenshot regression | 390/768/1180/1280/1440/1600 Playwright + 人工视觉复核 |
 | Authenticated workspace / Owner 隔离 UI | Single-system session；相关旧条款全部 superseded |
 
-本次是文档阶段。Login、Access Keys、Database 与 Configuration 的 API 名称、字段、错误与状态必须等待 PRD、后端和 canonical OpenAPI machine rewrite；UI 不得自行发明 machine contract，也不得在该门禁完成前驱动代码实现。
+D1 machine-contract 已冻结。Login、Access Keys、Database 与 Configuration 的 API 名称、字段、错误与状态由 UX001_D1_R1 canonical OpenAPI、configuration catalog、Bootstrap target schema 与 executable matrix 共同约束；UI runtime 实现转入 D2，不得自行发明第二份 machine contract。
 
 ---
 
@@ -233,7 +233,7 @@ Main content max-width：
 
 - Data-heavy pages：无强制 max-width；
 - Memo / readable text：`1120px`；
-- Setup Wizard：`880px`。
+- `/setup` 仅作为历史兼容跳转，不渲染 Wizard；正式配置控制面宽度遵循 Settings 页面规范。
 
 ## 4.3 Grid
 
@@ -1447,7 +1447,7 @@ Login 在 390 / 768 / 1440px 均完整可用，支持 paste/password manager、�
 
 居中 720–800px form column。
 
-左侧不显示主 Sidebar，避免 setup 期间误导航。已完成 Setup 后，后续修改一律进入 Settings。
+`/setup` 进入后立即跳转 `/settings`，使用同一主 Sidebar、Control DB 状态、目录和 mutation；不存在第二套 Setup 表单或本地 draft。后续修改一律进入 Settings。
 
 ## 29.2 Capability Communication
 
@@ -2933,7 +2933,7 @@ UI 只消费 canonical generated event/envelope/locator contract。事件只作�
 
 未知、mismatch、缺字段、extra field 或受保护 payload 泄漏时，整条 event 不显示、不 toast、不写 cache；页面保留当前内容并显示低干扰 `Re-synchronizing`，只 refetch 相关 active query。若偏差持续，升级为 `Client update required` degraded state 并停止无界重连；route、Tab、scroll、dialog/form draft 与 immutable cache 不丢失。
 
-Login、Access Keys、Database 与 Configuration 的 event family/locator 必须等待 canonical OpenAPI machine rewrite 后由 codegen 接入；当前不得沿用旧固定 member/branch 数量，也不得发明新 event name。
+Login、Access Keys、Database 与 Configuration 的 event family/locator 以 UX001_D1_R1 canonical OpenAPI 为准，由 codegen 接入；在 generated event schema 与 runtime gate 完成前不得沿用旧固定 member/branch 数量，也不得发明第二份 event name。
 
 ## 58.7 Single-system session isolation
 

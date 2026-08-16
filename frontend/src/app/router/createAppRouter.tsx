@@ -11,10 +11,10 @@ import { z } from 'zod';
 
 type RouteComponent = () => ReactNode;
 
-type RouteComponents = { Shell: RouteComponent; SetupPage: RouteComponent };
+type RouteComponents = { Shell: RouteComponent; SetupPage?: RouteComponent };
 
 /** Centralized typed route composition; feature implementations remain lazy. */
-export function createAppRouter({ Shell, SetupPage }: RouteComponents) {
+export function createAppRouter({ Shell }: RouteComponents) {
   const rootRoute = createRootRoute({ component: Shell });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -24,7 +24,12 @@ export function createAppRouter({ Shell, SetupPage }: RouteComponents) {
   const setupRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: 'setup',
-    component: SetupPage,
+    component: () => <Navigate to="/settings" replace />,
+  });
+  const loginRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: 'login',
+    component: lazyRouteComponent(() => import('../../routes/LoginRoute'), 'LoginPage'),
   });
   const overviewRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -144,6 +149,11 @@ export function createAppRouter({ Shell, SetupPage }: RouteComponents) {
     path: 'agents',
     component: lazyRouteComponent(() => import('../../routes/GovernanceRoutes'), 'AgentsPage'),
   });
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: 'settings',
+    component: lazyRouteComponent(() => import('../../routes/SettingsRoute'), 'SettingsPage'),
+  });
   const activityRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: 'activity',
@@ -157,6 +167,7 @@ export function createAppRouter({ Shell, SetupPage }: RouteComponents) {
   const routeTree = rootRoute.addChildren([
     indexRoute,
     setupRoute,
+    loginRoute,
     overviewRoute,
     researchRoute,
     researchWorkspaceRoute,
@@ -172,6 +183,7 @@ export function createAppRouter({ Shell, SetupPage }: RouteComponents) {
     memoLandingRoute,
     memoRoute,
     agentsRoute,
+    settingsRoute,
     activityRoute,
   ]);
   return createRouter({ routeTree, history: createBrowserHistory(), defaultPreload: 'intent' });

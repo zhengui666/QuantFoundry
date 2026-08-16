@@ -72,9 +72,9 @@ require_runtime_identity() {
 }
 
 backend_format() {
-  run_backend ruff format --check src/quantfoundry app workers scheduler tests alembic
   # Ruff 0.16.x's default py314 formatter emits invalid unparenthesized
-  # multiple-exception syntax; keep script formatting on the valid py313 form.
+  # multiple-exception syntax; enforce the valid py313 form everywhere.
+  run_backend ruff format --check --target-version py313 src/quantfoundry app workers scheduler tests alembic
   run_backend ruff format --check --target-version py313 "$repo_root/scripts"
 }
 
@@ -118,6 +118,7 @@ migration_check() {
   require_postgres
   run_backend alembic upgrade head
   run_backend alembic check
+  run_backend python scripts/ux001_domain_preflight.py
 }
 
 backend_test() {
@@ -219,7 +220,13 @@ openapi_check() {
   require_dir backend/tests/contracts
   require_file frontend/src/api/generated.ts
   run_backend_no_create python scripts/runtime_contract_diff.py
-  run_backend_no_create pytest tests/contracts
+  # Contract tests only inspect generated OpenAPI. Keep their autouse fixture
+  # on an ephemeral SQLite schema so they cannot mutate the CI migration DB.
+  run_backend_no_create env \
+    QF_DATABASE_URL="sqlite:///$ci_tmp/contracts.db" \
+    QF_ALEMBIC_URL="sqlite:///$ci_tmp/contracts.db" \
+    QF_ALLOW_TEST_SCHEMA_BOOTSTRAP=1 \
+    pytest tests/contracts
   run_frontend exec openapi-typescript "$repo_root/docs/后端系统技术方案/contracts/openapi-v1.yaml" --output "$ci_tmp/generated.ts"
   if ! cmp -s "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts"; then
     diff -u "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts" || true

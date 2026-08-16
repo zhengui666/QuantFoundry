@@ -3,7 +3,7 @@
 **方案版本：** V1.0.0  
 **变更事务：** `UX-001`  
 **日期：** 2026-08-13  
-**状态：** D0 文档联动已完成；D1 machine contract / schema 尚未冻结；禁止进入代码实现  
+**状态：** D3 frontend control-plane slice complete；D4 local verification complete（含 PG18 populated roundtrip 与 full-stack frontend）；DB chaos/存量迁移/独立 release closure pending
 **适用范围：** 产品身份、认证、配置控制面、数据库自举、UI/UX、前端、后端、Agent、测试与发布门禁  
 **不包含：** 本文档事务不修改源代码、测试代码、运行配置、数据库或部署状态
 
@@ -19,12 +19,12 @@
 
 本文件是 `UX-001` 的跨层实施与迁移方案，不替代 PRD、UI、前端、后端、Agent、OpenAPI、Tool Contract 或全栈测试方案。字段级、wire-level、DDL-level 与测试 case-level 事实必须在 D1 阶段写回各自 canonical 事实源后，代码实施才可开始。
 
-当前 committed OpenAPI、Schema 与测试精确计数只代表 `UX-001` 之前的 baseline。本文不猜测新的 operation、schema、error、table、column、constraint 或 fixture count；D1 必须由更新后的 machine-readable 事实源和生成器重新计算。
+旧 Schema 与测试精确计数只代表 `UX-001` 之前的 baseline；UX001_D1_R1 的 OpenAPI、configuration catalog、Bootstrap Control DB target schema 与 executable matrix 已由 machine-readable 事实源冻结。Domain runtime schema/migration counts 转入 D2，不在本文猜测。
 
 冲突处理：
 
 - 本方案的产品目标已确定；旧文档中“未来增加多用户”“User 菜单”“可切换 workspace”“email/password owner account”“配置文件或环境变量作为普通配置源”等方向不再是允许的目标状态；
-- 在 D1 machine contract / schema 完成前，旧 contract 仍仅用于描述当前实现，不得被当作新目标实现输入；
+- D1 machine contract / schema 已完成冻结；旧 contract 仍仅用于描述 current baseline，不得被当作新目标实现输入；
 - 任何 Agent 在 D1 前发现需要写代码，必须停止并报告 `UX-001-CONTRACT-NOT-FROZEN`。
 
 ---
@@ -213,6 +213,16 @@ Browser session：
 - 明文 key 展示一次；
 - claim 完成即永久关闭匿名 claim endpoint；
 - 远程、代理头伪造、并发双 claim 均 fail closed。
+
+生产首装由受信本机命令完成一次性 claim：
+
+```bash
+cd backend
+QF_ENVIRONMENT=production QF_CREDENTIAL_ENCRYPTION_KEY=... PYTHONPATH=. \
+  ../scripts/bootstrap-general-key.py --label primary
+```
+
+命令只把明文 key 输出到当前终端；之后通过 `/login` 换取 HttpOnly session。该命令不是业务 API，重复执行在已有 ACTIVE key 时拒绝。
 
 ---
 
@@ -684,20 +694,20 @@ Domain DB 目标：
 
 ---
 
-# 11. API Contract Direction
+# 11. API Contract Direction（D1 已冻结）
 
-D1 需要一个新的 canonical OpenAPI revision。它必须：
+D1 已冻结新的 canonical OpenAPI revision `UX001_D1_R1`。它满足：
 
 - 原位受控 breaking revision；项目尚未发布，不维护旧账号认证双轨；
 - browser canonical auth 改为 session cookie；mutation 具备 CSRF header/contract；
-- 仅 login/first-claim 必要入口可匿名，并具严格 bootstrap/rate-limit 约束；
+- 仅 login 可匿名；first-claim 是受信本机 CLI ceremony，不暴露匿名业务 HTTP endpoint，并具严格 bootstrap/rate-limit 约束；
 - 增加 auth session、access key、configuration catalog/revision、database candidate/activate/revert 等 operation；
 - secret request field 标记 `writeOnly`，read model 只返回 masked metadata；
 - mutation 使用 ETag/If-Match、Idempotency 与 canonical Problem；
 - Event payload 不包含 key fingerprint、session token、DSN、credential、ciphertext 或内部网络细节；
 - 不改变 13 个 Semantic Tool 的名称、权限或 scope。
 
-推荐 operation families（exact path/method 由 D1 冻结）：
+已冻结 operation families：
 
 ```text
 auth login / session / logout / first-claim
@@ -708,7 +718,7 @@ provider connection lifecycle
 consumer apply status
 ```
 
-不得提前填写新的 operation/schema/error count。D1 完成条件是 canonical file、Backend endpoint catalog、Frontend generated client、Test operation matrix 与 runtime discovery 全部一致。
+D1 machine completion 条件已满足：canonical file、configuration catalog、Bootstrap Control DB target schema、generated model check 与 Test operation matrix 的 operation/schema/error counts 一致；runtime discovery 属于 D2 implementation gate。
 
 ---
 
@@ -877,19 +887,35 @@ Severity：
 | Stage | Deliverable | Exit Gate | Current status |
 |---|---|---|---|
 | D0 | requirements, cross-layer plan, design brief, canonical doc linkage | no unresolved product contradiction | COMPLETE; documentation only |
-| D1 | canonical OpenAPI、Config Catalog、Control/Domain schema、generated counts、migration/test matrices | machine facts exact and independently reviewed | PENDING; code prohibited |
-| D2 | backend/control DB/auth/config/database migration | targeted unit/contract/PG/control-DB/chaos tests | NOT STARTED |
-| D3 | frontend redesign + responsive implementation | component/Storybook/Playwright/a11y/visual | NOT STARTED |
-| D4 | independent security/test/review | all UX-001 and existing P0 gates pass | NOT STARTED |
-| D5 | release evidence and migration rollout | registry closure evidence | NOT STARTED |
+| D1 | canonical OpenAPI、Config Catalog、Control/Domain target schema、generated counts、migration/test matrices | machine facts exact and independently reviewed | COMPLETE; runtime code/migration deferred to D2 |
+| D2 | backend/control DB/auth/config/database migration | runtime semantic diff、Alembic、Control DB、auth/config/database/Agent targeted gates；PG/chaos/独立 evidence | IMPLEMENTATION COMPLETE; CLOSURE PENDING |
+| D3 | frontend redesign + responsive implementation | canonical codegen、cookie session、Settings、responsive CSS、lint/build | IMPLEMENTATION COMPLETE; VISUAL/E2E CLOSURE PENDING |
+| D4 | independent security/test/review | static gates、targeted pytest、frontend lint/build、independent evidence | PARTIAL; local full frontend/backend target gates and PG18 migration/auth smoke pass; legacy migration/chaos/independent evidence pending |
+| D5 | release evidence and migration rollout | registry closure evidence | BLOCKED BY 8 OPEN/BLOCKED P0 ITEMS |
 
-Implementation Agent 在 D1 前不得：
+本轮 D2 已允许并完成后端 runtime implementation；D3 前端实现、D4 独立安全/测试复核、D5 release evidence 仍受各自 gate 约束。未通过真实 PostgreSQL、chaos 与独立 evidence 前，不得宣称 UX-001 release-ready。
 
-- 修改 runtime auth/config/database behavior；
-- 创建 user/key/session/config table；
-- 修改 OpenAPI generated client/runtime；
-- 开始页面代码或视觉重构；
-- 以 temporary endpoint/fixture/mock 代替 canonical contract。
+### 15.1 D2 implementation evidence
+
+- canonical runtime semantic diff：`65 operations / 75 errors / 186 schemas`，PASS；
+- generated model check、D1 machine contract check、ruff、compile、diff-check，PASS；
+- Domain Alembic `0018_ux001_runtime_snapshots` 与独立 Control Alembic，fresh SQLite upgrade PASS；
+- TestClient：通用密钥登录、Cookie/CSRF、配置 candidate/validate/activate、secret masking、Agent `CODEX-DEFAULT` projection、logout cascade、DB candidate invalid probe，PASS；
+- targeted pytest：`43 passed`（runtime contract/integrity/tool registry）；旧 D1 breaking setup fixture 仍按历史 contract 失败，不作为 D2 target gate；
+- 已闭合本地：真实 PostgreSQL 18 两轮 backend suite（345 passed）、populated migration roundtrip（63 tables/3918 rows/42 nonempty/12 workspace-role/191 CHECKs）与 full-stack frontend 六门禁（Vitest 231、Playwright 64 passed/5 skipped、build/bundle/Storybook）。
+- 未闭合：DB chaos、迁移存量 quarantine、GitHub 独立 Test/Review 与 release evidence。
+
+### 15.2 D3/D4 evidence
+
+- frontend canonical `codegen:check`、ESLint、Vite production build：PASS（Node 22，package engine 要求 Node 24.19.0，故为兼容运行）；
+- frontend `/login` 与 Shell session bootstrap 覆盖通用密钥登录；Settings 控制面覆盖 configuration catalog/active、general access keys、Domain DB status/candidate；Cookie session + CSRF headers；390px 以下不再隐藏应用；
+- production-mode TestClient 已验证 raw Bearer 401、通用密钥登录 200、Cookie 访问 configuration 200；Control DB 使用持久化数据目录下固定 `control.db`；首装 CLI 仅一次展示 key，重复 claim fail closed；
+- production startup no longer requires or reads `QF_DATABASE_URL`; it restores only the persisted ACTIVE Domain binding from Control DB, and marks the domain surface unavailable when the binding is absent or incompatible. A partial/unreadable Control DB fails closed as `BOOTSTRAP_LOCKED`.
+- Compose now injects the Domain DSN only into the one-shot migration container; API/worker/agent-worker/scheduler receive no Domain DSN and use the Control DB binding. Migration runs the singleton preflight and accepts only EMPTY (new install) or exactly one OWNER/singleton namespace.
+- backend `scripts/ci.sh contract`（临时 SQLite + test bootstrap）：PASS；`hygiene-check.sh`、Tool 13-entry schema/instance、release governance static fixtures、P0 fixtures：PASS；
+- D4 未闭合：完整 frontend Vitest、typecheck、lint、format、codegen 与 build 已通过；backend UX-001 control-plane smoke 与 44 targeted tests 已通过；本地 PostgreSQL 18 Alembic upgrade/auth/config smoke 与 `QF-PAPER-SCH-001..007`（7 passed）已通过；真实 chaos、存量迁移 quarantine、GitHub 独立 Test/Review artifacts 未取得；
+- `p0-check.sh docs/治理/p0-blockers.yaml --require-closed`：BLOCKED，8 个 release-blocking P0 均无 closure evidence。不得标记 D4/D5 完成。
+- PG18 populated full-suite gate 已在全新隔离 PostgreSQL 18 数据库通过；该结果仍不能替代 DB chaos、存量迁移 quarantine 或 GitHub 独立 Test/Review closure evidence。
 
 ---
 
@@ -900,6 +926,15 @@ Implementation Agent 在 D1 前不得：
 ```text
 docs/治理/QuantFoundry_User_Interaction_Optimization_Plan_V1.0.0.md
 docs/UI设计方案/QuantFoundry_UI_Interaction_Redesign_Brief_V1.0.0.md
+```
+
+D1 已冻结 machine-contract 产物：
+
+```text
+docs/后端系统技术方案/contracts/openapi-v1.yaml
+docs/后端系统技术方案/contracts/bootstrap-control-v1.yaml
+docs/后端系统技术方案/contracts/configuration-catalog-v1.yaml
+docs/后端系统技术方案/contracts/ux001-d1-test-matrix.yaml
 ```
 
 并联动：
@@ -918,7 +953,7 @@ docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md
 docs/后端系统技术方案/contracts/tools/README.md
 ```
 
-`openapi-v1.yaml`、Tool `v1-p0.yaml`、DDL/schema manifest、源码与测试代码不在 D0 修改范围；它们属于 D1 或之后，且必须继续按文档优先顺序实施。
+`openapi-v1.yaml`、`configuration-catalog-v1.yaml`、`bootstrap-control-v1.yaml` 与 `ux001-d1-test-matrix.yaml` 已冻结为 UX001_D1_R1 machine sources；Tool `v1-p0.yaml` 保持零修改。物理 DDL/schema migration、runtime consumers、源码与测试执行属于 D2。
 
 ---
 

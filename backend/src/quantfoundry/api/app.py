@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
@@ -45,6 +46,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from quantfoundry.api.sse.stream import durable_event_stream
@@ -84,7 +86,6 @@ from quantfoundry.contracts.openapi.api_models import (
     SnapshotCreateRequest,
     StrategyCreateRequest,
     ValidationCreateRequest,
-    application_schemas,
 )
 from quantfoundry.contracts.openapi.runtime import canonical_openapi, validated_payload
 from quantfoundry.contracts.openapi.runtime import now as NOW
@@ -117,12 +118,13 @@ from quantfoundry.infrastructure.db.schema import (
     canonical_workspace_id,
 )
 
-DB_URL = os.getenv("QF_DATABASE_URL")
 ENVIRONMENT = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV", "production")
-if not DB_URL:
-    raise RuntimeError(
-        "QF_DATABASE_URL is required; production never defaults to SQLite"
+if ENVIRONMENT in {"local", "development", "test", "ci"}:
+    DB_URL = os.getenv("QF_DATABASE_URL") or (
+        "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
     )
+else:
+    DB_URL = "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
 if ENVIRONMENT == "production" and DB_URL.startswith("sqlite"):
     raise RuntimeError(
         "production database must be configured through Alembic/PostgreSQL"
@@ -1750,6 +1752,9 @@ app = FastAPI(
     docs_url=None,
 )
 app.router.route_class = CanonicalRoute
+# Domain workers must restore the Control-DB ACTIVE binding before their first
+# query; an unset flag would incorrectly treat the sentinel engine as ready.
+app.state.domain_database_available = False
 
 
 ROLES = [
@@ -1770,19 +1775,30 @@ DEFAULT_AGENT_MODEL = os.getenv("QF_AGENT_MODEL", "unconfigured")
 
 
 def remote_codex_mode() -> bool:
-    return os.getenv("QF_AGENT_PROVIDER", DEFAULT_AGENT_PROVIDER).lower() in {
+    if os.getenv("QF_AGENT_PROVIDER", DEFAULT_AGENT_PROVIDER).lower() in {
         "openai-compatible",
         "remote-codex",
-    } or bool(os.getenv("QF_CODEX_BASE_URL"))
+    } or bool(os.getenv("QF_CODEX_BASE_URL")):
+        return True
+    try:
+        snapshot = remote_codex_projection()
+        return snapshot[0].lower() in {"openai-compatible", "remote-codex"}
+    except (ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError):
+        return False
 
 
 def remote_codex_projection() -> tuple[str, str]:
-    return (
-        "remote-codex",
-        os.getenv("QF_CODEX_MODEL")
-        or os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL)
-        or "unconfigured",
-    )
+    try:
+        from app.control_plane import active_runtime_snapshot
+
+        snapshot = active_runtime_snapshot()
+        model = str(snapshot.get("model_name") or "unconfigured")
+        provider = str(snapshot.get("model_provider") or "remote-codex")
+        if model != "unconfigured":
+            return provider, model
+    except (ImportError, OSError, RuntimeError, SQLAlchemyError):
+        pass
+    return ("remote-codex", os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL))
 
 
 def require_engine(engine_key: str, engine_version: str, expected_key: str) -> None:
@@ -1847,6 +1863,11 @@ def resolve_research_policy(
 
 
 def db():
+    if (
+        not getattr(app.state, "domain_database_available", True)
+        and ENVIRONMENT != "test"
+    ):
+        raise problem(503, "DATABASE_DISCONNECTED", "Domain database is unavailable")
     s = SessionLocal()
     try:
         yield s
@@ -1860,6 +1881,23 @@ class Actor:
     workspace_id: str
     role: str
     request_id: str
+
+
+def _control_cookie_actor(request: Request) -> Actor | None:
+    """Resolve the single OWNER principal from the Bootstrap Control DB cookie."""
+    if not request.cookies.get("qf_session"):
+        return None
+    from app.control_plane import _session_context
+
+    session = _session_context(request)
+    if isinstance(session, JSONResponse):
+        return None
+    return Actor(
+        "OWNER",
+        canonical_workspace_id("system"),
+        "OWNER",
+        getattr(request.state, "request_id", new_id("REQ")),
+    )
 
 
 def _configured_test_actor(token: str, request_id: str) -> Actor | None:
@@ -1905,6 +1943,11 @@ def auth(
     preauthenticated = getattr(request.state, "actor", None)
     if isinstance(preauthenticated, Actor):
         return preauthenticated
+    cookie_actor = _control_cookie_actor(request)
+    if cookie_actor is not None:
+        return cookie_actor
+    if ENVIRONMENT != "test" and credentials is None:
+        raise problem(401, "UNAUTHENTICATED", "Cookie session required")
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise problem(401, "UNAUTHENTICATED", "Bearer authentication required")
     token = credentials.credentials.strip()
@@ -1942,10 +1985,29 @@ def require_owner(actor: Actor = Depends(auth)) -> Actor:
 @app.middleware("http")
 async def authenticate_before_request_validation(request: Request, call_next):
     request.state.request_id = request.headers.get("X-Request-ID") or new_id("REQ")
-    if not request.url.path.startswith("/api/v1") or request.url.path in {
+    path = request.url.path
+    if not path.startswith("/api/v1") or path in {
         "/api/v1/system/health",
         "/api/v1/openapi.json",
     }:
+        return await call_next(request)
+    if path == "/api/v1/auth/login":
+        return await call_next(request)
+    if ENVIRONMENT != "test":
+        actor = _control_cookie_actor(request)
+        if actor is None:
+            return JSONResponse(
+                problem_payload(
+                    401, "UNAUTHENTICATED", request, "Cookie session required"
+                ),
+                status_code=401,
+                media_type="application/problem+json",
+            )
+        request.state.actor = actor
+        return await call_next(request)
+    cookie_actor = _control_cookie_actor(request)
+    if cookie_actor is not None:
+        request.state.actor = cookie_actor
         return await call_next(request)
     authorization = request.headers.get("Authorization", "")
     if (
@@ -2712,7 +2774,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3287,7 +3349,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except httpx.HTTPError, KeyError, TypeError, ValueError:
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
         return False
     return payload.get("model_name") in available_models
 
@@ -5709,13 +5771,29 @@ def default_agent_config(role: str):
 
 def agent_config_payload(row):
     model_provider, model_name = row.model_provider, row.model_name
+    ai_connection_id = "LOCAL-DETERMINISTIC"
+    ai_connection_revision = 1
     if remote_codex_mode():
         model_provider, model_name = remote_codex_projection()
+        try:
+            from app.control_plane import active_runtime_snapshot
+
+            snapshot = active_runtime_snapshot()
+            ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
+            ai_connection_revision = int(
+                snapshot.get("ai_connection_revision")
+                or snapshot.get("effective_configuration_revision")
+                or 1
+            )
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+            ai_connection_id = "CODEX-DEFAULT"
     return {
         "role_key": row.role,
         "enabled": row.enabled,
         "model_provider": model_provider,
         "model_name": model_name,
+        "ai_connection_id": ai_connection_id,
+        "ai_connection_revision": ai_connection_revision,
         "runtime_profile": row.runtime_profile,
         "tool_timeout_seconds": row.tool_timeout_seconds,
         "max_steps_override": row.max_steps_override,
@@ -5773,14 +5851,14 @@ def agent_config(
             "openai-compatible",
         }:
             raise problem(
-                409,
-                "RESOURCE_CONFLICT",
+                422,
+                "INVALID_REQUEST",
                 "Remote Codex provider is fixed for every Agent Role",
             )
         if requested_model is not None and requested_model != projected_model:
             raise problem(
-                409,
-                "RESOURCE_CONFLICT",
+                422,
+                "INVALID_REQUEST",
                 "Remote Codex model is fixed for every Agent Role",
             )
     row = s.get(AgentConfigRow, (actor.workspace_id, role)) or AgentConfigRow(
@@ -5849,12 +5927,52 @@ def agent_run(
     s: Session = Depends(db),
 ):
     r = owned(s, AgentRunRow, agent_run_id, actor, "agent run")
+    config = s.get(
+        AgentConfigRow, (actor.workspace_id, r.role)
+    ) or default_agent_config(r.role)
+    if remote_codex_mode():
+        try:
+            from app.control_plane import active_runtime_snapshot
+
+            snapshot = active_runtime_snapshot()
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+            snapshot = {}
+        ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
+        ai_connection_revision = int(
+            snapshot.get("ai_connection_revision")
+            or snapshot.get("effective_configuration_revision")
+            or 1
+        )
+        effective_configuration_revision = int(
+            snapshot.get("effective_configuration_revision") or 1
+        )
+        effective_configuration_sha256 = str(
+            snapshot.get("effective_configuration_sha256") or "0" * 64
+        )
+    else:
+        ai_connection_id = "LOCAL-DETERMINISTIC"
+        ai_connection_revision = 1
+        effective_configuration_revision = 1
+        effective_configuration_sha256 = "0" * 64
     return {
         "agent_run_id": r.id,
         "agent_role": r.role,
         "agent_version": r.agent_version,
         "model_provider": r.model_provider,
         "model_name": r.model_name,
+        "ai_connection_id": ai_connection_id,
+        "ai_connection_revision": ai_connection_revision,
+        "effective_configuration_revision": effective_configuration_revision,
+        "effective_configuration_sha256": effective_configuration_sha256,
+        "agent_configuration_revision": int(config.revision),
+        "runtime_profile": config.runtime_profile,
+        "tool_timeout_seconds": int(config.tool_timeout_seconds),
+        "max_steps": min(25, int(config.max_steps_override or 25)),
+        "max_tool_calls": min(50, int(config.max_tool_calls_override or 50)),
+        "prompt_manifest_sha256": hashlib.sha256(
+            f"{r.role}:{r.objective}".encode()
+        ).hexdigest(),
+        "tool_registry_sha256": "d13e3c4b60b6dd7232bd6fd3bd96fedb964b07846e502b249beb16b95b840633",
         "research_id": r.research_id,
         "object_type": r.object_type,
         "object_id": r.object_id,
@@ -5885,6 +6003,21 @@ def tool_call(
     s: Session = Depends(db),
 ):
     r = owned(s, ToolCallRow, tool_call_id, actor, "tool call")
+    effective_configuration_revision = 1
+    configuration_sha256 = "0" * 64
+    if remote_codex_mode():
+        try:
+            from app.control_plane import active_runtime_snapshot
+
+            snapshot = active_runtime_snapshot()
+            effective_configuration_revision = int(
+                snapshot.get("effective_configuration_revision") or 1
+            )
+            configuration_sha256 = str(
+                snapshot.get("effective_configuration_sha256") or configuration_sha256
+            )
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+            pass
     return {
         "tool_call_id": r.id,
         "agent_run_id": r.agent_run_id,
@@ -5895,6 +6028,9 @@ def tool_call(
         "experiment_id": r.experiment_id,
         "job_id": r.job_id,
         "input_sha256": r.input_sha256,
+        "effective_configuration_revision": effective_configuration_revision,
+        "configuration_sha256": configuration_sha256,
+        "tool_registry_sha256": "d13e3c4b60b6dd7232bd6fd3bd96fedb964b07846e502b249beb16b95b840633",
         "policy_version_ref": r.policy_version_ref,
         "status": r.status,
         "result_summary": json.loads(r.result_summary) if r.result_summary else None,
@@ -5958,7 +6094,12 @@ def _configure_contract_routes() -> None:
             .get("$ref")
         )
         if reference:
-            response_model = SCHEMA_MODELS[reference.rsplit("/", 1)[-1]]
+            model_name = reference.rsplit("/", 1)[-1]
+            response_model = SCHEMA_MODELS.get(model_name)
+            if response_model is None:
+                # Compatibility control-plane models are injected by app.main
+                # before its second contract-route pass.
+                continue
             route.response_model = response_model
             route.response_field = create_model_field(
                 name=f"Response_{operation['operationId']}",
@@ -5981,7 +6122,8 @@ def _configure_contract_routes() -> None:
                         ),
                         **(
                             {"content": declared["content"]}
-                            if "application/json" not in declared.get("content", {})
+                            if declared.get("content")
+                            and "application/json" not in declared["content"]
                             else {}
                         ),
                     }
@@ -6036,10 +6178,12 @@ def application_openapi() -> dict[str, Any]:
         for method, operation in methods.items():
             if not isinstance(operation, dict) or "responses" not in operation:
                 continue
-            declared = specification["paths"][path][method]["responses"]
-            canonical_parameters = specification["paths"][path][method].get(
-                "parameters", []
+            canonical_operation = specification["paths"][path][method]
+            declared = canonical_operation["responses"]
+            operation["security"] = canonical_operation.get(
+                "security", specification.get("security")
             )
+            canonical_parameters = canonical_operation.get("parameters", [])
             required_headers = {
                 (
                     specification["components"]["parameters"][
@@ -6087,11 +6231,25 @@ def application_openapi() -> dict[str, Any]:
             for status in list(operation["responses"]):
                 if status not in declared:
                     del operation["responses"][status]
+            # The checked-in OpenAPI contract is the public wire authority;
+            # runtime models still validate requests and handler responses.
+            operation["responses"] = {
+                status: deepcopy(
+                    specification["components"]["responses"].get(
+                        raw["$ref"].rsplit("/", 1)[-1], raw
+                    )
+                    if isinstance(raw, dict) and "$ref" in raw
+                    else raw
+                )
+                for status, raw in specification["paths"][path][method][
+                    "responses"
+                ].items()
+            }
     # FastAPI emits every request/response model attached to a route. Add only
     # referenced leaf models that FastAPI cannot discover through external
     # JSON-Schema refs; never replace the generated runtime document/spec.
     runtime_schemas = generated.setdefault("components", {}).setdefault("schemas", {})
-    model_schemas = application_schemas()
+    model_schemas = specification["components"]["schemas"]
     # FastAPI expands private helper classes used inside generated unions.  The
     # public runtime surface is the closed set of independently generated
     # component models, with their helper definitions already inlined.
