@@ -184,6 +184,7 @@ export function Shell() {
       }),
     [client],
   );
+  if (invalidRoute) return <State kind="error">{t(invalidRouteMessages[invalidRoute])}</State>;
   if ((!sessionReady || !localeReady) && !isLogin) return <State kind="loading" />;
   const navigation = [
     ['/overview', 'nav.overview'],
@@ -266,11 +267,7 @@ export function Shell() {
           </header>
           {reauthRequired && <State kind="error">{t('auth.expired')}</State>}
           {streamProblem && <Problem error={streamProblem} />}
-          {invalidRoute ? (
-            <State kind="error">{t(invalidRouteMessages[invalidRoute])}</State>
-          ) : (
-            <Outlet />
-          )}
+          <Outlet />
         </main>
       </div>
     </>
