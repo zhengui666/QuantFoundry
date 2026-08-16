@@ -187,6 +187,15 @@ export function Shell() {
     [client],
   );
   useEffect(() => setMobileNavOpen(false), [location.pathname]);
+  useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 1180px)');
+    const closeMobileSheetOnDesktop = () => {
+      if (desktopQuery.matches) setMobileNavOpen(false);
+    };
+    closeMobileSheetOnDesktop();
+    desktopQuery.addEventListener('change', closeMobileSheetOnDesktop);
+    return () => desktopQuery.removeEventListener('change', closeMobileSheetOnDesktop);
+  }, []);
   if (invalidRoute) return <State kind="error">{t(invalidRouteMessages[invalidRoute])}</State>;
   if ((!sessionReady || !localeReady) && !isLogin) return <State kind="loading" />;
   const navigation = [

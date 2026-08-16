@@ -188,6 +188,14 @@ button.text-button {
   border: 0;
   text-align: left;
 }
+button.secondary:hover:not(:disabled) {
+  background: var(--qf-color-surface-subtle);
+  border-color: var(--qf-color-control-border);
+}
+button.text-button:hover:not(:disabled) {
+  background: var(--qf-color-surface-subtle);
+  color: var(--qf-color-brand-hover);
+}
 button:disabled {
   background: var(--qf-color-disabled-surface);
   color: var(--qf-color-disabled-text);
@@ -269,14 +277,18 @@ th {
 }
 .definition {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: 140px minmax(0, 1fr);
   gap: 8px 16px;
 }
 .definition dt {
+  min-width: 0;
   color: var(--qf-color-text-secondary);
+  overflow-wrap: anywhere;
 }
 .definition dd {
+  min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .memo {
   max-width: 1120px;

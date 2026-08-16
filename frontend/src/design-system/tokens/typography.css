@@ -32,9 +32,17 @@
 
 @font-face {
   font-family: 'Noto Sans CJK SC';
+  src: url('/fonts/noto-sans-cjk-sc-semibold-subset.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans CJK SC';
   src: url('/fonts/noto-sans-cjk-sc-bold-subset.woff2') format('woff2');
   font-style: normal;
-  font-weight: 600 700;
+  font-weight: 700;
   font-display: swap;
 }
 
