@@ -163,10 +163,12 @@ const zodFor = (schema, schemaName) => {
   } else if (!expression && type === 'boolean') expression = 'z.boolean()';
   else if (!expression && type === 'array')
     expression = addArrayConstraints(`z.array(${zodFor(baseSchema.items)})`, baseSchema);
-  else if (!expression && (type === 'object' || baseSchema.properties)) {
+  else if (!expression && (type === 'object' || baseSchema.properties || baseSchema.required)) {
     const required = new Set(baseSchema.required ?? []);
-    const properties = Object.entries(baseSchema.properties ?? {}).map(([name, property]) => {
-      const value = zodFor(property) + (required.has(name) ? '' : '.optional()');
+    const propertyNames = new Set([...Object.keys(baseSchema.properties ?? {}), ...required]);
+    const properties = [...propertyNames].map((name) => {
+      const value =
+        zodFor(baseSchema.properties?.[name]) + (required.has(name) ? '' : '.optional()');
       return `${quote(name)}: ${value}`;
     });
     const composedObject =
@@ -199,7 +201,9 @@ const zodFor = (schema, schemaName) => {
   }
   if (oneOf.length) {
     const branches = oneOf.map((branch) => zodFor(branch));
-    if (oneOf.every((branch) => !branch.properties && branch.type !== 'object')) {
+    if (
+      oneOf.every((branch) => !branch.properties && branch.type !== 'object' && !branch.required)
+    ) {
       expression = `z.union([${branches.join(', ')}])`;
     } else {
       expression += `.superRefine((value, context) => { const matches = [${branches

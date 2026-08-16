@@ -62,7 +62,14 @@ class FakePort:
             return _capabilities()
         if path == "/v1/accounts":
             return {"accounts": [{"account_id": "acct-1"}]}
-        return {"status": "ACKNOWLEDGED", "broker_order_id": "b-1"}
+        return {
+            "status": "ACKNOWLEDGED",
+            "broker_order_id": "b-1",
+            "client_order_id": "LORD-NT-1",
+            "accepted_at": "2026-08-17T00:00:00Z",
+            "updated_at": "2026-08-17T00:00:00Z",
+            "fills": [],
+        }
 
 
 def _order() -> OrderRequest:
@@ -92,11 +99,11 @@ def test_nautilus_port_maps_canonical_submit_and_cancel() -> None:
     submit = port.calls[1]
     assert submit["method"] == "POST"
     assert submit["path"] == "/v1/accounts/acct-1/orders"
-    assert submit["idempotency_key"] == "LORD-NT-1"
+    assert submit["idempotency_key"] == "acct-1:LORD-NT-1"
     assert submit["payload"]["schema_version"] == "LIVE_CONNECTOR_V1"
     cancel = port.calls[2]
     assert cancel["path"].endswith("/orders/b-1/cancel")
-    assert cancel["idempotency_key"] == "cancel:b-1"
+    assert cancel["idempotency_key"] == "acct-1:cancel:b-1"
 
 
 def test_nautilus_port_preserves_unknown_submit_outcome() -> None:

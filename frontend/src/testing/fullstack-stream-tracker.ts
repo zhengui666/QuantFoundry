@@ -31,9 +31,15 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
         typeof expectedSessionCookie === 'function'
           ? expectedSessionCookie()
           : expectedSessionCookie;
+      const expectedPair = expected.includes('=') ? expected.trim() : `qf_session=${expected}`;
+      const cookieMatches = cookie
+        ?.split(';')
+        .map((part) => part.trim())
+        .some((part) => part === expectedPair);
       if (
+        expected.length > 0 &&
         status === 200 &&
-        (cookie?.includes(expected) || authorization === `Bearer ${expected}`)
+        (cookieMatches || authorization === `Bearer ${expected}`)
       ) {
         authenticatedRequest ??= request;
         return;

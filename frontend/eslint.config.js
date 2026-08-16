@@ -3,6 +3,12 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 const typedSourceFiles = ['src/**/*.{ts,tsx}'];
+const nonProductionSourceFiles = [
+  'src/**/*.test.{ts,tsx}',
+  'src/**/*.stories.{ts,tsx}',
+  'src/testing/**/*.{ts,tsx}',
+  'e2e/**/*.{ts,tsx}',
+];
 const nonProductionFiles = [
   '**/*.test.*',
   '**/*.stories.*',
@@ -10,7 +16,6 @@ const nonProductionFiles = [
   'src/api/generated/**',
   'src/api/generated.ts',
 ];
-const policyIgnores = [...nonProductionFiles, 'src/api/**', 'src/shared/transient-storage.ts'];
 const typeChecked = tseslint.configs.recommendedTypeChecked.map((config) =>
   config.languageOptions
     ? {
@@ -33,13 +38,46 @@ export default tseslint.config(
   js.configs.recommended,
   ...typeChecked,
   {
-    files: typedSourceFiles,
-    ignores: nonProductionFiles,
-    plugins: { 'react-hooks': reactHooks },
+    files: nonProductionSourceFiles,
+    languageOptions: {
+      parser: tseslint.parser,
+      globals: {
+        AbortController: 'readonly',
+        crypto: 'readonly',
+        document: 'readonly',
+        fetch: 'readonly',
+        localStorage: 'readonly',
+        process: 'readonly',
+        sessionStorage: 'readonly',
+        TextDecoderStream: 'readonly',
+        URL: 'readonly',
+        window: 'readonly',
+      },
+    },
     rules: {
-      'no-console': 'error',
+      'no-unused-vars': 'off',
+    },
+  },
+  {
+    files: typedSourceFiles,
+    plugins: { 'react-hooks': reactHooks },
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
       'react-hooks/exhaustive-deps': 'error',
       'react-hooks/rules-of-hooks': 'error',
+    },
+  },
+  {
+    files: typedSourceFiles,
+    ignores: [...nonProductionFiles, 'src/api/**', 'src/shared/transient-storage.ts'],
+    rules: {
+      'no-console': 'error',
       '@typescript-eslint/no-base-to-string': 'off',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
@@ -63,7 +101,7 @@ export default tseslint.config(
   },
   {
     files: typedSourceFiles,
-    ignores: policyIgnores,
+    ignores: [...nonProductionFiles, 'src/api/**', 'src/shared/transient-storage.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',

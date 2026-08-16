@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workerName = 'mockServiceWorker.js';
@@ -33,7 +33,7 @@ export const patchWorker = (source) => {
   safeMessageBody = replaceOnce(
     safeMessageBody,
     "  const clientId = Reflect.get(event.source || {}, 'id')\n",
-    "  await reconcileActiveClients()\n\n  const clientId = Reflect.get(event.source || {}, 'id')\n",
+    "  await reconcileActiveClients(event.source)\n\n  const clientId = Reflect.get(event.source || {}, 'id')\n",
     'active client reconciliation',
   );
   safeMessageBody = replaceOnce(
@@ -55,6 +55,26 @@ export const patchWorker = (source) => {
     'const activeClientIds = new Set()\n',
     `const activeClientIds = new Set()\nconst MESSAGE_TIMEOUT = 10_000\nconst SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])\n\nasync function reconcileActiveClients() {\n  const allClients = await self.clients.matchAll({\n    type: 'window',\n  })\n  const liveClientIds = new Set(allClients.map((client) => client.id))\n\n  for (const clientId of activeClientIds) {\n    if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)\n  }\n\n  if (activeClientIds.size === 0 && allClients.length === 0) {\n    await self.registration.unregister()\n  }\n\n  return allClients\n}\n`,
     'active client reconciliation helper',
+  );
+  patched = replaceOnce(
+    patched,
+    `async function reconcileActiveClients() {
+  const allClients = await self.clients.matchAll({
+    type: 'window',
+  })
+  const liveClientIds = new Set(allClients.map((client) => client.id))
+`,
+    `async function reconcileActiveClients(sender) {
+  const allClients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  })
+  if (sender?.id && !allClients.some((client) => client.id === sender.id)) {
+    allClients.push(sender)
+  }
+  const liveClientIds = new Set(allClients.map((client) => client.id))
+`,
+    'uncontrolled active client reconciliation',
   );
 
   patched = replaceOnce(
@@ -166,14 +186,20 @@ function sendToClient(client, message, transferrables = []) {
 
 const generate = async (directory) => {
   const path = resolve(directory, workerName);
-  await rm(path, { force: true });
-  execFileSync(workerBinary, ['init', directory], {
-    cwd: frontendRoot,
-    stdio: 'ignore',
-  });
-  const patched = patchWorker(await readFile(path, 'utf8'));
-  await writeFile(path, patched, 'utf8');
-  return patched;
+  const temporaryDirectory = await mkdtemp(resolve(directory, '.qf-msw-'));
+  const temporaryPath = resolve(temporaryDirectory, workerName);
+  try {
+    execFileSync(workerBinary, ['init', temporaryDirectory], {
+      cwd: frontendRoot,
+      stdio: 'ignore',
+    });
+    const patched = patchWorker(await readFile(temporaryPath, 'utf8'));
+    await writeFile(temporaryPath, patched, 'utf8');
+    await rename(temporaryPath, path);
+    return patched;
+  } finally {
+    await rm(temporaryDirectory, { force: true, recursive: true });
+  }
 };
 
 const main = async () => {
@@ -193,4 +219,4 @@ const main = async () => {
   await generate(resolve(frontendRoot, 'public'));
 };
 
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

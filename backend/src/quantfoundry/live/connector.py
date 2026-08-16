@@ -62,6 +62,41 @@ def _segment(value: str, field_name: str) -> str:
     return quote(value, safe="")
 
 
+def _validate_order_response(result: dict[str, Any], client_order_id: str) -> dict[str, Any]:
+    statuses = {
+        "CREATED",
+        "SUBMITTING",
+        "ACKNOWLEDGED",
+        "PARTIALLY_FILLED",
+        "FILLED",
+        "CANCEL_PENDING",
+        "CANCELLED",
+        "REJECTED",
+        "EXPIRED",
+        "UNKNOWN",
+        "RECONCILING",
+    }
+    required = {
+        "broker_order_id",
+        "client_order_id",
+        "status",
+        "accepted_at",
+        "updated_at",
+        "fills",
+    }
+    if (
+        not required.issubset(result)
+        or result.get("client_order_id") != client_order_id
+        or not isinstance(result.get("broker_order_id"), str)
+        or result.get("status") not in statuses
+        or not isinstance(result.get("accepted_at"), str)
+        or not isinstance(result.get("updated_at"), str)
+        or not isinstance(result.get("fills"), list)
+    ):
+        raise ConnectorProtocolError("order response is invalid")
+    return result
+
+
 class ConnectorError(RuntimeError):
     """Base error; message never contains credentials or response bodies."""
 
@@ -88,6 +123,10 @@ def _decimal(value: str | Decimal, *, field_name: str, positive: bool = False) -
     if not parsed.is_finite() or (positive and parsed <= 0):
         raise ValueError(f"{field_name} is invalid")
     return format(parsed, "f")
+
+
+def _decimal_places(value: str | Decimal) -> int:
+    return max(0, -Decimal(str(value)).as_tuple().exponent)
 
 
 @dataclass(frozen=True)
@@ -355,6 +394,10 @@ class ConnectorCapabilities:
             and "PREVIEW_ORDER" not in self.supported_operations
         ):
             raise ConnectorProtocolError("margin preview is required for this asset")
+        if _decimal_places(order.quantity) > self.quantity_scale:
+            raise ConnectorProtocolError("order quantity exceeds connector scale")
+        if order.limit_price is not None and _decimal_places(order.limit_price) > self.price_scale:
+            raise ConnectorProtocolError("order price exceeds connector scale")
 
 
 class ConnectorClient:
@@ -389,6 +432,9 @@ class ConnectorClient:
         self._credential = credential.encode("utf-8")
         self._clock = clock
         self._nonce_factory = nonce_factory
+        if timeout <= 0:
+            raise ValueError("connector timeout must be positive")
+        self._timeout = timeout
         self._client = http_client or httpx.Client(
             base_url=self._base_url,
             timeout=timeout,
@@ -441,11 +487,22 @@ class ConnectorClient:
         if idempotency_key is not None:
             headers["Idempotency-Key"] = idempotency_key
         try:
-            response = self._client.request(method, path, content=body, headers=headers)
+            response = self._client.request(
+                method,
+                f"{self._base_url}{path}",
+                content=body,
+                headers=headers,
+                timeout=self._timeout,
+                follow_redirects=False,
+            )
         except httpx.HTTPError as error:
             raise ConnectorUnavailable(
                 "live connector request outcome is unknown"
             ) from error
+        if response.status_code == 408 or response.status_code >= 500:
+            raise ConnectorUnavailable(
+                f"live connector returned ambiguous HTTP {response.status_code}"
+            )
         if response.status_code < 200 or response.status_code >= 300:
             raise ConnectorHTTPError(response.status_code)
         try:
@@ -498,12 +555,13 @@ class ConnectorClient:
         if account_id not in capabilities.account_ids:
             raise ConnectorProtocolError("account is not in connector capabilities")
         capabilities.validate_order(order)
-        return self._request(
+        result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
             payload=order.to_wire(),
             idempotency_key=order.client_order_id,
         )
+        return _validate_order_response(result, order.client_order_id)
 
     def orders(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:
         path = f"/v1/accounts/{_segment(account_id, 'account_id')}/orders"

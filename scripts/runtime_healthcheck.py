@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import sys
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +21,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--component", required=True, choices=("worker", "scheduler"))
     parser.add_argument("--queue", choices=("core", "agent"))
     parser.add_argument("--max-age-seconds", type=int, default=120)
+    parser.add_argument(
+        "--instance-id",
+        default=os.getenv("QF_RUNTIME_INSTANCE_ID")
+        or os.getenv("QF_WORKER_ID")
+        or os.getenv("QF_SCHEDULER_ID")
+        or socket.gethostname(),
+    )
     args = parser.parse_args()
     if args.component == "worker" and args.queue is None:
         parser.error("--queue is required for worker health checks")
@@ -33,14 +41,18 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if not domain_main.app.state.domain_database_available:
-        if os.getenv("QF_ENV", "production") in {"local", "development"}:
+        environment = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV", "production")
+        if environment in {"local", "development"}:
             return 0
         print("domain_database_unavailable", file=sys.stderr)
         return 1
-    threshold = datetime.now(UTC) - timedelta(seconds=args.max_age_seconds)
+    now = datetime.now(UTC)
+    threshold = now - timedelta(seconds=args.max_age_seconds)
     statement = select(RuntimeHeartbeat).where(
         RuntimeHeartbeat.component == args.component,
         RuntimeHeartbeat.occurred_at >= threshold,
+        RuntimeHeartbeat.occurred_at <= now,
+        RuntimeHeartbeat.instance_id == args.instance_id,
     )
     if args.queue is not None:
         statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)

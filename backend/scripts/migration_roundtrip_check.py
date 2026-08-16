@@ -19,6 +19,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 GATE_MANIFEST_PATH = BACKEND_ROOT / "schema/populated_migration_gate.json"
 APPLICATION_TABLE_COUNT = 63
 CHECK_CONSTRAINT_COUNT = 191
+MIGRATION_GATE_MARKER_TABLE = "migration_gate_control.marker"
 COMMITTED_MINIMUM_ROWS = 2503
 COMMITTED_MINIMUM_NONEMPTY_TABLES = 38
 COMMITTED_MINIMUM_WORKSPACE_ROLE_TUPLES = 12
@@ -273,6 +274,28 @@ def _alembic_check(database_url: str) -> None:
             os.environ["QF_ALEMBIC_URL"] = previous
 
 
+def _require_disposable_migration_gate(database_url: str) -> None:
+    marker = os.getenv("QF_MIGRATION_GATE_MARKER")
+    if not marker:
+        raise RuntimeError(
+            "QF_MIGRATION_GATE_MARKER is required; refusing destructive migration roundtrip"
+        )
+    engine = create_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            markers = connection.execute(
+                text(f"SELECT marker FROM {MIGRATION_GATE_MARKER_TABLE} ORDER BY marker")
+            ).scalars().all()
+            database_name = connection.execute(text("SELECT current_database()")).scalar_one()
+        if markers != [marker]:
+            raise RuntimeError(
+                "target database is not the disposable migration gate database: "
+                f"database={database_name!r} marker_count={len(markers)}"
+            )
+    finally:
+        engine.dispose()
+
+
 def main() -> int:
     gate_manifest = _load_gate_manifest()
     parser = argparse.ArgumentParser()
@@ -304,6 +327,7 @@ def main() -> int:
         parser.error("--confirm-destructive is required for the downgrade/upgrade gate")
     if not args.database_url.startswith("postgresql+psycopg://"):
         parser.error("--database-url must target the PostgreSQL migration gate")
+    _require_disposable_migration_gate(args.database_url)
 
     _validate_requested_floors(
         minimum_rows=args.minimum_rows,

@@ -9,7 +9,9 @@ from pydantic import ValidationError
 
 try:
     _event_models = import_module("app.generated_api_models")
-except ImportError:  # pragma: no cover - packaged canonical fallback
+except ModuleNotFoundError as error:  # pragma: no cover - packaged canonical fallback
+    if error.name != "app":
+        raise
     _event_models = import_module("quantfoundry.contracts.openapi.generated_api_models")
 
 EventPayload = _event_models.EventPayload
@@ -54,6 +56,8 @@ def _event_object_types() -> dict[str, str]:
         )
         for value in values:
             if isinstance(value, str):
+                if value in result and result[value] != object_type:
+                    raise RuntimeError(f"event type {value} has conflicting object types")
                 result[value] = object_type
     if set(result) != set(EVENT_TYPES):
         raise RuntimeError("generated SSE event/object mapping is incomplete")

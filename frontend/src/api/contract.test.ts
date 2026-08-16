@@ -14,6 +14,7 @@ import {
 import { errorCopy } from '../ui';
 import {
   CanonicalErrorCodeSchema,
+  ConfigurationValueWriteSchema,
   ExperimentSearchDimensionSchema,
   ExperimentSearchResultSchema,
   EventObjectExamples,
@@ -169,6 +170,23 @@ const eventEnvelope = (
 };
 
 describe('canonical transport', () => {
+  it('enforces exactly one configuration value source', () => {
+    expect(
+      ConfigurationValueWriteSchema.safeParse({ key: 'runtime.mode', value: 'paper' }).success,
+    ).toBe(true);
+    expect(
+      ConfigurationValueWriteSchema.safeParse({ key: 'runtime.mode', secret: 'encrypted' }).success,
+    ).toBe(true);
+    expect(
+      ConfigurationValueWriteSchema.safeParse({
+        key: 'runtime.mode',
+        value: 'paper',
+        secret: 'encrypted',
+      }).success,
+    ).toBe(false);
+    expect(ConfigurationValueWriteSchema.safeParse({ key: 'runtime.mode' }).success).toBe(false);
+  });
+
   it.each(setupStatusMatrix)('SetupStatus cases 01-20: %s', (_name, value, valid) => {
     expect(SetupStatusSchema.safeParse(value).success).toBe(valid);
   });

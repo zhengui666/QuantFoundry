@@ -9,10 +9,25 @@ export {
 import { splitCanonicalSseFrames } from '../api/client';
 import type { DecodedSseFrame } from '../api/client';
 
-export async function startCanonicalSseProbe(url: URL, sessionCookie: string) {
+export async function startCanonicalSseProbe(
+  url: URL,
+  sessionCookie: string,
+  trustedOrigin: string,
+) {
+  const origin = new URL(trustedOrigin).origin;
+  if (
+    url.origin !== origin ||
+    url.pathname !== '/api/v1/events/stream' ||
+    url.search ||
+    url.hash ||
+    url.username ||
+    url.password
+  )
+    throw new Error('Authenticated SSE probe URL is outside the trusted stream origin.');
   const controller = new AbortController();
   const response = await fetch(url, {
     headers: { Accept: 'text/event-stream', Cookie: sessionCookie },
+    redirect: 'error',
     signal: controller.signal,
   });
   const responseBody = response.body;
@@ -28,6 +43,14 @@ export async function startCanonicalSseProbe(url: URL, sessionCookie: string) {
     resolve: (frame: DecodedSseFrame) => void;
     reject: (error: unknown) => void;
   }>();
+  let closed = false;
+  let terminalError: Error | undefined;
+  const rejectWaiters = (error: Error) => {
+    terminalError = error;
+    closed = true;
+    for (const waiter of waiters) waiter.reject(error);
+    waiters.clear();
+  };
   const publish = (frame: DecodedSseFrame) => {
     frames.push(frame);
     for (const waiter of waiters) {
@@ -51,9 +74,15 @@ export async function startCanonicalSseProbe(url: URL, sessionCookie: string) {
     } catch (error) {
       if (!controller.signal.aborted) {
         failure = error;
-        for (const waiter of waiters) waiter.reject(error);
-        waiters.clear();
+        rejectWaiters(error instanceof Error ? error : new Error(String(error)));
       }
+    } finally {
+      if (!closed)
+        rejectWaiters(
+          failure instanceof Error
+            ? failure
+            : new Error('Authenticated SSE probe stream closed before the expected frame.'),
+        );
     }
   })();
 
@@ -62,7 +91,7 @@ export async function startCanonicalSseProbe(url: URL, sessionCookie: string) {
     waitForFrame(predicate: (frame: DecodedSseFrame) => boolean) {
       const current = frames.find(predicate);
       if (current) return Promise.resolve(current);
-      if (failure) return Promise.reject(failure);
+      if (terminalError) return Promise.reject(terminalError);
       return new Promise<DecodedSseFrame>((resolve, reject) => {
         waiters.add({ predicate, resolve, reject });
       });

@@ -721,7 +721,7 @@ export const api = {
     const parsed = ExperimentReproduceAcceptedSchema.safeParse(result.body);
     if (!parsed.success)
       throw new ContractError('Invalid canonical ExperimentReproduceAccepted response.');
-    const accepted = parsed.data as Schema<'ExperimentReproduceAccepted'>;
+    const accepted = parsed.data;
     const expectedLocation = pathFor('getExperiment', { experiment_id: accepted.resource_ref.id });
     const locationPath = result.location
       ? result.location.startsWith('http://') || result.location.startsWith('https://')
@@ -1278,6 +1278,7 @@ export function streamEvents(
   let contractBlocked = false;
   let consecutiveContractSkews = 0;
   let attempts = 0;
+  let reconnectTimer: number | undefined;
   const reconnect = () => {
     if (stopped || authorizationBlocked || contractBlocked) return;
     active?.abort();
@@ -1351,14 +1352,16 @@ export function streamEvents(
             consecutiveContractSkews = 0;
             if (event.sequence <= last) continue;
             const hasGap = last > 0 && event.sequence > last + 1;
-            last = event.sequence;
-            transientStorage.set(cursorKey(), String(last));
             if (event.event_type === 'system.resync_required') {
               onResync();
+              last = event.sequence;
+              transientStorage.set(cursorKey(), String(last));
               continue;
             }
             onEvent(event);
             if (hasGap) onResync();
+            last = event.sequence;
+            transientStorage.set(cursorKey(), String(last));
           }
         }
       } catch {
@@ -1370,11 +1373,21 @@ export function streamEvents(
       if (!stopped && !authorizationBlocked && !contractBlocked && !controller.signal.aborted) {
         attempts += 1;
         if (consecutiveContractSkews === 0) onState?.('reconnecting');
-        window.setTimeout(reconnect, Math.min(1000 * 2 ** Math.min(attempts, 5), 30_000));
+        reconnectTimer = window.setTimeout(
+          () => {
+            reconnectTimer = undefined;
+            reconnect();
+          },
+          Math.min(1000 * 2 ** Math.min(attempts, 5), 30_000),
+        );
       }
     })();
   };
   const unsubscribe = auth.subscribe(() => {
+    if (reconnectTimer !== undefined) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+    }
     active?.abort();
     streamScope = auth.scope();
     last = Number(transientStorage.get(cursorKey()) ?? '0');
@@ -1386,6 +1399,7 @@ export function streamEvents(
   return () => {
     stopped = true;
     unsubscribe();
+    if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
     active?.abort();
   };
 }

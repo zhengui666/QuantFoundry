@@ -105,6 +105,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     const probe = await startCanonicalSseProbe(
       new URL('/api/v1/events/stream', applicationUrl!),
       await sessionCookie(request),
+      new URL(applicationUrl!).origin,
     );
     const beforeMutation = await request.get(new URL(exactPath, applicationUrl!).href, {
       headers: apiHeaders(),
@@ -209,6 +210,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     const sseProbe = await startCanonicalSseProbe(
       new URL('/api/v1/events/stream', applicationUrl!),
       `qf_session=${(await page.context().cookies()).find((item) => item.name === 'qf_session')?.value}`,
+      new URL(applicationUrl!).origin,
     );
 
     await executeCapability(page, 'create_research');

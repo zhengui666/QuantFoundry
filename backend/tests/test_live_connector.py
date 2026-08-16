@@ -55,7 +55,15 @@ def test_signed_submit_is_idempotent_and_capability_gated() -> None:
         seen.append(request)
         if request.url.path == "/v1/accounts/acct-1/orders":
             return httpx.Response(
-                200, json={"status": "ACKNOWLEDGED", "broker_order_id": "b-1"}
+                200,
+                json={
+                    "status": "ACKNOWLEDGED",
+                    "broker_order_id": "b-1",
+                    "client_order_id": "LORD-1",
+                    "accepted_at": "2026-08-17T00:00:00Z",
+                    "updated_at": "2026-08-17T00:00:00Z",
+                    "fills": [],
+                },
             )
         return httpx.Response(200, json=_capabilities())
 

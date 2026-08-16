@@ -10,9 +10,11 @@ const contractPath = resolve(frontendRoot, '../docs/后端系统技术方案/con
 const outputPath = resolve(frontendRoot, 'src/api/generated/operation-map.ts');
 const document = load(await readFile(contractPath, 'utf8'));
 const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
-const resolveReference = (reference, expectedPrefix) => {
+const resolveReference = (reference, expectedPrefix, seen = new Set()) => {
   if (typeof reference !== 'string' || !reference.startsWith(`${expectedPrefix}/`))
     throw new Error(`Unsupported local reference: ${String(reference)}`);
+  if (seen.has(reference)) throw new Error(`Cyclic local reference: ${reference}`);
+  const nextSeen = new Set(seen).add(reference);
   const tokens = reference
     .slice(2)
     .split('/')
@@ -20,7 +22,9 @@ const resolveReference = (reference, expectedPrefix) => {
   let value = document;
   for (const token of tokens) value = value?.[token];
   if (value === undefined) throw new Error(`Unresolved local reference: ${reference}`);
-  return value;
+  return value?.$ref && Object.keys(value).length === 1
+    ? resolveReference(value.$ref, expectedPrefix, nextSeen)
+    : value;
 };
 const parameter = (entry) => {
   if (entry?.$ref) return resolveReference(entry.$ref, '#/components/parameters');
@@ -30,18 +34,25 @@ const schema = (entry) => {
   if (entry?.$ref) return resolveReference(entry.$ref, '#/components/schemas');
   return entry;
 };
-const fixedConst = (entry) => {
+const fixedConst = (entry, seen = new Set()) => {
   const resolved = schema(entry);
+  if (!resolved || typeof resolved !== 'object') return undefined;
+  if (seen.has(resolved))
+    throw new Error('Cyclic schema composition while inferring fixed query value');
+  const nextSeen = new Set(seen).add(resolved);
   if (resolved?.const !== undefined) return resolved.const;
-  const variants = [
-    ...(resolved?.allOf ?? []),
-    ...(resolved?.oneOf ?? []),
-    ...(resolved?.anyOf ?? []),
-  ]
-    .map((variant) => fixedConst(variant))
+  const allOfValues = (resolved.allOf ?? [])
+    .map((variant) => fixedConst(variant, nextSeen))
     .filter((value) => value !== undefined);
-  if (variants.length && variants.every((value) => value === variants[0])) return variants[0];
-  if (variants.length) throw new Error('Ambiguous fixed query parameter schema');
+  if (allOfValues.length && allOfValues.every((value) => value === allOfValues[0]))
+    return allOfValues[0];
+  for (const variants of [resolved.oneOf, resolved.anyOf]) {
+    if (!variants) continue;
+    const values = variants.map((variant) => fixedConst(variant, nextSeen));
+    if (values.some((value) => value === undefined)) return undefined;
+    if (values.every((value) => value === values[0])) return values[0];
+    throw new Error('Ambiguous fixed query parameter schema');
+  }
   return undefined;
 };
 const securityMetadata = (security, operationId) => {

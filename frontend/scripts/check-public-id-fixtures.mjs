@@ -1,5 +1,5 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { dirname, extname, relative, resolve } from 'node:path';
+import { lstat, readFile, readdir } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { load } from 'js-yaml';
 
@@ -85,13 +85,19 @@ export const collectFormalPublicIdFiles = async (
   repositoryRoot,
   sources = formalPublicIdSources,
 ) => {
+  const root = resolve(repositoryRoot);
   const files = new Set();
   const coverage = new Map();
 
   for (const source of sources) {
-    const absolutePath = resolve(repositoryRoot, source.path);
-    const metadata = await stat(absolutePath).catch(() => null);
+    const absolutePath = resolve(root, source.path);
+    const relativePath = relative(root, absolutePath);
+    if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith('../'))
+      throw new Error(`Formal public-ID source escapes repository root: ${source.path}`);
+    const metadata = await lstat(absolutePath).catch(() => null);
     if (!metadata) throw new Error(`Formal public-ID source is missing: ${source.path}`);
+    if (metadata.isSymbolicLink())
+      throw new Error(`Formal public-ID source contains an unsupported symlink: ${absolutePath}`);
     if (source.kind === 'file' && !metadata.isFile())
       throw new Error(`Formal public-ID source is not a file: ${source.path}`);
     if (source.kind === 'directory' && !metadata.isDirectory())
@@ -137,14 +143,7 @@ const invalidTokens = (text, context, location, matchers) => {
   for (const match of matches) {
     const token = match[0];
     const nextCharacter = text[match.index + token.length] ?? '';
-    if (
-      match[2] === '' &&
-      (/[()[\]{}?*+\\%]/.test(nextCharacter) ||
-        /\b(?:like|regexp|glob|pattern|prefix|substr|length|startswith|replace|public[- ]id|exact grammar)\b|\|\||\+/i.test(
-          context,
-        ))
-    )
-      continue;
+    if (match[2] !== '' && /[()[\]{}?*+\\%]/.test(nextCharacter)) continue;
     const rawPrefix = match[1] ?? '';
     const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
@@ -237,6 +236,11 @@ const main = async () => {
     const prefix = [...prefixes][0];
     if (!prefix || examples.length !== 2 || schema.oneOf?.length !== 2)
       throw new Error(`Malformed public-ID schema ${name}`);
+    if (
+      !/^[A-Z][A-Z0-9]*$/.test(prefix) ||
+      examples.some((example) => !example.startsWith(`${prefix}-`))
+    )
+      throw new Error(`Public-ID schema ${name} must use a canonical uppercase prefix`);
     const patterns = schema.oneOf.map((branch) => new RegExp(branch.pattern));
     const matches = patterns.map(
       (pattern) => examples.map((example) => pattern.test(example)).filter(Boolean).length,

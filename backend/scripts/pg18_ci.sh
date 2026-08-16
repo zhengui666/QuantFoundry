@@ -108,6 +108,15 @@ fi
 
 createdb "$database_name"
 database_created=1
+migration_gate_marker="$(.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))')"
+psql -v ON_ERROR_STOP=1 --dbname="$database_name" --set=gate_marker="$migration_gate_marker" <<'SQL'
+CREATE SCHEMA migration_gate_control;
+CREATE TABLE migration_gate_control.marker (
+  marker text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO migration_gate_control.marker (marker) VALUES (:'gate_marker');
+SQL
 
 export QF_REQUIRE_PG18=1
 export QF_ENVIRONMENT=test
@@ -119,6 +128,8 @@ export QF_POLICY_DIR="$runtime_root/policies"
 export QF_TEST_RUNTIME_PARENT="$runtime_root/pytest"
 export QF_PG18_CI_DATABASE_NAME="$database_name"
 export QF_PG18_CI_RUNTIME_ROOT="$runtime_root"
+export QF_MIGRATION_GATE_MARKER="$migration_gate_marker"
+export QF_ALLOW_EXTERNAL_TEST_DATABASE=1
 if [ -n "${PGHOST:-}" ]; then
   pg_user="${PGUSER:-postgres}"
   pg_port="${PGPORT:-5432}"

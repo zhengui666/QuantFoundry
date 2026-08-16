@@ -97,7 +97,7 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
 
 def worker_id(queue_name: str) -> str:
     configured = os.getenv("QF_WORKER_ID")
-    return configured or f"{socket.gethostname()}:{os.getpid()}:{queue_name}"
+    return configured or socket.gethostname()
 
 
 def _claim(queue_name: str, identity: str) -> JobLease | None:

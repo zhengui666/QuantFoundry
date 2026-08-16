@@ -470,6 +470,8 @@ def downgrade() -> None:
         batch_op.drop_constraint("jobs_fencing_token_check", type_="check")
         batch_op.drop_constraint("jobs_max_attempts_check", type_="check")
         batch_op.drop_constraint("jobs_attempt_check", type_="check")
+        batch_op.drop_constraint("jobs_attempt_limit_check", type_="check")
+        batch_op.drop_constraint("jobs_progress_bounds_check", type_="check")
         batch_op.drop_constraint("jobs_priority_check", type_="check")
     op.drop_index("ix_jobs_correlation_id", table_name="jobs")
     op.drop_index("ix_jobs_lease_expires_at", table_name="jobs")

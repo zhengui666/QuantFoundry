@@ -26,17 +26,19 @@ export function SettingsPage() {
     queryFn: ({ signal }) => api.databaseConnection(signal),
   });
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
-  const [draftInitialized, setDraftInitialized] = useState(false);
+  const [draftIdentity, setDraftIdentity] = useState<string>();
   const [configurationMessage, setConfigurationMessage] = useState<string>();
   useEffect(() => {
-    if (!active.data || draftInitialized) return;
+    if (!active.data) return;
+    const identity = `${active.data.etag}:${active.data.body.active_revision}`;
+    if (draftIdentity === identity) return;
     const next: Record<string, string> = {};
     for (const value of active.data.body.values)
       if (value.sensitivity !== 'SECRET' && value.value !== null)
         next[value.key] = JSON.stringify(value.value, null, 2);
     setDraftValues(next);
-    setDraftInitialized(true);
-  }, [active.data, draftInitialized]);
+    setDraftIdentity(identity);
+  }, [active.data, draftIdentity]);
   const saveConfiguration = useMutation({
     mutationFn: async () => {
       const etag = active.data?.etag;
@@ -64,6 +66,8 @@ export function SettingsPage() {
         etag,
       );
       const validation = await api.validateConfigurationCandidate();
+      if (validation.body.revision !== candidate.body.revision)
+        throw new Error('Configuration candidate changed during validation; retry.');
       if (validation.body.status !== 'VALID') throw new Error(t('settings.validationFailed'));
       return api.activateConfiguration(candidate.body.revision, etag);
     },

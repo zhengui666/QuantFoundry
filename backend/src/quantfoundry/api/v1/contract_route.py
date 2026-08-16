@@ -116,6 +116,8 @@ class CanonicalRoute(APIRoute):
                 )
             for header_name, raw_header in declared.get("headers", {}).items():
                 if header_name.lower() not in response.headers:
+                    if not _resolve_header(raw_header).get("required", False):
+                        continue
                     return _problem(
                         request, f"handler omitted required {header_name} header"
                     )
@@ -129,9 +131,18 @@ class CanonicalRoute(APIRoute):
                         request, f"handler returned invalid {header_name} header"
                     )
             content_type = response.headers.get("content-type", "").split(";", 1)[0]
-            media = declared.get("content", {}).get(content_type)
-            if media is None or content_type == "text/markdown":
+            declared_content = declared.get("content", {})
+            if not declared_content:
                 return response
+            media = declared_content.get(content_type)
+            if content_type == "text/markdown":
+                return response
+            if media is None:
+                if not getattr(response, "body", b""):
+                    return response
+                return _problem(
+                    request, "handler returned an undeclared response content type"
+                )
             reference = media.get("schema", {}).get("$ref")
             if reference and hasattr(response, "body"):
                 try:
@@ -141,10 +152,7 @@ class CanonicalRoute(APIRoute):
                     decoded_body = json.loads(response_body)
                     validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
                     if operation.get("operationId") == "completeSetup":
-                        expected_etag = (
-                            f'W/"{decoded_body["settings_id"]}:'
-                            f'{decoded_body["revision"]}"'
-                        )
+                        expected_etag = f'W/"config:{decoded_body["active_revision"]}"'
                         if response.headers.get("etag") != expected_etag:
                             return _problem(
                                 request,

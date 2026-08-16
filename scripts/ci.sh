@@ -123,7 +123,7 @@ migration_check() {
 
 backend_test() {
   require_postgres
-  run_backend pytest
+  run_backend env QF_ALLOW_EXTERNAL_TEST_DATABASE=1 pytest
 }
 
 backend_pg18_full() {
@@ -227,6 +227,7 @@ openapi_check() {
     QF_ENVIRONMENT=test \
     QF_DATABASE_URL="sqlite:///$ci_tmp/contracts.db" \
     QF_ALEMBIC_URL="sqlite:///$ci_tmp/contracts.db" \
+    QF_ALLOW_EXTERNAL_TEST_DATABASE=1 \
     QF_ALLOW_TEST_SCHEMA_BOOTSTRAP=1 \
     pytest tests/contracts
   run_frontend exec openapi-typescript "$repo_root/docs/后端系统技术方案/contracts/openapi-v1.yaml" --output "$ci_tmp/generated.ts"

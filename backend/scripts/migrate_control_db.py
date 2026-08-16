@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -27,7 +28,8 @@ def main() -> int:
         config.set_main_option("script_location", str(root / "alembic_control"))
         command.upgrade(config, "head")
         init_control_db()
-    print(f"control_db={_control_path()} schema={CONTROL_SCHEMA_VERSION}")
+    target = os.getenv("QF_CONTROL_DB_URL") or str(_control_path())
+    print(f"control_db={target} schema={CONTROL_SCHEMA_VERSION}")
     return 0
 
 

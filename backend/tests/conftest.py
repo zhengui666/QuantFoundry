@@ -56,9 +56,14 @@ def _test_runtime_directory(name: str, environment_name: str) -> Path:
     return path
 
 
-os.environ.setdefault(
-    "QF_DATABASE_URL", f"sqlite:////tmp/quantfoundry-pytest-{os.getpid()}.db"
-)
+configured_database_url = os.getenv("QF_DATABASE_URL")
+if configured_database_url is None:
+    os.environ["QF_DATABASE_URL"] = f"sqlite:///{_TEST_RUNTIME_ROOT / 'database.db'}"
+elif os.getenv("QF_ALLOW_EXTERNAL_TEST_DATABASE") != "1":
+    raise RuntimeError(
+        "QF_DATABASE_URL is externally configured; set "
+        "QF_ALLOW_EXTERNAL_TEST_DATABASE=1 only for an explicitly disposable test database"
+    )
 # Test collection must never inherit production/staging control-plane state;
 # the control DB teardown below is intentionally destructive to this test root.
 os.environ["QF_ENV"] = "test"
@@ -347,10 +352,18 @@ def isolate_control_plane_between_tests():
         ConfigurationRevision,
         ConfigurationValue,
         ControlSessionLocal,
+        _control_path,
     )
     from quantfoundry.api.app import AgentConfigRow, SessionLocal
 
     try:
+        control_path = _control_path().resolve()
+        try:
+            control_path.relative_to(_TEST_RUNTIME_ROOT.resolve())
+        except ValueError as error:
+            raise RuntimeError(
+                f"refusing destructive control DB teardown outside test runtime: {control_path}"
+            ) from error
         with ControlSessionLocal.begin() as control:
             baseline = (
                 control.query(ConfigurationRevision)

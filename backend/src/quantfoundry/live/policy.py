@@ -26,7 +26,9 @@ OrderStatus = Literal[
 
 _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     "CREATED": frozenset({"SUBMITTING", "CANCELLED"}),
-    "SUBMITTING": frozenset({"ACKNOWLEDGED", "UNKNOWN", "RECONCILING", "REJECTED"}),
+    "SUBMITTING": frozenset(
+        {"ACKNOWLEDGED", "PARTIALLY_FILLED", "FILLED", "UNKNOWN", "RECONCILING", "REJECTED"}
+    ),
     "ACKNOWLEDGED": frozenset(
         {
             "PARTIALLY_FILLED",
@@ -42,10 +44,10 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     ),
     "FILLED": frozenset(),
     "CANCEL_PENDING": frozenset({"CANCELLED", "FILLED", "PARTIALLY_FILLED", "UNKNOWN"}),
-    "CANCELLED": frozenset(),
+    "CANCELLED": frozenset({"PARTIALLY_FILLED", "FILLED"}),
     "REJECTED": frozenset(),
     "EXPIRED": frozenset(),
-    "UNKNOWN": frozenset({"RECONCILING"}),
+    "UNKNOWN": frozenset({"PARTIALLY_FILLED", "FILLED", "RECONCILING"}),
     "RECONCILING": frozenset(
         {
             "ACKNOWLEDGED",
@@ -100,6 +102,8 @@ class ActivationEvidence:
             for value in (global_switch, account_switch, deployment_switch)
         ):
             raise LivePolicyError("live kill switch is active")
+        if now.tzinfo is None or self.validated_at.tzinfo is None:
+            raise LivePolicyError("activation timestamps must be timezone-aware")
         current = now.astimezone(UTC)
         validated = self.validated_at.astimezone(UTC)
         if current < validated or current - validated > self.max_validation_age:
@@ -144,6 +148,7 @@ def apply_fill(
     known_fill_ids: frozenset[str],
     cumulative_quantity: str,
     order_quantity: str,
+    previous_cumulative_quantity: str | None = None,
     terminal: bool = False,
 ) -> tuple[OrderStatus, frozenset[str], bool]:
     """Return status, fill-id set and whether this fill changed state."""
@@ -167,9 +172,13 @@ def apply_fill(
         raise LivePolicyError("fill quantities are invalid")
     if cumulative > quantity:
         raise LivePolicyError("cumulative fill exceeds order quantity")
-    if terminal:
-        target: OrderStatus = "FILLED"
-    else:
-        target = "FILLED" if cumulative == quantity else "PARTIALLY_FILLED"
+    if previous_cumulative_quantity is not None:
+        try:
+            previous = Decimal(previous_cumulative_quantity)
+        except InvalidOperation as error:
+            raise LivePolicyError("previous cumulative quantity is invalid") from error
+        if not previous.is_finite() or previous < 0 or cumulative <= previous:
+            raise LivePolicyError("cumulative fill is not increasing")
+    target: OrderStatus = "FILLED" if cumulative == quantity else "PARTIALLY_FILLED"
     next_status = transition_order(current, target)
     return next_status, known_fill_ids | {fill_id}, True

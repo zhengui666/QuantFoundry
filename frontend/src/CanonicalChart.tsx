@@ -34,7 +34,14 @@ export default function CanonicalChart({ chart }: { chart: Schema<'ChartAggregat
     instance.setOption({
       animation: false,
       aria: { enabled: true, description: ariaDescription, decal: { show: true } },
-      xAxis: { type: chart.x_axis.kind === 'TIME' ? 'time' : 'category' },
+      xAxis: {
+        type:
+          chart.x_axis.kind === 'TIME'
+            ? 'time'
+            : chart.x_axis.kind === 'NUMERIC'
+              ? 'value'
+              : 'category',
+      },
       yAxis: { type: 'value' },
       series: chart.series.map((series, index) => ({
         name: series.display_label,

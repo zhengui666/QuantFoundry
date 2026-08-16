@@ -13,13 +13,16 @@ import tempfile
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from functools import wraps
 from pathlib import Path
+from threading import RLock
 from typing import Annotated, Any
 from urllib.parse import quote
 
 import yaml
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHash, VerificationError, VerifyMismatchError
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi import Path as ApiPath
@@ -96,6 +99,16 @@ SESSION_COOKIE = "qf_session"
 PH = PasswordHasher()
 DUMMY_VERIFIER = PH.hash("quantfoundry-invalid-access-key")
 CONTROL_METADATA = MetaData()
+_DOMAIN_SWITCH_LOCK = RLock()
+
+
+def _serialize_domain_switch(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _DOMAIN_SWITCH_LOCK:
+            return function(*args, **kwargs)
+
+    return wrapped
 
 
 class ControlBase(DeclarativeBase):
@@ -262,6 +275,9 @@ def _control_path() -> Path:
 
 
 def _engine():
+    configured_url = os.getenv("QF_CONTROL_DB_URL")
+    if configured_url:
+        return create_engine(configured_url)
     path = _control_path()
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
     return create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
@@ -423,8 +439,13 @@ def _open(envelope: bytes, *, aad: bytes, key_id: str | None = None) -> str:
     configured_key_id, key = _root_key()
     if key_id is not None and not hmac.compare_digest(configured_key_id, key_id):
         raise ValueError("encryption key unavailable")
+    if len(envelope) < 13:
+        raise ValueError("encrypted value is malformed")
     nonce, ciphertext = envelope[:12], envelope[12:]
-    return AESGCM(key).decrypt(nonce, ciphertext, aad).decode()
+    try:
+        return AESGCM(key).decrypt(nonce, ciphertext, aad).decode()
+    except (InvalidTag, UnicodeDecodeError) as error:
+        raise ValueError("encrypted value cannot be decrypted") from error
 
 
 def _configuration_aad(
@@ -729,11 +750,10 @@ def _effective_values(session: Session, revision: int) -> list[ConfigurationValu
             ActiveConfiguration.singleton_key == "CONFIGURATION-DEFAULT"
         )
     )
-    base = (
-        active.active_revision
-        if active and revision != active.active_revision
-        else None
-    )
+    revision_row = session.get(ConfigurationRevision, revision)
+    base = revision_row.base_revision if revision_row else None
+    if base is None and active and revision != active.active_revision:
+        base = active.active_revision
     rows: dict[str, ConfigurationValue] = {}
     if base is not None:
         for row in session.scalars(
@@ -895,8 +915,8 @@ def activate_configuration_revision(
                     ConfigurationConsumerState(
                         consumer=consumer,
                         desired_revision=revision,
-                        applied_revision=revision,
-                        ack="ACKED",
+                        applied_revision=None,
+                        ack="PENDING",
                         heartbeat_at=_now(),
                         instance_id="control-plane",
                         build_sha="0" * 64,
@@ -904,9 +924,14 @@ def activate_configuration_revision(
                 )
             else:
                 state.desired_revision = revision
-                state.applied_revision = revision
-                state.ack = "ACKED"
+                state.ack = "PENDING"
+                state.error_code = None
                 state.heartbeat_at = _now()
+        bootstrap = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+        if bootstrap is not None:
+            bootstrap.active_configuration_revision = revision
+            bootstrap.last_known_good_configuration_revision = revision
+            bootstrap.updated_at = _now()
         _audit(
             db,
             "CONFIG_ACTIVATED",
@@ -1179,6 +1204,7 @@ def _probe_database(
     return checks, failure
 
 
+@_serialize_domain_switch
 def _rebind_domain_database(
     row: DomainDatabaseConnectionRevision,
 ) -> tuple[Any, Any]:
@@ -1215,6 +1241,7 @@ def _rebind_domain_database(
         raise
 
 
+@_serialize_domain_switch
 def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> None:
     """Restore the prior binding before a control-plane transaction rolls back."""
     from app import main as domain_main
@@ -1475,7 +1502,7 @@ def build_router() -> APIRouter:
         _audit(session, "LOGIN_SUCCESS", key.key_id, {"session": "created"})
         session.commit()
         # Local/development smoke runs use plain HTTP; production remains Secure.
-        secure = request.app.state.environment == "production"
+        secure = request.app.state.environment not in {"local", "development", "test"}
         response.set_cookie(
             SESSION_COOKIE,
             token,
@@ -1797,6 +1824,16 @@ def build_router() -> APIRouter:
             db.add(revision)
             db.flush()
             snapshot: dict[str, Any] = {}
+            for row in db.scalars(
+                select(ConfigurationValue).where(
+                    ConfigurationValue.revision == active.active_revision
+                )
+            ):
+                snapshot[row.key] = (
+                    {"configured": True, "secret": True}
+                    if row.ciphertext is not None
+                    else row.typed_value
+                )
             for item in data.values:
                 if item.key in seen or item.key not in catalog:
                     return _problem(
@@ -2046,8 +2083,8 @@ def build_router() -> APIRouter:
                         ConfigurationConsumerState(
                             consumer=consumer,
                             desired_revision=candidate.revision,
-                            applied_revision=candidate.revision,
-                            ack="ACKED",
+                            applied_revision=None,
+                            ack="PENDING",
                             heartbeat_at=_now(),
                             instance_id="control-plane",
                             build_sha="0" * 64,
@@ -2055,9 +2092,14 @@ def build_router() -> APIRouter:
                     )
                 else:
                     existing.desired_revision = candidate.revision
-                    existing.applied_revision = candidate.revision
-                    existing.ack = "ACKED"
+                    existing.ack = "PENDING"
+                    existing.error_code = None
                     existing.heartbeat_at = _now()
+            bootstrap = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+            if bootstrap is not None:
+                bootstrap.active_configuration_revision = candidate.revision
+                bootstrap.last_known_good_configuration_revision = candidate.revision
+                bootstrap.updated_at = _now()
             _audit(
                 db,
                 "CONFIG_ACTIVATED",
@@ -2228,6 +2270,36 @@ def build_router() -> APIRouter:
                 )
                 if result.rowcount != 1:
                     return _problem(412, "REVISION_MISMATCH", "revision does not match")
+            for consumer in sorted(
+                {
+                    c
+                    for row in db.scalars(select(ConfigurationCatalogRow))
+                    for c in row.consumers
+                }
+            ):
+                existing = db.get(ConfigurationConsumerState, consumer)
+                if existing is None:
+                    db.add(
+                        ConfigurationConsumerState(
+                            consumer=consumer,
+                            desired_revision=revision.revision,
+                            applied_revision=None,
+                            ack="PENDING",
+                            heartbeat_at=_now(),
+                            instance_id="control-plane",
+                            build_sha="0" * 64,
+                        )
+                    )
+                else:
+                    existing.desired_revision = revision.revision
+                    existing.ack = "PENDING"
+                    existing.error_code = None
+                    existing.heartbeat_at = _now()
+            bootstrap = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+            if bootstrap is not None:
+                bootstrap.active_configuration_revision = revision.revision
+                bootstrap.last_known_good_configuration_revision = revision.revision
+                bootstrap.updated_at = _now()
             _audit(
                 db,
                 "CONFIG_ROLLED_BACK",
@@ -2412,6 +2484,7 @@ def build_router() -> APIRouter:
         response_model=DatabaseConnectionStatus,
         operation_id="activateDomainDatabaseConnection",
     )
+    @_serialize_domain_switch
     def activate_database_candidate(
         request: Request,
         response: Response,
@@ -2423,98 +2496,119 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
-            active = db.scalar(
-                select(DomainDatabaseConnectionRevision)
-                .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
-                .order_by(desc(DomainDatabaseConnectionRevision.revision))
-            )
-            candidate = db.scalar(
-                select(DomainDatabaseConnectionRevision)
-                .where(DomainDatabaseConnectionRevision.state == "VALIDATED")
-                .order_by(desc(DomainDatabaseConnectionRevision.revision))
-            )
-            current_revision = active.revision if active else 0
-            mismatch = _if_match(if_match, "database", max(current_revision, 0))
-            if mismatch is not None:
-                return mismatch
-            if candidate is None:
-                return _problem(
-                    409,
-                    "DATABASE_CONNECTION_FAILED",
-                    "candidate must pass validation before activation",
+        previous_engine = None
+        candidate_engine = None
+        restored = False
+        switched = False
+        try:
+            with ControlSessionLocal.begin() as db:
+                active = db.scalar(
+                    select(DomainDatabaseConnectionRevision)
+                    .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
+                    .order_by(desc(DomainDatabaseConnectionRevision.revision))
                 )
-            _checks, probe_failure = _probe_database(candidate)
-            if probe_failure is not None:
-                candidate.state = "FAILED"
-                candidate.failure_code = probe_failure
-                return _problem(
-                    409, probe_failure, "database candidate is no longer valid"
+                candidate = db.scalar(
+                    select(DomainDatabaseConnectionRevision)
+                    .where(DomainDatabaseConnectionRevision.state == "VALIDATED")
+                    .order_by(desc(DomainDatabaseConnectionRevision.revision))
                 )
-            try:
-                previous_engine, candidate_engine = _rebind_domain_database(candidate)
-            except (
-                SQLAlchemyError,
-                OSError,
-                ValueError,
-                KeyError,
-                TypeError,
-                RuntimeError,
-            ):
-                candidate.state = "FAILED"
-                candidate.failure_code = "DATABASE_SWITCH_FAILED"
-                return _problem(409, "DATABASE_SWITCH_FAILED", "database canary failed")
-            try:
-                now = _now()
-                if active is not None:
-                    active.state = "SUPERSEDED"
-                candidate.state = "ACTIVE"
-                candidate.activated_at = now
-                state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
-                if state is not None:
-                    state.active_database_connection_revision = candidate.revision
-                    state.last_known_good_database_connection_revision = (
-                        active.revision if active else candidate.revision
+                current_revision = active.revision if active else 0
+                mismatch = _if_match(if_match, "database", max(current_revision, 0))
+                if mismatch is not None:
+                    return mismatch
+                if candidate is None:
+                    return _problem(
+                        409,
+                        "DATABASE_CONNECTION_FAILED",
+                        "candidate must pass validation before activation",
                     )
-                    state.readiness_state = "READY"
-                    state.updated_at = now
-                _audit(
-                    db,
-                    "DATABASE_ACTIVATED",
-                    None,
-                    {"revision": candidate.revision},
-                    db_revision=candidate.revision,
-                )
-                payload = {
-                    "state": "READY",
-                    "active_revision": candidate.revision,
-                    "candidate_revision": None,
-                    "last_known_good_revision": active.revision
-                    if active
-                    else candidate.revision,
-                    "active": _database_candidate_view(candidate),
-                    "candidate": None,
-                    "domain_operations": "AVAILABLE",
-                    "checked_at": now,
-                }
-                response.headers["ETag"] = f'W/"database:{candidate.revision}"'
-                return payload
-            except (
-                SQLAlchemyError,
-                OSError,
-                ValueError,
-                KeyError,
-                TypeError,
-                RuntimeError,
-            ):
+                _checks, probe_failure = _probe_database(candidate)
+                if probe_failure is not None:
+                    candidate.state = "FAILED"
+                    candidate.failure_code = probe_failure
+                    return _problem(
+                        409, probe_failure, "database candidate is no longer valid"
+                    )
+                try:
+                    previous_engine, candidate_engine = _rebind_domain_database(candidate)
+                    switched = True
+                except (
+                    SQLAlchemyError,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                ):
+                    candidate.state = "FAILED"
+                    candidate.failure_code = "DATABASE_SWITCH_FAILED"
+                    return _problem(409, "DATABASE_SWITCH_FAILED", "database canary failed")
+                try:
+                    now = _now()
+                    if active is not None:
+                        active.state = "SUPERSEDED"
+                    candidate.state = "ACTIVE"
+                    candidate.activated_at = now
+                    state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+                    if state is not None:
+                        state.active_database_connection_revision = candidate.revision
+                        state.last_known_good_database_connection_revision = (
+                            active.revision if active else candidate.revision
+                        )
+                        state.readiness_state = "READY"
+                        state.updated_at = now
+                    _audit(
+                        db,
+                        "DATABASE_ACTIVATED",
+                        None,
+                        {"revision": candidate.revision},
+                        db_revision=candidate.revision,
+                    )
+                    payload = {
+                        "state": "READY",
+                        "active_revision": candidate.revision,
+                        "candidate_revision": None,
+                        "last_known_good_revision": active.revision
+                        if active
+                        else candidate.revision,
+                        "active": _database_candidate_view(candidate),
+                        "candidate": None,
+                        "domain_operations": "AVAILABLE",
+                        "checked_at": now,
+                    }
+                    response.headers["ETag"] = f'W/"database:{candidate.revision}"'
+                except (
+                    SQLAlchemyError,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                ):
+                    _restore_domain_database(previous_engine, candidate_engine)
+                    restored = True
+                    raise
+        except (
+            SQLAlchemyError,
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+        ):
+            if switched and not restored and previous_engine is not None and candidate_engine is not None:
                 _restore_domain_database(previous_engine, candidate_engine)
-                raise
+            raise
+        if previous_engine is not None:
+            previous_engine.dispose()
+        return payload
 
     @router.post(
         "/database/connection/revert",
         response_model=DatabaseConnectionStatus,
         operation_id="revertDomainDatabaseConnection",
     )
+    @_serialize_domain_switch
     def revert_database_connection(
         request: Request,
         response: Response,

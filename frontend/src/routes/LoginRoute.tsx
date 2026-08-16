@@ -27,13 +27,17 @@ export function LoginPage() {
                 setKey('');
                 const returnTo = transientStorage.get('qf.auth.return_to');
                 transientStorage.remove('qf.auth.return_to');
-                if (
-                  returnTo &&
-                  returnTo.startsWith('/') &&
-                  !returnTo.startsWith('//') &&
-                  returnTo !== '/login'
-                )
-                  window.location.replace(returnTo);
+                let safeReturnTo: string | undefined;
+                if (returnTo) {
+                  try {
+                    const target = new URL(returnTo, window.location.origin);
+                    if (target.origin === window.location.origin && target.pathname !== '/login')
+                      safeReturnTo = `${target.pathname}${target.search}${target.hash}`;
+                  } catch {
+                    safeReturnTo = undefined;
+                  }
+                }
+                if (safeReturnTo) window.location.replace(safeReturnTo);
                 else void navigate({ to: '/overview', replace: true });
               } catch (value) {
                 setError(value);

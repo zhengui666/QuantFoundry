@@ -144,7 +144,7 @@ export function Shell() {
       if (returnTo !== '/login') transientStorage.set('qf.auth.return_to', returnTo);
       void navigate({ to: '/login', replace: true });
     }
-  }, [isLogin, navigate, sessionReady]);
+  }, [authScopeKey, isLogin, navigate, sessionReady]);
   useEffect(() => {
     if (!auth.get()) return;
     return streamEvents(
@@ -336,6 +336,10 @@ export function SetupPage() {
     queryKey: workspaceQueryKey('setup-status'),
     queryFn: ({ signal }) => api.setupStatus(signal),
   });
+  const configuration = useQuery({
+    queryKey: workspaceQueryKey('setup-configuration'),
+    queryFn: ({ signal }) => api.configurationActive(signal),
+  });
   const capabilities = useQuery({
     queryKey: workspaceQueryKey('setup-capabilities'),
     queryFn: ({ signal }) => api.setupCapabilities(signal),
@@ -358,21 +362,21 @@ export function SetupPage() {
   const [form, setForm] = useState({
     language: 'zh-CN' as 'en' | 'zh-CN',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    base_currency: 'USD',
     number_format_locale: 'zh-CN',
     default_benchmark: 'SPY',
     default_research_start: '',
     initial_paper_capital: '100000',
   });
   const validateAi = useMutation({
-    mutationFn: () =>
+    mutationFn: (variables: { providerId: string; modelName: string; credential: string }) =>
       api.validateSetupConnection({
-        provider_id: providerId,
+        provider_id: variables.providerId,
         kind: 'AI',
-        model_name: modelName || null,
-        credential: aiCredential,
+        model_name: variables.modelName || null,
+        credential: variables.credential,
       }),
-    onSuccess: async ({ body }) => {
+    onSuccess: async ({ body }, variables) => {
+      if (providerId !== variables.providerId) return;
       setAiCredential('');
       if (body.state === 'FAILED') {
         setAiConnection(body);
@@ -385,14 +389,15 @@ export function SetupPage() {
     },
   });
   const validateData = useMutation({
-    mutationFn: () =>
+    mutationFn: (variables: { providerId: string; credential: string }) =>
       api.validateSetupConnection({
-        provider_id: dataProviderId,
+        provider_id: variables.providerId,
         kind: 'DATA',
         model_name: null,
-        credential: dataCredential,
+        credential: variables.credential,
       }),
-    onSuccess: ({ body }) => {
+    onSuccess: ({ body }, variables) => {
+      if (dataProviderId !== variables.providerId) return;
       setDataConnection(body);
       setDataCredential('');
       void status.refetch();
@@ -410,13 +415,58 @@ export function SetupPage() {
         server.fallback_step !== null
       )
         throw new ContractError('Fresh server setup refs are required before Finish.');
-      const active = await api.configurationActive();
-      if (!active.etag) throw new ContractError('Fresh configuration ETag is required.');
-      const body = { configuration_revision: active.body.active_revision };
+      const active = await configuration.refetch();
+      if (!active.data?.etag) throw new ContractError('Fresh configuration ETag is required.');
+      const valuesByKey = new Map(active.data.body.values.map((entry) => [entry.key, entry.value]));
+      const locale = valuesByKey.get('appearance.locale');
+      const defaults = valuesByKey.get('research.defaults');
+      if (
+        typeof locale !== 'object' ||
+        locale === null ||
+        Array.isArray(locale) ||
+        typeof defaults !== 'object' ||
+        defaults === null ||
+        Array.isArray(defaults)
+      )
+        throw new ContractError('Active setup configuration is incomplete.');
+      type ConfigurationValue = Exclude<Schema<'ConfigurationValueWrite'>['value'], undefined>;
+      const configurationValue = (value: object): ConfigurationValue => value as ConfigurationValue;
+      const candidate = await api.putConfigurationCandidate(
+        {
+          base_revision: active.data.body.active_revision,
+          values: [
+            {
+              key: 'appearance.locale',
+              value: configurationValue({
+                ...(locale as Record<string, unknown>),
+                language: form.language,
+                timezone: form.timezone,
+                number_format_locale: form.number_format_locale,
+              }),
+            },
+            {
+              key: 'research.defaults',
+              value: configurationValue({
+                ...(defaults as Record<string, unknown>),
+                benchmark: form.default_benchmark,
+                research_start: form.default_research_start || null,
+                initial_paper_capital: Number(form.initial_paper_capital),
+              }),
+            },
+          ],
+        },
+        active.data.etag,
+      );
+      const validation = await api.validateConfigurationCandidate();
+      if (validation.body.revision !== candidate.body.revision)
+        throw new ContractError('Setup configuration changed during validation.');
+      if (validation.body.status !== 'VALID')
+        throw new ContractError('Setup configuration validation failed.');
+      const body = { configuration_revision: candidate.body.revision };
       const payload = JSON.stringify(body);
       if (!completeIntent.current || completeIntent.current.payload !== payload)
         completeIntent.current = { payload, key: idempotency() };
-      return api.completeSetup(body, active.etag, completeIntent.current.key);
+      return api.completeSetup(body, active.data.etag, completeIntent.current.key);
     },
     onSuccess: async ({ body }) => {
       const locale = configurationLocale(
@@ -489,10 +539,11 @@ export function SetupPage() {
   useEffect(() => {
     if (readiness && step > recoveryStep && readiness.fallback_step !== null) setStep(recoveryStep);
   }, [readiness, recoveryStep, step]);
-  if (status.isLoading || capabilities.isLoading)
+  if (status.isLoading || capabilities.isLoading || configuration.isLoading)
     return <State kind="loading">{t('setup.loading')}</State>;
   if (status.error) return <Problem error={status.error} />;
   if (capabilities.error) return <Problem error={capabilities.error} />;
+  if (configuration.error) return <Problem error={configuration.error} />;
   return (
     <>
       <h1>{t('page.setup')}</h1>
@@ -538,7 +589,7 @@ export function SetupPage() {
                 <option value="en">English</option>
               </select>
             </label>
-            {(['timezone', 'base_currency', 'number_format_locale'] as const).map((key) => (
+            {(['timezone', 'number_format_locale'] as const).map((key) => (
               <label key={key}>
                 {t(`setup.field.${key}`)}
                 <input
@@ -596,7 +647,7 @@ export function SetupPage() {
             <button
               type="button"
               disabled={!providerId || !aiCredential || validateAi.isPending}
-              onClick={() => validateAi.mutate()}
+              onClick={() => validateAi.mutate({ providerId, modelName, credential: aiCredential })}
             >
               {validateAi.isPending ? t('setup.testing') : t('setup.testAi')}
             </button>
@@ -650,7 +701,9 @@ export function SetupPage() {
             <button
               type="button"
               disabled={!dataProviderId || !dataCredential || validateData.isPending}
-              onClick={() => validateData.mutate()}
+              onClick={() =>
+                validateData.mutate({ providerId: dataProviderId, credential: dataCredential })
+              }
             >
               {validateData.isPending ? t('setup.testing') : t('setup.testData')}
             </button>

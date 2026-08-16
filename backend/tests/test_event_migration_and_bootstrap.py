@@ -131,6 +131,14 @@ def test_populated_roundtrip_manifest_and_pg18_floor_are_monotonic(
         migration_roundtrip_check._load_gate_manifest(path)
 
 
+def test_populated_roundtrip_requires_server_side_disposable_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("QF_MIGRATION_GATE_MARKER", raising=False)
+    with pytest.raises(RuntimeError, match="QF_MIGRATION_GATE_MARKER"):
+        migration_roundtrip_check._require_disposable_migration_gate("postgresql+psycopg://gate")
+
+
 def test_populated_roundtrip_gate_requires_12_workspace_roles() -> None:
     manifest = migration_roundtrip_check._load_gate_manifest()
     with pytest.raises(RuntimeError, match=r"roles=11/12"):

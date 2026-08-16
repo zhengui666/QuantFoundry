@@ -7,6 +7,7 @@ import json
 import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Lock
 from typing import Any
 
 
@@ -18,6 +19,7 @@ class LocalProviderServer(ThreadingHTTPServer):
     model_name: str
     failure_statuses: list[int]
     request_log: list[dict[str, Any]]
+    state_lock: Lock
 
 
 class LocalProviderHandler(BaseHTTPRequestHandler):
@@ -193,8 +195,17 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            request = json.loads(self.rfile.read(length))
+            raw_length = self.headers.get("Content-Length")
+            length = int(raw_length) if raw_length is not None else -1
+            if length < 0:
+                raise ValueError("Content-Length is required")
+            if length > 4 * 1024 * 1024:
+                self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body_too_large"})
+                return
+            body = self.rfile.read(length)
+            if len(body) != length:
+                raise ValueError("incomplete request body")
+            request = json.loads(body)
         except (ValueError, json.JSONDecodeError):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
             return
@@ -221,24 +232,25 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                 }
             )
         self.server.request_log.append(request_log)
-        if self.server.failure_statuses:
-            failure_status = self.server.failure_statuses.pop(0)
-            self._json(
-                HTTPStatus(failure_status), {"error": "injected_provider_failure"}
-            )
-            return
-        if self.server.deterministic_research_plan and not self.server.actions:
-            try:
-                action = self._deterministic_action(request)
-            except (ValueError, json.JSONDecodeError):
+        with self.server.state_lock:
+            if self.server.failure_statuses:
+                failure_status = self.server.failure_statuses.pop(0)
                 self._json(
-                    HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"}
+                    HTTPStatus(failure_status), {"error": "injected_provider_failure"}
                 )
                 return
-        else:
-            index = min(self.server.action_index, len(self.server.actions) - 1)
-            action = self.server.actions[index]
-        self.server.action_index += 1
+            if self.server.deterministic_research_plan and not self.server.actions:
+                try:
+                    action = self._deterministic_action(request)
+                except (ValueError, json.JSONDecodeError):
+                    self._json(
+                        HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"}
+                    )
+                    return
+            else:
+                index = min(self.server.action_index, len(self.server.actions) - 1)
+                action = self.server.actions[index]
+            self.server.action_index += 1
         self._json(
             HTTPStatus.OK,
             {
@@ -287,14 +299,17 @@ def create_server(
         raise RuntimeError(
             "QF_LOCAL_PROVIDER_API_KEY must contain at least 20 characters"
         )
+    if actions is not None and not actions:
+        raise ValueError("actions must be non-empty when explicitly configured")
     server = LocalProviderServer((host, port), LocalProviderHandler)
     server.deterministic_research_plan = actions is None
-    server.actions = actions or []
+    server.actions = list(actions) if actions is not None else []
     server.action_index = 0
     server.api_key = effective_key
     server.model_name = model_name
     server.failure_statuses = list(failure_statuses or [])
     server.request_log = []
+    server.state_lock = Lock()
     return server
 
 

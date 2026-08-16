@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -150,6 +150,27 @@ describe('public-ID repository fixture scanner', () => {
       expect(result.coverage.get('source')).toBe(2);
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects sources outside the repository and declared symlinks', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'qf-pid-boundary-'));
+    const outside = await mkdtemp(join(tmpdir(), 'qf-pid-outside-'));
+    try {
+      await writeFile(join(outside, 'fixture.md'), 'outside');
+      await expect(
+        collectFormalPublicIdFiles(root, [
+          { path: '../qf-pid-outside-does-not-exist', kind: 'file' },
+        ]),
+      ).rejects.toThrow('escapes repository root');
+      const link = join(root, 'linked');
+      await symlink(outside, link, 'junction');
+      await expect(
+        collectFormalPublicIdFiles(root, [{ path: 'linked', kind: 'directory' }]),
+      ).rejects.toThrow('unsupported symlink');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 });

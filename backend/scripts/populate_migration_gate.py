@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import runpy
 import uuid
@@ -411,17 +412,43 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
     if connection.dialect.name == "postgresql":
         connection.exec_driver_sql("ALTER TABLE audit_events DISABLE TRIGGER USER")
         connection.exec_driver_sql("ALTER TABLE domain_events DISABLE TRIGGER USER")
-        connection.exec_driver_sql(
-            "DELETE FROM audit_events "
-            "WHERE action_type='SCHEDULER_STATE_INITIALIZED_NO_HISTORY' "
-            "AND object_type='paper'"
-        )
-        connection.exec_driver_sql(
-            "DELETE FROM domain_events "
-            "WHERE event_type='paper.updated' AND object_type='paper'"
-        )
-        connection.exec_driver_sql("ALTER TABLE audit_events ENABLE TRIGGER USER")
-        connection.exec_driver_sql("ALTER TABLE domain_events ENABLE TRIGGER USER")
+        try:
+            evidence_key = migration["_EVIDENCE_KEY"]
+            audit_table = _table(metadata, "audit_events", connection)
+            event_table = _table(metadata, "domain_events", connection)
+            audit_ids = []
+            event_ids = []
+            evidence_rows = connection.execute(
+                select(audit_table.c.id, audit_table.c.summary).where(
+                    audit_table.c.action_type == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+                    audit_table.c.object_type == "paper",
+                )
+            ).mappings()
+            for row in evidence_rows:
+                summary = row["summary"]
+                if isinstance(summary, str):
+                    try:
+                        summary = json.loads(summary)
+                    except json.JSONDecodeError:
+                        continue
+                evidence = summary.get(evidence_key) if isinstance(summary, dict) else None
+                state_transition_id = (
+                    evidence.get("state_transition_id")
+                    if isinstance(evidence, dict)
+                    else None
+                )
+                if state_transition_id:
+                    audit_ids.append(row["id"])
+                    event_ids.append(state_transition_id)
+            if audit_ids:
+                connection.execute(audit_table.delete().where(audit_table.c.id.in_(audit_ids)))
+            if event_ids:
+                connection.execute(
+                    event_table.delete().where(event_table.c.event_id.in_(event_ids))
+                )
+        finally:
+            connection.exec_driver_sql("ALTER TABLE audit_events ENABLE TRIGGER USER")
+            connection.exec_driver_sql("ALTER TABLE domain_events ENABLE TRIGGER USER")
     for name in (
         "paper_deployments",
         "paper_scheduler_states",

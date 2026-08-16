@@ -14,4 +14,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    CONTROL_METADATA.drop_all(op.get_bind())
+    for table_name in (
+        "configuration_values",
+        "owner_sessions",
+        "bootstrap_audit_events",
+        "configuration_consumer_states",
+        "active_configuration",
+        "domain_database_connection_revisions",
+        "configuration_revisions",
+        "configuration_catalog",
+        "bootstrap_state",
+        "general_access_keys",
+    ):
+        op.drop_table(table_name)

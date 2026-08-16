@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 import uuid
+from types import MappingProxyType
 from typing import Final
 
-PUBLIC_ID_PREFIXES: Final[dict[str, str]] = {
+PUBLIC_ID_PREFIXES: Final = MappingProxyType({
     "research_policy": "RP",
     "risk_policy": "RISK",
     "cost_model": "COST",
@@ -41,18 +42,20 @@ PUBLIC_ID_PREFIXES: Final[dict[str, str]] = {
     "artifact": "ART",
     "notification": "NOTIF",
     "provenance": "PROV",
-}
+})
 
 _ULID = r"[0-7][0-9A-HJKMNP-TV-Z]{25}"
 _UUID4 = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
-PUBLIC_ID_PATTERNS: Final[dict[str, str]] = {
+PUBLIC_ID_PATTERNS: Final = MappingProxyType({
     kind: rf"^{prefix}-(?:{_ULID}|{_UUID4})$"
     for kind, prefix in PUBLIC_ID_PREFIXES.items()
-}
-PUBLIC_ID_MAX_LENGTHS: Final[dict[str, int]] = {
+})
+PUBLIC_ID_MAX_LENGTHS: Final = MappingProxyType({
     kind: len(prefix) + 1 + 36 for kind, prefix in PUBLIC_ID_PREFIXES.items()
-}
-_COMPILED = {kind: re.compile(pattern) for kind, pattern in PUBLIC_ID_PATTERNS.items()}
+})
+_COMPILED = MappingProxyType(
+    {kind: re.compile(pattern) for kind, pattern in PUBLIC_ID_PATTERNS.items()}
+)
 
 
 def new_public_id(kind: str) -> str:

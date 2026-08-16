@@ -186,6 +186,21 @@ run_agent_change() {
   run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$review_locator" "$commit"
 }
 
+verify_remote_release_tag() {
+  local refs remote_commit
+  refs="$(git -C "$repo_root" ls-remote --exit-code origin \
+    "refs/tags/$QF_RELEASE_TAG" "refs/tags/$QF_RELEASE_TAG^{}")" || return 1
+  remote_commit="$(printf '%s\n' "$refs" | awk -v tag="$QF_RELEASE_TAG" '
+    $2 == "refs/tags/" tag "^{}" { peeled = $1 }
+    $2 == "refs/tags/" tag { direct = $1 }
+    END { print peeled != "" ? peeled : direct }
+  ')"
+  [[ -n "$remote_commit" && "$remote_commit" == "$commit" ]] || {
+    printf 'remote release tag target %s does not match checkout %s\n' "$remote_commit" "$commit" >&2
+    return 1
+  }
+}
+
 run_rc() {
   require_ci_environment
   require_common_tooling
@@ -201,7 +216,7 @@ run_rc() {
     write_result release-tag-target 'release tag must resolve to checkout HEAD' 2 'release tag target does not match checkout HEAD'
     exit 2
   }
-  run_step remote-release-tag git -C "$repo_root" ls-remote --exit-code --refs origin "refs/tags/$QF_RELEASE_TAG"
+  run_step remote-release-tag verify_remote_release_tag
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
   run_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain
   run_step known-issues-review scripts/release-known-issues-check.sh

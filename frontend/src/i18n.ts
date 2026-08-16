@@ -12,13 +12,10 @@ export const canonicalTimeZone = (timezone: string): string => {
   }
 };
 
-const readServerLocale = (): ServerLocaleSettings | undefined => undefined;
-
-const restoredLocale = readServerLocale();
-let activeLocale: ServerLocaleSettings | undefined = restoredLocale;
+let activeLocale: ServerLocaleSettings | undefined;
 
 void i18n.use(initReactI18next).init({
-  lng: restoredLocale?.language ?? 'zh-CN',
+  lng: 'zh-CN',
   fallbackLng: 'en',
   interpolation: { escapeValue: false },
   resources: {
@@ -1425,8 +1422,7 @@ const applyDocumentLocale = ({ language, timezone }: ServerLocaleSettings) => {
   document.documentElement.dataset.timezone = timezone;
 };
 
-if (restoredLocale) applyDocumentLocale(restoredLocale);
-else applyDocumentLocale({ language: 'zh-CN', timezone: 'UTC' });
+applyDocumentLocale({ language: 'zh-CN', timezone: 'UTC' });
 i18n.on('languageChanged', (language) => {
   document.documentElement.lang = language;
 });
@@ -1436,9 +1432,9 @@ export const applyServerSettingsLocale = async (settings: ServerLocaleSettings) 
     ...settings,
     timezone: canonicalTimeZone(settings.timezone),
   };
+  await i18n.changeLanguage(canonical.language);
   activeLocale = canonical;
   applyDocumentLocale(canonical);
-  await i18n.changeLanguage(canonical.language);
 };
 
 export const configurationLocale = (value: unknown): ServerLocaleSettings | undefined => {

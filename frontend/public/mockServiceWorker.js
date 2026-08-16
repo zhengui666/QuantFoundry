@@ -14,10 +14,14 @@ const activeClientIds = new Set()
 const MESSAGE_TIMEOUT = 10_000
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-async function reconcileActiveClients() {
+async function reconcileActiveClients(sender) {
   const allClients = await self.clients.matchAll({
     type: 'window',
+    includeUncontrolled: true,
   })
+  if (sender?.id && !allClients.some((client) => client.id === sender.id)) {
+    allClients.push(sender)
+  }
   const liveClientIds = new Set(allClients.map((client) => client.id))
 
   for (const clientId of activeClientIds) {
@@ -44,7 +48,7 @@ addEventListener('message', function (event) {
 })
 
 async function handleMessage(event) {
-  await reconcileActiveClients()
+  await reconcileActiveClients(event.source)
 
   const clientId = Reflect.get(event.source || {}, 'id')
 

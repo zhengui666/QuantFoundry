@@ -3018,7 +3018,41 @@ export const ConfigurationCatalogSchema = z
     entries: z.array(ConfigurationCatalogEntrySchema),
   })
   .strict();
-export const ConfigurationValueWriteSchema = z.union([z.unknown(), z.unknown()]);
+export const ConfigurationValueWriteSchema = z
+  .object({
+    key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
+    value: z
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          z.string().safeParse(value).success,
+          z.number().safeParse(value).success,
+          z.boolean().safeParse(value).success,
+          z.object({}).passthrough().safeParse(value).success,
+          z.array(z.unknown()).safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches === 0)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match at least one canonical variant',
+          });
+      })
+      .optional(),
+    secret: z.string().min(1).max(16384).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const matches = [
+      z.object({ value: z.unknown() }).passthrough().safeParse(value).success,
+      z.object({ secret: z.unknown() }).passthrough().safeParse(value).success,
+    ].filter(Boolean).length;
+    if (matches !== 1)
+      context.addIssue({
+        code: 'custom',
+        message: 'Value must match exactly one canonical variant',
+      });
+  });
 export const ConfigurationCandidateRequestSchema = z
   .object({
     base_revision: z.number().int().min(1),

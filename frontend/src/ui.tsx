@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
@@ -68,20 +68,26 @@ export function Capability({
   confirmationHandled = false,
 }: {
   item: Schema<'ActionCapability'>;
-  onClick?: (() => void) | undefined;
+  onClick?: (() => void | Promise<void>) | undefined;
   busy?: boolean;
   label?: string;
   confirmationHandled?: boolean;
 }) {
   const { t } = useTranslation();
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [confirmationPending, setConfirmationPending] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string>();
   if (item.visibility === 'HIDE') return null;
   const executable = item.allowed && onClick !== undefined;
   const actionLabel = label ?? t(`action.${item.action}`, { defaultValue: item.action });
+  const run = () => {
+    void onClick?.();
+  };
   const button = (
     <button
       data-testid={`capability-action-${item.action}`}
       data-requires-confirmation={String(item.requires_confirmation)}
-      onClick={item.requires_confirmation && !confirmationHandled ? undefined : onClick}
+      onClick={item.requires_confirmation && !confirmationHandled ? undefined : run}
       disabled={!executable || busy}
       title={
         item.allowed
@@ -96,8 +102,21 @@ export function Capability({
     </button>
   );
   if (!executable || !item.requires_confirmation || confirmationHandled) return button;
+  const confirm = async () => {
+    if (!onClick) return;
+    setConfirmationPending(true);
+    setConfirmationError(undefined);
+    try {
+      await onClick();
+      setConfirmationOpen(false);
+    } catch (error) {
+      setConfirmationError(error instanceof Error ? error.message : t('error.connection'));
+    } finally {
+      setConfirmationPending(false);
+    }
+  };
   return (
-    <Dialog.Root>
+    <Dialog.Root open={confirmationOpen} onOpenChange={setConfirmationOpen}>
       <Dialog.Trigger asChild>{button}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
@@ -108,11 +127,14 @@ export function Capability({
             {item.if_match_required ? ` · ${t('capability.revisionProtected')}` : ''}
             {item.idempotency_required ? ` · ${t('capability.idempotentRequest')}` : ''}
           </p>
-          <Dialog.Close asChild>
-            <button data-testid={`capability-confirm-${item.action}`} onClick={onClick}>
-              {t('capability.confirmAction')}
-            </button>
-          </Dialog.Close>
+          {confirmationError && <State kind="error">{confirmationError}</State>}
+          <button
+            data-testid={`capability-confirm-${item.action}`}
+            onClick={() => void confirm()}
+            disabled={confirmationPending}
+          >
+            {t('capability.confirmAction')}
+          </button>
           <Dialog.Close asChild>
             <button className="secondary">{t('common.cancel')}</button>
           </Dialog.Close>

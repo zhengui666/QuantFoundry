@@ -1,6 +1,6 @@
 import { ESLint } from 'eslint';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const frontendRoot = resolve(import.meta.dirname, '..');
@@ -105,17 +105,22 @@ export { Button };
 
 describe('frontend ESLint policy fixtures', () => {
   it('rejects every mandated policy violation', async () => {
-    const fixturePaths = cases.map(({ directory, path }) =>
-      resolve(frontendRoot, directory ?? 'src/__eslint_fixtures__', path),
-    );
-    const fixtureDirectories = [...new Set(fixturePaths.map((path) => resolve(path, '..')))];
+    const fixtureRoots = new Map();
+    const fixturePaths = [];
     try {
+      for (const { directory, path } of cases) {
+        const scope = directory
+          ? resolve(frontendRoot, directory, '..')
+          : resolve(frontendRoot, 'src');
+        let root = fixtureRoots.get(scope);
+        if (!root) {
+          root = await mkdtemp(join(scope, 'qf-eslint-fixtures-'));
+          fixtureRoots.set(scope, root);
+        }
+        fixturePaths.push(resolve(root, path));
+      }
       await Promise.all(
-        cases.map(async ({ directory, path, source }) => {
-          const nestedPath = resolve(frontendRoot, directory ?? 'src/__eslint_fixtures__', path);
-          await mkdir(resolve(nestedPath, '..'), { recursive: true });
-          await writeFile(nestedPath, source, 'utf8');
-        }),
+        cases.map(({ source }, index) => writeFile(fixturePaths[index], source, 'utf8')),
       );
       const eslint = new ESLint({
         cwd: frontendRoot,
@@ -126,7 +131,9 @@ describe('frontend ESLint policy fixtures', () => {
         expect(result.messages.map((message) => message.ruleId)).toContain(cases[index].ruleId);
     } finally {
       await Promise.all(
-        fixtureDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
+        [...fixtureRoots.values()].map((directory) =>
+          rm(directory, { recursive: true, force: true }),
+        ),
       );
     }
   }, 20_000);

@@ -100,7 +100,15 @@ def _replace_idempotency() -> None:
     op.create_table(
         "idempotency_records_v2",
         sa.Column("actor_id", sa.String(), primary_key=True),
-        sa.Column("workspace_id", sa.String(), primary_key=True),
+        sa.Column(
+            "workspace_id",
+            sa.String(),
+            sa.ForeignKey(
+                "workspaces.id",
+                name="fk_idempotency_records_workspace_id_workspaces",
+            ),
+            primary_key=True,
+        ),
         sa.Column("method", sa.String(), primary_key=True),
         sa.Column("path", sa.String(), primary_key=True),
         sa.Column("key", sa.String(), primary_key=True),
@@ -138,11 +146,11 @@ def _replace_strategy_guard() -> None:
                 END IF;
                 RETURN OLD;
               END IF;
-              IF OLD.state <> 'CANDIDATE' AND (
+              IF (OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   NEW.frozen_at IS DISTINCT FROM OLD.frozen_at OR
+                   (OLD.state <> 'CANDIDATE' AND NEW.frozen_at IS DISTINCT FROM OLD.frozen_at) OR
                    NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
               ) THEN
                 RAISE EXCEPTION 'frozen strategy specification is immutable';
@@ -184,7 +192,7 @@ def _replace_strategy_guard() -> None:
         """
         CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE
         ON strategy_versions WHEN
-          (OLD.state != 'CANDIDATE' AND (
+          ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
              NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR
              NEW.spec_sha256 != OLD.spec_sha256 OR NEW.frozen_at != OLD.frozen_at OR
              COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR

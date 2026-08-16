@@ -5,7 +5,14 @@ from __future__ import annotations
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from quantfoundry.contracts.openapi import generated_api_models as generated
 
@@ -84,6 +91,15 @@ class LiveConnectorValidationResult(BaseModel):
     ]
     checked_at: AwareDatetime
 
+    @model_validator(mode="after")
+    def validate_outcome(self) -> LiveConnectorValidationResult:
+        if self.state == "SUCCESS":
+            if self.error_code is not None or not self.connector_id or not self.protocol_version:
+                raise ValueError("successful connector validation must contain capabilities")
+        elif self.error_code is None:
+            raise ValueError("failed connector validation must contain an error code")
+        return self
+
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     name: cast(type[BaseModel], SetupCompleteRequest)
@@ -133,8 +149,9 @@ try:
         "ProblemContext",
     ):
         SCHEMA_MODELS[_name] = cast(type[BaseModel], getattr(_ux_models, _name))
-except ImportError:
-    pass
+except ModuleNotFoundError as error:
+    if error.name != "app":
+        raise
 
 
 def validate_schema(name: str, value: Any) -> Any:

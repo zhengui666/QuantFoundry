@@ -7,6 +7,7 @@ otherwise conceal an incomplete handler result.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ def canonical_openapi() -> dict[str, Any]:
                 / "docs/后端系统技术方案/contracts/openapi-v1.yaml"
             ).read_text()
         )
-    return _SPEC
+    return deepcopy(_SPEC)
 
 
 def now() -> str:
