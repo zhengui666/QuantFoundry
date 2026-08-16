@@ -14,11 +14,18 @@ os.environ.setdefault("QF_DATABASE_URL", database_url)
 _previous_alembic_running = os.environ.get("QF_ALEMBIC_RUNNING")
 os.environ["QF_ALEMBIC_RUNNING"] = "1"
 
-from quantfoundry.api.app import Base  # noqa: E402
+try:
+    from quantfoundry.api.app import Base  # noqa: E402
 
-config = context.config
-config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
-target_metadata = Base.metadata
+    config = context.config
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    target_metadata = Base.metadata
+except Exception:
+    if _previous_alembic_running is None:
+        os.environ.pop("QF_ALEMBIC_RUNNING", None)
+    else:
+        os.environ["QF_ALEMBIC_RUNNING"] = _previous_alembic_running
+    raise
 
 
 def run_migrations_offline():

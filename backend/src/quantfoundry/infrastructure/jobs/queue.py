@@ -323,20 +323,7 @@ def complete_job(
     now: datetime | None = None,
 ) -> JobRow:
     timestamp = now or datetime.now(UTC)
-    row = session.get(JobRow, lease.job_id)
-    if row is None:
-        raise LostLease(f"lost lease for {lease.job_id}")
-    lease_expires_at = row.lease_expires_at
-    if lease_expires_at is not None and lease_expires_at.tzinfo is None:
-        lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
-    if (
-        row.status != "RUNNING"
-        or row.lease_owner != lease.worker_id
-        or row.fencing_token != lease.fencing_token
-        or lease_expires_at is None
-        or lease_expires_at <= timestamp
-    ):
-        raise LostLease(f"lost or expired lease for {lease.job_id}")
+    row = lock_active_lease(session, lease, now=timestamp)
     if result_ref is not None and not job_result_ref_valid(result_ref):
         raise ValueError("job result_ref violates the closed canonical schema")
     next_status = "CANCELLED" if row.cancel_requested_at else "COMPLETED"
@@ -410,14 +397,13 @@ def fail_job(
     now: datetime | None = None,
 ) -> JobRow:
     timestamp = now or datetime.now(UTC)
-    row = session.get(JobRow, lease.job_id)
-    if row is None:
-        raise LostLease(f"lost lease for {lease.job_id}")
+    row = lock_active_lease(session, lease, now=timestamp)
     next_revision = row.revision + 1
+    next_status = "CANCELLED" if row.cancel_requested_at else "FAILED"
     detail = json.loads(row.payload)
     detail.update(
         {
-            "status": "FAILED",
+            "status": next_status,
             "error_code": error_code,
             "revision": next_revision,
             "started_at": _iso(row.started_at),
@@ -447,7 +433,7 @@ def fail_job(
                 JobRow.lease_expires_at > timestamp,
             )
             .values(
-                status="FAILED",
+                status=next_status,
                 error_code=error_code,
                 error_detail=error_detail,
                 finished_at=timestamp,
@@ -481,7 +467,7 @@ def fail_job(
         row.id,
         row.revision,
         "job.updated",
-        payload={"state": "FAILED", "status": "FAILED"},
+        payload={"state": next_status, "status": next_status},
         job_id=row.id,
         correlation_id=row.correlation_id,
         request_id=row.request_id,

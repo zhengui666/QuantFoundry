@@ -103,6 +103,7 @@ def _persist_section14_validation_run(
             workspace_id=job.workspace_id,
             policy_id=policy.policy_id,
             policy_family="validation",
+            version=policy.version,
         )
         .one_or_none()
     )
@@ -582,7 +583,7 @@ def _factor_evidence_for_snapshot(
         select(JobRow)
         .where(
             JobRow.workspace_id == workspace_id,
-            JobRow.job_type == "FACTOR_ANALYSIS",
+            JobRow.job_type.in_({"FACTOR_ANALYSIS", "EXPERIMENT"}),
             JobRow.status == "COMPLETED",
         )
         .order_by(JobRow.finished_at.desc())
@@ -605,7 +606,8 @@ def _factor_evidence_for_snapshot(
         if (
             evidence.get("factor_id") == factor_id
             and evidence.get("factor_version") == factor_version
-            and evidence.get("snapshot_id") == snapshot_id
+            and evidence.get("snapshot_id", evidence.get("data_snapshot_id"))
+            == snapshot_id
             and evidence.get("definition_sha256")
             == factor_detail.get("definition_sha256")
             and evidence.get("formula") == factor_detail.get("formula")
@@ -1768,11 +1770,14 @@ def _expose_holdout(
     session.add(exposure)
     session.flush([exposure])
     validation_runs = Base.metadata.tables["validation_runs"]
+    validation_status = "COMPLETED" if holdout_result == "PASS" else "FAILED"
     session.execute(
         validation_runs.update()
         .where(validation_runs.c.validation_id == validation.id)
         .values(
-            status="COMPLETED",
+            status=validation_status,
+            result=holdout_result,
+            failures=holdout_failures,
             holdout_state="EXPOSED",
             revision=validation.revision + 1,
             finished_at=datetime.fromisoformat(exposed_at.replace("Z", "+00:00")),
@@ -1780,13 +1785,15 @@ def _expose_holdout(
     )
     validation.holdout_state = "EXPOSED"
     validation.exposure_count = 1
-    validation.status = "COMPLETED"
+    validation.status = validation_status
     validation.revision += 1
     detail = json.loads(validation.detail)
     detail.update(
         {
             "holdout_state": "EXPOSED",
-            "status": "COMPLETED",
+            "status": validation_status,
+            "result": holdout_result,
+            "failures": holdout_failures,
             "revision": validation.revision,
         }
     )
@@ -2114,39 +2121,27 @@ def _compare_factor_evidence(
 ) -> dict[str, Any]:
     refs = inputs["factor_refs"]
     if not all(
-        isinstance(item, dict) and isinstance(item.get("id"), str) for item in refs
+        isinstance(item, dict)
+        and isinstance(item.get("id"), str)
+        and isinstance(item.get("version"), int)
+        for item in refs
     ):
         raise InvalidJobState("factor comparison refs are invalid")
     compared: list[dict[str, Any]] = []
     for ref in refs:
-        factor = session.get(FactorRow, ref["id"])
-        if factor is None or factor.workspace_id != job.workspace_id:
-            raise InvalidJobState("factor comparison subject is missing")
-        candidates = session.execute(
-            select(JobRow).where(
-                JobRow.workspace_id == job.workspace_id,
-                JobRow.job_type == "FACTOR_ANALYSIS",
-                JobRow.status == "COMPLETED",
-            )
-        ).scalars()
-        evidence = None
-        for candidate in candidates:
-            candidate_inputs = json.loads(candidate.input_payload)
-            if (
-                candidate_inputs.get("factor_id") == factor.id
-                and candidate_inputs.get("snapshot_id") == inputs["snapshot_id"]
-                and candidate.result_ref
-            ):
-                artifact_id = json.loads(candidate.result_ref).get("artifact_id")
-                if isinstance(artifact_id, str):
-                    evidence = _artifact_payload(session, artifact_id, job.workspace_id)
-                    break
-        if evidence is None:
-            raise InvalidJobState("factor comparison evidence is missing")
+        factor, evidence, _artifact_id = _factor_evidence_for_snapshot(
+            session,
+            factor_id=ref["id"],
+            factor_version=ref["version"],
+            snapshot_id=inputs["snapshot_id"],
+            workspace_id=job.workspace_id,
+        )
+        factor_detail = json.loads(factor.detail)
         compared.append(
             {
                 "factor_id": factor.id,
-                "definition_sha256": json.loads(factor.detail)["definition_sha256"],
+                "factor_version": ref["version"],
+                "definition_sha256": factor_detail["definition_sha256"],
                 "metrics": evidence["metrics"],
             }
         )
@@ -2275,7 +2270,7 @@ def apply_job_effect(session: Session, job: JobRow) -> dict[str, Any] | None:
 
         PaperScheduler().execute_claimed(session, job)
         return None
-    return None
+    raise InvalidJobState(f"unsupported job type: {job.job_type}")
 
 
 def apply_job_failure(session: Session, job: JobRow) -> None:

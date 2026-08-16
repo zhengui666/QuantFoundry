@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 type RouteComponent = () => ReactNode;
 
-type RouteComponents = { Shell: RouteComponent; SetupPage?: RouteComponent };
+type RouteComponents = { Shell: RouteComponent };
 
 /** Centralized typed route composition; feature implementations remain lazy. */
 export function createAppRouter({ Shell }: RouteComponents) {

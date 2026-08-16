@@ -33,6 +33,69 @@ WORKSPACE_TABLES = (
 )
 
 
+def _assert_ownership_backfill_is_mappable() -> None:
+    bind = op.get_bind()
+    tables = (*WORKSPACE_TABLES, "domain_events", "audit_events", "agent_configs")
+    counts = {
+        table: int(bind.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar_one())
+        for table in tables
+    }
+    legacy_idempotency = int(
+        bind.execute(sa.text("SELECT COUNT(*) FROM idempotency_records")).scalar_one()
+    )
+    unowned_research = int(
+        bind.execute(
+            sa.text("SELECT COUNT(*) FROM research_cases WHERE workspace_id IS NULL")
+        ).scalar_one()
+    )
+    if any(counts.values()) or legacy_idempotency or unowned_research:
+        detail = ", ".join(f"{table}={count}" for table, count in counts.items())
+        raise RuntimeError(
+            "0006 refuses to guess workspace ownership; manual mapping required "
+            f"({detail}, idempotency_records={legacy_idempotency}, "
+            f"research_cases.workspace_id_null={unowned_research})"
+        )
+
+
+def _add_workspace_column(table: str) -> None:
+    column = sa.Column(
+        "workspace_id",
+        sa.String(),
+        sa.ForeignKey(
+            "workspaces.id", name=f"fk_{table}_workspace_id_workspaces"
+        ),
+        nullable=False,
+    )
+    if op.get_bind().dialect.name != "sqlite":
+        op.add_column(table, column)
+        return
+    connection = op.get_bind()
+    trigger_rows = [
+        (str(row[0]), str(row[1]))
+        for row in connection.execute(
+            sa.text(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type = 'trigger' AND "
+                "(tbl_name = :table OR lower(sql) LIKE lower(:pattern)) "
+                "ORDER BY name"
+            ),
+            {"table": table, "pattern": f"%{table}%"},
+        )
+        if row[1]
+    ]
+    for name, _ in trigger_rows:
+        op.execute(f'DROP TRIGGER "{name.replace(chr(34), chr(34) * 2)}"')
+    with op.batch_alter_table(
+        table,
+        naming_convention={
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"
+        },
+    ) as batch_op:
+        batch_op.add_column(column)
+    for _, sql in trigger_rows:
+        op.execute(sql)
+
+
 def _replace_idempotency() -> None:
     op.create_table(
         "idempotency_records_v2",
@@ -48,31 +111,6 @@ def _replace_idempotency() -> None:
         sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-    )
-    op.execute(
-        """
-        INSERT INTO idempotency_records_v2
-          (actor_id, workspace_id, method, path, key, request_hash, status,
-           response, state, lease_expires_at, created_at, expires_at)
-        SELECT 'legacy-system', 'legacy-system', COALESCE(method, 'POST'),
-               COALESCE(path, '/legacy'), key, COALESCE(request_hash, ''),
-               COALESCE(status, 202), COALESCE(response, '{}'), state,
-               lease_expires_at, CURRENT_TIMESTAMP,
-               CURRENT_TIMESTAMP + INTERVAL '7 days'
-        FROM idempotency_records
-        """
-        if op.get_bind().dialect.name == "postgresql"
-        else """
-        INSERT INTO idempotency_records_v2
-          (actor_id, workspace_id, method, path, key, request_hash, status,
-           response, state, lease_expires_at, created_at, expires_at)
-        SELECT 'legacy-system', 'legacy-system', COALESCE(method, 'POST'),
-               COALESCE(path, '/legacy'), key, COALESCE(request_hash, ''),
-               COALESCE(status, 202), COALESCE(response, '{}'), state,
-               lease_expires_at, CURRENT_TIMESTAMP,
-               datetime(CURRENT_TIMESTAMP, '+7 days')
-        FROM idempotency_records
-        """
     )
     op.drop_table("idempotency_records")
     op.rename_table("idempotency_records_v2", "idempotency_records")
@@ -165,23 +203,31 @@ def _replace_strategy_guard() -> None:
 
 
 def upgrade() -> None:
+    _assert_ownership_backfill_is_mappable()
     _replace_idempotency()
     op.create_table(
         "audit_chain_heads",
-        sa.Column("workspace_id", sa.String(), primary_key=True),
+        sa.Column(
+            "workspace_id",
+            sa.String(),
+            sa.ForeignKey(
+                "workspaces.id", name="fk_audit_chain_heads_workspace_id_workspaces"
+            ),
+            primary_key=True,
+        ),
         sa.Column("event_sha256", sa.String(64)),
         sa.Column("revision", sa.Integer(), nullable=False, server_default="0"),
     )
     for table in WORKSPACE_TABLES:
-        op.add_column(table, sa.Column("workspace_id", sa.String()))
+        _add_workspace_column(table)
         op.create_index(f"ix_{table}_workspace_id", table, ["workspace_id"])
     op.add_column("jobs", sa.Column("request_id", sa.String()))
     op.create_index("ix_jobs_request_id", "jobs", ["request_id"])
-    op.add_column("domain_events", sa.Column("workspace_id", sa.String()))
+    _add_workspace_column("domain_events")
     op.add_column("domain_events", sa.Column("actor_id", sa.String()))
     op.create_index("ix_domain_events_workspace_id", "domain_events", ["workspace_id"])
     op.create_index("ix_domain_events_actor_id", "domain_events", ["actor_id"])
-    op.add_column("audit_events", sa.Column("workspace_id", sa.String()))
+    _add_workspace_column("audit_events")
     op.add_column("audit_events", sa.Column("request_id", sa.String()))
     op.create_index("ix_audit_events_workspace_id", "audit_events", ["workspace_id"])
     op.create_index("ix_audit_events_request_id", "audit_events", ["request_id"])
@@ -207,8 +253,10 @@ def upgrade() -> None:
             sa.Column(
                 "workspace_id",
                 sa.String(),
+                sa.ForeignKey(
+                    "workspaces.id", name="fk_agent_configs_workspace_id_workspaces"
+                ),
                 nullable=False,
-                server_default="system",
             )
         )
         batch_op.drop_constraint(
@@ -216,6 +264,30 @@ def upgrade() -> None:
             type_="primary",
         )
         batch_op.create_primary_key("agent_configs_pkey", ["workspace_id", "role"])
+    if dialect == "sqlite":
+        with op.batch_alter_table(
+            "agent_runs", naming_convention=naming
+        ) as batch_op:
+            batch_op.create_foreign_key(
+                "fk_agent_runs_workspace_role_agent_configs",
+                "agent_configs",
+                ["workspace_id", "role"],
+                ["workspace_id", "role"],
+            )
+    else:
+        op.create_foreign_key(
+            "fk_agent_runs_workspace_role_agent_configs",
+            "agent_runs",
+            "agent_configs",
+            ["workspace_id", "role"],
+            ["workspace_id", "role"],
+        )
+    dialect = op.get_bind().dialect.name
+    if dialect == "sqlite":
+        with op.batch_alter_table("research_cases") as batch_op:
+            batch_op.alter_column("workspace_id", nullable=False)
+    else:
+        op.alter_column("research_cases", "workspace_id", nullable=False)
     op.drop_index("uq_tool_calls_active_semantic", table_name="tool_calls")
     op.create_index(
         "uq_tool_calls_active_semantic",

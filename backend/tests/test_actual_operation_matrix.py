@@ -394,10 +394,11 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         ("2020-06-01", "RESEARCH"),
         ("2020-06-02", "VALIDATION"),
         ("2020-07-01", "VALIDATION"),
-        ("2020-09-01", "VALIDATION"),
-        ("2020-09-02", "HOLDOUT"),
-        ("2020-10-01", "HOLDOUT"),
-        ("2020-12-31", "HOLDOUT"),
+            ("2020-09-01", "VALIDATION"),
+            ("2020-09-02", "HOLDOUT"),
+            ("2020-10-01", "HOLDOUT"),
+            ("2020-11-02", "HOLDOUT"),
+            ("2020-12-31", "HOLDOUT"),
     ]
     market_rows = [
         {

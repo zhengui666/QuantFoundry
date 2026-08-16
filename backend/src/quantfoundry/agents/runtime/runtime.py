@@ -26,6 +26,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from psycopg.rows import dict_row
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from quantfoundry.api.app import (
@@ -79,6 +80,7 @@ class ToolExecutionFailure(AgentRuntimeError):
         tool_call_id: str,
         tool_name: str,
         tool_version: str,
+        input_payload: str,
         input_sha256: str,
         semantic_scope: str,
         agent_run_id: str,
@@ -93,6 +95,7 @@ class ToolExecutionFailure(AgentRuntimeError):
         self.tool_call_id = tool_call_id
         self.tool_name = tool_name
         self.tool_version = tool_version
+        self.input_payload = input_payload
         self.input_sha256 = input_sha256
         self.semantic_scope = semantic_scope
         self.agent_run_id = agent_run_id
@@ -328,7 +331,9 @@ class LocalDeterministicModel(DeterministicModel):
     """Explicit non-production adapter used only when configured by name."""
 
 
-def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | None:
+def _active_setup_provider(
+    session: Session, config: AgentConfigRow
+) -> tuple[str, str] | None:
     binding = session.get(SetupBindingRow, config.workspace_id)
     if binding is None:
         return None
@@ -349,7 +354,6 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
         or connection.validation_state != "SUCCESS"
         or connection.status != "ACTIVE"
         or (expires_at is not None and expires_at <= datetime.now(UTC))
-        or connection.model_name != (os.getenv("QF_CODEX_MODEL") or config.model_name)
     ):
         return None
     aad = credential_aad(
@@ -360,8 +364,11 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
         model_name=connection.model_name,
     )
     try:
-        return decrypt_credential(
+        return (
+            decrypt_credential(
             connection.ciphertext, connection.nonce, connection.key_id, aad=aad
+            ),
+            connection.model_name,
         )
     except CredentialConfigurationError as error:
         raise AgentRuntimeError(
@@ -415,13 +422,31 @@ def configured_model(config: AgentConfigRow, session: Session | None = None) -> 
     )
     if remote_mode or config.model_provider in {"openai-compatible", "remote-codex"}:
         control = _active_control_plane_connection()
-        api_key = (
-            _active_setup_api_key(session, config) if session is not None else None
+        setup_provider = (
+            _active_setup_provider(session, config) if session is not None else None
         )
+        api_key = setup_provider[0] if setup_provider is not None else None
         if control is not None:
             api_key = control["credential"]
+        elif (
+            session is not None
+            and not api_key
+            and not (
+                os.getenv("QF_ENV") == "test"
+                and os.getenv("QF_TEST_RUNTIME_ROOT")
+            )
+        ):
+            raise AgentRuntimeError(
+                "workspace provider credential is unavailable; refusing process fallback"
+            )
         return RemoteCodexModel(
-            model_name=control["model"] if control is not None else config.model_name,
+            model_name=(
+                control["model"]
+                if control is not None
+                else setup_provider[1]
+                if setup_provider is not None
+                else config.model_name
+            ),
             timeout_seconds=config.tool_timeout_seconds,
             api_key=api_key,
             base_url=control["endpoint"] if control is not None else None,
@@ -455,6 +480,8 @@ class AgentGraphState(TypedDict, total=False):
     action: dict[str, Any]
     wait: dict[str, Any]
     resume_result: dict[str, Any]
+    resume_job_id: str
+    model_action_index: int
 
 
 @contextmanager
@@ -511,7 +538,10 @@ def _compiled_graph(model: Model, saver: BaseCheckpointSaver[str]) -> Any:
             resumed = interrupt(state["wait"])
             if not isinstance(resumed, dict):
                 raise AgentRuntimeError("Agent resume payload is invalid")
-            return {"resume_result": resumed}
+            job_id = resumed.get("job_id")
+            if not isinstance(job_id, str) or not job_id:
+                raise AgentRuntimeError("Agent resume job identity is invalid")
+            return {"resume_result": resumed, "resume_job_id": job_id}
         raise AgentRuntimeError("Agent graph phase is invalid")
 
     builder = StateGraph(AgentGraphState)
@@ -528,9 +558,22 @@ def _graph_action(
     row.checkpoint_thread_id = thread_id
     with _checkpoint_saver() as saver:
         graph = _compiled_graph(model, saver)
+        config = {"configurable": {"thread_id": thread_id}}
+        saved = graph.get_state(config)
+        values = saved.values if saved is not None else {}
+        if (
+            isinstance(values, dict)
+            and values.get("model_action_index") == checkpoint.get("model_action_index")
+            and isinstance(values.get("action"), dict)
+        ):
+            return values["action"]
         result = graph.invoke(
-            {"phase": "MODEL", "checkpoint": checkpoint},
-            {"configurable": {"thread_id": thread_id}},
+            {
+                "phase": "MODEL",
+                "checkpoint": checkpoint,
+                "model_action_index": checkpoint.get("model_action_index", 0),
+            },
+            config,
         )
     action = result.get("action")
     if not isinstance(action, dict):
@@ -549,17 +592,23 @@ def _graph_interrupt_for_job(
     row.checkpoint_thread_id = thread_id
     with _checkpoint_saver() as saver:
         graph = _compiled_graph(DeterministicModel(), saver)
+        config = {"configurable": {"thread_id": thread_id}}
+        saved = graph.get_state(config)
+        values = saved.values if saved is not None else {}
+        expected_wait = {
+            "reason": "INTERNAL_JOB_WAIT",
+            "tool_call_id": tool_call_id,
+            "awaited_job_id": awaited_job_id,
+        }
+        if isinstance(values, dict) and values.get("wait") == expected_wait:
+            return
         graph.invoke(
             {
                 "phase": "WAITING_JOB",
                 "checkpoint": checkpoint,
-                "wait": {
-                    "reason": "INTERNAL_JOB_WAIT",
-                    "tool_call_id": tool_call_id,
-                    "awaited_job_id": awaited_job_id,
-                },
+                "wait": expected_wait,
             },
-            {"configurable": {"thread_id": thread_id}},
+            config,
         )
 
 
@@ -568,9 +617,21 @@ def _graph_resume(row: AgentRunRow, result: dict[str, Any]) -> dict[str, Any]:
         raise AgentRuntimeError("Agent checkpoint thread is missing")
     with _checkpoint_saver() as saver:
         graph = _compiled_graph(DeterministicModel(), saver)
+        config = {"configurable": {"thread_id": row.checkpoint_thread_id}}
+        saved = graph.get_state(config)
+        values = saved.values if saved is not None else {}
+        cached = values.get("resume_result") if isinstance(values, dict) else None
+        cached_job_id = values.get("resume_job_id") if isinstance(values, dict) else None
+        if (
+            isinstance(cached, dict)
+            and cached_job_id == result.get("job_id")
+        ):
+            if cached != result:
+                raise AgentRuntimeError("Agent checkpoint result mismatch")
+            return cached
         resumed = graph.invoke(
             Command(resume=result),
-            {"configurable": {"thread_id": row.checkpoint_thread_id}},
+            config,
         )
     value = resumed.get("resume_result")
     if not isinstance(value, dict):
@@ -1239,6 +1300,9 @@ def _consume_resume(
         or row.pending_resume_token_hash != token_hash
         or row.resume_fencing_token != fencing_token
         or checkpoint.get("resume_fencing_token") != fencing_token
+        or checkpoint.get("pending_resume_job_id") != resume_job.id
+        or checkpoint.get("pending_tool_call_id") != inputs.get("tool_call_id")
+        or checkpoint.get("pending_job_id") != inputs.get("awaited_job_id")
     ):
         raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
     tool_call = session.execute(
@@ -1258,7 +1322,12 @@ def _consume_resume(
         )
         .with_for_update()
     ).scalar_one_or_none()
-    if tool_call is None or child is None or tool_call.status != "RUNNING":
+    if (
+        tool_call is None
+        or child is None
+        or tool_call.status != "RUNNING"
+        or tool_call.job_id != child.id
+    ):
         raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
     if child.status not in {"COMPLETED", "FAILED", "CANCELLED"}:
         raise AgentRuntimeError("Agent child job is not terminal")
@@ -1508,22 +1577,62 @@ def advance_agent_run(
         if row.research_id is not None
         else f"run:{row.id}"
     )
+    def replay(existing: ToolCallRow) -> None:
+        checkpoint["semantic_call_hashes"].append(semantic_hash)
+        checkpoint["result_refs"].append(json.loads(existing.result_summary or "{}"))
+
+    def wait_for(existing: ToolCallRow) -> AgentStep:
+        if not existing.job_id:
+            raise AgentRuntimeError("active semantic tool call has no child job")
+        waiting_call = existing
+        if existing.agent_run_id != row.id:
+            waiting_call = ToolCallRow(
+                id=new_id("TCALL"),
+                workspace_id=row.workspace_id,
+                agent_run_id=row.id,
+                tool_name=name,
+                tool_version=definition["version"],
+                status="RUNNING",
+                input_payload=json.dumps(arguments),
+                input_sha256=semantic_hash,
+                semantic_scope=f"wait:{row.id}:{semantic_hash[:12]}",
+                objective=row.objective,
+                research_id=row.research_id,
+                policy_version_ref=policy_version_ref,
+                job_id=existing.job_id,
+                warnings=json.dumps([{"code": "SEMANTIC_DEDUP_WAIT"}]),
+                started_at=now,
+            )
+            session.add(waiting_call)
+            session.flush()
+        row.tool_call_count += 1
+        return _suspend_for_child_job(
+            session,
+            job,
+            row,
+            waiting_call,
+            checkpoint,
+            existing.job_id,
+        )
+
     prior = session.execute(
         select(ToolCallRow).where(
             ToolCallRow.workspace_id == row.workspace_id,
             ToolCallRow.semantic_scope == semantic_scope,
             ToolCallRow.tool_name == name,
             ToolCallRow.input_sha256 == semantic_hash,
-            ToolCallRow.status == "SUCCESS",
+            ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
         )
     ).scalar_one_or_none()
-    if prior is not None:
-        checkpoint["semantic_call_hashes"].append(semantic_hash)
-        checkpoint["result_refs"].append(json.loads(prior.result_summary or "{}"))
+    tool_call: ToolCallRow | None = None
+    if prior is not None and prior.status == "SUCCESS":
+        replay(prior)
+    elif prior is not None:
+        return wait_for(prior)
     else:
         from quantfoundry.agents.tools.executors import execute_tool
 
-        tool_call = ToolCallRow(
+        candidate = ToolCallRow(
             id=new_id("TCALL"),
             workspace_id=row.workspace_id,
             agent_run_id=row.id,
@@ -1539,8 +1648,31 @@ def advance_agent_run(
             warnings="[]",
             started_at=now,
         )
-        session.add(tool_call)
-        session.flush()
+        try:
+            with session.begin_nested():
+                session.add(candidate)
+                session.flush()
+        except IntegrityError:
+            winner = session.execute(
+                select(ToolCallRow)
+                .where(
+                    ToolCallRow.workspace_id == row.workspace_id,
+                    ToolCallRow.semantic_scope == semantic_scope,
+                    ToolCallRow.tool_name == name,
+                    ToolCallRow.input_sha256 == semantic_hash,
+                    ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
+                )
+                .with_for_update()
+            ).scalar_one_or_none()
+            if winner is None:
+                raise
+            if winner.status == "SUCCESS":
+                replay(winner)
+            else:
+                return wait_for(winner)
+        else:
+            tool_call = candidate
+    if tool_call is not None:
         try:
             output = execute_tool(
                 session,
@@ -1560,6 +1692,7 @@ def advance_agent_run(
                 tool_call_id=tool_call.id,
                 tool_name=name,
                 tool_version=definition["version"],
+                input_payload=json.dumps(arguments, sort_keys=True),
                 input_sha256=semantic_hash,
                 semantic_scope=semantic_scope,
                 agent_run_id=row.id,
@@ -1751,7 +1884,7 @@ def persist_tool_failure(
             tool_name=error.tool_name,
             tool_version=error.tool_version,
             status="ERROR",
-            input_payload="{}",
+            input_payload=error.input_payload,
             input_sha256=error.input_sha256,
             semantic_scope=error.semantic_scope,
             objective=error.objective,

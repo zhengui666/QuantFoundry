@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
@@ -191,7 +191,9 @@ const zodFor = (schema, schemaName) => {
     const branches = anyOf.map((branch) => zodFor(branch));
     expression += `.superRefine((value, context) => { const matches = [${branches
       .map((branch) => `${branch}.safeParse(value).success`)
-      .join(', ')}].filter(Boolean).length; if (matches === 0) context.addIssue({ code: 'custom', message: 'Value must match at least one canonical variant' }); })`;
+      .join(
+        ', ',
+      )}].filter(Boolean).length; if (matches === 0) context.addIssue({ code: 'custom', message: 'Value must match at least one canonical variant' }); })`;
   }
   if (oneOf.length) {
     const branches = oneOf.map((branch) => zodFor(branch));
@@ -200,7 +202,9 @@ const zodFor = (schema, schemaName) => {
     } else {
       expression += `.superRefine((value, context) => { const matches = [${branches
         .map((branch) => `${branch}.safeParse(value).success`)
-        .join(', ')}].filter(Boolean).length; if (matches !== 1) context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' }); })`;
+        .join(
+          ', ',
+        )}].filter(Boolean).length; if (matches !== 1) context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' }); })`;
     }
   }
   if (condition) {
@@ -462,5 +466,11 @@ if (process.argv.includes('--check')) {
   const current = await readFile(outputPath, 'utf8').catch(() => '');
   if (current !== output) throw new Error('Generated runtime schemas drifted; run pnpm codegen');
 } else {
-  await writeFile(outputPath, output);
+  const temporaryPath = `${outputPath}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporaryPath, output);
+    await rename(temporaryPath, outputPath);
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
 }

@@ -34,6 +34,14 @@ def _key(label: str) -> str:
     return f"fresh-local-{label}-{uuid.uuid4()}"
 
 
+def _diagnostic_experiment_status(detail: str) -> str | None:
+    try:
+        value = json.loads(detail)
+    except (json.JSONDecodeError, TypeError):
+        return "INVALID_DETAIL"
+    return value.get("status") if isinstance(value, dict) else "INVALID_DETAIL"
+
+
 def _expect(response: httpx.Response, status: int) -> dict[str, object]:
     if response.status_code != status:
         raise RuntimeError(
@@ -69,8 +77,16 @@ def _drive_worker_turns(
     last: WorkflowObservation | None = None
     for turn in range(max_turns):
         progressed = run_agent(turn)
-        after_agent = inspect()
-        observed_analyze_wait |= after_agent.analyze_wait
+        last = inspect()
+        observed_analyze_wait |= last.analyze_wait
+        if last.finished:
+            return observed_analyze_wait, last.diagnostic
+        if last.terminal_failure:
+            raise RuntimeError(
+                "fresh local Research workflow reached a terminal failure: "
+                + json.dumps(last.diagnostic, sort_keys=True)
+            )
+
         progressed += run_core(turn)
         last = inspect()
         observed_analyze_wait |= last.analyze_wait
@@ -202,7 +218,7 @@ def _workflow_observation(
             "experiments": [
                 {
                     "id": row.id,
-                    "status": json.loads(row.detail).get("status"),
+                    "status": _diagnostic_experiment_status(row.detail),
                     "immutable": row.immutable,
                     "revision": row.revision,
                 }
@@ -245,8 +261,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root")
     args = parser.parse_args()
-    root = Path(args.root) if args.root else Path(tempfile.mkdtemp(prefix="qf-local-"))
-    root.mkdir(mode=0o750, parents=True, exist_ok=True)
+    if args.root:
+        root = Path(args.root)
+        root.mkdir(mode=0o750, parents=True, exist_ok=True)
+        if any(root.iterdir()):
+            raise RuntimeError("fresh local smoke root must be empty")
+    else:
+        root = Path(tempfile.mkdtemp(prefix="qf-local-"))
     environment = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV") or "local"
     if environment not in {"local", "development", "test"}:
         raise RuntimeError(
@@ -254,20 +275,20 @@ def main() -> None:
         )
     os.environ["QF_ENVIRONMENT"] = environment
     os.environ["QF_ENV"] = environment
-    os.environ.setdefault("QF_DATABASE_URL", f"sqlite:///{root / 'quantfoundry.db'}")
-    os.environ.setdefault("QF_GIT_COMMIT", "local-smoke")
-    os.environ.setdefault("QF_BUILD_ID", "local-smoke")
-    os.environ.setdefault("QF_ARTIFACT_DIR", str(root / "artifacts"))
-    os.environ.setdefault("QF_DATA_ROOT", str(root / "data"))
-    os.environ.setdefault("QF_DATASET_DIR", str(root / "datasets"))
-    os.environ.setdefault("QF_COST_MODEL_DIR", str(root / "cost-models"))
-    os.environ.setdefault("QF_POLICY_DIR", str(root / "policies"))
-    os.environ.setdefault(
-        "QF_AGENT_CHECKPOINT_SQLITE", str(root / "agent-checkpoint.db")
-    )
-    os.environ.setdefault("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER", "1")
-    os.environ.setdefault("QF_LOCAL_DATA_CREDENTIAL", secrets.token_urlsafe(32))
-    os.environ.setdefault("QF_LOCAL_PROVIDER_API_KEY", secrets.token_urlsafe(32))
+    database_url = f"sqlite:///{root / 'quantfoundry.db'}"
+    os.environ["QF_DATABASE_URL"] = database_url
+    os.environ["QF_ALEMBIC_URL"] = database_url
+    os.environ["QF_GIT_COMMIT"] = "local-smoke"
+    os.environ["QF_BUILD_ID"] = "local-smoke"
+    os.environ["QF_ARTIFACT_DIR"] = str(root / "artifacts")
+    os.environ["QF_DATA_ROOT"] = str(root / "data")
+    os.environ["QF_DATASET_DIR"] = str(root / "datasets")
+    os.environ["QF_COST_MODEL_DIR"] = str(root / "cost-models")
+    os.environ["QF_POLICY_DIR"] = str(root / "policies")
+    os.environ["QF_AGENT_CHECKPOINT_SQLITE"] = str(root / "agent-checkpoint.db")
+    os.environ["QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER"] = "1"
+    os.environ["QF_LOCAL_DATA_CREDENTIAL"] = secrets.token_urlsafe(32)
+    os.environ["QF_LOCAL_PROVIDER_API_KEY"] = secrets.token_urlsafe(32)
     # This smoke owns an in-process Remote Codex transport.  Do not inherit
     # a test runner's model/provider selection: that would validate a different
     # workflow while still writing into the fresh database under test.
@@ -277,11 +298,10 @@ def main() -> None:
     os.environ["QF_CODEX_REMOTE_INSTANCE_ID"] = "CODEX-DEFAULT"
     os.environ["QF_CODEX_MODEL"] = "qf-local-v1"
     os.environ["QF_CODEX_MODELS"] = "qf-local-v1"
-    os.environ.setdefault("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "local-smoke-v1")
-    os.environ.setdefault(
-        "QF_CREDENTIAL_ENCRYPTION_KEY",
-        base64.b64encode(secrets.token_bytes(32)).decode(),
-    )
+    os.environ["QF_CREDENTIAL_ENCRYPTION_KEY_ID"] = "local-smoke-v1"
+    os.environ["QF_CREDENTIAL_ENCRYPTION_KEY"] = base64.b64encode(
+        secrets.token_bytes(32)
+    ).decode()
     for directory in ("artifacts", "data", "datasets", "cost-models", "policies"):
         (root / directory).mkdir(mode=0o750, exist_ok=True)
 
@@ -290,8 +310,16 @@ def main() -> None:
     provider = create_server(
         "127.0.0.1", 0, api_key=os.environ["QF_LOCAL_PROVIDER_API_KEY"]
     )
-    provider_thread = threading.Thread(target=provider.serve_forever, daemon=True)
+    provider_started = threading.Event()
+
+    def serve_provider() -> None:
+        provider_started.set()
+        provider.serve_forever()
+
+    provider_thread = threading.Thread(target=serve_provider, daemon=True)
     provider_thread.start()
+    if not provider_started.wait(timeout=2):
+        raise RuntimeError("local provider failed to start")
     provider_url = f"http://127.0.0.1:{provider.server_address[1]}/v1"
     os.environ["QF_CODEX_BASE_URL"] = provider_url
     try:
@@ -643,7 +671,8 @@ def main() -> None:
             )
         )
     finally:
-        provider.shutdown()
+        if provider_thread.is_alive() and provider_started.is_set():
+            provider.shutdown()
         provider.server_close()
         provider_thread.join(timeout=2)
 

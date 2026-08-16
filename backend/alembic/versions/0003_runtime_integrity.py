@@ -17,22 +17,22 @@ depends_on = None
 
 
 JOB_COLUMNS = (
-    sa.Column("input_payload", sa.Text(), nullable=False, server_default="{}"),
-    sa.Column("payload_sha256", sa.String(64), nullable=False, server_default="0" * 64),
-    sa.Column("queue_name", sa.String(), nullable=False, server_default="core"),
-    sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
+    sa.Column("input_payload", sa.Text(), nullable=False),
+    sa.Column("payload_sha256", sa.String(64), nullable=False),
+    sa.Column("queue_name", sa.String(), nullable=False),
+    sa.Column("priority", sa.Integer(), nullable=False),
     sa.Column("result_ref", sa.Text()),
     sa.Column("error_code", sa.String()),
     sa.Column("error_detail", sa.Text()),
-    sa.Column("attempt", sa.Integer(), nullable=False, server_default="0"),
-    sa.Column("max_attempts", sa.Integer(), nullable=False, server_default="3"),
+    sa.Column("attempt", sa.Integer(), nullable=False),
+    sa.Column("max_attempts", sa.Integer(), nullable=False),
     sa.Column("lease_owner", sa.String()),
     sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
     sa.Column("heartbeat_at", sa.DateTime(timezone=True)),
     sa.Column("cancel_requested_at", sa.DateTime(timezone=True)),
-    sa.Column("fencing_token", sa.Integer(), nullable=False, server_default="0"),
-    sa.Column("retry_safe", sa.Boolean(), nullable=False, server_default=sa.true()),
-    sa.Column("progress_mode", sa.String(), nullable=False, server_default="NONE"),
+    sa.Column("fencing_token", sa.Integer(), nullable=False),
+    sa.Column("retry_safe", sa.Boolean(), nullable=False),
+    sa.Column("progress_mode", sa.String(), nullable=False),
     sa.Column("completed_units", sa.Integer()),
     sa.Column("total_units", sa.Integer()),
     sa.Column("progress_unit", sa.String()),
@@ -42,12 +42,11 @@ JOB_COLUMNS = (
         "queued_at",
         sa.DateTime(timezone=True),
         nullable=False,
-        server_default=sa.text("CURRENT_TIMESTAMP"),
     ),
     sa.Column("started_at", sa.DateTime(timezone=True)),
     sa.Column("finished_at", sa.DateTime(timezone=True)),
-    sa.Column("created_by_type", sa.String(), nullable=False, server_default="USER"),
-    sa.Column("created_by_id", sa.String(), nullable=False, server_default="system"),
+    sa.Column("created_by_type", sa.String(), nullable=False),
+    sa.Column("created_by_id", sa.String(), nullable=False),
     sa.Column("correlation_id", sa.String()),
 )
 
@@ -61,17 +60,39 @@ EVENT_COLUMNS = (
 )
 
 APPROVAL_COLUMNS = (
-    sa.Column("subject_type", sa.String(), nullable=False, server_default="validation"),
-    sa.Column("subject_id", sa.String(), nullable=False, server_default=""),
+    sa.Column("subject_type", sa.String(), nullable=False),
+    sa.Column("subject_id", sa.String(), nullable=False),
     sa.Column("subject_version", sa.Integer()),
-    sa.Column("subject_revision", sa.Integer(), nullable=False, server_default="1"),
-    sa.Column(
-        "subject_spec_sha256", sa.String(64), nullable=False, server_default="0" * 64
-    ),
-    sa.Column(
-        "prerequisites_sha256", sa.String(64), nullable=False, server_default="0" * 64
-    ),
+    sa.Column("subject_revision", sa.Integer(), nullable=False),
+    sa.Column("subject_spec_sha256", sa.String(64), nullable=False),
+    sa.Column("prerequisites_sha256", sa.String(64), nullable=False),
 )
+
+
+def _assert_integrity_backfill_is_mappable() -> None:
+    bind = op.get_bind()
+    tables = (
+        "jobs",
+        "domain_events",
+        "audit_events",
+        "approval_requests",
+        "tool_calls",
+    )
+    counts = {
+        table: int(bind.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar_one())
+        for table in tables
+    }
+    null_events = int(
+        bind.execute(
+            sa.text("SELECT COUNT(*) FROM domain_events WHERE expires_at IS NULL")
+        ).scalar_one()
+    )
+    if any(counts.values()) or null_events:
+        detail = ", ".join(f"{table}={count}" for table, count in counts.items())
+        raise RuntimeError(
+            "0003 refuses to synthesize integrity evidence; manual backfill required "
+            f"({detail}, domain_events.expires_at_null={null_events})"
+        )
 
 
 def _create_immutability_guards() -> None:
@@ -123,6 +144,15 @@ def _create_immutability_guards() -> None:
               IF OLD.state = 'FROZEN' THEN
                 RAISE EXCEPTION 'frozen strategy version cannot be changed';
               END IF;
+              IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN'
+                 AND (
+                   NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.detail IS DISTINCT FROM OLD.detail
+                 ) THEN
+                RAISE EXCEPTION 'strategy evidence cannot change while freezing';
+              END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
             END;
@@ -140,6 +170,14 @@ def _create_immutability_guards() -> None:
               IF OLD.immutable THEN
                 RAISE EXCEPTION 'completed experiment cannot be changed';
               END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
+                 AND (
+                   NEW.research_id IS DISTINCT FROM OLD.research_id OR
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   NEW.revision IS DISTINCT FROM OLD.revision
+                 ) THEN
+                RAISE EXCEPTION 'experiment evidence cannot change while completing';
+              END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
             END;
@@ -156,6 +194,19 @@ def _create_immutability_guards() -> None:
             BEGIN
               IF OLD.status <> 'PENDING' THEN
                 RAISE EXCEPTION 'terminal approval cannot be changed';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NEW.status <> 'PENDING'
+                 AND (
+                   NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                   NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                   NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                   NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                   NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                   NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                   NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                   NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+                 ) THEN
+                RAISE EXCEPTION 'approval evidence cannot change while resolving';
               END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
@@ -205,9 +256,36 @@ def _create_immutability_guards() -> None:
             "ON approval_requests WHEN OLD.status != 'PENDING' BEGIN "
             "SELECT RAISE(ABORT, 'terminal approval cannot be changed'); END"
         )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_freeze_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND ("
+        "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) "
+        "BEGIN SELECT RAISE(ABORT, 'strategy evidence cannot change while freezing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE "
+        "ON experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND ("
+        "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
+        "NEW.revision IS NOT OLD.revision) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE "
+        "ON approval_requests WHEN OLD.status = 'PENDING' AND NEW.status != 'PENDING' AND ("
+        "NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR "
+        "NEW.subject_type IS NOT OLD.subject_type OR NEW.subject_id IS NOT OLD.subject_id OR "
+        "NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256) "
+        "BEGIN SELECT RAISE(ABORT, 'approval evidence cannot change while resolving'); END"
+    )
 
 
 def upgrade() -> None:
+    _assert_integrity_backfill_is_mappable()
     for column in JOB_COLUMNS:
         op.add_column("jobs", column)
     for column in EVENT_COLUMNS:
@@ -215,15 +293,13 @@ def upgrade() -> None:
     op.add_column("audit_events", sa.Column("previous_sha256", sa.String(64)))
     op.add_column(
         "audit_events",
-        sa.Column(
-            "event_sha256", sa.String(64), nullable=False, server_default="0" * 64
-        ),
+        sa.Column("event_sha256", sa.String(64), nullable=False),
     )
     for column in APPROVAL_COLUMNS:
         op.add_column("approval_requests", column)
     op.add_column(
         "tool_calls",
-        sa.Column("semantic_scope", sa.String(), nullable=False, server_default=""),
+        sa.Column("semantic_scope", sa.String(), nullable=False),
     )
     op.create_index(
         "uq_tool_calls_active_semantic",
@@ -254,6 +330,13 @@ def upgrade() -> None:
         )
         batch_op.create_check_constraint(
             "jobs_total_units_check", "total_units IS NULL OR total_units >= 0"
+        )
+        batch_op.create_check_constraint(
+            "jobs_attempt_limit_check", "attempt <= max_attempts"
+        )
+        batch_op.create_check_constraint(
+            "jobs_progress_bounds_check",
+            "completed_units IS NULL OR total_units IS NULL OR completed_units <= total_units",
         )
     for name in ("correlation_id", "job_id", "agent_run_id", "tool_call_id"):
         op.create_index(f"ix_domain_events_{name}", "domain_events", [name])
@@ -363,6 +446,9 @@ def _drop_immutability_guards() -> None:
     for table in ("strategy_versions", "experiments", "approval_requests"):
         for action in ("update", "delete"):
             op.execute(f"DROP TRIGGER qf_{table}_{action}_immutable")
+    op.execute("DROP TRIGGER qf_strategy_versions_freeze_immutable")
+    op.execute("DROP TRIGGER qf_experiments_complete_immutable")
+    op.execute("DROP TRIGGER qf_approval_requests_resolve_immutable")
 
 
 def downgrade() -> None:

@@ -39,6 +39,8 @@ from quantfoundry.contracts.openapi.api_models import (
 )
 from quantfoundry.contracts.openapi.runtime import now, validated_payload
 from quantfoundry.engines.core import (
+    EngineInputError,
+    load_cost_model,
     load_dataset,
     snapshot_content_sha256,
     snapshot_rows,
@@ -117,8 +119,29 @@ def _define_strategy(
     if research is None or research.workspace_id != run.workspace_id:
         raise ToolExecutionError("research is unavailable to this workspace")
     factors = [session.get(FactorRow, item["factor_id"]) for item in payload["signals"]]
-    if any(row is None or row.workspace_id != run.workspace_id for row in factors):
+    if any(
+        row is None
+        or row.workspace_id != run.workspace_id
+        or row.research_id != research.id
+        for row in factors
+    ):
         raise ToolExecutionError("strategy references an unavailable factor")
+    cost = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == run.workspace_id,
+            CostModelVersionRow.cost_model_id == payload["cost_model_id"],
+            CostModelVersionRow.version == 1,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if cost is None:
+        raise ToolExecutionError("strategy references an unavailable cost model")
+    try:
+        loaded_cost = load_cost_model(payload["cost_model_id"])
+    except EngineInputError as error:
+        raise ToolExecutionError("strategy cost model is invalid") from error
+    if loaded_cost.version != cost.version:
+        raise ToolExecutionError("strategy cost model version is inconsistent")
     strategy_id = new_id("STRAT")
     digest = content_hash(payload)
     created_at = now()
@@ -201,7 +224,7 @@ def _define_strategy(
         strategy_id,
         1,
         "strategy.created",
-        payload={"state": "DRAFT", "status": "DRAFT"},
+        payload={"state": "CANDIDATE", "status": "CANDIDATE"},
         object_version=1,
         agent_run_id=cast(str, run.id),
     )
@@ -427,6 +450,11 @@ def execute_tool(
             or any(
                 factor is None or factor.workspace_id != run.workspace_id
                 for factor in factors
+            )
+            or any(
+                not isinstance(item, dict)
+                or item.get("version") != 1
+                for item in factor_refs
             )
         ):
             raise ToolExecutionError("factor comparison subjects are unavailable")

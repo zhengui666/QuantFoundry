@@ -103,6 +103,7 @@ export function Shell() {
   const [streamProblem, setStreamProblem] = useState<ApiError>();
   const [keyDraft, setKeyDraft] = useState('');
   const [reauthRequired, setReauthRequired] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [authScopeKey, setAuthScopeKey] = useState(auth.scope());
   const [sessionReady, setSessionReady] = useState(() => Boolean(auth.get()));
   const [localeReady, setLocaleReady] = useState(() => !auth.get());
@@ -184,6 +185,7 @@ export function Shell() {
       }),
     [client],
   );
+  useEffect(() => setMobileNavOpen(false), [location.pathname]);
   if (invalidRoute) return <State kind="error">{t(invalidRouteMessages[invalidRoute])}</State>;
   if ((!sessionReady || !localeReady) && !isLogin) return <State kind="loading" />;
   const navigation = [
@@ -202,30 +204,54 @@ export function Shell() {
     <>
       <div className={`app${isSetup ? ' setup-shell' : ''}`}>
         {!isSetup && (
-          <nav className="sidebar" aria-label={t('nav.primary')}>
-            <div className="brand">
-              <span className="nav-label">{t('brand')}</span>
-              <span className="nav-short" aria-hidden="true">
-                QF
-              </span>
-            </div>
-            {navigation.map(([to, key]) => (
-              <Link
-                key={to}
-                to={to}
-                aria-label={t(key)}
-                activeProps={{ className: 'active', 'aria-current': 'page' }}
-              >
-                <span className="nav-label">{t(key)}</span>
+          <>
+            {mobileNavOpen && (
+              <button
+                className="mobile-nav-backdrop"
+                aria-label={t('nav.primary')}
+                onClick={() => setMobileNavOpen(false)}
+              />
+            )}
+            <nav
+              id="primary-navigation"
+              className={`sidebar${mobileNavOpen ? ' mobile-sheet-open' : ''}`}
+              aria-label={t('nav.primary')}
+            >
+              <div className="brand">
+                <span className="nav-label">{t('brand')}</span>
                 <span className="nav-short" aria-hidden="true">
-                  {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
+                  QF
                 </span>
-              </Link>
-            ))}
-          </nav>
+              </div>
+              {navigation.map(([to, key]) => (
+                <Link
+                  key={to}
+                  to={to}
+                  aria-label={t(key)}
+                  onClick={() => setMobileNavOpen(false)}
+                  activeProps={{ className: 'active', 'aria-current': 'page' }}
+                >
+                  <span className="nav-label">{t(key)}</span>
+                  <span className="nav-short" aria-hidden="true">
+                    {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
+                  </span>
+                </Link>
+              ))}
+            </nav>
+          </>
         )}
         <main key={authScopeKey}>
           <header className="topbar">
+            {!isSetup && !isLogin && (
+              <button
+                className="mobile-nav-trigger secondary"
+                aria-expanded={mobileNavOpen}
+                aria-controls="primary-navigation"
+                onClick={() => setMobileNavOpen((open) => !open)}
+              >
+                {t('nav.primary')}
+              </button>
+            )}
             <span aria-live="polite">
               <Badge>
                 {t('realtime')} ·{' '}

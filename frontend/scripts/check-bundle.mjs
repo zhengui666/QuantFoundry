@@ -1,11 +1,24 @@
 import { readdir, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const assets = resolve(process.cwd(), 'dist/assets');
+const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const assets = resolve(frontendRoot, 'dist/assets');
 const maximumBytes = 500 * 1024;
-const files = (await readdir(assets)).filter((file) => file.endsWith('.js'));
+const collectJavaScript = async (directory) => {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await collectJavaScript(path)));
+    else if (entry.isFile() && entry.name.endsWith('.js')) files.push(path);
+  }
+  return files;
+};
+const files = await collectJavaScript(assets);
+if (files.length === 0) throw new Error('Production bundle check found no JavaScript assets.');
 const sizes = await Promise.all(
-  files.map(async (file) => ({ file, bytes: (await stat(resolve(assets, file))).size })),
+  files.map(async (file) => ({ file, bytes: (await stat(file)).size })),
 );
 const oversized = sizes.filter(({ bytes }) => bytes > maximumBytes);
 if (oversized.length > 0)
@@ -13,4 +26,4 @@ if (oversized.length > 0)
     `Production bundle limit exceeded: ${oversized.map(({ file, bytes }) => `${file}=${bytes}`).join(', ')}`,
   );
 for (const { file, bytes } of sizes.sort((left, right) => right.bytes - left.bytes))
-  process.stdout.write(`${file}: ${bytes} bytes\n`);
+  process.stdout.write(`${relative(frontendRoot, file)}: ${bytes} bytes\n`);
