@@ -317,7 +317,7 @@ th {
 }
 .row-card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   padding: 10px 0;
@@ -549,5 +549,10 @@ code {
   }
   .auth-form button {
     width: 100%;
+    margin-inline: 0;
+  }
+  .row-card {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
   }
 }
