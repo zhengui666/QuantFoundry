@@ -35,15 +35,6 @@ a:focus-visible {
   outline: 3px solid var(--qf-color-focus);
   outline-offset: 2px;
 }
-@supports (outline-color: color-mix(in srgb, black 50%, white)) {
-  button:focus-visible,
-  input:focus-visible,
-  textarea:focus-visible,
-  select:focus-visible,
-  a:focus-visible {
-    outline-color: color-mix(in srgb, var(--qf-color-focus) 38%, transparent);
-  }
-}
 .app {
   min-height: 100vh;
   display: grid;
@@ -77,6 +68,9 @@ a:focus-visible {
 .sidebar a.active {
   background: var(--qf-color-sidebar-active);
   color: var(--qf-color-on-accent);
+}
+.sidebar a.active {
+  box-shadow: inset 3px 0 var(--qf-color-on-accent);
 }
 main {
   width: min(100%, 1560px);
@@ -506,13 +500,13 @@ code {
     flex: 1;
     min-width: 0;
   }
-}
-
-@media (max-width: 767px) {
   .grid,
   .metrics {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+@media (max-width: 767px) {
   .auth-form {
     flex-direction: column;
     align-items: stretch;
