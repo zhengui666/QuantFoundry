@@ -220,7 +220,13 @@ openapi_check() {
   require_dir backend/tests/contracts
   require_file frontend/src/api/generated.ts
   run_backend_no_create python scripts/runtime_contract_diff.py
-  run_backend_no_create pytest tests/contracts
+  # Contract tests only inspect generated OpenAPI. Keep their autouse fixture
+  # on an ephemeral SQLite schema so they cannot mutate the CI migration DB.
+  run_backend_no_create env \
+    QF_DATABASE_URL="sqlite:///$ci_tmp/contracts.db" \
+    QF_ALEMBIC_URL="sqlite:///$ci_tmp/contracts.db" \
+    QF_ALLOW_TEST_SCHEMA_BOOTSTRAP=1 \
+    pytest tests/contracts
   run_frontend exec openapi-typescript "$repo_root/docs/后端系统技术方案/contracts/openapi-v1.yaml" --output "$ci_tmp/generated.ts"
   if ! cmp -s "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts"; then
     diff -u "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts" || true
