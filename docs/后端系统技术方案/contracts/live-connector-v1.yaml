@@ -1,0 +1,83 @@
+schema_version: LIVE_CONNECTOR_V1
+status: FROZEN_TARGET
+authority: QUANTFOUNDRY_LIVE_EXECUTION
+implementations:
+  first:
+    name: NAUTILUS_TRADER
+    runtime: NAUTILUS_TRADER_V2
+    integration_mode: EXECUTION_CLIENT_PORT
+    qf_module: backend/src/quantfoundry/live/nautilus.py
+    boundary: NAUTILUS_EXECUTION_CLIENT_TO_LIVE_CONNECTOR_V1
+    dependency: EXTERNAL_OPTIONAL
+    python_custom_adapter_api: NOT_REQUIRED
+    venue_adapter_owner: NAUTILUS_BRIDGE_RUNTIME
+    missing_or_unknown_result: FAIL_CLOSED
+    port:
+      method: request
+      arguments: [method, path, payload, idempotency_key]
+      response: JSON_OBJECT
+      exception_semantics: UNKNOWN_RESULT
+transport:
+  protocol: HTTPS
+  tls_verification: REQUIRED
+  redirects: FORBIDDEN
+  request_signature:
+    algorithm: HMAC-SHA256
+    headers: [X-QF-Key-Id, X-QF-Timestamp, X-QF-Nonce, X-QF-Signature]
+    canonical_string: "METHOD\\nPATH_WITH_QUERY\\nBODY_SHA256\\nTIMESTAMP\\nNONCE"
+    max_clock_skew_seconds: 60
+    nonce_replay_window_seconds: 300
+  idempotency_header: Idempotency-Key
+  inbound_webhooks: FORBIDDEN
+assets:
+  EQUITY: {quantity_unit: shares, contract_fields: [venue, symbol, currency]}
+  FUTURE: {quantity_unit: contracts, contract_fields: [venue, symbol, expiry, multiplier, currency]}
+  OPTION: {quantity_unit: contracts, contract_fields: [venue, symbol, underlying, expiry, strike, right, style, multiplier, currency]}
+  FX_SPOT: {quantity_unit: base_currency, contract_fields: [venue, symbol, base_currency, quote_currency]}
+  CRYPTO_SPOT: {quantity_unit: base_currency, contract_fields: [venue, symbol, base_currency, quote_currency]}
+  CRYPTO_PERPETUAL: {quantity_unit: contracts, contract_fields: [venue, symbol, multiplier, margin_currency]}
+operations:
+  - {method: GET, path: /v1/capabilities, auth: signed}
+  - {method: GET, path: /v1/accounts, auth: signed}
+  - {method: GET, path: "/v1/accounts/{account_id}/balances", auth: signed}
+  - {method: GET, path: "/v1/accounts/{account_id}/positions", auth: signed}
+  - {method: POST, path: "/v1/accounts/{account_id}/orders/preview", auth: signed}
+  - {method: POST, path: "/v1/accounts/{account_id}/orders", auth: signed, idempotent: true}
+  - {method: GET, path: "/v1/accounts/{account_id}/orders", auth: signed}
+  - {method: GET, path: "/v1/accounts/{account_id}/orders/{broker_order_id}", auth: signed}
+  - {method: POST, path: "/v1/accounts/{account_id}/orders/{broker_order_id}/cancel", auth: signed, idempotent: true}
+  - {method: GET, path: "/v1/accounts/{account_id}/fills", auth: signed, cursor: true}
+  - {method: GET, path: /v1/market/clock, auth: signed}
+capabilities:
+  required:
+    - protocol_version
+    - connector_id
+    - assets
+    - order_types
+    - time_in_force
+    - quantity_scale
+    - price_scale
+    - account_ids
+    - supported_operations
+  margin_preview_required_for: [FUTURE, OPTION, FX_SPOT, CRYPTO_PERPETUAL]
+order:
+  types: [MARKET, LIMIT]
+  time_in_force: [DAY, GTC, IOC, FOK]
+  position_effect: [AUTO, OPEN, CLOSE]
+  statuses: [CREATED, SUBMITTING, ACKNOWLEDGED, PARTIALLY_FILLED, FILLED, CANCEL_PENDING, CANCELLED, REJECTED, EXPIRED, UNKNOWN, RECONCILING]
+  required_fields: [schema_version, client_order_id, instrument, side, quantity, order_type, time_in_force, position_effect]
+  limit_price_required_when: "order_type == LIMIT"
+  response_fields: [broker_order_id, client_order_id, status, accepted_at, updated_at, fills]
+  prohibited: [withdrawal, transfer, liquidation, multi_leg_order]
+failure_semantics:
+  timeout_after_submit: query_by_client_order_id_before_any_retry
+  unknown_order_result: RECONCILING
+  missing_query_capability: fail_closed
+  partial_fill: retain_open_order_until_terminal_or_explicit_cancel
+  duplicate_fill: ignore_by_broker_fill_id
+security:
+  credentials: write_only_encrypted_control_db
+  secrets_in_logs_events_artifacts: FORBIDDEN
+  account_scope: deployment_bound
+  enablement: human_approval_and_explicit_confirmation
+  kill_switch: [GLOBAL, ACCOUNT, DEPLOYMENT]

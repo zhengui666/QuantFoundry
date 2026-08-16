@@ -74,7 +74,7 @@ def protected_operations() -> list[tuple[str, str]]:
 
 
 def test_auth_matrix_covers_every_protected_operation() -> None:
-    assert len(protected_operations()) == 63
+    assert len(protected_operations()) == 64
 
 
 @pytest.mark.parametrize(("method", "path"), protected_operations())

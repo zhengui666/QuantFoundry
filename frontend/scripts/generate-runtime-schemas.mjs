@@ -26,10 +26,10 @@ const operationCount = Object.values(document.paths ?? {}).reduce(
     ).length,
   0,
 );
-if (operationCount !== 65)
-  throw new Error(`Expected 65 canonical operations, found ${operationCount}`);
-if (Object.keys(schemas).length !== 186)
-  throw new Error(`Expected 186 canonical schemas, found ${Object.keys(schemas).length}`);
+if (operationCount !== 66)
+  throw new Error(`Expected 66 canonical operations, found ${operationCount}`);
+if (Object.keys(schemas).length !== 188)
+  throw new Error(`Expected 188 canonical schemas, found ${Object.keys(schemas).length}`);
 if (schemas.CanonicalErrorCode?.enum?.length !== 75)
   throw new Error(
     `Expected 75 canonical errors, found ${schemas.CanonicalErrorCode?.enum?.length}`,
@@ -314,6 +314,8 @@ const roots = [
   'DatabaseConnectionValidationResult',
   'SetupStatus',
   'SetupCapabilityCatalog',
+  'LiveConnectorValidationRequest',
+  'LiveConnectorValidationResult',
   'SetupProviderConnectionValidationRequest',
   'SetupProviderConnectionValidationResult',
   'SetupCompleteRequest',

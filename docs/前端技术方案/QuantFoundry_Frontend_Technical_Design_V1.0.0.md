@@ -3418,11 +3418,14 @@ advanced agent settings
 
 ```text
 dark theme QA
-live broker UI
 multi-asset specialized views
 intraday
 options
 ```
+
+## LiveExecution P0
+
+`LiveExecution` 使用独立的 deployment、account、order、fill、position 和 reconciliation read models；前端不得复用 Paper order/fill 状态，也不得直接调用外部 Connector。所有写操作经后端 human approval、If-Match 和 idempotency gate。
 
 不得为了未来 P2 先引入 microfrontend / permissions framework。
 

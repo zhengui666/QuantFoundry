@@ -306,3 +306,32 @@ entries:
         metrics_credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
     validator: observability.runtime.secret_redaction_and_payload_policy
     safe_range: {retention_days: [1, 3650]}
+  - key: execution.live_connectors
+    group: Live Execution Connectors
+    schema_version: 1
+    scope: INSTALLATION
+    sensitivity: SECRET
+    apply_mode: LIVE_NEW_WORK
+    consumers: [api, worker, scheduler]
+    dependencies: []
+    schema:
+      type: object
+      additionalProperties: false
+      required: [global_enabled, connections]
+      properties:
+        global_enabled: {type: boolean}
+        connections:
+          type: array
+          maxItems: 32
+          items:
+            type: object
+            additionalProperties: false
+            required: [connection_id, endpoint, key_id, credential]
+            properties:
+              connection_id: {type: string, pattern: '^[A-Za-z0-9._-]{1,80}$'}
+              endpoint: {type: string, format: uri, pattern: '^https://'}
+              key_id: {type: string, minLength: 1, maxLength: 160}
+              credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+              ca_pem: {type: [string, 'null'], maxLength: 65536, writeOnly: true}
+    validator: execution.live_connector.tls_signature_and_secret_redaction
+    safe_range: {}

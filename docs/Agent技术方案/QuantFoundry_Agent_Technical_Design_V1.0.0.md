@@ -28,7 +28,7 @@
 
 当前目标 HTTP 边界严格以 `/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml` 为准：stage=`UX001_D1`、revision=`UX001_D1_R1`、65 operations、186 schemas、75 canonical errors。D1 前的 `P0_EXECUTABLE_R2` 45-operation/65-error 组合仅用于历史 baseline 验证；不得重新生成其 Bearer/workspace 语义。`v1-p0.yaml` 仍为 13-Tool canonical scope。
 
-Paper daily scheduler 不属于 Agent Runtime、13 个 P0/P0.5 Semantic Tool 或当前 HTTP operation；它是 deterministic backend P0 service。Agent 不得读取、创建或迁移 `paper_scheduler_states`，不得发现 due-time、选择 trading_date、取得 lease、设置 suppression/watermark、触发/retry 日跑或绕过 calendar/risk/data gate。其正式契约只在 PRD §52.1–§52.3、Backend §23.4–§23.4.1 和 Test Plan §27.1；Paper HTTP/UI 保持 `FUTURE_STAGED` 不等于 scheduler core 可跳过。
+Paper daily scheduler 与 LiveExecution scheduler 均不属于 Agent Runtime、13 个 P0/P0.5 Semantic Tool 或当前 Agent HTTP operation；它们是 deterministic backend services。Agent 不得读取、创建或迁移 scheduler state，不得发现 due-time、选择 trading_date、取得 lease、设置 suppression/watermark、触发/retry 日跑、审批/启用 Live 或绕过 calendar/risk/data/connector gate。Live connector credential 只能由 server-side credential broker 解析到受控内存，不能进入 prompt、checkpoint、Audit、Event 或 Artifact。
 
 它不重新定义：
 
@@ -39,6 +39,7 @@ Paper daily scheduler 不属于 Agent Runtime、13 个 P0/P0.5 Semantic Tool 或
 - Human Approval；
 - Holdout 数据权限；
 - Paper execution；
+- Live capital execution and broker authority；
 - 前端视觉与交互。
 
 上述事项仍分别以：

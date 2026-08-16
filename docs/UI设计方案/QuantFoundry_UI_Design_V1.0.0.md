@@ -3074,9 +3074,18 @@ Dark theme
 ## UI P2
 
 ```text
-Live broker UI
 Multi-asset specialized views
 Options / intraday visualization
+```
+
+## UI P0 — LiveExecution
+
+```text
+Live Connector Settings
+Live Deployment Approval
+Live Account / Positions
+Live Orders / Fills / Reconciliation
+Global / Account / Deployment Kill Switch
 ```
 
 ---

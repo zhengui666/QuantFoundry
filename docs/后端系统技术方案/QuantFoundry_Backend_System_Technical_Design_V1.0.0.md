@@ -2226,7 +2226,23 @@ attempt、lease owner/expiry、heartbeat、fencing token、retry policy/时间�
 | `turnover` | `numeric(20,12)` | YES | NULL |  | 当日/周期换手 |
 | `source_run_id` | `uuid` | NO | — | FK paper_daily_runs(id) | 来源 |
 
-### 14.38 `performance_reviews`
+### 14.38 LiveExecution domain
+
+LiveExecution 与 Paper 使用独立的 deployment、run、order、fill、position 和 reconciliation 事实，不允许 Paper 行升级为实盘行。完整外部协议以 `contracts/live-connector-v1.yaml` 为唯一事实源。
+
+首批 adapter 为 `backend/src/quantfoundry/live/nautilus.py`。它提供 QF `LIVE_CONNECTOR_V1` 与 NautilusTrader v2 Rust-native `ExecutionClient` 之间的最小 port bridge：只接收 canonical operation、instrument/order wire 和幂等键，只返回 canonical connector response；不在 QF 进程内反射或猜测 NautilusTrader 私有对象。venue-specific Nautilus adapter 仍由 bridge 运行时提供，缺失依赖或不完整能力必须阻断实盘提交。
+
+新增表：`live_deployments`、`live_scheduler_states`、`live_runs`、`live_orders`、`live_fills`、`live_positions`、`live_account_snapshots`、`live_reconciliations`。所有表必须包含 `workspace_id`、内部主键、revision/created_at，并以 `(workspace_id, live_id)` 或父对象唯一约束隔离。
+
+Live Deployment 必须冻结 strategy/portfolio/risk/cost/margin/data snapshot、connector connection revision、account id、base currency、capital limits 和 capability hash。连接、账户、策略或能力 revision 变化后不可继续执行，必须重新审批。
+
+`live_orders` 是 write-ahead order intent；`client_order_id` 在同一 workspace、deployment、run 内唯一。外部 HTTP commit 与数据库 commit 不可伪造为一个事务：提交前写 `CREATED`，提交后保存 broker order id；超时或未知结果只能进入 `RECONCILING` 并按 client id 查询，禁止盲重发。
+
+订单状态为 `CREATED|SUBMITTING|ACKNOWLEDGED|PARTIALLY_FILLED|FILLED|CANCEL_PENDING|CANCELLED|REJECTED|EXPIRED|UNKNOWN|RECONCILING`。成交只接受 connector 返回的 broker fill id；重复 fill 幂等忽略；任何未知账户、能力、保证金、行情 freshness 或 risk gate 均 fail closed。
+
+Live scheduler 只能在 global/account/deployment kill switch 均启用、人工 approval 有效、显式 activation 已完成且首次 reconciliation 成功后创建 run。`PAUSE` 禁止新单，`STOP` 额外撤销已知可撤单，均不自动清算持仓。
+
+### 14.39 `performance_reviews`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|

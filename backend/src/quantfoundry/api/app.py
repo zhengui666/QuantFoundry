@@ -78,6 +78,7 @@ from quantfoundry.contracts.openapi.api_models import (
     FreezeStrategyRequest,
     HoldoutApprovalRequest,
     HoldoutRunRequest,
+    LiveConnectorValidationRequest,
     MemoGenerateRequest,
     ResearchCreateRequest,
     ResearchStartRequest,
@@ -117,6 +118,7 @@ from quantfoundry.infrastructure.db.schema import (
     augment_section14_metadata,
     canonical_workspace_id,
 )
+from quantfoundry.live.connector import ConnectorClient, ConnectorError
 
 ENVIRONMENT = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV", "production")
 if ENVIRONMENT in {"local", "development", "test", "ci"}:
@@ -3357,6 +3359,91 @@ def _validate_provider_credential(
 @app.get("/api/v1/setup/capabilities")
 def setup_capabilities(_: Actor = Depends(require_owner)):
     return {"providers": setup_provider_catalog(), "server_checked_at": NOW()}
+
+
+@app.post("/api/v1/setup/live-connectors/validate")
+def validate_live_connector(
+    data: LiveConnectorValidationRequest,
+    idempotency_key: IdempotencyKey,
+    actor: Actor = Depends(require_owner),
+    s: Session = Depends(db),
+):
+    payload = data.model_dump(mode="json", exclude_unset=True)
+    try:
+        fingerprint = credential_fingerprint(data.credential)
+    except CredentialConfigurationError:
+        fingerprint = "credential-key-unavailable"
+    redacted = {
+        **{key: value for key, value in payload.items() if key != "credential"},
+        "credential_fingerprint": fingerprint,
+    }
+
+    def operation():
+        checked_at = NOW()
+        try:
+            connector = ConnectorClient(
+                data.endpoint,
+                key_id=data.key_id,
+                credential=data.credential,
+            )
+            try:
+                capabilities = connector.capabilities()
+                accounts = connector.accounts()
+            finally:
+                connector.close()
+        except (ConnectorError, ValueError):
+            return 200, {
+                "connection_id": data.connection_id,
+                "state": "FAILED",
+                "error_code": "PROVIDER_UNAVAILABLE",
+                "connector_id": None,
+                "protocol_version": None,
+                "capabilities_hash": None,
+                "account_ids": [],
+                "assets": [],
+                "checked_at": checked_at,
+            }
+        account_ids = list(capabilities.account_ids)
+        listed_ids = {
+            str(item.get("account_id"))
+            for item in accounts
+            if isinstance(item.get("account_id"), str)
+        }
+        if listed_ids != set(account_ids) or (
+            data.expected_account_id
+            and data.expected_account_id not in set(account_ids)
+        ):
+            return 200, {
+                "connection_id": data.connection_id,
+                "state": "FAILED",
+                "error_code": "INVALID_REQUEST",
+                "connector_id": capabilities.connector_id,
+                "protocol_version": capabilities.protocol_version,
+                "capabilities_hash": None,
+                "account_ids": account_ids,
+                "assets": sorted(capabilities.assets),
+                "checked_at": checked_at,
+            }
+        return 200, {
+            "connection_id": data.connection_id,
+            "state": "SUCCESS",
+            "error_code": None,
+            "connector_id": capabilities.connector_id,
+            "protocol_version": capabilities.protocol_version,
+            "capabilities_hash": capabilities.content_hash(),
+            "account_ids": account_ids,
+            "assets": sorted(capabilities.assets),
+            "checked_at": checked_at,
+        }
+
+    return idem(
+        s,
+        actor,
+        idempotency_key,
+        redacted,
+        "/setup/live-connectors/validate",
+        operation,
+    )
 
 
 @app.post("/api/v1/setup/provider-connections/validate")

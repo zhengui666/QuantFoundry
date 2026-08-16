@@ -4,7 +4,7 @@
   "domain_table_count": 50,
   "manifest_version": 1,
   "source_path": "docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md",
-  "source_section_sha256": "0600b72aea50e17ccdf483319c97204f17648e95b2df70fefbae00403527905f",
+  "source_section_sha256": "e429bb50efd04faa540ffa67977a37243b9e0046b5c368241a8faf701292ce1e",
   "support_column_count": 78,
   "support_table_count": 13,
   "support_tables": [
@@ -5430,7 +5430,7 @@
         }
       ],
       "name": "performance_reviews",
-      "section": "14.38"
+      "section": "14.39"
     },
     {
       "columns": [

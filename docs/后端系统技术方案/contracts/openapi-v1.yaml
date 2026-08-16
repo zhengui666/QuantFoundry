@@ -8,12 +8,12 @@ info:
   description: Canonical field-level HTTP contract for the UX-001 breaking D1 revision. The installation has one fixed OWNER principal, multiple equal general access keys, a short-lived HttpOnly cookie session, a Bootstrap Control DB configuration authority, and a recoverable Domain PostgreSQL connection. The legacy P0 operation set remains in this file only where its domain surface is still required; new codegen, fixtures, migrations, and runtime consumers MUST target this revision and MUST NOT restore Bearer, user, or workspace product semantics.
   x-quantfoundry-contract-stage: UX001_D1
   x-quantfoundry-contract-revision: UX001_D1_R1
-  x-quantfoundry-operation-count: 65
-  x-quantfoundry-schema-count: 186
+  x-quantfoundry-operation-count: 66
+  x-quantfoundry-schema-count: 188
   x-quantfoundry-error-count: 75
   x-quantfoundry-configuration-catalog: configuration-catalog-v1.yaml
   x-quantfoundry-configuration-catalog-version: UX001_D1_CATALOG_R1
-  x-quantfoundry-configuration-entry-count: 15
+  x-quantfoundry-configuration-entry-count: 16
   x-quantfoundry-full-v1-status: TARGET_NORMATIVE
   x-quantfoundry-public-id-policy:
     generation: PREFIXED_CANONICAL_CROCKFORD_ULID_OR_LOWERCASE_UUIDV4
@@ -665,6 +665,28 @@ paths:
               schema: {$ref: '#/components/schemas/SetupCapabilityCatalog'}
         '401': {$ref: '#/components/responses/Problem401'}
         '403': {$ref: '#/components/responses/Problem403'}
+        '429': {$ref: '#/components/responses/Problem429'}
+  /setup/live-connectors/validate:
+    post:
+      summary: Validate a write-only external HTTPS Live Connector
+      operationId: validateLiveConnector
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LiveConnectorValidationRequest'}
+      responses:
+        '200':
+          description: Redacted connector capabilities and account validation result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LiveConnectorValidationResult'}
+        '401': {$ref: '#/components/responses/Problem401'}
+        '403': {$ref: '#/components/responses/Problem403'}
+        '409': {$ref: '#/components/responses/Problem409'}
+        '422': {$ref: '#/components/responses/Problem422'}
         '429': {$ref: '#/components/responses/Problem429'}
   /setup/provider-connections/validate:
     post:
@@ -1818,6 +1840,30 @@ components:
     CanonicalErrorCode:
       type: string
       enum: [INVALID_REQUEST, RESOURCE_NOT_FOUND, PRECONDITION_REQUIRED, REVISION_MISMATCH, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS, RESOURCE_CONFLICT, SERVICE_DEGRADED, INTERNAL_ERROR, UNAUTHENTICATED, PERMISSION_DENIED, HUMAN_APPROVAL_REQUIRED, RESEARCH_NOT_MUTABLE, RESEARCH_WAITING_USER, EXPERIMENT_IMMUTABLE, EXPERIMENT_INVALID, NON_REPRODUCIBLE, MULTIPLE_TESTING_LIMIT_REACHED, STRATEGY_VERSION_FROZEN, STRATEGY_VERSION_MISMATCH, STRATEGY_NOT_FROZEN, STRATEGY_NOT_VALIDATED, VALIDATION_IN_PROGRESS, VALIDATION_FAILED, VALIDATION_PREREQUISITES_INCOMPLETE, VALIDATION_TEST_BLOCKED, HOLDOUT_LOCKED, HOLDOUT_APPROVAL_REQUIRED, HOLDOUT_PREREQUISITES_INCOMPLETE, HOLDOUT_ALREADY_EXPOSED, HOLDOUT_RESULT_FORBIDDEN, APPROVAL_STALE, APPROVAL_ALREADY_RESOLVED, APPROVAL_PREREQUISITES_CHANGED, APPROVAL_TYPE_MISMATCH, DATA_CAPABILITY_MISSING, DATA_QUALITY_BLOCKED, DATA_SNAPSHOT_MISSING, PIT_GUARANTEE_UNAVAILABLE, STALE_DATA, PROVIDER_UNAVAILABLE, JOB_CONFLICT, JOB_NOT_CANCELLABLE, JOB_LEASE_LOST, JOB_FAILED, PAPER_APPROVAL_REQUIRED, PAPER_RISK_BLOCKED, PAPER_DATA_BLOCKED, PAPER_DUPLICATE_RUN, PAPER_VERSION_MISMATCH, RISK_LIMIT_EXCEEDED, AGENT_DISABLED, AGENT_TOOL_FORBIDDEN, AGENT_BUDGET_EXCEEDED, AGENT_OUTPUT_INVALID, AGENT_MODEL_UNAVAILABLE, AGENT_RESUME_CONFLICT, AGENT_CONTEXT_STALE, AGENT_RETRY_EXHAUSTED, TOOL_INPUT_INVALID, TOOL_EXECUTION_FAILED, CREDENTIAL_INVALID, CREDENTIAL_NOT_CONFIGURED, CONNECTION_VALIDATION_EXPIRED, CONNECTION_KIND_MISMATCH, LAST_ACTIVE_KEY_REQUIRED, CONFIGURATION_VALIDATION_FAILED, CONFIGURATION_APPLY_FAILED, CONFIGURATION_RESTART_REQUIRED, DATABASE_CONNECTION_FAILED, DATABASE_SCHEMA_INCOMPATIBLE, DATABASE_SWITCH_FAILED, BOOTSTRAP_LOCKED, DATABASE_DISCONNECTED, CSRF_REQUIRED]
+    LiveConnectorValidationRequest:
+      type: object
+      additionalProperties: false
+      required: [connection_id, endpoint, key_id, credential]
+      properties:
+        connection_id: {type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9._-]+$'}
+        endpoint: {type: string, minLength: 1, maxLength: 2048, format: uri, pattern: '^https://'}
+        key_id: {type: string, minLength: 1, maxLength: 160}
+        credential: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+        expected_account_id: {type: [string, 'null'], minLength: 1, maxLength: 160}
+    LiveConnectorValidationResult:
+      type: object
+      additionalProperties: false
+      required: [connection_id, state, error_code, connector_id, protocol_version, capabilities_hash, account_ids, assets, checked_at]
+      properties:
+        connection_id: {type: string, minLength: 1, maxLength: 80}
+        state: {enum: [SUCCESS, FAILED]}
+        error_code: {type: [string, 'null']}
+        connector_id: {type: [string, 'null']}
+        protocol_version: {type: [string, 'null']}
+        capabilities_hash: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$'}
+        account_ids: {type: array, items: {type: string}}
+        assets: {type: array, items: {enum: [EQUITY, FUTURE, OPTION, FX_SPOT, CRYPTO_SPOT, CRYPTO_PERPETUAL]}}
+        checked_at: {type: string, format: date-time}
     ApiProblem:
       type: object
       additionalProperties: false

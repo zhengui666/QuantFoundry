@@ -1781,6 +1781,37 @@ export const SetupCapabilityCatalogSchema = z
     server_checked_at: z.iso.datetime(),
   })
   .strict();
+export const LiveConnectorValidationRequestSchema = z
+  .object({
+    connection_id: z.string().min(1).max(80).regex(new RegExp('^[A-Za-z0-9._-]+$')),
+    endpoint: z.string().min(1).max(2048).regex(new RegExp('^https://')),
+    key_id: z.string().min(1).max(160),
+    credential: z.string().min(1).max(16384),
+    expected_account_id: z.string().min(1).max(160).nullable().optional(),
+  })
+  .strict();
+export const LiveConnectorValidationResultSchema = z
+  .object({
+    connection_id: z.string().min(1).max(80),
+    state: z.union([z.literal('SUCCESS'), z.literal('FAILED')]),
+    error_code: z.string().nullable(),
+    connector_id: z.string().nullable(),
+    protocol_version: z.string().nullable(),
+    capabilities_hash: z.string().regex(new RegExp('^[0-9a-f]{64}$')).nullable(),
+    account_ids: z.array(z.string()),
+    assets: z.array(
+      z.union([
+        z.literal('EQUITY'),
+        z.literal('FUTURE'),
+        z.literal('OPTION'),
+        z.literal('FX_SPOT'),
+        z.literal('CRYPTO_SPOT'),
+        z.literal('CRYPTO_PERPETUAL'),
+      ]),
+    ),
+    checked_at: z.iso.datetime(),
+  })
+  .strict();
 export const SetupProviderConnectionValidationRequestSchema = z
   .object({
     provider_id: z.string(),

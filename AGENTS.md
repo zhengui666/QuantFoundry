@@ -32,6 +32,7 @@
 >     │   ├── QuantFoundry_Backend_System_Technical_Design_V1.0.0.md
 >     │   ├── contracts/
 >     │   │   ├── openapi-v1.yaml                # canonical OpenAPI
+>     │   │   ├── live-connector-v1.yaml         # canonical external live execution connector
 >     │   │   ├── configuration-catalog-v1.yaml  # D1 frozen configuration catalog
 >     │   │   ├── ux001-d1-test-matrix.yaml      # D1 frozen executable matrix
 >     │   │   ├── bootstrap-control-v1.yaml      # D1 frozen Control DB target schema
@@ -64,6 +65,7 @@
 > | `docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0_Backend_CoBuild_Patch.md` | 已完整合并的 historical archive；不再生效，不是竞争事实源 |
 > | `docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md` | 后端架构、领域模型、数据、接口与系统约束 |
 > | `docs/后端系统技术方案/contracts/openapi-v1.yaml`            | 唯一 canonical OpenAPI machine-readable 事实源 |
+> | `docs/后端系统技术方案/contracts/live-connector-v1.yaml`     | 外部 HTTPS 实盘 Connector canonical protocol |
 > | `docs/后端系统技术方案/contracts/configuration-catalog-v1.yaml` | UX-001 D1 closed installation configuration catalog |
 > | `docs/后端系统技术方案/contracts/ux001-d1-test-matrix.yaml` | UX-001 D1 executable test matrix and generated counts |
 > | `docs/后端系统技术方案/contracts/bootstrap-control-v1.yaml`   | UX-001 D1 Bootstrap Control DB 与 Domain transition logical schema；物理实现仍以 SQLAlchemy + Alembic 生成物为准 |

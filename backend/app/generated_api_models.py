@@ -308,6 +308,38 @@ class SystemHealth(BaseModel):
     checked_at: AwareDatetime
 
 
+class LiveConnectorValidationRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    connection_id: str = Field(
+        ..., max_length=80, min_length=1, pattern="^[A-Za-z0-9._-]+$"
+    )
+    endpoint: AnyUrl
+    key_id: str = Field(..., max_length=160, min_length=1)
+    credential: str = Field(..., max_length=16384, min_length=1)
+    expected_account_id: str | None = Field(default=None, max_length=160, min_length=1)
+
+
+class LiveConnectorValidationResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    connection_id: str = Field(..., max_length=80, min_length=1)
+    state: Literal["SUCCESS", "FAILED"]
+    error_code: str | None
+    connector_id: str | None
+    protocol_version: str | None
+    capabilities_hash: str | None = Field(..., pattern="^[0-9a-f]{64}$")
+    account_ids: list[str]
+    assets: list[
+        Literal[
+            "EQUITY", "FUTURE", "OPTION", "FX_SPOT", "CRYPTO_SPOT", "CRYPTO_PERPETUAL"
+        ]
+    ]
+    checked_at: AwareDatetime
+
+
 class FieldError(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -28291,6 +28323,8 @@ SCHEMA_NAMES = (
     "DatabaseConnectionValidationResult",
     "SystemHealth",
     "CanonicalErrorCode",
+    "LiveConnectorValidationRequest",
+    "LiveConnectorValidationResult",
     "ApiProblem",
     "FieldError",
     "ProblemContext",

@@ -223,6 +223,8 @@ openapi_check() {
   # Contract tests only inspect generated OpenAPI. Keep their autouse fixture
   # on an ephemeral SQLite schema so they cannot mutate the CI migration DB.
   run_backend_no_create env \
+    QF_ENV=test \
+    QF_ENVIRONMENT=test \
     QF_DATABASE_URL="sqlite:///$ci_tmp/contracts.db" \
     QF_ALEMBIC_URL="sqlite:///$ci_tmp/contracts.db" \
     QF_ALLOW_TEST_SCHEMA_BOOTSTRAP=1 \

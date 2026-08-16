@@ -1,6 +1,9 @@
 """Compatibility alias plus the UX-001 control-plane bootstrap."""
 
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from app import control_plane as _control_plane
 from app import generated_api_models as _control_models

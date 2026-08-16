@@ -185,6 +185,13 @@ export const operationMap = {
     query: [],
     authenticated: true,
   },
+  validateLiveConnector: {
+    method: 'POST',
+    path: '/setup/live-connectors/validate',
+    headers: ['Idempotency-Key'],
+    query: [],
+    authenticated: true,
+  },
   validateSetupProviderConnection: {
     method: 'POST',
     path: '/setup/provider-connections/validate',

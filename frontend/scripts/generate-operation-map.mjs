@@ -48,8 +48,8 @@ const operations = Object.entries(document.paths ?? {}).flatMap(([path, pathItem
       };
     }),
 );
-if (operations.length !== 65)
-  throw new Error(`Expected 65 canonical operations, found ${operations.length}`);
+if (operations.length !== 66)
+  throw new Error(`Expected 66 canonical operations, found ${operations.length}`);
 const ids = new Set(operations.map((operation) => operation.id));
 if (ids.size !== operations.length) throw new Error('Canonical operation IDs must be unique');
 const quote = (value) => JSON.stringify(value);
