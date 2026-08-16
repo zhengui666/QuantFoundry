@@ -329,7 +329,7 @@ code {
   right: 0;
   top: 0;
   bottom: 0;
-  width: 480px;
+  width: min(480px, calc(100vw - 24px));
   padding: 28px;
   background: var(--qf-color-surface-panel);
   box-shadow: var(--qf-shadow-drawer);

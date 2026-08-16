@@ -32,10 +32,6 @@
   --qf-color-overlay: rgb(16 24 40 / 42%);
 }
 
-[data-theme='dark'] {
-  color-scheme: dark;
-}
-
 @theme inline {
   --color-qf-app: var(--qf-color-surface-canvas);
   --color-qf-surface: var(--qf-color-surface-panel);
