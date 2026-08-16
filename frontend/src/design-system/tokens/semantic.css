@@ -44,7 +44,7 @@
   --color-qf-text: var(--qf-color-text-primary);
   --color-qf-muted: var(--qf-color-text-secondary);
   --color-qf-border: var(--qf-color-border);
-  --color-qf-primary: var(--qf-color-action);
+  --color-qf-primary: var(--qf-color-brand);
   --color-qf-action: var(--qf-color-action);
   --color-qf-evidence: var(--qf-color-evidence);
   --color-qf-ai: var(--qf-color-ai);

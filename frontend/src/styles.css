@@ -382,7 +382,7 @@ code {
   top: 50%;
   transform: translate(-50%, -50%);
   width: min(560px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   overflow: auto;
   background: var(--qf-color-surface-panel);
   border-radius: var(--qf-radius-lg);
@@ -509,7 +509,7 @@ code {
     margin: 0;
     padding: 0;
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
     background: var(--qf-color-overlay);
     z-index: 9;
   }
