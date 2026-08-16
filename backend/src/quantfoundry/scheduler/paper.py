@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.orm import Session
 
 from quantfoundry.api.app import (
@@ -24,7 +24,7 @@ from quantfoundry.api.app import (
 )
 from quantfoundry.infrastructure.artifacts.store import publish_staged, stage_json
 
-TERMINAL = frozenset({"COMPLETED", "BLOCKED"})
+TERMINAL = frozenset({"COMPLETED", "BLOCKED", "FAILED"})
 ACTIVE_EXECUTION = frozenset({"QUEUED", "RUNNING"})
 ACTIVE = "ACTIVE"
 MAX_ATTEMPTS = 3
@@ -94,7 +94,12 @@ def _utc(value: datetime) -> datetime:
 
 def _parse_schedule(value: object) -> Schedule:
     if isinstance(value, str):
-        value = json.loads(value)
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError) as error:
+            raise InvalidExecutionAssumption(
+                "execution_assumption is not valid JSON"
+            ) from error
     if not isinstance(value, dict) or set(value) < {
         "schedule_timezone",
         "daily_due_time",
@@ -118,6 +123,10 @@ def _parse_schedule(value: object) -> Schedule:
     if parsed_due.second or parsed_due.microsecond:
         raise InvalidExecutionAssumption("daily_due_time must be minute-precise")
     return Schedule(timezone, parsed_due, calendar)
+
+
+def _invalid_schedule() -> Schedule:
+    return Schedule("UTC", time(0), "INVALID")
 
 
 def _calendar_label(schedule: Schedule, version: str) -> dict[str, str] | str:
@@ -600,6 +609,8 @@ class PaperScheduler:
                 "UNKNOWN_POST_SIDE_EFFECT",
                 True,
                 "NO_AUTOMATIC_REPLAY",
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
             )
             raise PaperSchedulerError(
                 "PaperDailyRun configuration failed closed"
@@ -998,6 +1009,22 @@ class PaperScheduler:
                 "risk inputs are incomplete",
                 {},
             )
+        if not all(
+            value.is_finite()
+            for value in (
+                max_weight,
+                gross_weight,
+                expected_turnover,
+                *limits.values(),
+            )
+        ):
+            return GateDecision(
+                "RISK",
+                "UNKNOWN",
+                "RISK_RESULT_UNKNOWN",
+                "risk inputs are non-finite",
+                {},
+            )
         violations = [
             name
             for name, actual, limit in (
@@ -1070,6 +1097,21 @@ class PaperScheduler:
             schedule = _parse_schedule(deployment["execution_assumption"])
             _, calendar_version = self._is_trading_day(schedule, row["trading_date"])
         except InvalidExecutionAssumption:
+            self._finish_run(
+                session,
+                deployment,
+                row,
+                job,
+                "FAILED",
+                "CONFIGURATION_INVALID",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                now=now,
+                lease_snapshot=lease_snapshot,
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
+            )
             return
         self._finish_run(
             session,
@@ -1100,6 +1142,8 @@ class PaperScheduler:
         now: datetime | None = None,
         block_reason_code: str | None = None,
         lease_snapshot: LeaseSnapshot | None = None,
+        schedule: Schedule | None = None,
+        calendar_version: str | None = None,
     ) -> None:
         runs = Base.metadata.tables["paper_daily_runs"]
         now = now or datetime.now(UTC)
@@ -1114,14 +1158,22 @@ class PaperScheduler:
         )
         finished = dict(run)
         finished["status"] = status
+        schedule = schedule or _invalid_schedule()
+        if calendar_version is None:
+            try:
+                schedule = _parse_schedule(deployment["execution_assumption"])
+                calendar_version = self._is_trading_day(
+                    schedule, run["trading_date"]
+                )[1]
+            except InvalidExecutionAssumption:
+                schedule = _invalid_schedule()
+                calendar_version = "UNAVAILABLE"
         self._transition_evidence(
             session,
             deployment,
             finished,
-            _parse_schedule(deployment["execution_assumption"]),
-            self._is_trading_day(
-                _parse_schedule(deployment["execution_assumption"]), run["trading_date"]
-            )[1],
+            schedule,
+            calendar_version,
             run["trading_date"],
             now,
             status,
@@ -1326,6 +1378,16 @@ class PaperScheduler:
         }
         if set(payload) != EVIDENCE_KEYS:
             raise PaperSchedulerError("scheduler evidence envelope is not closed")
+        session.flush()
+        audit_events = Base.metadata.tables["audit_events"]
+        previous_revision = session.scalar(
+            select(func.max(audit_events.c.object_revision)).where(
+                audit_events.c.workspace_id == deployment["workspace_id"],
+                audit_events.c.object_type == "paper_run",
+                audit_events.c.object_id == run["paper_run_id"],
+            )
+        )
+        object_revision = int(previous_revision or 0) + 1
         storage_key, digest = stage_json(
             session, payload, object_key=run["paper_run_id"]
         )
@@ -1359,7 +1421,7 @@ class PaperScheduler:
             session,
             "paper_run",
             run["paper_run_id"],
-            1,
+            object_revision,
             "paper.run.updated",
             payload={
                 "state": to_status,

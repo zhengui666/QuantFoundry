@@ -804,9 +804,9 @@ def test_formal_staged_artifact_recovers_to_published() -> None:
 
 @pytest.mark.parametrize(
     ("fault", "published_before_rollback"),
-    [("before_publish", False), ("after_publish", True)],
+    [("before_publish", False), ("after_publish", False)],
 )
-def test_artifact_publication_fault_never_commits_reference_and_reaps_orphan(
+def test_artifact_publication_fault_never_commits_reference_or_leaves_orphan(
     monkeypatch: pytest.MonkeyPatch,
     fault: str,
     published_before_rollback: bool,

@@ -111,7 +111,6 @@ def publish_staged(session: Session, storage_key: str, expected_sha256: str) -> 
     _fsync_directory(target.parent)
     if hashlib.sha256(target.read_bytes()).hexdigest() != expected_sha256:
         raise ArtifactStoreError("artifact read-back verification failed")
-    stages.remove(matching[0])
     if os.getenv("QF_ARTIFACT_FAULT") == "after_publish":
         raise ArtifactStoreError("injected post-publication failure")
 
@@ -187,8 +186,10 @@ def _finalize_staged_artifacts(session: Session) -> None:
 @event.listens_for(Session, "after_rollback")
 def _discard_staged_artifacts(session: Session) -> None:
     stages = session.info.pop("qf_artifact_stages", [])
-    for temporary, _target, _digest in stages:
+    for temporary, target, digest in stages:
         temporary.unlink(missing_ok=True)
+        if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() == digest:
+            target.unlink(missing_ok=True)
 
 
 def reap_orphan_artifacts(
