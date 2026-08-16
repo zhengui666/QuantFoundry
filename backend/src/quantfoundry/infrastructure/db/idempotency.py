@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -83,6 +83,19 @@ def _takeover_is_safe(record: Any) -> bool:
     )
 
 
+def _database_now(session: Session) -> datetime:
+    value = session.scalar(select(func.current_timestamp()))
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if value is None:
+        raise RuntimeError("database clock returned no timestamp")
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("database clock returned an invalid timestamp") from error
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
 def execute(
     session: Session,
     record_type: Any,
@@ -106,9 +119,36 @@ def execute(
         json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     method = method.upper()
-    now = datetime.now(UTC)
     lease_owner_id = uuid.uuid4().hex
     try:
+        now = _database_now(session)
+
+        def resolve_existing(existing: Any, current_time: datetime) -> Any:
+            if existing.request_hash != request_hash:
+                session.rollback()
+                raise fail(409, "IDEMPOTENCY_CONFLICT", None)
+            if existing.state == "SUCCEEDED":
+                payload = json.loads(existing.response)
+                if not isinstance(payload, dict):
+                    session.rollback()
+                    raise RuntimeError("stored idempotency result is invalid")
+                status = existing.status
+                session.rollback()
+                return _json_response(status, path, payload)
+            if (
+                existing.state == "PROCESSING"
+                and (_utc(existing.lease_expires_at) or current_time) > current_time
+            ):
+                session.rollback()
+                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
+            if not _takeover_is_safe(existing):
+                session.rollback()
+                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
+            existing.state = "PROCESSING"
+            existing.lease_owner_id = lease_owner_id
+            existing.lease_expires_at = current_time + timedelta(seconds=LEASE_SECONDS)
+            return None
+
         session.execute(
             delete(record_type).where(
                 record_type.workspace_id == workspace_id,
@@ -127,26 +167,9 @@ def execute(
             .with_for_update()
         ).scalar_one_or_none()
         if record is not None:
-            if record.request_hash != request_hash:
-                session.rollback()
-                raise fail(409, "IDEMPOTENCY_CONFLICT", None)
-            if record.state == "SUCCEEDED":
-                payload = json.loads(record.response)
-                status = record.status
-                session.rollback()
-                return _json_response(status, path, payload)
-            if (
-                record.state == "PROCESSING"
-                and (_utc(record.lease_expires_at) or now) > now
-            ):
-                session.rollback()
-                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
-            if not _takeover_is_safe(record):
-                session.rollback()
-                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
-            record.state = "PROCESSING"
-            record.lease_owner_id = lease_owner_id
-            record.lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
+            replay = resolve_existing(record, now)
+            if replay is not None:
+                return replay
         else:
             record = record_type(
                 actor_id=actor_id,
@@ -168,10 +191,26 @@ def execute(
                 session.flush()
             except IntegrityError as error:
                 session.rollback()
-                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None) from error
+                now = _database_now(session)
+                record = session.execute(
+                    select(record_type)
+                    .where(
+                        record_type.actor_id == actor_id,
+                        record_type.workspace_id == workspace_id,
+                        record_type.method == method,
+                        record_type.path == path,
+                        record_type.key == key,
+                    )
+                    .with_for_update()
+                ).scalar_one_or_none()
+                if record is None:
+                    raise error
+                replay = resolve_existing(record, now)
+                if replay is not None:
+                    return replay
 
         status, payload = operation()
-        completed_at = datetime.now(UTC)
+        completed_at = _database_now(session)
         response = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         resource_ref = payload.get("resource_ref")
         terminal_write = cast(
@@ -186,7 +225,6 @@ def execute(
                     record_type.key == key,
                     record_type.state == "PROCESSING",
                     record_type.lease_owner_id == lease_owner_id,
-                    record_type.lease_expires_at > completed_at,
                 )
                 .values(
                     status=status,
@@ -205,23 +243,8 @@ def execute(
         )
         if terminal_write.rowcount != 1:
             raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
-        session.expire(record)
         session.commit()
-        persisted = session.execute(
-            select(record_type).where(
-                record_type.actor_id == actor_id,
-                record_type.workspace_id == workspace_id,
-                record_type.method == method,
-                record_type.path == path,
-                record_type.key == key,
-            )
-        ).scalar_one_or_none()
-        if persisted is None or persisted.state != "SUCCEEDED":
-            raise RuntimeError("committed idempotency result is unavailable")
-        persisted_payload = json.loads(persisted.response)
-        if not isinstance(persisted_payload, dict):
-            raise RuntimeError("committed idempotency result is invalid")
-        return _json_response(persisted.status, path, persisted_payload)
+        return _json_response(status, path, payload)
     except Exception:
         session.rollback()
         raise

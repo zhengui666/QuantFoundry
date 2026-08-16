@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from alembic.util.exc import CommandError
 from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -40,16 +42,21 @@ def _database_state(session: Session, required_tables: set[str]) -> str:
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
         return "HEALTHY" if current == _alembic_head() else "DEGRADED"
-    except (SQLAlchemyError, OSError, ValueError):
+    except (CommandError, SQLAlchemyError, OSError, ValueError):
         return "UNAVAILABLE"
 
 
 def _runtime_state(session: Session, heartbeat_model: Any) -> str:
     try:
-        threshold = datetime.now(UTC) - timedelta(seconds=120)
+        now = datetime.now(UTC)
+        threshold = now - timedelta(seconds=120)
+        ceiling = now + timedelta(seconds=30)
         rows = (
             session.execute(
-                select(heartbeat_model).where(heartbeat_model.occurred_at >= threshold)
+                select(heartbeat_model).where(
+                    heartbeat_model.occurred_at >= threshold,
+                    heartbeat_model.occurred_at <= ceiling,
+                )
             )
             .scalars()
             .all()
@@ -71,8 +78,14 @@ def _artifact_state() -> str:
     try:
         if not root.is_dir():
             return "UNAVAILABLE"
-        if not os.access(root, os.R_OK | os.W_OK | os.X_OK):
+        if not os.access(root, os.R_OK | os.X_OK):
             return "UNAVAILABLE"
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=root, prefix=".qf-health-write-", delete=True
+        ) as handle:
+            handle.write(b"quantfoundry-artifact-health\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         probe = root / ".qf-health-probe.json"
         if not probe.is_file():
             return "DEGRADED"
@@ -93,9 +106,10 @@ def _artifact_state() -> str:
             or payload.get("content_sha256") != expected_sha256
         ):
             return "UNAVAILABLE"
+        now = datetime.now(UTC)
         return (
             "HEALTHY"
-            if occurred_at >= datetime.now(UTC) - timedelta(seconds=120)
+            if now - timedelta(seconds=120) <= occurred_at <= now + timedelta(seconds=30)
             else "DEGRADED"
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
@@ -116,19 +130,27 @@ def probe_health(
         "holdout_exposures",
         "snapshot_partitions",
     }
-    database = _database_state(session, required_tables)
-    states = {
-        "database": database,
-        "job_queue": "UNAVAILABLE",
-        "event_stream": "UNAVAILABLE",
-        "artifact_store": _artifact_state(),
-    }
-    if database != "UNAVAILABLE":
+    probe_session = Session(bind=session.get_bind())
+    try:
+        database = _database_state(probe_session, required_tables)
+        states = {
+            "database": database,
+            "job_queue": "UNAVAILABLE",
+            "event_stream": "UNAVAILABLE",
+            "artifact_store": _artifact_state(),
+        }
+        if database == "UNAVAILABLE":
+            return states
         try:
-            session.execute(select(job_model.id).limit(1))
-            states["job_queue"] = _runtime_state(session, heartbeat_model)
-            session.execute(select(event_model.sequence).limit(1))
+            probe_session.execute(select(job_model.id).limit(1))
+            states["job_queue"] = _runtime_state(probe_session, heartbeat_model)
+        except SQLAlchemyError:
+            states["job_queue"] = "UNAVAILABLE"
+        try:
+            probe_session.execute(select(event_model.sequence).limit(1))
             states["event_stream"] = "HEALTHY"
         except SQLAlchemyError:
-            pass
-    return states
+            states["event_stream"] = "UNAVAILABLE"
+        return states
+    finally:
+        probe_session.close()

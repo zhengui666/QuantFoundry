@@ -94,7 +94,7 @@ def test_real_postgres_idempotency_concurrency_and_lease_takeover() -> None:
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             responses = list(pool.map(call, [{"x": "same"}, {"x": "same"}]))
-        assert sorted(response.status_code for response in responses) == [201, 409]
+        assert sorted(response.status_code for response in responses) == [201, 201]
         assert executions == 1
         replay = call({"x": "same"})
         assert replay.status_code == 201 and json.loads(replay.body) == {
