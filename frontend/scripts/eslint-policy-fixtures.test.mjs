@@ -33,6 +33,20 @@ export { unsafeString };
 `,
   },
   {
+    name: 'member raw fetch',
+    path: 'member-fetch.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidRequest = () => window.fetch('/api/v1/health');
+`,
+  },
+  {
+    name: 'computed raw fetch',
+    path: 'computed-fetch.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidRequest = () => window['fetch']('/api/v1/health');
+`,
+  },
+  {
     name: 'dangerous HTML',
     path: 'html.tsx',
     ruleId: 'no-restricted-syntax',
@@ -56,12 +70,35 @@ export { unsafeString };
 `,
   },
   {
+    name: 'direct client storage boundary',
+    path: 'direct-storage.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidStorage = localStorage.getItem('server-truth');
+`,
+  },
+  {
+    name: 'computed client storage boundary',
+    path: 'computed-storage.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidStorage = window['sessionStorage'].getItem('server-truth');
+`,
+  },
+  {
     name: 'domain import boundary',
     directory: 'src/domain/__eslint_fixtures__',
     path: 'boundary.ts',
     ruleId: 'no-restricted-imports',
     source: `import { LoginPage } from '../../routes/LoginRoute';
 export { LoginPage };
+`,
+  },
+  {
+    name: 'nested UI import boundary',
+    directory: 'src/api/__eslint_fixtures__',
+    path: 'nested-ui.ts',
+    ruleId: 'no-restricted-imports',
+    source: `import Button from '../ui/Button';
+export { Button };
 `,
   },
 ];

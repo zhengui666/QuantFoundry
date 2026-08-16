@@ -24,18 +24,50 @@ export const patchWorker = (source) => {
     throw new Error('Unsupported MSW worker message listener');
 
   const messageBody = source.slice(listenerStart + listenerPrefix.length, listenerEnd);
-  const safeMessageBody = messageBody
+  let safeMessageBody = messageBody
     .replaceAll('    sendToClient(', '    void sendToClient(')
     .replaceAll('      })\n      break', '      }).catch(() => {})\n      break');
   if (safeMessageBody === messageBody)
     throw new Error('MSW worker notification calls were not found');
 
+  safeMessageBody = replaceOnce(
+    safeMessageBody,
+    "  const clientId = Reflect.get(event.source || {}, 'id')\n",
+    "  await reconcileActiveClients()\n\n  const clientId = Reflect.get(event.source || {}, 'id')\n",
+    'active client reconciliation',
+  );
+  safeMessageBody = replaceOnce(
+    safeMessageBody,
+    `  const allClients = await self.clients.matchAll({\n    type: 'window',\n  })\n\n`,
+    '',
+    'message client list removal',
+  );
+  safeMessageBody = replaceOnce(
+    safeMessageBody,
+    `      const remainingClients = allClients.filter((client) => {\n        return client.id !== clientId\n      })\n\n      // Unregister itself when there are no more clients\n      if (remainingClients.length === 0) {\n        self.registration.unregister()\n      }`,
+    '      await reconcileActiveClients()',
+    'client close reconciliation',
+  );
+
   let patched = `${source.slice(0, listenerStart)}addEventListener('message', function (event) {\n  event.waitUntil(handleMessage(event))\n})\n\nasync function handleMessage(event) {\n${safeMessageBody}\n}${source.slice(listenerEnd + listenerClosing.length)}`;
   patched = replaceOnce(
     patched,
     'const activeClientIds = new Set()\n',
-    'const activeClientIds = new Set()\nconst MESSAGE_TIMEOUT = 10_000\n',
-    'message timeout constant',
+    `const activeClientIds = new Set()\nconst MESSAGE_TIMEOUT = 10_000\nconst SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])\n\nasync function reconcileActiveClients() {\n  const allClients = await self.clients.matchAll({\n    type: 'window',\n  })\n  const liveClientIds = new Set(allClients.map((client) => client.id))\n\n  for (const clientId of activeClientIds) {\n    if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)\n  }\n\n  if (activeClientIds.size === 0 && allClients.length === 0) {\n    await self.registration.unregister()\n  }\n\n  return allClients\n}\n`,
+    'active client reconciliation helper',
+  );
+
+  patched = replaceOnce(
+    patched,
+    '  if (client && activeClientIds.has(client.id)) {\n    const serializedRequest = await serializeRequest(requestCloneForEvents)',
+    '  if (client && activeClientIds.has(client.id)) {\n    try {\n    const serializedRequest = await serializeRequest(requestCloneForEvents)',
+    'response notification guard',
+  );
+  patched = replaceOnce(
+    patched,
+    'async function handleRequest(event, requestId, requestInterceptedAt) {\n  const client = await resolveMainClient(event)',
+    'async function handleRequest(event, requestId, requestInterceptedAt) {\n  await reconcileActiveClients()\n  const client = await resolveMainClient(event)',
+    'fetch active client reconciliation',
   );
 
   const responseCallStart =
@@ -49,7 +81,7 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     '\n    )\n  }\n\n  return response',
-    '\n    ).catch(() => {})\n  }\n\n  return response',
+    '\n    ).catch(() => {})\n    } catch {}\n  }\n\n  return response',
     'response notification completion',
   );
 
@@ -63,8 +95,21 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     '\n  )\n\n  switch (clientMessage.type)',
-    '\n    )\n  } catch {\n    return passthrough()\n  }\n\n  switch (clientMessage.type)',
+    "\n    )\n  } catch {\n    return failClosed()\n  }\n\n  if (!clientMessage || typeof clientMessage !== 'object') return failClosed()\n\n  switch (clientMessage.type)",
     'request delegation completion',
+  );
+
+  patched = replaceOnce(
+    patched,
+    '    return fetch(requestClone, { headers })\n  }\n\n  // Bypass mocking',
+    '    return fetch(requestClone, { headers })\n  }\n\n  function failClosed() {\n    return SAFE_METHODS.has(event.request.method) ? passthrough() : Response.error()\n  }\n\n  // Bypass mocking',
+    'request fail-closed helper',
+  );
+  patched = replaceOnce(
+    patched,
+    '  return passthrough()\n}\n\n/**\n * @param {Client} client',
+    '  return failClosed()\n}\n\n/**\n * @param {Client} client',
+    'unknown request message fail-closed',
   );
 
   const sendStart = '/**\n * @param {Client} client\n';
@@ -120,11 +165,12 @@ function sendToClient(client, message, transferrables = []) {
 };
 
 const generate = async (directory) => {
+  const path = resolve(directory, workerName);
+  await rm(path, { force: true });
   execFileSync(workerBinary, ['init', directory], {
     cwd: frontendRoot,
     stdio: 'ignore',
   });
-  const path = resolve(directory, workerName);
   const patched = patchWorker(await readFile(path, 'utf8'));
   await writeFile(path, patched, 'utf8');
   return patched;

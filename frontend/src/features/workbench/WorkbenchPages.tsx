@@ -291,16 +291,18 @@ export function Shell() {
               ) : (
                 <form
                   className="auth-form"
-                  onSubmit={async (event) => {
-                    event.preventDefault();
-                    try {
-                      await api.login(keyDraft.trim());
-                      setKeyDraft('');
-                      setReauthRequired(false);
-                    } catch (error) {
-                      if (error instanceof ApiError) setStreamProblem(error);
-                      setReauthRequired(true);
-                    }
+                  onSubmit={(event) => {
+                    void (async () => {
+                      event.preventDefault();
+                      try {
+                        await api.login(keyDraft.trim());
+                        setKeyDraft('');
+                        setReauthRequired(false);
+                      } catch (error) {
+                        if (error instanceof ApiError) setStreamProblem(error);
+                        setReauthRequired(true);
+                      }
+                    })();
                   }}
                 >
                   <label>

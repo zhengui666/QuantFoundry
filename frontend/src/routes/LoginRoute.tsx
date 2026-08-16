@@ -17,28 +17,30 @@ export function LoginPage() {
       <p>{t('auth.loginLede')}</p>
       <Panel title={t('auth.generalAccessKey')}>
         <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setPending(true);
-            setError(undefined);
-            try {
-              await api.login(key.trim());
-              setKey('');
-              const returnTo = transientStorage.get('qf.auth.return_to');
-              transientStorage.remove('qf.auth.return_to');
-              if (
-                returnTo &&
-                returnTo.startsWith('/') &&
-                !returnTo.startsWith('//') &&
-                returnTo !== '/login'
-              )
-                window.location.replace(returnTo);
-              else void navigate({ to: '/overview', replace: true });
-            } catch (value) {
-              setError(value);
-            } finally {
-              setPending(false);
-            }
+          onSubmit={(event) => {
+            void (async () => {
+              event.preventDefault();
+              setPending(true);
+              setError(undefined);
+              try {
+                await api.login(key.trim());
+                setKey('');
+                const returnTo = transientStorage.get('qf.auth.return_to');
+                transientStorage.remove('qf.auth.return_to');
+                if (
+                  returnTo &&
+                  returnTo.startsWith('/') &&
+                  !returnTo.startsWith('//') &&
+                  returnTo !== '/login'
+                )
+                  window.location.replace(returnTo);
+                else void navigate({ to: '/overview', replace: true });
+              } catch (value) {
+                setError(value);
+              } finally {
+                setPending(false);
+              }
+            })();
           }}
         >
           <label>

@@ -1,5 +1,3 @@
-/* eslint-disable no-restricted-syntax -- this is the sole allowlisted transient storage adapter. */
-
 const allowed = (key: string): boolean =>
   key === 'qf.auth.return_to' || key === 'qf.setup.started' || key.startsWith('qf.sse.cursor:');
 

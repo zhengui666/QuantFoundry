@@ -12,6 +12,24 @@ const INTEGRITY_CHECKSUM = '03cb67ac84128e63d7cd722a6e5b7f1e'
 const IS_MOCKED_RESPONSE = Symbol('isMockedResponse')
 const activeClientIds = new Set()
 const MESSAGE_TIMEOUT = 10_000
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+async function reconcileActiveClients() {
+  const allClients = await self.clients.matchAll({
+    type: 'window',
+  })
+  const liveClientIds = new Set(allClients.map((client) => client.id))
+
+  for (const clientId of activeClientIds) {
+    if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)
+  }
+
+  if (activeClientIds.size === 0 && allClients.length === 0) {
+    await self.registration.unregister()
+  }
+
+  return allClients
+}
 
 addEventListener('install', function () {
   self.skipWaiting()
@@ -26,6 +44,8 @@ addEventListener('message', function (event) {
 })
 
 async function handleMessage(event) {
+  await reconcileActiveClients()
+
   const clientId = Reflect.get(event.source || {}, 'id')
 
   if (!clientId || !self.clients) {
@@ -37,10 +57,6 @@ async function handleMessage(event) {
   if (!client) {
     return
   }
-
-  const allClients = await self.clients.matchAll({
-    type: 'window',
-  })
 
   switch (event.data) {
     case 'KEEPALIVE_REQUEST': {
@@ -79,14 +95,7 @@ async function handleMessage(event) {
     case 'CLIENT_CLOSED': {
       activeClientIds.delete(clientId)
 
-      const remainingClients = allClients.filter((client) => {
-        return client.id !== clientId
-      })
-
-      // Unregister itself when there are no more clients
-      if (remainingClients.length === 0) {
-        self.registration.unregister()
-      }
+      await reconcileActiveClients()
 
       break
     }
@@ -127,6 +136,7 @@ addEventListener('fetch', function (event) {
  * @param {number} requestInterceptedAt
  */
 async function handleRequest(event, requestId, requestInterceptedAt) {
+  await reconcileActiveClients()
   const client = await resolveMainClient(event)
   const requestCloneForEvents = event.request.clone()
   const response = await getResponse(
@@ -140,6 +150,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
   // Ensure MSW is active and ready to handle the message, otherwise
   // this message will pend indefinitely.
   if (client && activeClientIds.has(client.id)) {
+    try {
     const serializedRequest = await serializeRequest(requestCloneForEvents)
 
     // Omit the body of server-sent event stream responses.
@@ -178,6 +189,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
         ? [serializedRequest.body, responseClone.body]
         : [],
     ).catch(() => {})
+    } catch {}
   }
 
   return response
@@ -255,6 +267,10 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
     return fetch(requestClone, { headers })
   }
 
+  function failClosed() {
+    return SAFE_METHODS.has(event.request.method) ? passthrough() : Response.error()
+  }
+
   // Bypass mocking when the client is not active.
   if (!client) {
     return passthrough()
@@ -285,8 +301,10 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
     [serializedRequest.body],
     )
   } catch {
-    return passthrough()
+    return failClosed()
   }
+
+  if (!clientMessage || typeof clientMessage !== 'object') return failClosed()
 
   switch (clientMessage.type) {
     case 'MOCK_RESPONSE': {
@@ -298,7 +316,7 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
     }
   }
 
-  return passthrough()
+  return failClosed()
 }
 
 /**

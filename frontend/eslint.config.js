@@ -10,7 +10,7 @@ const nonProductionFiles = [
   'src/api/generated/**',
   'src/api/generated.ts',
 ];
-const policyIgnores = [...nonProductionFiles, 'src/api/**'];
+const policyIgnores = [...nonProductionFiles, 'src/api/**', 'src/shared/transient-storage.ts'];
 const typeChecked = tseslint.configs.recommendedTypeChecked.map((config) =>
   config.languageOptions
     ? {
@@ -41,9 +41,9 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'error',
       'react-hooks/rules-of-hooks': 'error',
       '@typescript-eslint/no-base-to-string': 'off',
-      '@typescript-eslint/no-misused-promises': 'off',
+      '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
-      '@typescript-eslint/prefer-promise-reject-errors': 'off',
+      '@typescript-eslint/prefer-promise-reject-errors': 'error',
     },
   },
   {
@@ -72,11 +72,31 @@ export default tseslint.config(
           message: 'Use the canonical operation client in src/api instead of raw fetch.',
         },
         {
+          selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.computed=true][callee.property.value='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
           selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
           message: 'Render structured text; dangerouslySetInnerHTML is forbidden.',
         },
         {
           selector: 'MemberExpression[property.name=/^(localStorage|sessionStorage|indexedDB)$/]',
+          message:
+            'Use the allowlisted transient-storage adapter; client storage is not server truth.',
+        },
+        {
+          selector: 'MemberExpression[object.name=/^(localStorage|sessionStorage|indexedDB)$/]',
+          message:
+            'Use the allowlisted transient-storage adapter; client storage is not server truth.',
+        },
+        {
+          selector:
+            'MemberExpression[computed=true][property.value=/^(localStorage|sessionStorage|indexedDB)$/]',
           message:
             'Use the allowlisted transient-storage adapter; client storage is not server truth.',
         },
@@ -96,7 +116,7 @@ export default tseslint.config(
           ],
           patterns: [
             {
-              group: ['**/routes/**', '**/features/**', '**/domain/**', '**/ui'],
+              group: ['**/routes/**', '**/features/**', '**/domain/**', '**/ui', '**/ui/**'],
               message: 'The API layer cannot depend on UI or domain implementation modules.',
             },
           ],
