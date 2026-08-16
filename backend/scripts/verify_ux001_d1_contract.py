@@ -33,8 +33,8 @@ def main() -> int:
     errors = len(openapi["components"]["schemas"]["CanonicalErrorCode"]["enum"])
     expected = openapi["info"]
     assert expected["x-quantfoundry-contract-revision"] == "UX001_D1_R1"
-    assert operations == expected["x-quantfoundry-operation-count"] == 65
-    assert schemas == expected["x-quantfoundry-schema-count"] == 186
+    assert operations == expected["x-quantfoundry-operation-count"] == 66
+    assert schemas == expected["x-quantfoundry-schema-count"] == 188
     assert errors == expected["x-quantfoundry-error-count"] == 75
     assert "cookieSession" in openapi["components"]["securitySchemes"]
     assert "bearerAuth" not in openapi["components"]["securitySchemes"]
@@ -62,7 +62,7 @@ def main() -> int:
         expected["x-quantfoundry-configuration-catalog-version"]
         == catalog["catalog_version"]
     )
-    assert expected["x-quantfoundry-configuration-entry-count"] == len(keys) == 15
+    assert expected["x-quantfoundry-configuration-entry-count"] == len(keys) == 16
 
     assert bootstrap["status"] == "TARGET_SCHEMA_FROZEN"
     assert bootstrap["authority"]["physical_source"].startswith("SQLAlchemy")
@@ -71,8 +71,8 @@ def main() -> int:
 
     assert matrix["status"] == "FROZEN"
     assert matrix["counts"] == {
-        "operations": 65,
-        "schemas": 186,
+        "operations": 66,
+        "schemas": 188,
         "errors": 75,
         "semantic_tools": 13,
     }

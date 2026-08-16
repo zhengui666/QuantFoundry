@@ -2,7 +2,7 @@
 
 **治理版本：** Final V1.0
 **日期：** 2026-08-13
-**适用范围：** QuantFoundry repository；仅 Paper、Single-human-principal / Self-hosted；不包含实盘资金执行。
+**适用范围：** QuantFoundry repository；仅 Paper、受控 LiveExecution、Single-human-principal / Self-hosted；不包含无人值守、绕过人工审批或自动清算的实盘资金执行。
 **当前阶段：** D3 frontend control-plane slice complete；D1 machine sources、D2 Control DB/Alembic/runtime、D3 cookie session/Settings/responsive targeted gates 已通过；PG/chaos/independent release evidence pending。
 
 ## 1. 目的与权威关系

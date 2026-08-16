@@ -1,0 +1,175 @@
+"""Fail-closed activation and order-state rules for LiveExecution."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+
+from quantfoundry.live.connector import ConnectorCapabilities, OrderRequest
+
+KillSwitch = Literal["ACTIVE", "PAUSED", "STOPPED", "DISABLED"]
+ApprovalState = Literal["PENDING", "APPROVED", "REJECTED", "STALE"]
+OrderStatus = Literal[
+    "CREATED",
+    "SUBMITTING",
+    "ACKNOWLEDGED",
+    "PARTIALLY_FILLED",
+    "FILLED",
+    "CANCEL_PENDING",
+    "CANCELLED",
+    "REJECTED",
+    "EXPIRED",
+    "UNKNOWN",
+    "RECONCILING",
+]
+
+_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
+    "CREATED": frozenset({"SUBMITTING", "CANCELLED"}),
+    "SUBMITTING": frozenset({"ACKNOWLEDGED", "UNKNOWN", "RECONCILING", "REJECTED"}),
+    "ACKNOWLEDGED": frozenset(
+        {
+            "PARTIALLY_FILLED",
+            "FILLED",
+            "CANCEL_PENDING",
+            "REJECTED",
+            "EXPIRED",
+            "UNKNOWN",
+        }
+    ),
+    "PARTIALLY_FILLED": frozenset(
+        {"PARTIALLY_FILLED", "FILLED", "CANCEL_PENDING", "UNKNOWN"}
+    ),
+    "FILLED": frozenset(),
+    "CANCEL_PENDING": frozenset({"CANCELLED", "FILLED", "PARTIALLY_FILLED", "UNKNOWN"}),
+    "CANCELLED": frozenset(),
+    "REJECTED": frozenset(),
+    "EXPIRED": frozenset(),
+    "UNKNOWN": frozenset({"RECONCILING"}),
+    "RECONCILING": frozenset(
+        {
+            "ACKNOWLEDGED",
+            "PARTIALLY_FILLED",
+            "FILLED",
+            "CANCELLED",
+            "REJECTED",
+            "EXPIRED",
+            "UNKNOWN",
+        }
+    ),
+}
+
+
+class LivePolicyError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class ActivationEvidence:
+    live_id: str
+    approval_state: ApprovalState
+    approval_revision: int
+    connector_revision: int
+    capabilities_hash: str
+    account_id: str
+    validated_at: datetime
+    max_validation_age: timedelta = timedelta(minutes=10)
+
+    def validate(
+        self,
+        *,
+        now: datetime,
+        confirmation: str,
+        global_switch: KillSwitch,
+        account_switch: KillSwitch,
+        deployment_switch: KillSwitch,
+        capabilities: ConnectorCapabilities,
+        order: OrderRequest | None = None,
+    ) -> None:
+        if confirmation != f"ENABLE LIVE {self.live_id}":
+            raise LivePolicyError("explicit live confirmation is required")
+        if self.approval_state != "APPROVED" or self.approval_revision < 1:
+            raise LivePolicyError("live approval is not active")
+        if (
+            self.connector_revision < 1
+            or self.capabilities_hash != capabilities.content_hash()
+        ):
+            raise LivePolicyError("connector capabilities have changed")
+        if any(
+            value != "ACTIVE"
+            for value in (global_switch, account_switch, deployment_switch)
+        ):
+            raise LivePolicyError("live kill switch is active")
+        current = now.astimezone(UTC)
+        validated = self.validated_at.astimezone(UTC)
+        if current < validated or current - validated > self.max_validation_age:
+            raise LivePolicyError("connector validation has expired")
+        if self.account_id not in capabilities.account_ids:
+            raise LivePolicyError("approved account is not in connector capabilities")
+        if order is not None:
+            capabilities.validate_order(order)
+
+
+def ensure_submission_allowed(
+    *,
+    global_switch: KillSwitch,
+    account_switch: KillSwitch,
+    deployment_switch: KillSwitch,
+    live_activated: bool,
+    reconciliation_ok: bool,
+) -> None:
+    if not live_activated:
+        raise LivePolicyError("live deployment is not activated")
+    if not reconciliation_ok:
+        raise LivePolicyError("account reconciliation is required")
+    if any(
+        value != "ACTIVE"
+        for value in (global_switch, account_switch, deployment_switch)
+    ):
+        raise LivePolicyError("live kill switch is active")
+
+
+def transition_order(current: OrderStatus, target: OrderStatus) -> OrderStatus:
+    if target == current:
+        return current
+    if target not in _TRANSITIONS[current]:
+        raise LivePolicyError(f"illegal order transition {current}->{target}")
+    return target
+
+
+def apply_fill(
+    *,
+    current: OrderStatus,
+    fill_id: str,
+    known_fill_ids: frozenset[str],
+    cumulative_quantity: str,
+    order_quantity: str,
+    terminal: bool = False,
+) -> tuple[OrderStatus, frozenset[str], bool]:
+    """Return status, fill-id set and whether this fill changed state."""
+    if not fill_id:
+        raise LivePolicyError("broker fill id is required")
+    if fill_id in known_fill_ids:
+        return current, known_fill_ids, False
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        cumulative = Decimal(cumulative_quantity)
+        quantity = Decimal(order_quantity)
+    except InvalidOperation as error:
+        raise LivePolicyError("fill quantities are invalid") from error
+    if (
+        not cumulative.is_finite()
+        or not quantity.is_finite()
+        or cumulative <= 0
+        or quantity <= 0
+    ):
+        raise LivePolicyError("fill quantities are invalid")
+    if cumulative > quantity:
+        raise LivePolicyError("cumulative fill exceeds order quantity")
+    if terminal:
+        target: OrderStatus = "FILLED"
+    else:
+        target = "FILLED" if cumulative == quantity else "PARTIALLY_FILLED"
+    next_status = transition_order(current, target)
+    return next_status, known_fill_ids | {fill_id}, True

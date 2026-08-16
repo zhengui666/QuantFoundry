@@ -10,7 +10,9 @@ from typing import Any, cast
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parents[1]))
+BACKEND_ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(BACKEND_ROOT / "src"))
+sys.path.insert(1, str(BACKEND_ROOT))
 
 from app.main import app  # noqa: E402
 

@@ -396,6 +396,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup/live-connectors/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate a write-only external HTTPS Live Connector */
+        post: operations["validateLiveConnector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup/provider-connections/validate": {
         parameters: {
             query?: never;
@@ -1295,6 +1312,27 @@ export interface components {
         };
         /** @enum {string} */
         CanonicalErrorCode: "INVALID_REQUEST" | "RESOURCE_NOT_FOUND" | "PRECONDITION_REQUIRED" | "REVISION_MISMATCH" | "IDEMPOTENCY_CONFLICT" | "IDEMPOTENCY_IN_PROGRESS" | "RESOURCE_CONFLICT" | "SERVICE_DEGRADED" | "INTERNAL_ERROR" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "HUMAN_APPROVAL_REQUIRED" | "RESEARCH_NOT_MUTABLE" | "RESEARCH_WAITING_USER" | "EXPERIMENT_IMMUTABLE" | "EXPERIMENT_INVALID" | "NON_REPRODUCIBLE" | "MULTIPLE_TESTING_LIMIT_REACHED" | "STRATEGY_VERSION_FROZEN" | "STRATEGY_VERSION_MISMATCH" | "STRATEGY_NOT_FROZEN" | "STRATEGY_NOT_VALIDATED" | "VALIDATION_IN_PROGRESS" | "VALIDATION_FAILED" | "VALIDATION_PREREQUISITES_INCOMPLETE" | "VALIDATION_TEST_BLOCKED" | "HOLDOUT_LOCKED" | "HOLDOUT_APPROVAL_REQUIRED" | "HOLDOUT_PREREQUISITES_INCOMPLETE" | "HOLDOUT_ALREADY_EXPOSED" | "HOLDOUT_RESULT_FORBIDDEN" | "APPROVAL_STALE" | "APPROVAL_ALREADY_RESOLVED" | "APPROVAL_PREREQUISITES_CHANGED" | "APPROVAL_TYPE_MISMATCH" | "DATA_CAPABILITY_MISSING" | "DATA_QUALITY_BLOCKED" | "DATA_SNAPSHOT_MISSING" | "PIT_GUARANTEE_UNAVAILABLE" | "STALE_DATA" | "PROVIDER_UNAVAILABLE" | "JOB_CONFLICT" | "JOB_NOT_CANCELLABLE" | "JOB_LEASE_LOST" | "JOB_FAILED" | "PAPER_APPROVAL_REQUIRED" | "PAPER_RISK_BLOCKED" | "PAPER_DATA_BLOCKED" | "PAPER_DUPLICATE_RUN" | "PAPER_VERSION_MISMATCH" | "RISK_LIMIT_EXCEEDED" | "AGENT_DISABLED" | "AGENT_TOOL_FORBIDDEN" | "AGENT_BUDGET_EXCEEDED" | "AGENT_OUTPUT_INVALID" | "AGENT_MODEL_UNAVAILABLE" | "AGENT_RESUME_CONFLICT" | "AGENT_CONTEXT_STALE" | "AGENT_RETRY_EXHAUSTED" | "TOOL_INPUT_INVALID" | "TOOL_EXECUTION_FAILED" | "CREDENTIAL_INVALID" | "CREDENTIAL_NOT_CONFIGURED" | "CONNECTION_VALIDATION_EXPIRED" | "CONNECTION_KIND_MISMATCH" | "LAST_ACTIVE_KEY_REQUIRED" | "CONFIGURATION_VALIDATION_FAILED" | "CONFIGURATION_APPLY_FAILED" | "CONFIGURATION_RESTART_REQUIRED" | "DATABASE_CONNECTION_FAILED" | "DATABASE_SCHEMA_INCOMPATIBLE" | "DATABASE_SWITCH_FAILED" | "BOOTSTRAP_LOCKED" | "DATABASE_DISCONNECTED" | "CSRF_REQUIRED";
+        LiveConnectorValidationRequest: {
+            connection_id: string;
+            /** Format: uri */
+            endpoint: string;
+            key_id: string;
+            credential: string;
+            expected_account_id?: string | null;
+        };
+        LiveConnectorValidationResult: {
+            connection_id: string;
+            /** @enum {unknown} */
+            state: "SUCCESS" | "FAILED";
+            error_code: string | null;
+            connector_id: string | null;
+            protocol_version: string | null;
+            capabilities_hash: string | null;
+            account_ids: string[];
+            assets: ("EQUITY" | "FUTURE" | "OPTION" | "FX_SPOT" | "CRYPTO_SPOT" | "CRYPTO_PERPETUAL")[];
+            /** Format: date-time */
+            checked_at: string;
+        };
         ApiProblem: {
             /** Format: uri */
             type: string;
@@ -3844,6 +3882,37 @@ export interface operations {
             };
             401: components["responses"]["Problem401"];
             403: components["responses"]["Problem403"];
+            429: components["responses"]["Problem429"];
+        };
+    };
+    validateLiveConnector: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveConnectorValidationRequest"];
+            };
+        };
+        responses: {
+            /** @description Redacted connector capabilities and account validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveConnectorValidationResult"];
+                };
+            };
+            401: components["responses"]["Problem401"];
+            403: components["responses"]["Problem403"];
+            409: components["responses"]["Problem409"];
+            422: components["responses"]["Problem422"];
             429: components["responses"]["Problem429"];
         };
     };

@@ -1509,7 +1509,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         "streamEvents",
     }
     assert required <= set(calls)
-    assert SPEC["info"]["x-quantfoundry-operation-count"] == 65
+    assert SPEC["info"]["x-quantfoundry-operation-count"] == 66
     assert holdout_sentinel not in "\n".join(response_bodies)
 
     session = SessionLocal()

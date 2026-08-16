@@ -39,6 +39,8 @@ import {
   HoldoutRunRequestSchema,
   JobAcceptedSchema,
   JobDetailSchema,
+  LiveConnectorValidationRequestSchema,
+  LiveConnectorValidationResultSchema,
   MemoDetailSchema,
   MemoGenerateRequestSchema,
   OverviewReadModelSchema,
@@ -580,6 +582,21 @@ export const api = {
       }),
       SetupProviderConnectionValidationResultSchema,
       'SetupProviderConnectionValidationResult',
+    );
+  },
+  validateLiveConnector: async (body: Schema<'LiveConnectorValidationRequest'>) => {
+    const canonicalBody = validateInput<Schema<'LiveConnectorValidationRequest'>>(
+      body,
+      LiveConnectorValidationRequestSchema,
+      'LiveConnectorValidation',
+    );
+    return validateResult<Schema<'LiveConnectorValidationResult'>>(
+      await request<unknown>('validateLiveConnector', {
+        headers: { 'Idempotency-Key': idempotency() },
+        body: JSON.stringify(canonicalBody),
+      }),
+      LiveConnectorValidationResultSchema,
+      'LiveConnectorValidationResult',
     );
   },
   completeSetup: async (

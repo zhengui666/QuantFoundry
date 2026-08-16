@@ -3132,7 +3132,8 @@ Release evidence archived
 - Framework adapters 可替换且需 golden compatibility；
 - failure is valid output；
 - Paper before Live；
-- V1 no live capital execution。
+- Live capital execution only through the canonical LiveExecution gate: human approval, explicit activation, connector capability validation, idempotent order intent, reconciliation and kill switch; Agent/client bypass is forbidden。
+- 首批 `NAUTILUS_TRADER` adapter 必须验证 `LIVE_CONNECTOR_V1` operation/instrument/order wire 映射、幂等键传递、能力缺失阻断和 submit unknown → `RECONCILING`；不得以本地 fake port 证明真实 NautilusTrader venue execution 已就绪。
 
 没有为了自动化或测试便利弱化项目围栏。
 

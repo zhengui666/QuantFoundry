@@ -4,8 +4,8 @@ canonical_contract: openapi-v1.yaml
 canonical_catalog: configuration-catalog-v1.yaml
 canonical_bootstrap_schema: bootstrap-control-v1.yaml
 counts:
-  operations: 65
-  schemas: 186
+  operations: 66
+  schemas: 188
   errors: 75
   semantic_tools: 13
 families:
