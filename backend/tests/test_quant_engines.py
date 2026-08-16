@@ -19,6 +19,7 @@ from quantfoundry.api.app import HoldoutExposureRow, JobRow, SessionLocal, app
 from quantfoundry.engines.core import (
     CostModel,
     DatasetBundle,
+    EngineInputError,
     ValidationPolicy,
     compute_factor_rows,
     data_quality_profile,
@@ -101,6 +102,14 @@ def test_csv_and_parquet_adapter_enforce_pit_as_of_and_schema(
             "partition": "VALIDATION",
         },
         {
+            "event_time": "2020-06-03T21:00:00Z",
+            "available_at": "2020-06-04T21:01:00Z",
+            "symbol": "BBB",
+            "close": 101.0,
+            "benchmark_close": 101.0,
+            "partition": "RESEARCH",
+        },
+        {
             "event_time": "2020-09-02T21:00:00Z",
             "available_at": "2020-09-02T21:01:00Z",
             "symbol": "QF_HOLDOUT_SENTINEL",
@@ -123,7 +132,7 @@ def test_csv_and_parquet_adapter_enforce_pit_as_of_and_schema(
     public, protected = snapshot_rows(
         csv_bundle, "2020-01-01", "2020-12-31", "2020-06-30T23:59:59Z"
     )
-    assert [row["date"] for row in public] == ["2020-06-01"]
+    assert [row["date"] for row in public] == ["2020-06-01", "2020-06-03"]
     assert protected == []
     assert all(row["available_at"] <= "2020-06-30T23:59:59Z" for row in public)
 
@@ -149,6 +158,61 @@ def test_csv_and_parquet_adapter_enforce_pit_as_of_and_schema(
         protected,
     )
 
+
+def test_dataset_rejects_intraday_duplicates_and_non_pit_rows(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("QF_DATASET_DIR", str(tmp_path))
+    dataset_id = "DSSET-550e8400-e29b-41d4-a716-446655440013"
+    _metadata(tmp_path, dataset_id)
+    rows = [
+        {
+            "event_time": "2020-06-01T21:00:00Z",
+            "available_at": "2020-06-01T21:01:00Z",
+            "symbol": "AAA",
+            "close": 100,
+            "benchmark_close": 100,
+            "partition": "RESEARCH",
+        },
+        {
+            "event_time": "2020-06-01T21:30:00Z",
+            "available_at": "2020-06-01T21:31:00Z",
+            "symbol": "AAA",
+            "close": 101,
+            "benchmark_close": 101,
+            "partition": "RESEARCH",
+        },
+    ]
+    columns = list(rows[0])
+    (tmp_path / f"{dataset_id}.csv").write_text(
+        ",".join(columns) + "\n" + "\n".join(
+            ",".join(str(row[column]) for column in columns) for row in rows
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(EngineInputError, match="duplicate market row"):
+        load_dataset(dataset_id)
+
+
+def test_simulation_does_not_use_late_release_for_prior_decision() -> None:
+    rows = [
+        {
+            **_market_row("2020-01-02", "AAA", 100, 100),
+            "available_at": "2020-01-04T21:00:00Z",
+            "strategy_score": 100,
+        },
+        {**_market_row("2020-01-02", "BBB", 100, 100), "strategy_score": 1},
+        {
+            **_market_row("2020-01-03", "AAA", 100, 100),
+            "strategy_score": 100,
+        },
+        {**_market_row("2020-01-03", "BBB", 100, 100), "strategy_score": 1},
+        {
+            **_market_row("2020-01-06", "AAA", 100, 100),
+            "strategy_score": 100,
+        },
+        {**_market_row("2020-01-06", "BBB", 100, 100), "strategy_score": 1},
+    ]
+    result = simulation_metrics(rows, 1, CostModel("cost:zero", 1, 0, 0))
+    assert result["returns"] == [0.0, 0.0]
 
 def test_factor_ic_rank_ic_turnover_and_coverage_golden() -> None:
     rows = [
@@ -400,8 +464,8 @@ def test_backtest_cost_benchmark_drawdown_portfolio_and_risk_golden() -> None:
         rows, 1, CostModel("COST-00000000-0000-4000-8000-000000000003", 1, 1.0, 2.0)
     )
     assert charged["total_return"] < result["total_return"]
-    assert charged["commission"] == pytest.approx(0.0001, abs=1e-12)
-    assert charged["slippage"] == pytest.approx(0.0002, abs=1e-12)
+    assert charged["commission"] == pytest.approx(0.000100033344448, rel=1e-12)
+    assert charged["slippage"] == pytest.approx(0.000200066688896, rel=1e-12)
 
 
 def test_validation_can_fail_leakage_and_numerical_rules() -> None:

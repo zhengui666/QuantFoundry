@@ -200,7 +200,7 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
             raise EngineInputError("market row symbol/price is invalid")
         if not math.isfinite(dividend) or dividend < 0:
             raise EngineInputError("market row dividend is invalid")
-        key = (event_time.isoformat(), symbol)
+        key = (local_date, symbol)
         if key in seen:
             raise EngineInputError(f"duplicate market row: {key}")
         seen.add(key)
@@ -349,6 +349,15 @@ def load_validation_policy(policy_id: str) -> ValidationPolicy:
         or not 0 <= policy.data_max_late_release_fraction <= 1
         or not -1 <= policy.validation_max_drawdown_floor <= 0
         or not -1 <= policy.holdout_max_drawdown_floor <= 0
+        or not all(
+            math.isfinite(value)
+            for value in (
+                policy.validation_min_sharpe,
+                policy.holdout_min_total_return,
+                policy.holdout_min_sharpe,
+                policy.data_max_late_release_fraction,
+            )
+        )
     ):
         raise EngineInputError("validation policy thresholds are out of range")
     return policy
@@ -516,7 +525,19 @@ def compute_factor_rows(
     for history in by_symbol.values():
         for index in range(lookback, len(history)):
             current = history[index]
-            prior = history[index - lookback]
+            knowledge_time = max(
+                _parse_timestamp(current["event_time"], "event_time"),
+                _parse_timestamp(current["available_at"], "available_at"),
+            )
+            available_history = [
+                item
+                for item in history[:index]
+                if _parse_timestamp(item["available_at"], "available_at")
+                <= knowledge_time
+            ]
+            if len(available_history) < lookback:
+                continue
+            prior = available_history[-lookback]
             score = float(current["close"]) / float(prior["close"]) - 1.0
             if operation == "mean_reversion":
                 score *= -1
@@ -636,6 +657,11 @@ def _portfolio_returns(
         raise EngineInputError("selection_count must be positive")
     by_date: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     for row in rows:
+        if row["symbol"] in by_date[row["date"]]:
+            raise EngineInputError(
+                "duplicate market row for local date and symbol: "
+                f"{row['date']}/{row['symbol']}"
+            )
         by_date[row["date"]][row["symbol"]] = row
     dates = sorted(by_date)
     net_returns: list[float] = []
@@ -649,16 +675,23 @@ def _portfolio_returns(
     weighting = rules.get("weighting", "EQUAL")
     rebalance_frequency = rules.get("rebalance_frequency", "DAILY")
     long_short = bool(rules.get("long_short", False))
-    leverage_limit = float(rules.get("leverage_limit", 1))
-    position_limit = float(rules.get("position_limit", 1))
-    signal_scale = sum(
-        float(signal["weight"]) * (1 if signal["direction"] == "LONG" else -1)
-        for signal in (strategy_spec or {}).get(
+    try:
+        leverage_limit = float(rules.get("leverage_limit", 1))
+        position_limit = float(rules.get("position_limit", 1))
+        signals = (strategy_spec or {}).get(
             "signals", [{"weight": "1", "direction": "LONG"}]
         )
-    )
+        signal_scale = sum(
+            float(signal["weight"]) * (1 if signal["direction"] == "LONG" else -1)
+            for signal in signals
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise EngineInputError("strategy signal/leverage inputs are invalid") from error
     if (
         signal_scale == 0
+        or not math.isfinite(signal_scale)
+        or not math.isfinite(leverage_limit)
+        or not math.isfinite(position_limit)
         or leverage_limit <= 0
         or not 0 < position_limit <= leverage_limit
     ):
@@ -668,7 +701,10 @@ def _portfolio_returns(
 
     def signal_score(row: dict[str, Any]) -> float:
         value = row.get("strategy_score")
-        return float(value) if value is not None else signal_scale * float(row["close"])
+        score = float(value) if value is not None else signal_scale * float(row["close"])
+        if not math.isfinite(score):
+            raise EngineInputError("strategy score must be finite")
+        return score
 
     def rebalance_due(index: int) -> bool:
         if index == 0 or rebalance_frequency == "DAILY":
@@ -690,18 +726,28 @@ def _portfolio_returns(
     for index in range(len(dates) - 1):
         today, tomorrow = dates[index], dates[index + 1]
         next_rows = by_date[tomorrow]
-        for symbol, market_row in by_date[today].items():
+        next_event_time = min(
+            _parse_timestamp(row["event_time"], "event_time")
+            for row in next_rows.values()
+        )
+        today_rows = {
+            symbol: row
+            for symbol, row in by_date[today].items()
+            if _parse_timestamp(row["available_at"], "available_at")
+            <= next_event_time
+        }
+        for symbol, market_row in today_rows.items():
             price_history[symbol].append(float(market_row["close"]))
         ranked = sorted(
             (
                 symbol
-                for symbol in by_date[today]
+                for symbol in today_rows
                 if symbol in next_rows
-                and bool(by_date[today][symbol].get("in_universe", True))
+                and bool(today_rows[symbol].get("in_universe", True))
                 and (not universe_symbols or symbol in universe_symbols)
             ),
             key=lambda symbol: (
-                -signal_score(by_date[today][symbol]),
+                -signal_score(today_rows[symbol]),
                 symbol,
             ),
         )
@@ -712,12 +758,12 @@ def _portfolio_returns(
             target = {
                 symbol: weight
                 for symbol, weight in previous_weights.items()
-                if symbol in next_rows
+                if symbol in today_rows and symbol in next_rows
             }
         else:
             if weighting == "SCORE":
                 raw = {
-                    symbol: abs(signal_score(by_date[today][symbol]))
+                    symbol: abs(signal_score(today_rows[symbol]))
                     for symbol in selected
                 }
             elif weighting == "VOLATILITY":
@@ -735,6 +781,8 @@ def _portfolio_returns(
             else:
                 raise EngineInputError("unsupported strategy weighting")
             raw_total = sum(raw.values())
+            if not math.isfinite(raw_total) or raw_total <= 0:
+                raise EngineInputError("strategy weights must have a positive finite total")
             target = {
                 symbol: min(position_limit, leverage_limit * value / raw_total)
                 for symbol, value in raw.items()
@@ -769,16 +817,26 @@ def _portfolio_returns(
                     * float(next_rows[symbol].get("split_factor", 1.0))
                     + float(next_rows[symbol].get("dividend", 0.0))
                 )
-                / float(by_date[today][symbol]["close"])
+                / float(today_rows[symbol]["close"])
                 - 1.0
             )
             for symbol in target
         }
         gross = sum(weight * asset_returns[symbol] for symbol, weight in target.items())
         cost_rate = (cost.commission_bps + cost.slippage_bps) / 10_000
-        net_returns.append(gross - turnover * cost_rate)
+        net = gross - turnover * cost_rate
+        if (
+            not math.isfinite(cost_rate)
+            or cost_rate < 0
+            or not math.isfinite(gross)
+            or not math.isfinite(net)
+            or gross <= -1
+            or net <= -1
+        ):
+            raise EngineInputError("simulation produced an insolvent or non-finite return")
+        net_returns.append(net)
         benchmark_today = statistics.fmean(
-            float(value["benchmark_close"]) for value in by_date[today].values()
+            float(value["benchmark_close"]) for value in today_rows.values()
         )
         benchmark_tomorrow = statistics.fmean(
             float(value["benchmark_close"]) for value in next_rows.values()
@@ -791,7 +849,7 @@ def _portfolio_returns(
             if target.get(symbol, 0.0) != previous_weights.get(symbol, 0.0)
         )
         previous_weights = {
-            symbol: weight * (1.0 + asset_returns[symbol]) / (1.0 + gross)
+            symbol: weight * (1.0 + asset_returns[symbol]) / (1.0 + net)
             for symbol, weight in target.items()
         }
         final_weights = target
@@ -815,6 +873,8 @@ def _risk_contribution(
             for index in range(1, len(dates))
         }
     symbols = sorted(weights)
+    if not symbols:
+        return {}
     common_dates = set.intersection(
         *(set(return_maps.get(symbol, {})) for symbol in symbols)
     )
