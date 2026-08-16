@@ -21,6 +21,17 @@ body {
 .mobile-nav-backdrop {
   display: none;
 }
+.mobile-sheet-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 button,
 input,
 textarea,
@@ -468,7 +479,7 @@ code {
   .mobile-nav-trigger {
     display: inline-flex;
   }
-  button.mobile-nav-backdrop {
+  .mobile-nav-backdrop {
     position: fixed;
     inset: 0;
     display: block;
@@ -480,9 +491,6 @@ code {
     height: 100vh;
     background: var(--qf-color-overlay);
     z-index: 9;
-  }
-  button.mobile-nav-backdrop:hover {
-    background: var(--qf-color-overlay);
   }
   main {
     padding-inline: 16px;

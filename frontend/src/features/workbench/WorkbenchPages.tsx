@@ -204,98 +204,98 @@ export function Shell() {
   return (
     <>
       <div className={`app${isSetup ? ' setup-shell' : ''}`}>
-        {!isSetup && (
-          <>
-            {mobileNavOpen && (
-              <button
-                className="mobile-nav-backdrop"
-                aria-label={t('nav.primary')}
-                onClick={() => setMobileNavOpen(false)}
-              />
-            )}
-            <nav
-              id="primary-navigation"
-              className={`sidebar${mobileNavOpen ? ' mobile-sheet-open' : ''}`}
-              aria-label={t('nav.primary')}
-            >
-              <div className="brand">
-                <span className="nav-label">{t('brand')}</span>
-                <span className="nav-short" aria-hidden="true">
-                  QF
-                </span>
-              </div>
-              {navigation.map(([to, key]) => (
-                <Link
-                  key={to}
-                  to={to}
-                  aria-label={t(key)}
-                  onClick={() => setMobileNavOpen(false)}
-                  activeProps={{ className: 'active', 'aria-current': 'page' }}
+        <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          {!isSetup && (
+            <Dialog.Portal>
+              <Dialog.Overlay className="mobile-nav-backdrop" />
+              <Dialog.Content asChild aria-describedby={undefined}>
+                <nav
+                  id="primary-navigation"
+                  className="sidebar mobile-sheet-open"
+                  aria-label={t('nav.primary')}
                 >
-                  <span className="nav-label">{t(key)}</span>
-                  <span className="nav-short" aria-hidden="true">
-                    {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
-                  </span>
-                </Link>
-              ))}
-            </nav>
-          </>
-        )}
-        <main key={authScopeKey}>
-          <header className="topbar">
-            {!isSetup && !isLogin && (
-              <button
-                className="mobile-nav-trigger secondary"
-                aria-expanded={mobileNavOpen}
-                aria-controls="primary-navigation"
-                onClick={() => setMobileNavOpen((open) => !open)}
-              >
-                {t('nav.primary')}
-              </button>
-            )}
-            <span aria-live="polite">
-              <Badge>
-                {t('realtime')} ·{' '}
-                {streamState === 'connecting' ? t('stream.connecting') : streamState}
-              </Badge>
-            </span>
-            {isLogin ? null : auth.get() ? (
-              <button className="secondary" onClick={() => void api.logout()}>
-                {t('auth.logout')}
-              </button>
-            ) : (
-              <form
-                className="auth-form"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  try {
-                    await api.login(keyDraft.trim());
-                    setKeyDraft('');
-                    setReauthRequired(false);
-                  } catch (error) {
-                    if (error instanceof ApiError) setStreamProblem(error);
-                    setReauthRequired(true);
-                  }
-                }}
-              >
-                <label>
-                  {t('auth.generalAccessKey')}
-                  <input
-                    type="password"
-                    value={keyDraft}
-                    aria-label={t('auth.generalAccessKey')}
-                    onChange={(event) => setKeyDraft(event.target.value)}
-                    placeholder={t('auth.memoryOnly')}
-                  />
-                </label>
-                <button disabled={!keyDraft.trim()}>{t('auth.authenticate')}</button>
-              </form>
-            )}
-          </header>
-          {reauthRequired && <State kind="error">{t('auth.expired')}</State>}
-          {streamProblem && <Problem error={streamProblem} />}
-          <Outlet />
-        </main>
+                  <Dialog.Title className="mobile-sheet-title">{t('nav.primary')}</Dialog.Title>
+                  <div className="brand">
+                    <span className="nav-label">{t('brand')}</span>
+                    <span className="nav-short" aria-hidden="true">
+                      QF
+                    </span>
+                  </div>
+                  {navigation.map(([to, key]) => (
+                    <Link
+                      key={to}
+                      to={to}
+                      aria-label={t(key)}
+                      onClick={() => setMobileNavOpen(false)}
+                      activeProps={{ className: 'active', 'aria-current': 'page' }}
+                    >
+                      <span className="nav-label">{t(key)}</span>
+                      <span className="nav-short" aria-hidden="true">
+                        {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
+                      </span>
+                    </Link>
+                  ))}
+                </nav>
+              </Dialog.Content>
+            </Dialog.Portal>
+          )}
+          <main key={authScopeKey}>
+            <header className="topbar">
+              {!isSetup && !isLogin && (
+                <Dialog.Trigger asChild>
+                  <button
+                    className="mobile-nav-trigger secondary"
+                    aria-expanded={mobileNavOpen}
+                    aria-controls="primary-navigation"
+                  >
+                    {t('nav.primary')}
+                  </button>
+                </Dialog.Trigger>
+              )}
+              <span aria-live="polite">
+                <Badge>
+                  {t('realtime')} ·{' '}
+                  {streamState === 'connecting' ? t('stream.connecting') : streamState}
+                </Badge>
+              </span>
+              {isLogin ? null : auth.get() ? (
+                <button className="secondary" onClick={() => void api.logout()}>
+                  {t('auth.logout')}
+                </button>
+              ) : (
+                <form
+                  className="auth-form"
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    try {
+                      await api.login(keyDraft.trim());
+                      setKeyDraft('');
+                      setReauthRequired(false);
+                    } catch (error) {
+                      if (error instanceof ApiError) setStreamProblem(error);
+                      setReauthRequired(true);
+                    }
+                  }}
+                >
+                  <label>
+                    {t('auth.generalAccessKey')}
+                    <input
+                      type="password"
+                      value={keyDraft}
+                      aria-label={t('auth.generalAccessKey')}
+                      onChange={(event) => setKeyDraft(event.target.value)}
+                      placeholder={t('auth.memoryOnly')}
+                    />
+                  </label>
+                  <button disabled={!keyDraft.trim()}>{t('auth.authenticate')}</button>
+                </form>
+              )}
+            </header>
+            {reauthRequired && <State kind="error">{t('auth.expired')}</State>}
+            {streamProblem && <Problem error={streamProblem} />}
+            <Outlet />
+          </main>
+        </Dialog.Root>
       </div>
     </>
   );
