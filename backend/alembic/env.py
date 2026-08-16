@@ -17,7 +17,7 @@ os.environ["QF_ALEMBIC_RUNNING"] = "1"
 from quantfoundry.api.app import Base  # noqa: E402
 
 config = context.config
-config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
 

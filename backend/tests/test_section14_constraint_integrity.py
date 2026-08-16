@@ -502,6 +502,9 @@ def test_check_normalization_preserves_string_literal_case() -> None:
     assert schema_manifest_check._normalized_check("value = 'A  B::text'") != (
         schema_manifest_check._normalized_check("value = 'A B'")
     )
+    assert schema_manifest_check._normalized_check("value::text = 'A'") != (
+        schema_manifest_check._normalized_check("value = 'A'")
+    )
 
 
 def test_anonymous_constraint_name_policy_is_structural_and_fail_closed() -> None:

@@ -14,8 +14,9 @@ def main() -> int:
     if not database_url:
         print(json.dumps({"status": "QUARANTINE", "reason": "DATABASE_URL_MISSING"}))
         return 2
-    engine = create_engine(database_url, pool_pre_ping=True)
+    engine = None
     try:
+        engine = create_engine(database_url, pool_pre_ping=True)
         with engine.connect() as connection:
             tables = set(inspect(connection).get_table_names())
             missing = sorted({"users", "workspaces"} - tables)
@@ -29,19 +30,17 @@ def main() -> int:
                     "missing_tables": missing,
                 }
             else:
-                users = int(
-                    connection.execute(text("SELECT count(*) FROM users")).scalar_one()
-                )
-                workspaces = int(
-                    connection.execute(
-                        text("SELECT count(*) FROM workspaces")
-                    ).scalar_one()
-                )
-                owners = int(
-                    connection.execute(
-                        text("SELECT count(*) FROM users WHERE role = 'OWNER'")
-                    ).scalar_one()
-                )
+                row = connection.execute(
+                    text(
+                        "SELECT "
+                        "(SELECT count(*) FROM users) AS users, "
+                        "(SELECT count(*) FROM workspaces) AS workspaces, "
+                        "(SELECT count(*) FROM users WHERE role = 'OWNER') AS owners"
+                    )
+                ).one()
+                users = int(row.users)
+                workspaces = int(row.workspaces)
+                owners = int(row.owners)
                 report = {
                     "users": users,
                     "workspaces": workspaces,
@@ -54,7 +53,7 @@ def main() -> int:
                         else "QUARANTINE"
                     ),
                 }
-    except SQLAlchemyError:
+    except (SQLAlchemyError, ValueError):
         report = {
             "users": None,
             "workspaces": None,
@@ -62,7 +61,8 @@ def main() -> int:
             "status": "QUARANTINE",
         }
     finally:
-        engine.dispose()
+        if engine is not None:
+            engine.dispose()
     print(json.dumps(report, sort_keys=True))
     return 0 if report["status"] in {"READY", "EMPTY"} else 2
 

@@ -14,7 +14,7 @@ from app.control_plane import CONTROL_METADATA, _control_path  # noqa: E402
 
 config = context.config
 database_url = os.getenv("QF_CONTROL_DB_URL") or f"sqlite:///{_control_path()}"
-config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 target_metadata = CONTROL_METADATA
 
 

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +65,7 @@ def _type_spec(type_: Any) -> dict[str, Any]:
     if isinstance(effective, Boolean):
         return {"name": "boolean"}
     if isinstance(effective, DateTime):
-        return {"name": "timestamptz"}
+        return {"name": "timestamptz" if effective.timezone else "timestamp"}
     if isinstance(effective, Date):
         return {"name": "date"}
     if isinstance(effective, Text):
@@ -316,9 +317,25 @@ def main() -> int:
             engine.dispose()
     value = snapshot(metadata)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=args.output.parent,
+            prefix=f".{args.output.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, args.output)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     print(
         f"wrote {value['table_count']} tables/{value['column_count']} columns "
         f"to {args.output}"

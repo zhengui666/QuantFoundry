@@ -686,10 +686,6 @@ def _normalized_sql_layout(value: str) -> str:
             pending_space = True
             index += 1
             continue
-        cast = re.match(r"::\s*text\b", value[index:], re.IGNORECASE)
-        if cast is not None:
-            index += cast.end()
-            continue
         dollar = re.match(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$", value[index:])
         if char in {"'", '"'} or dollar is not None:
             if pending_space and output:
@@ -802,6 +798,9 @@ def _check_metadata(
         physical_table = physical_contract[table_name]
         physical_columns = {item["name"]: item for item in physical_table["columns"]}
         for name, physical_column in physical_columns.items():
+            if name not in table.c:
+                errors.append(f"{label}:missing-physical-column:{table_name}.{name}")
+                continue
             column = table.c[name]
             actual_default = _column_default_signature(column)
             if actual_default != physical_column.get("server_default"):
