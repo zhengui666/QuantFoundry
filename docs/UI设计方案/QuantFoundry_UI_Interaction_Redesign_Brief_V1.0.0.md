@@ -31,7 +31,7 @@
 - 所有持久配置与认证状态必须来自 server-generated contract；
 - frontend 不写配置文件，不把 browser storage 当配置事实源；
 - 当前只做文档，不写代码、不生成截图资产、不宣布视觉冻结；
-- 实施前必须完成 canonical OpenAPI machine rewrite、生成类型、契约测试与全栈测试方案联动。
+- D1 已冻结 UX001_D1_R1 canonical OpenAPI、configuration catalog、Bootstrap target schema 与 executable matrix；UI runtime implementation 进入 D2，必须消费生成类型并通过契约/全栈 gate。
 
 “参考”只表示抽象信息架构、密度、状态与交互原则，严禁复制其他产品的品牌资产、专属图形、文案、数据、布局像素或源代码。
 
@@ -638,7 +638,7 @@ remaining risk
 ```text
 PRD 联动
 → 后端认证/配置/数据库 bootstrap 设计
-→ canonical OpenAPI machine rewrite
+→ UX001_D1_R1 generated contract + schema gate
 → generated contract 与 error/state 映射
 → UI / Frontend / Test 文档最终对齐
 → 参考截图归档与 design freeze

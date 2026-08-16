@@ -11,11 +11,12 @@
 **产品阶段：** MVP / First Usable Product
 **部署模式：** Single-human-principal / Self-hosted
 **默认语言：** 简体中文
-**文档状态：** Final V1.0 + UX-001 D0 target amendment；D1 machine contract/schema pending
-**Canonical HTTP Contract Stage（current baseline）：** `P0_EXECUTABLE`
-**Canonical HTTP Contract Revision（current baseline）：** `P0_EXECUTABLE_R2`
-**Canonical Operation Count（current baseline）：** `45`
-**Canonical Error Count（current baseline）：** `65`
+**文档状态：** Final V1.0 + UX-001 D1 contract amendment；D2 Agent snapshot/control-plane implementation complete；PG/chaos/release closure pending
+**Canonical HTTP Contract Stage（target）：** `UX001_D1`
+**Canonical HTTP Contract Revision（target）：** `UX001_D1_R1`
+**Canonical Operation Count（generated target）：** `65`
+**Canonical Schema Count（generated target）：** `186`
+**Canonical Error Count（generated target）：** `75`
 **日期：** 2026-08-13
 **正式路径：** `/QuantFoundry/docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md`
 
@@ -25,7 +26,7 @@
 
 本文定义 QuantFoundry V1 **Agent / Orchestration Layer 的实现级技术基线**。
 
-当前可执行 HTTP 边界严格以 `/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml` 为准：stage=`P0_EXECUTABLE`、revision=`P0_EXECUTABLE_R2`、45 operations、65 canonical errors。未出现在该文件的 Full-V1 catalog operation 均为 `FUTURE_STAGED`，不得作为实现、codegen、fixture 或 runtime contract 目标。新增 `reproduceExperiment` 是 deterministic Experiment HTTP operation，不新增 Agent semantic Tool、role permission 或 Agent workflow capability；`v1-p0.yaml` 仍为 13-Tool canonical scope。
+当前目标 HTTP 边界严格以 `/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml` 为准：stage=`UX001_D1`、revision=`UX001_D1_R1`、65 operations、186 schemas、75 canonical errors。D1 前的 `P0_EXECUTABLE_R2` 45-operation/65-error 组合仅用于历史 baseline 验证；不得重新生成其 Bearer/workspace 语义。`v1-p0.yaml` 仍为 13-Tool canonical scope。
 
 Paper daily scheduler 不属于 Agent Runtime、13 个 P0/P0.5 Semantic Tool 或当前 HTTP operation；它是 deterministic backend P0 service。Agent 不得读取、创建或迁移 `paper_scheduler_states`，不得发现 due-time、选择 trading_date、取得 lease、设置 suppression/watermark、触发/retry 日跑或绕过 calendar/risk/data gate。其正式契约只在 PRD §52.1–§52.3、Backend §23.4–§23.4.1 和 Test Plan §27.1；Paper HTTP/UI 保持 `FUTURE_STAGED` 不等于 scheduler core 可跳过。
 
@@ -284,7 +285,7 @@ JobId = Annotated[str, GeneratedPublicId("job")]
 
 ## 1.4.2 Generated Event/Audit Locator Contract
 
-Agent Runtime 不定义平行 locator DTO。下列 7 个 schema 必须从 canonical OpenAPI revision `P0_EXECUTABLE_R2` 生成并原样用于 Shared State boundary、Tool Call、Job、Agent Run、checkpoint、Handoff、SSE 与 Problem handling：
+Agent Runtime 不定义平行 locator DTO。下列 7 个 schema 必须从 canonical OpenAPI revision `UX001_D1_R1` 生成并原样用于 Shared State boundary、Tool Call、Job、Agent Run、checkpoint、Handoff、SSE 与 Problem handling：
 
 | Surface | Canonical generated schema |
 |---|---|
@@ -2479,7 +2480,7 @@ risk authority
 
 ## 35.5 Agent / Tool Error Codes
 
-`/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml#/components/schemas/CanonicalErrorCode` 是 65-member 机器可读唯一源；当前 revision=`P0_EXECUTABLE_R2`。其 Agent / Tool 子集为：
+`/QuantFoundry/docs/后端系统技术方案/contracts/openapi-v1.yaml#/components/schemas/CanonicalErrorCode` 是 75-member 机器可读唯一源；当前 target revision=`UX001_D1_R1`。D1 前 65-member/P0_EXECUTABLE_R2 仅是历史 baseline。其 Agent / Tool 子集为：
 
 ```text
 AGENT_DISABLED
@@ -4568,15 +4569,15 @@ Agent V1 技术实现完成必须满足：
 |---|---|
 | Change ID | `UX-001` |
 | 目标状态 | `TARGET_NORMATIVE` |
-| 当前阶段 | `D0_DOCS_ONLY` |
-| 机器契约/schema 阶段 | `D1_REQUIRED_BEFORE_CODE` |
-| Agent 实现、migration、fixture、eval 变更 | `BLOCKED` until D1 complete |
+| 当前阶段 | `D3_FRONTEND_CONTROL_PLANE_IMPLEMENTED` |
+| 机器契约/schema 阶段 | `UX001_D1_R1_FROZEN` |
+| Agent 实现、migration、fixture、eval 变更 | `D3_IMPLEMENTATION_COMPLETE_TARGETED` |
 
 本节是 Backend §41 `UX-001` 在 Agent Runtime 的联动 target normative。与本文既有 per-role provider/model 可写、deployment/Setup 连接解析、多 workspace 授权或 current bearer owner 叙述冲突时，本节决定 UX-001 目标；既有叙述只是 current baseline。
 
-`D0_DOCS_ONLY` 不代表 canonical OpenAPI、AgentConfig schema、Agent Run persistence、Bootstrap Control DB 或 runtime 已经支持本节。在 PRD/UI/Frontend/Backend/Agent/Test 联动、canonical OpenAPI revision、Bootstrap/Domain schema、migration、generated models 和机器门禁完成 D1 之前，不得开始 Agent 配置、model adapter、checkpoint、resume 或 Tool envelope 代码变更。
+`D2_RUNTIME_IMPLEMENTED` 表示 Agent Run snapshot、Control DB projection 与 targeted runtime checks 已落地；真实 PostgreSQL、chaos、存量迁移 quarantine 与独立 release evidence 仍未闭合。
 
-> 本文顶部的 canonical `45 operations / 65 errors`、本文既有 AgentConfig/AgentRun 字段与 Backend `63 tables / 953 columns` 都只是 UX-001 之前的 current baseline。D1 必须从修订后的 machine sources 生成新计数与字段，不得手填数字或把 target 字段直接塞入旧 manifest 伪造一致。
+> 本文既有 AgentConfig/AgentRun 字段与 Backend `63 tables / 953 columns` 仍只是 UX-001 之前的 current baseline；OpenAPI target 已由 UX001_D1_R1 生成 `65 operations / 186 schemas / 75 errors`。D1 数据库与 generated consumer 仍必须从 machine sources 生成新字段与计数，不得手填数字或把 target 字段直接塞入旧 manifest 伪造一致。
 
 ## 93.2 身份与配置事实源
 
@@ -4607,7 +4608,7 @@ logical Remote Codex instance count = 1
 all six runtime roles use the same active installation AI connection
 ```
 
-Remote Codex endpoint、model 和 credential 由 active installation-level AI connection revision 解析。`model_provider` / `model_name` 在 Role read model 中只是 actual singleton projection，不得在 Role mutation 中写入。D1 canonical `AgentConfigUpdate` 必须删除这两个可写字段；D0 期间不得以 current OpenAPI 仍接受字段为理由实现第二 Provider/Model 选择器。
+Remote Codex endpoint、model 和 credential 由 active installation-level AI connection revision 解析。`model_provider` / `model_name` 在 Role read model 中只是 actual singleton projection，不得在 Role mutation 中写入；UX001_D1_R1 的 `AgentConfigUpdate` 已删除这两个可写字段。不得以 current-baseline generated client 仍接受字段为理由实现第二 Provider/Model 选择器。
 
 Role 可配置边界仅包含：
 

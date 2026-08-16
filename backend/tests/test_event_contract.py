@@ -86,6 +86,10 @@ def _canonical_locator(event_type: str) -> tuple[str, str, int | None]:
         object_type = "memo"
     elif event_type == "setup.completed":
         return "settings", "SETTINGS-DEFAULT", None
+    elif event_type in {"configuration.updated", "configuration.apply_failed"}:
+        return "settings", "SETTINGS-DEFAULT", None
+    elif event_type in {"database.connection.updated", "database.connection.failed"}:
+        return "provider_connection", str(uuid.uuid4()), None
     elif event_type == "notification.created":
         object_type = "notification"
     elif event_type == "notification.updated":
@@ -231,10 +235,10 @@ async def _replay_legacy(rows: list[LegacyEvent], cursor: int, count: int) -> li
         engine.dispose()
 
 
-def test_sse_case_01_event_type_has_exact_31_generated_members() -> None:
+def test_sse_case_01_event_type_has_exact_35_generated_members() -> None:
     generated = tuple(EventType.model_json_schema(mode="validation")["enum"])
     assert generated == EVENT_TYPES
-    assert len(generated) == len(set(generated)) == 31
+    assert len(generated) == len(set(generated)) == 35
     for value in generated:
         assert validate_event_type(value) == value
 

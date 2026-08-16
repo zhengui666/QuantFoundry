@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any, cast
 
 from pydantic import ValidationError
 
-from quantfoundry.contracts.openapi.generated_api_models import (
-    EventPayload,
-    EventType,
-    SseEnvelope,
-)
+try:
+    _event_models = import_module("app.generated_api_models")
+except ImportError:  # pragma: no cover - packaged canonical fallback
+    _event_models = import_module("quantfoundry.contracts.openapi.generated_api_models")
+
+EventPayload = _event_models.EventPayload
+EventType = _event_models.EventType
+SseEnvelope = _event_models.SseEnvelope
 
 
 def _event_type_values() -> tuple[str, ...]:
@@ -24,8 +28,8 @@ def _event_type_values() -> tuple[str, ...]:
 
 
 EVENT_TYPES = _event_type_values()
-if len(EVENT_TYPES) != 31 or len(set(EVENT_TYPES)) != 31:
-    raise RuntimeError("generated EventType must contain exactly 31 unique members")
+if len(EVENT_TYPES) != 35 or len(set(EVENT_TYPES)) != 35:
+    raise RuntimeError("generated EventType must contain exactly 35 unique members")
 
 
 def _event_object_types() -> dict[str, str]:

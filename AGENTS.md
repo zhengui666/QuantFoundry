@@ -32,6 +32,9 @@
 >     │   ├── QuantFoundry_Backend_System_Technical_Design_V1.0.0.md
 >     │   ├── contracts/
 >     │   │   ├── openapi-v1.yaml                # canonical OpenAPI
+>     │   │   ├── configuration-catalog-v1.yaml  # D1 frozen configuration catalog
+>     │   │   ├── ux001-d1-test-matrix.yaml      # D1 frozen executable matrix
+>     │   │   ├── bootstrap-control-v1.yaml      # D1 frozen Control DB target schema
 >     │   │   └── tools/                         # canonical semantic-tool schemas
 >     │   │       ├── README.md
 >     │   │       └── v1-p0.yaml
@@ -61,6 +64,9 @@
 > | `docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0_Backend_CoBuild_Patch.md` | 已完整合并的 historical archive；不再生效，不是竞争事实源 |
 > | `docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md` | 后端架构、领域模型、数据、接口与系统约束 |
 > | `docs/后端系统技术方案/contracts/openapi-v1.yaml`            | 唯一 canonical OpenAPI machine-readable 事实源 |
+> | `docs/后端系统技术方案/contracts/configuration-catalog-v1.yaml` | UX-001 D1 closed installation configuration catalog |
+> | `docs/后端系统技术方案/contracts/ux001-d1-test-matrix.yaml` | UX-001 D1 executable test matrix and generated counts |
+> | `docs/后端系统技术方案/contracts/bootstrap-control-v1.yaml`   | UX-001 D1 Bootstrap Control DB 与 Domain transition logical schema；物理实现仍以 SQLAlchemy + Alembic 生成物为准 |
 > | `docs/后端系统技术方案/contracts/tools/README.md`            | Tool Contract 版本、兼容性与 staged scope 治理规则 |
 > | `docs/后端系统技术方案/contracts/tools/v1-p0.yaml`           | staged P0/P0.5 唯一 canonical Agent semantic-tool field-level 事实源 |
 > | `docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md` | Agent 系统设计、职责与运行约束           |

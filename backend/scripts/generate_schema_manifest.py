@@ -23,7 +23,7 @@ DEFAULT_OUTPUT = BACKEND_ROOT / "schema/section14_manifest.json"
 HEADING = re.compile(r"^### (14\.[0-9]+[a-z]?) `([^`]+)`$")
 ROW = re.compile(r"^\|(.+)\|$")
 EXPECTED_TABLE_COUNT = 63
-EXPECTED_COLUMN_COUNT = 953
+EXPECTED_COLUMN_COUNT = 967
 SUPPORT_TABLES = frozenset(
     {
         "audit_chain_heads",

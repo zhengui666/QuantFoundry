@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from quantfoundry.contracts.openapi import generated_api_models as generated
 
-SetupCompleteRequest = generated.SetupCompleteRequest
 SetupProviderConnectionValidationRequest = (
     generated.SetupProviderConnectionValidationRequest
 )
@@ -32,12 +31,58 @@ ApprovalDecisionRequest = generated.ApprovalDecisionRequest
 ApprovalRejectRequest = generated.ApprovalRejectRequest
 AgentConfigUpdate = generated.AgentConfigUpdate
 
+
+class SetupCompleteRequest(BaseModel):
+    """UX-001 completes setup by activating a validated control-plane revision."""
+
+    model_config = ConfigDict(extra="forbid")
+    configuration_revision: int = Field(..., ge=1)
+
+
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
-    name: cast(type[BaseModel], getattr(generated, name))
+    name: cast(type[BaseModel], SetupCompleteRequest)
+    if name == "SetupCompleteRequest"
+    else cast(type[BaseModel], getattr(generated, name))
     for name in generated.SCHEMA_NAMES
 }
 for _model in SCHEMA_MODELS.values():
     _model.model_rebuild()
+try:
+    from app import generated_api_models as _ux_models
+
+    for _name in (
+        "GeneralAccessKeyLoginRequest",
+        "GeneralAccessKeyMetadata",
+        "GeneralAccessKeyList",
+        "GeneralAccessKeyCreateRequest",
+        "GeneralAccessKeyRenameRequest",
+        "GeneralAccessKeyIssued",
+        "OwnerSessionView",
+        "SessionBootstrapResponse",
+        "ConfigurationCatalog",
+        "ConfigurationCatalogEntry",
+        "ConfigurationValueWrite",
+        "ConfigurationValueView",
+        "ConfigurationCandidateRequest",
+        "ConfigurationCandidate",
+        "ConfigurationConsumerState",
+        "ConfigurationActive",
+        "ConfigurationValidationResult",
+        "ConfigurationActivateRequest",
+        "ConfigurationRollbackRequest",
+        "DatabaseConnectionCandidate",
+        "DatabaseConnectionCandidateRequest",
+        "DatabaseConnectionStatus",
+        "DatabaseConnectionCheck",
+        "DatabaseConnectionValidationResult",
+        "ApiProblem",
+        "CanonicalErrorCode",
+        "FieldError",
+        "ProblemContext",
+    ):
+        SCHEMA_MODELS[_name] = cast(type[BaseModel], getattr(_ux_models, _name))
+except ImportError:
+    pass
 
 
 def validate_schema(name: str, value: Any) -> Any:
@@ -76,7 +121,7 @@ def application_schemas() -> dict[str, dict[str, Any]]:
         )
         definitions = schema.pop("$defs", {})
         schemas[name] = cast(dict[str, Any], inline(schema, definitions, frozenset()))
-    return {name: schemas[name] for name in generated.SCHEMA_NAMES}
+    return schemas
 
 
 __all__ = [

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import time
@@ -15,6 +16,7 @@ from quantfoundry.agents.runtime.runtime import (
     fail_agent_run,
     persist_tool_failure,
 )
+from quantfoundry.api import app as domain_main
 from quantfoundry.api.app import Event, EventStreamWatermark, JobRow, SessionLocal
 from quantfoundry.application.jobs.effects import apply_job_effect, apply_job_failure
 from quantfoundry.infrastructure.artifacts.store import probe_artifact_store
@@ -33,7 +35,24 @@ class SimulatedWorkerCrash(RuntimeError):
     """Test hook proving uncommitted effects roll back and leases recover."""
 
 
+logger = logging.getLogger(__name__)
+
+
+def _domain_ready() -> bool:
+    if getattr(domain_main.app.state, "domain_database_available", True):
+        return True
+    try:
+        from app.control_plane import restore_active_domain_database
+
+        restore_active_domain_database()
+    except Exception:  # noqa: BLE001 - recovery loop must stay alive
+        return False
+    return bool(getattr(domain_main.app.state, "domain_database_available", False))
+
+
 def cleanup_expired_events(now: datetime | None = None) -> int:
+    if not _domain_ready():
+        return 0
     session = SessionLocal()
     try:
         threshold = now or datetime.now(UTC)
@@ -128,6 +147,8 @@ def _run_once(
     crash_after_effects: bool = False,
     crash_after_checkpoint: bool = False,
 ) -> int:
+    if not _domain_ready():
+        return 0
     queue_name = "agent" if agent_queue else "core"
     probe_artifact_store()
     lease = _claim(queue_name, identity or worker_id(queue_name))
@@ -215,7 +236,13 @@ def run_agent_once(
 def run_forever(agent_queue: bool = False, poll_seconds: float = 1.0) -> None:
     """Core and agent workers only claim their configured queue."""
     while True:
-        _run_once(agent_queue)
+        try:
+            _run_once(agent_queue)
+        except Exception:  # noqa: BLE001 - worker boundary retries after recovery
+            logger.exception(
+                "worker loop recovered after an iteration failure",
+                extra={"queue": "agent" if agent_queue else "core"},
+            )
         time.sleep(poll_seconds)
 
 

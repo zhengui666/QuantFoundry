@@ -6,19 +6,164 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import time
-from datetime import date, timedelta
+import uuid
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import httpx
+from sqlalchemy import select
+
+
+def ensure_fullstack_compat_setup() -> None:
+    """Create the singleton compatibility binding used by domain job effects."""
+    from quantfoundry.api.app import (
+        CostModelVersionRow,
+        ModelProviderConnectionRow,
+        Record,
+        ResearchPolicyVersionRow,
+        RiskPolicyVersionRow,
+        SessionLocal,
+        SetupBindingRow,
+    )
+    from quantfoundry.infrastructure.crypto.provider_credentials import (
+        credential_aad,
+        encrypt_credential,
+    )
+    from quantfoundry.infrastructure.db.schema import canonical_workspace_id
+
+    workspace_id = canonical_workspace_id("system")
+    owner_id = "system-owner"
+    model_name = os.environ["QF_CODEX_MODEL"]
+    credential = os.environ["QF_LOCAL_PROVIDER_API_KEY"]
+    timestamp = datetime.now(UTC)
+    with SessionLocal.begin() as db:
+        ai = db.scalar(
+            select(ModelProviderConnectionRow).where(
+                ModelProviderConnectionRow.workspace_id == workspace_id,
+                ModelProviderConnectionRow.kind == "AI",
+                ModelProviderConnectionRow.validation_state == "SUCCESS",
+            )
+        )
+        if ai is None:
+            connection_id = str(uuid.uuid4())
+            ciphertext, nonce, key_id = encrypt_credential(
+                credential,
+                aad=credential_aad(
+                    connection_id=connection_id,
+                    workspace_id=workspace_id,
+                    actor_id=owner_id,
+                    provider_id="REMOTE_CODEX",
+                    model_name=model_name,
+                ),
+            )
+            ai = ModelProviderConnectionRow(
+                id=connection_id,
+                workspace_id=workspace_id,
+                owner_actor_id=owner_id,
+                provider_id="REMOTE_CODEX",
+                kind="AI",
+                model_name=model_name,
+                ciphertext=ciphertext,
+                nonce=nonce,
+                key_id=key_id,
+                validation_state="SUCCESS",
+                status="ACTIVE",
+                validated_at=timestamp,
+                consumed_at=timestamp,
+            )
+            db.add(ai)
+            db.flush()
+        research = db.scalar(
+            select(ResearchPolicyVersionRow).where(
+                ResearchPolicyVersionRow.workspace_id == workspace_id,
+                ResearchPolicyVersionRow.policy_family == "research",
+                ResearchPolicyVersionRow.status == "ACTIVE",
+            )
+        )
+        risk = db.scalar(
+            select(RiskPolicyVersionRow).where(
+                RiskPolicyVersionRow.workspace_id == workspace_id,
+                RiskPolicyVersionRow.status == "ACTIVE",
+            )
+        )
+        cost = db.scalar(
+            select(CostModelVersionRow).where(
+                CostModelVersionRow.workspace_id == workspace_id,
+                CostModelVersionRow.status == "ACTIVE",
+            )
+        )
+        if research is None or risk is None or cost is None:
+            raise RuntimeError("full-stack seed policy/cost rows are missing")
+        settings = db.scalar(
+            select(Record).where(
+                Record.workspace_id == workspace_id,
+                Record.record_key == "SETTINGS-DEFAULT",
+            )
+        )
+        settings_body = {
+            "settings_id": "SETTINGS-DEFAULT",
+            "revision": settings.revision + 1 if settings else 1,
+            "ai_connection_id": ai.id,
+            "research_policy_id": research.policy_id,
+            "risk_policy_id": risk.policy_id,
+            "cost_model_id": cost.cost_model_id,
+            "language": "en",
+            "timezone": "UTC",
+            "base_currency": "USD",
+            "number_format_locale": "en-US",
+            "default_benchmark": "SPY",
+            "default_frequency": "DAILY",
+            "initial_paper_capital": "100000",
+            "created_at": timestamp.isoformat(),
+            "updated_at": timestamp.isoformat(),
+        }
+        if settings is None:
+            settings = Record(
+                workspace_id=workspace_id,
+                record_key="SETTINGS-DEFAULT",
+                kind="settings",
+                revision=1,
+                body=json.dumps(settings_body),
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            db.add(settings)
+        else:
+            settings.revision = settings_body["revision"]
+            settings.body = json.dumps(settings_body)
+            settings.updated_at = timestamp
+        binding = db.get(SetupBindingRow, workspace_id)
+        if binding is None:
+            db.add(
+                SetupBindingRow(
+                    workspace_id=workspace_id,
+                    settings_record_id="SETTINGS-DEFAULT",
+                    ai_connection_id=ai.id,
+                    research_policy_version_id=research.id,
+                    risk_policy_version_id=risk.id,
+                    cost_model_version_id=cost.id,
+                    revision=1,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+            )
+        else:
+            binding.ai_connection_id = ai.id
+            binding.research_policy_version_id = research.id
+            binding.risk_policy_version_id = risk.id
+            binding.cost_model_version_id = cost.id
+            binding.revision += 1
+            binding.updated_at = timestamp
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", default="http://127.0.0.1:8000/api/v1")
     parser.add_argument("--application-url", required=True)
+    parser.add_argument("--prepare-only", action="store_true")
     return parser.parse_args()
 
 
@@ -103,21 +248,192 @@ def required_string(value: dict[str, Any], key: str) -> str:
     return result
 
 
+def activate_fullstack_database(
+    client: httpx.Client, auth: dict[str, str], prefix: str
+) -> None:
+    raw_url = os.environ.get("QF_FULLSTACK_DATABASE_URL")
+    if not raw_url:
+        raise RuntimeError("QF_FULLSTACK_DATABASE_URL is required")
+    parsed = urlsplit(raw_url)
+    if not parsed.hostname or not parsed.username or not parsed.path.strip("/"):
+        raise RuntimeError("QF_FULLSTACK_DATABASE_URL is invalid")
+    status = client.get("/database/connection", headers=auth)
+    if status.status_code != 200:
+        raise RuntimeError(
+            f"GET /database/connection: {status.status_code} {status.text}"
+        )
+    current = status.json()
+    if current.get("active_revision") is not None:
+        return
+    etag = status.headers.get("etag")
+    if not etag:
+        raise RuntimeError("database status is missing ETag")
+    candidate = request_json(
+        client,
+        "PUT",
+        "/database/connection/candidate",
+        expected=200,
+        headers={
+            **auth,
+            "If-Match": etag,
+            "Idempotency-Key": f"{prefix}-db-candidate",
+        },
+        payload={
+            "base_revision": max(int(current.get("active_revision") or 0), 1),
+            "connection": {
+                "host": parsed.hostname,
+                "port": parsed.port or 5432,
+                "database": parsed.path.strip("/").split("/", 1)[0],
+                "tls_mode": "DISABLED",
+                "username": unquote(parsed.username),
+                "password": unquote(parsed.password or ""),
+                "pool_profile": "fullstack-ci",
+            },
+        },
+    )
+    if not isinstance(candidate.get("revision"), int):
+        raise RuntimeError("database candidate is missing revision")
+    request_json(
+        client,
+        "POST",
+        "/database/connection/candidate/validate",
+        expected=200,
+        headers={**auth, "Idempotency-Key": f"{prefix}-db-validate"},
+    )
+    request_json(
+        client,
+        "POST",
+        "/database/connection/activate",
+        expected=200,
+        headers={
+            **auth,
+            "If-Match": etag,
+            "Idempotency-Key": f"{prefix}-db-activate",
+        },
+    )
+
+
 def main() -> int:
     args = parse_args()
-    bootstrap = json.load(sys.stdin)
-    if not isinstance(bootstrap, dict):
-        raise TypeError("bootstrap input must be a JSON object")
-    token = required_string(bootstrap, "owner_session_token")
-    dataset_id = required_string(bootstrap, "dataset_id")
-    cost_model_id = required_string(bootstrap, "cost_model_id")
-    validation_policy_id = required_string(bootstrap, "validation_policy_id")
-    workspace_id = required_string(bootstrap, "workspace_id")
-    write_fullstack_dataset(dataset_id)
-
-    auth = {"Authorization": f"Bearer {token}"}
-    key_prefix = f"fullstack-{workspace_id}"
+    general_key = os.environ.get("QF_FULLSTACK_GENERAL_KEY")
+    if not general_key:
+        raise RuntimeError("QF_FULLSTACK_GENERAL_KEY is required")
     with httpx.Client(base_url=args.api_url, timeout=30) as client:
+        login = request_json(
+            client,
+            "POST",
+            "/auth/login",
+            expected=200,
+            headers={},
+            payload={"key": general_key},
+        )
+        session = login.get("session")
+        if not isinstance(session, dict):
+            raise RuntimeError("login response is missing session")
+        csrf = session.get("csrf_token")
+        if not isinstance(csrf, str) or len(csrf) < 32:
+            raise RuntimeError("login response is missing CSRF token")
+        auth = {"X-CSRF-Token": csrf}
+        activate_fullstack_database(client, auth, "fullstack-bootstrap")
+        from app.control_plane import restore_active_domain_database
+
+        restore_active_domain_database()
+        # Immutable policy/cost content is seeded into the mounted runtime
+        # data store and bound in the singleton compatibility namespace.
+        # Mutable installation settings remain Control-DB-only.
+        from app.bootstrap import seed_local
+
+        seeded = seed_local(
+            workspace_id="system",
+            owner_id="system-owner",
+            owner_email="owner@system.invalid",
+            session_token=f"fullstack-seed-{os.urandom(16).hex()}",
+        )
+        ensure_fullstack_compat_setup()
+        dataset_id = required_string(seeded, "dataset_id")
+        cost_model_id = required_string(seeded, "cost_model_id")
+        validation_policy_id = required_string(seeded, "validation_policy_id")
+        key_prefix = f"fullstack-{dataset_id}"
+        active_response = client.get("/configuration/active", headers=auth)
+        if active_response.status_code != 200:
+            raise RuntimeError(
+                f"GET /configuration/active: {active_response.status_code} {active_response.text}"
+            )
+        active = active_response.json()
+        active_revision = active.get("active_revision")
+        etag = active_response.headers.get("etag")
+        if not isinstance(active_revision, int) or not etag:
+            raise RuntimeError("active configuration is missing revision or ETag")
+        candidate = client.put(
+            "/configuration/candidate",
+            headers={
+                **auth,
+                "If-Match": etag,
+                "Idempotency-Key": f"{key_prefix}-locale",
+            },
+            json={
+                "base_revision": active_revision,
+                "values": [
+                    {
+                        "key": "appearance.locale",
+                        "value": {
+                            "language": "en",
+                            "timezone": "UTC",
+                            "number_format_locale": "en-US",
+                            "theme": "SYSTEM",
+                            "density": "COMFORTABLE",
+                        },
+                    },
+                    {
+                        # The production runtime is Control-DB-only.  The
+                        # harness may source these deterministic values from
+                        # its environment, but workers must consume the
+                        # encrypted active revision rather than env fallback.
+                        "key": "ai.remote_codex",
+                        "secret": json.dumps(
+                            {
+                                "endpoint": os.environ["QF_CODEX_BASE_URL"],
+                                "credential": os.environ["QF_LOCAL_PROVIDER_API_KEY"],
+                                "model": os.environ["QF_CODEX_MODEL"],
+                                "timeout_seconds": 60,
+                                "max_retries": 3,
+                                "concurrency": 2,
+                            },
+                            separators=(",", ":"),
+                        ),
+                    },
+                ],
+            },
+        )
+        if candidate.status_code != 200:
+            raise RuntimeError(
+                f"PUT /configuration/candidate: {candidate.status_code} {candidate.text}"
+            )
+        candidate_revision = candidate.json().get("revision")
+        if not isinstance(candidate_revision, int):
+            raise RuntimeError("configuration candidate is missing revision")
+        request_json(
+            client,
+            "POST",
+            "/configuration/candidate/validate",
+            expected=200,
+            headers={**auth, "Idempotency-Key": f"{key_prefix}-locale-validate"},
+        )
+        request_json(
+            client,
+            "POST",
+            "/configuration/activate",
+            expected=200,
+            headers={
+                **auth,
+                "If-Match": etag,
+                "Idempotency-Key": f"{key_prefix}-locale-activate",
+            },
+            payload={"revision": candidate_revision},
+        )
+        if args.prepare_only:
+            return 0
+        write_fullstack_dataset(dataset_id)
         validation = request_json(
             client,
             "POST",
@@ -199,7 +515,6 @@ def main() -> int:
         json.dumps(
             {
                 "QF_FULLSTACK_BASE_URL": args.application_url,
-                "QF_FULLSTACK_BEARER_TOKEN": token,
                 "QF_FULLSTACK_FACTOR_ID": factor_id,
                 "QF_FULLSTACK_SNAPSHOT_ID": snapshot_id,
                 "QF_FULLSTACK_COST_MODEL_ID": cost_model_id,

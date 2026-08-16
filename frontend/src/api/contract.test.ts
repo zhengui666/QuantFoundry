@@ -131,34 +131,19 @@ const setupStatusMatrix: ReadonlyArray<readonly [string, unknown, boolean]> = [
 ];
 
 const settingsDetail = {
-  settings_id: 'SETTINGS-DEFAULT',
-  revision: 3,
-  language: 'zh-CN',
-  timezone: 'Asia/Shanghai',
-  base_currency: 'USD',
-  number_format_locale: 'zh-CN',
-  ai_connection_id: 'CONN-AI-1',
-  default_data_provider_id: null,
-  default_benchmark: 'SPY',
-  default_frequency: 'DAILY',
-  default_research_start: null,
-  initial_paper_capital: '100000',
-  research_policy_id: 'RP-756FFQA659A84RCEVR0M9X8DMN',
-  risk_policy_id: 'RISK-7TTN4TSTQB0FXPTV60RHR5P7NH',
-  cost_model_id: 'COST-0QY70GRXXGT2HVM7HY8TMPXMVF',
-  created_at: '2026-08-10T00:00:00Z',
+  active_revision: 3,
+  last_known_good_revision: 3,
+  catalog_version: 'v1',
+  values: [],
+  snapshot_sha256: 'a'.repeat(64),
+  consumer_states: [],
   updated_at: '2026-08-10T00:01:00Z',
 } satisfies Schema<'SettingsDetail'>;
 
 const settingsDecoderCases: ReadonlyArray<readonly [string, unknown, boolean]> = [
-  ['closed non-null valid', settingsDetail, true],
-  ['missing research binding', omit(settingsDetail, 'research_policy_id'), false],
-  ['null risk binding', { ...settingsDetail, risk_policy_id: null }, false],
-  ['empty cost binding', { ...settingsDetail, cost_model_id: '' }, false],
-  ['unknown persisted field', { ...settingsDetail, internal_owner_id: 'secret' }, false],
-  ['malformed timestamp', { ...settingsDetail, updated_at: 'not-a-time' }, false],
-  ['invalid revision', { ...settingsDetail, revision: 0 }, false],
-  ['non-canonical frequency', { ...settingsDetail, default_frequency: 'WEEKLY' }, false],
+  ['active configuration projection', settingsDetail, true],
+  ['empty legacy projection rejected', {}, false],
+  ['unknown persisted field rejected', { internal_owner_id: 'secret' }, false],
 ];
 
 const eventEnvelope = (
@@ -197,8 +182,16 @@ describe('canonical transport', () => {
     expect(SettingsDetailSchema.safeParse(value).success).toBe(valid);
   });
 
-  it('uses bearer only for authenticated API calls and If-Match for agent config', async () => {
-    auth.set('token');
+  it('uses cookie session + CSRF for authenticated mutations', async () => {
+    auth.establish({
+      principal: 'OWNER',
+      auth_method: 'GENERAL_ACCESS_KEY',
+      key_id: 'gak_test',
+      issued_at: '2026-08-10T00:00:00Z',
+      last_seen_at: '2026-08-10T00:00:00Z',
+      expires_at: '2026-08-11T00:00:00Z',
+      csrf_token: 'csrf-token-abcdefghijklmnopqrstuvwxyz',
+    });
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -206,6 +199,8 @@ describe('canonical transport', () => {
           enabled: false,
           model_provider: 'openai',
           model_name: 'gpt-test',
+          ai_connection_id: 'CODEX-DEFAULT',
+          ai_connection_revision: 1,
           runtime_profile: 'default',
           tool_timeout_seconds: 30,
           max_steps_override: null,
@@ -225,19 +220,23 @@ describe('canonical transport', () => {
     await api.updateAgent('RESEARCH_DIRECTOR', 'W/"agent:RESEARCH_DIRECTOR:3"', { enabled: false });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/v1/agents/RESEARCH_DIRECTOR/config');
-    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer token');
+    expect(new Headers(init.headers).get('Authorization')).toBeNull();
+    expect(new Headers(init.headers).get('X-CSRF-Token')).toBe(
+      'csrf-token-abcdefghijklmnopqrstuvwxyz',
+    );
+    expect(init.credentials).toBe('include');
     expect(new Headers(init.headers).get('If-Match')).toBe('W/"agent:RESEARCH_DIRECTOR:3"');
   });
 
-  it('maps all 65 generated canonical errors', () => {
-    expect(Object.keys(errorCopy)).toHaveLength(65);
-    expect(CanonicalErrorCodeSchema.options).toHaveLength(65);
+  it('maps all generated canonical errors', () => {
+    expect(Object.keys(errorCopy)).toHaveLength(75);
+    expect(CanonicalErrorCodeSchema.options).toHaveLength(75);
     expect(errorCopy.CONNECTION_VALIDATION_EXPIRED).toMatch(/expired/i);
   });
 
-  it('SSE case 01 decodes all 31 exact generated EventType members', () => {
+  it('SSE case 01 decodes all exact generated EventType members', () => {
     const eventTypes = EventTypeSchema.options.map((option) => option.value) as EventType[];
-    expect(eventTypes).toHaveLength(31);
+    expect(eventTypes).toHaveLength(35);
     expect(eventTypes.every((eventType) => eventType === eventType.toLowerCase())).toBe(true);
     for (const eventType of eventTypes)
       expect(SseEnvelopeSchema.safeParse(eventEnvelope(eventType)).success).toBe(true);

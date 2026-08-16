@@ -16,22 +16,6 @@ environment_value() {
   printf '%s' "${line#*=}"
 }
 
-optional_environment_value() {
-  local key="$1"
-  local count
-  local line
-  count="$(grep -Ec "^[[:space:]]*${key}=" "$environment_file" || true)"
-  if [[ "$count" == "0" ]]; then
-    return 0
-  fi
-  if [[ "$count" != "1" ]]; then
-    printf 'Expected at most one %s entry in %s.\n' "$key" "$environment_file" >&2
-    exit 1
-  fi
-  line="$(grep -E "^[[:space:]]*${key}=" "$environment_file")"
-  printf '%s' "${line#*=}"
-}
-
 if [[ ! -f "$environment_file" ]]; then
   cp .env.example "$environment_file"
   printf 'Created %s from .env.example.\n' "$environment_file" >&2
@@ -85,71 +69,12 @@ if [[ ! "$credential_key" =~ ^[A-Za-z0-9_-]{43}=?$ ]]; then
   exit 1
 fi
 
-provider="$(environment_value QF_AGENT_PROVIDER)"
-agent_model="$(environment_value QF_AGENT_MODEL)"
-local_provider_enabled="$(environment_value QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER)"
-if [[ "$provider" == "local-deterministic" && "$local_provider_enabled" != "1" ]]; then
-  printf '%s\n' 'The local deterministic provider requires QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER=1.' >&2
-  exit 1
-fi
-if [[ "$qf_env" == "staging" || "$qf_env" == "production" ]] &&
-  [[ "$local_provider_enabled" != "0" ]]; then
-  printf '%s\n' 'Local deterministic providers must be disabled in staging/production.' >&2
-  exit 1
-fi
-
-codex_base_url="$(optional_environment_value QF_CODEX_BASE_URL)"
-codex_models="$(optional_environment_value QF_CODEX_MODELS)"
-codex_runtime_id="$(optional_environment_value QF_CODEX_RUNTIME_ID)"
-codex_instance_id="$(optional_environment_value QF_CODEX_REMOTE_INSTANCE_ID)"
-openai_base_url="$(optional_environment_value QF_OPENAI_BASE_URL)"
-openai_models="$(optional_environment_value QF_OPENAI_MODELS)"
-effective_provider_url="$codex_base_url"
-effective_provider_models="$codex_models"
-if [[ -z "$effective_provider_url" ]]; then
-  effective_provider_url="$openai_base_url"
-  effective_provider_models="$openai_models"
-fi
-if [[ "$provider" == "remote-codex" || -n "$codex_base_url" ]]; then
-  [[ "$provider" == "remote-codex" ]] || {
-    printf '%s\n' 'QF_CODEX_BASE_URL requires QF_AGENT_PROVIDER=remote-codex.' >&2
-    exit 1
-  }
-  [[ "$codex_runtime_id" == "CODEX-DEFAULT" ]] || {
-    printf '%s\n' 'QF_CODEX_RUNTIME_ID must be CODEX-DEFAULT.' >&2
-    exit 1
-  }
-  [[ -n "$codex_instance_id" ]] || {
-    printf '%s\n' 'QF_CODEX_REMOTE_INSTANCE_ID must be non-empty.' >&2
-    exit 1
-  }
-  [[ -n "$effective_provider_url" && -n "$agent_model" ]] || {
-    printf '%s\n' 'Remote Codex requires a base URL and QF_AGENT_MODEL.' >&2
-    exit 1
-  }
-  [[ "$effective_provider_url" == http://* || "$effective_provider_url" == https://* ]] || {
-    printf '%s\n' 'Remote Codex base URL must use http or https.' >&2
-    exit 1
-  }
-fi
-if [[ "$effective_provider_url" == "http://local-provider:8011/v1" ]]; then
+if [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then
   local_provider_key="$(environment_value QF_LOCAL_PROVIDER_API_KEY)"
-  local_data_credential="$(environment_value QF_LOCAL_DATA_CREDENTIAL)"
-  if [[ "$qf_env" != "local" && "$qf_env" != "development" ]]; then
-    printf '%s\n' 'The bundled local provider is permitted only in local/development.' >&2
+  if ((${#local_provider_key} < 20)); then
+    printf '%s\n' 'Local provider credential must contain at least 20 characters.' >&2
     exit 1
   fi
-  [[ ( "$provider" == "openai-compatible" || "$provider" == "remote-codex" ) && "$effective_provider_models" == *"qf-local-v1"* ]] || {
-    printf '%s\n' 'The bundled local provider requires remote-codex/qf-local-v1.' >&2
-    exit 1
-  }
-  if ((${#local_provider_key} < 20 || ${#local_data_credential} < 20)); then
-    printf '%s\n' 'Local provider and data credentials must contain at least 20 characters.' >&2
-    exit 1
-  fi
-elif [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then
-  printf '%s\n' 'Local bootstrap requires QF_CODEX_BASE_URL=http://local-provider:8011/v1.' >&2
-  exit 1
 fi
 
 if [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then

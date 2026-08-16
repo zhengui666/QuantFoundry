@@ -287,6 +287,8 @@ def load_manifest() -> dict[str, Any]:
 
 
 def sqlalchemy_type(pg_type: str, *, string_compatible_json: bool = False) -> Any:
+    if pg_type == "varchar":
+        return String()
     match = _TYPE_WITH_ARGS.fullmatch(pg_type)
     if match:
         kind, first, second = match.groups()

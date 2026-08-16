@@ -5,7 +5,7 @@ export type StreamTrackerSnapshot = {
 };
 
 export function createAuthenticatedStreamTracker<RequestIdentity extends object>(
-  expectedBearer: string,
+  expectedSessionCookie: string | (() => string),
 ) {
   let authenticatedRequest: RequestIdentity | undefined;
   let authenticatedTerminated = false;
@@ -18,14 +18,23 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
       path,
       request,
       status,
+      cookie,
     }: {
       authorization: string | undefined;
+      cookie?: string;
       path: string;
       request: RequestIdentity;
       status: number;
     }) {
       if (path !== '/api/v1/events/stream') return;
-      if (status === 200 && authorization === `Bearer ${expectedBearer}`) {
+      const expected =
+        typeof expectedSessionCookie === 'function'
+          ? expectedSessionCookie()
+          : expectedSessionCookie;
+      if (
+        status === 200 &&
+        (cookie?.includes(expected) || authorization === `Bearer ${expected}`)
+      ) {
         authenticatedRequest ??= request;
         return;
       }

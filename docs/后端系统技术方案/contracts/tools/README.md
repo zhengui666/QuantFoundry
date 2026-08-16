@@ -12,7 +12,7 @@ Paper daily scheduling is a deterministic backend P0 service, not an Agent Seman
 
 ## UX-001 — D0/D1 control-plane boundary
 
-Status: **TARGET_NORMATIVE / D0_DOCS_ONLY**. The single-Owner, multiple-general-key, DB-only configuration target is normative, but this README does not mutate the current canonical machine contract. **D1 MUST revise and validate canonical OpenAPI plus affected persistence schemas before any production code, migration, fixture, generated client, or implementation test begins.**
+Status: **TARGET_NORMATIVE / D1_CONTRACT_FROZEN**. The single-Owner, multiple-general-key, DB-only configuration target is normative. Canonical OpenAPI, Bootstrap Control DB target schema, configuration catalog, and D1 executable matrix are frozen as `UX001_D1_R1`; runtime implementation and release evidence belong to D2. This README intentionally does not add auth/config/database capabilities to the exact 13 semantic Tools.
 
 The semantic Tool registry remains the exact 13-entry `name@version` set in `v1-p0.yaml`; UX-001 neither adds nor removes a Tool. Authentication, login/logout, Owner sessions, general-access-key create/rotate/revoke/expire, configuration read/write/validate/activate/rollback, Domain DB candidate validation/switch/LKG recovery, root-key access, and configuration-consumer ACK are control-plane operations and **MUST NEVER** become Agent Semantic Tools.
 

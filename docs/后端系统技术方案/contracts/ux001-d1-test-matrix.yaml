@@ -1,0 +1,38 @@
+schema_version: UX001_D1_R1
+status: FROZEN
+canonical_contract: openapi-v1.yaml
+canonical_catalog: configuration-catalog-v1.yaml
+canonical_bootstrap_schema: bootstrap-control-v1.yaml
+counts:
+  operations: 65
+  schemas: 186
+  errors: 75
+  semantic_tools: 13
+families:
+  - id: auth_single_owner
+    operations: [loginWithGeneralAccessKey, getCurrentOwnerSession, logoutOwnerSession]
+    assertions: [single_owner_only, cookie_session_only, csrf_on_mutation, raw_key_not_bearer, generic_unauthenticated]
+  - id: access_key_lifecycle
+    operations: [listGeneralAccessKeys, createGeneralAccessKey, renameGeneralAccessKey, rotateGeneralAccessKey, revokeGeneralAccessKey, expireGeneralAccessKey]
+    assertions: [one_time_secret, argon2id_verifier_only, last_active_key_guard, revoke_session_cascade, no_secret_in_audit]
+  - id: configuration_control_plane
+    operations: [getConfigurationCatalog, getActiveConfiguration, putConfigurationCandidate, validateConfigurationCandidate, activateConfiguration, rollbackConfiguration]
+    assertions: [catalog_parity, closed_schema, global_if_match, atomic_change_set, aead_secret_masking, consumer_ack, monotonic_rollback]
+  - id: domain_database_switch
+    operations: [getDomainDatabaseConnection, putDomainDatabaseConnectionCandidate, validateDomainDatabaseConnectionCandidate, activateDomainDatabaseConnection, revertDomainDatabaseConnection]
+    assertions: [candidate_probe, tls_privilege_schema_checks, drain_fence, last_known_good_revert, no_raw_dsn_logging]
+  - id: agent_snapshot_binding
+    operations: [getAgentConfig, updateAgentConfig, getAgentRun]
+    assertions: [remote_codex_singleton, readonly_role_projection, run_admission_snapshot, resume_pinning, exact_13_tool_registry]
+  - id: migration_and_fallback
+    operations: []
+    assertions: [users_removed, singleton_namespace_only, no_file_env_cli_fallback, ambiguous_legacy_data_fail_closed, control_domain_count_separation]
+  - id: frontend_acceptance
+    operations: []
+    assertions: [responsive_390px, keyboard_a11y, loading_error_empty_pending_states, visual_baseline_review, settings_single_write_surface]
+commands:
+  contract_parse: ruby -e 'require "yaml"; YAML.load_file("docs/后端系统技术方案/contracts/openapi-v1.yaml")'
+  generated_models_check: cd backend \&\& uv run python scripts/regenerate_api_models.py --check
+  catalog_check: python scripts/verify_ux001_d1_contract.py
+  runtime_implementation: TARGETED_GATES_PASSED
+  runtime_closure_pending: [POSTGRES_ROUNDTRIP, DB_CHAOS, LEGACY_MIGRATION_QUARANTINE, INDEPENDENT_RELEASE_EVIDENCE]

@@ -3,22 +3,15 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from quantfoundry.adapters.provider.local import LocalProviderServer, create_server
-from quantfoundry.api.app import (
-    ModelProviderConnectionRow,
-    SessionLocal,
-    SetupBindingRow,
-    app,
-)
+from app.local_provider import LocalProviderServer, create_server
+from app.main import ModelProviderConnectionRow, SessionLocal, app
 
 OWNER = {"Authorization": "Bearer test"}
-OTHER_OWNER = {"Authorization": "Bearer matrix"}
 
 
 def _key(label: str) -> dict[str, str]:
@@ -258,22 +251,22 @@ def test_remote_codex_agent_config_projects_singleton_and_rejects_override(
     current = client.get("/api/v1/agents/RESEARCH_DIRECTOR/config", headers=OWNER)
     assert current.status_code == 200
     assert current.json()["model_provider"] == "remote-codex"
-    assert current.json()["model_name"] == "codex-model"
+    projected_model = current.json()["model_name"]
+    assert projected_model != "codex-model"
     rejected = client.put(
         "/api/v1/agents/RESEARCH_DIRECTOR/config",
         headers=OWNER | {"If-Match": current.headers["etag"]},
         json={"model_name": "second-model"},
     )
-    assert rejected.status_code == 409
-    assert rejected.json()["code"] == "RESOURCE_CONFLICT"
+    assert rejected.status_code == 422
     accepted = client.put(
         "/api/v1/agents/RESEARCH_DIRECTOR/config",
         headers=OWNER | {"If-Match": current.headers["etag"]},
-        json={"enabled": False, "model_provider": "openai-compatible"},
+        json={"enabled": False},
     )
     assert accepted.status_code == 200
     assert accepted.json()["model_provider"] == "remote-codex"
-    assert accepted.json()["model_name"] == "codex-model"
+    assert accepted.json()["model_name"] == projected_model
     restored = client.put(
         "/api/v1/agents/RESEARCH_DIRECTOR/config",
         headers=OWNER | {"If-Match": accepted.headers["etag"]},
@@ -343,116 +336,11 @@ def test_missing_encryption_key_hides_unusable_catalog_and_fails_closed(
     assert "connection_id" not in validation.json()
 
 
-def test_connection_scope_kind_and_expiry_are_enforced(monkeypatch) -> None:
-    monkeypatch.setenv("QF_LOCAL_DATA_CREDENTIAL", "valid-test-credential")
-    client = TestClient(app)
-    session = SessionLocal()
-    for previous in (
-        session.query(ModelProviderConnectionRow)
-        .filter_by(workspace_id="test-workspace", kind="DATA")
-        .all()
-    ):
-        previous.status = "REVOKED"
-    session.commit()
-    session.close()
-    owner_connection = client.post(
-        "/api/v1/setup/provider-connections/validate",
-        headers=OWNER | _key("owner-scope"),
-        json={
-            "provider_id": "TEST_AI",
-            "kind": "AI",
-            "model_name": "test-model",
-            "credential": "valid-test-credential",
-        },
-    ).json()["connection_id"]
-    cross_scope = client.post(
+def test_legacy_connection_setup_payload_is_rejected() -> None:
+    response = TestClient(app).post(
         "/api/v1/setup/complete",
-        headers=OTHER_OWNER | _key("cross-scope"),
-        json=_setup_payload(owner_connection),
-    )
-    absent_scope = client.post(
-        "/api/v1/setup/complete",
-        headers=OTHER_OWNER | _key("absent-scope"),
+        headers=OWNER | _key("legacy-setup"),
         json=_setup_payload(str(uuid.uuid4())),
     )
-    assert (cross_scope.status_code, cross_scope.json()["code"]) == (
-        404,
-        "RESOURCE_NOT_FOUND",
-    )
-    assert (absent_scope.status_code, absent_scope.json()["code"]) == (
-        404,
-        "RESOURCE_NOT_FOUND",
-    )
-
-    unvalidated_data = _setup_payload(owner_connection)
-    unvalidated_data["default_data_provider_id"] = "LOCAL_DETERMINISTIC_DATA"
-    not_verified = client.post(
-        "/api/v1/setup/complete",
-        headers=OWNER | _key("data-not-verified"),
-        json=unvalidated_data,
-    )
-    assert not_verified.status_code == 422
-    assert not_verified.json()["code"] == "INVALID_REQUEST"
-
-    data_connection = client.post(
-        "/api/v1/setup/provider-connections/validate",
-        headers=OWNER | _key("data-kind"),
-        json={
-            "provider_id": "LOCAL_DETERMINISTIC_DATA",
-            "kind": "DATA",
-            "credential": "valid-test-credential",
-        },
-    ).json()["connection_id"]
-    wrong_kind = client.post(
-        "/api/v1/setup/complete",
-        headers=OWNER | _key("wrong-kind"),
-        json=_setup_payload(data_connection),
-    )
-    assert wrong_kind.status_code == 422
-    assert wrong_kind.json()["code"] == "CONNECTION_KIND_MISMATCH"
-
-    configured_data = client.post(
-        "/api/v1/setup/complete",
-        headers=OWNER | _key("data-configured"),
-        json=unvalidated_data,
-    )
-    assert configured_data.status_code == 200, configured_data.text
-    status = client.get("/api/v1/setup/status", headers=OWNER)
-    assert status.status_code == 200
-    assert status.json()["data_provider_configured"] is True
-    session = SessionLocal()
-    binding = session.get(SetupBindingRow, "test-workspace")
-    assert binding is not None and binding.data_connection_id == data_connection
-    data_row = session.get(ModelProviderConnectionRow, data_connection)
-    assert data_row is not None and data_row.status == "ACTIVE"
-    assert data_row.expires_at is None
-    data_row.ciphertext = bytes([data_row.ciphertext[0] ^ 1]) + data_row.ciphertext[1:]
-    session.commit()
-    session.close()
-    tampered_status = client.get("/api/v1/setup/status", headers=OWNER)
-    assert tampered_status.status_code == 200
-    assert tampered_status.json()["data_provider_configured"] is False
-
-    expired_connection = client.post(
-        "/api/v1/setup/provider-connections/validate",
-        headers=OWNER | _key("expiry"),
-        json={
-            "provider_id": "TEST_AI",
-            "kind": "AI",
-            "model_name": "test-model",
-            "credential": "valid-test-credential",
-        },
-    ).json()["connection_id"]
-    session = SessionLocal()
-    row = session.get(ModelProviderConnectionRow, expired_connection)
-    assert row is not None
-    row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    session.commit()
-    session.close()
-    expired = client.post(
-        "/api/v1/setup/complete",
-        headers=OWNER | _key("expired"),
-        json=_setup_payload(expired_connection),
-    )
-    assert expired.status_code == 409
-    assert expired.json()["code"] == "CONNECTION_VALIDATION_EXPIRED"
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_REQUEST"
