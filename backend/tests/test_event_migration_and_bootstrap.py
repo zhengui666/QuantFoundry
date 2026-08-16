@@ -297,7 +297,7 @@ def test_section14_downgrade_restores_active_cost_model_fk_canonically() -> None
         "cost_model_versions": [
             {
                 "id": cost_model_id,
-                "legacy_id": "COST-legacy",
+                "legacy_id": "COST-legacy",  # reject_fixture COST-legacy
                 "workspace_id": workspace_id,
             }
         ],
@@ -1525,7 +1525,7 @@ def test_event_migration_canonicalizes_legacy_and_checks_future_values(
                       (event_id, event_type, object_type, object_id, payload,
                        request_id, occurred_at, expires_at)
                     VALUES
-                      ('EVT-rejected', 'future.rejected', 'test', 'rejected', '{}',
+                      ('EVT-rejected', 'future.rejected', 'test', 'rejected', '{}', -- reject_fixture EVT-rejected
                        'REQ-rejected', :occurred_at, :expires_at)
                     """
                 ),

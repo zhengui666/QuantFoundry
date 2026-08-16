@@ -1972,7 +1972,7 @@ P00 AI provider connection 使用独立的加密 credential aggregate。`POST /s
 | `exposed_by_job_id` | `uuid` | NO | — | FK jobs(id) | 执行 Job |
 | `contaminated_for_future_versions` | `boolean` | NO | true |  | 对衍生版本视为已知 |
 | `validation_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,validation_id), CHECK exact VAL grammar | 归属 Validation public locator；与 internal validation FK 同 workspace |
-| `strategy_version_public_id` | `varchar(64)` | NO | — | CHECK closed `STRAT-ID@version` locator | Strategy aggregate public ID + 正整数 version；禁止仅 STRAT 猜测 current |
+| `strategy_version_public_id` | `varchar(64)` | NO | — | CHECK closed `STRAT-ID@version` locator <!-- reject_fixture STRAT-ID --> | Strategy aggregate public ID + 正整数 version；禁止仅 STRAT 猜测 current |
 | `approval_public_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,approval_public_id), CHECK exact APR grammar | 解锁审批 public locator |
 | `job_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,job_id), CHECK exact JOB grammar | 产生暴露结果的 Job public locator |
 | `result_artifact_public_id` | `varchar(40)` | NO | — | CHECK exact ART grammar | 不可变结果 artifact public locator |

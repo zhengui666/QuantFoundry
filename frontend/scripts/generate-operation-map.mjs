@@ -1,17 +1,28 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
 import { format, resolveConfig } from 'prettier';
 
-const contractPath = resolve(process.cwd(), '../docs/后端系统技术方案/contracts/openapi-v1.yaml');
-const outputPath = resolve(process.cwd(), 'src/api/generated/operation-map.ts');
+const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const contractPath = resolve(frontendRoot, '../docs/后端系统技术方案/contracts/openapi-v1.yaml');
+const outputPath = resolve(frontendRoot, 'src/api/generated/operation-map.ts');
 const document = load(await readFile(contractPath, 'utf8'));
 const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
+const resolveReference = (reference, expectedPrefix) => {
+  if (typeof reference !== 'string' || !reference.startsWith(`${expectedPrefix}/`))
+    throw new Error(`Unsupported local reference: ${String(reference)}`);
+  const tokens = reference
+    .slice(2)
+    .split('/')
+    .map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
+  let value = document;
+  for (const token of tokens) value = value?.[token];
+  if (value === undefined) throw new Error(`Unresolved local reference: ${reference}`);
+  return value;
+};
 const parameter = (entry) => {
-  if (entry.$ref) {
-    const name = entry.$ref.split('/').at(-1);
-    return document.components?.parameters?.[name];
-  }
+  if (entry?.$ref) return resolveReference(entry.$ref, '#/components/parameters');
   return entry;
 };
 const operations = Object.entries(document.paths ?? {}).flatMap(([path, pathItem]) =>
@@ -20,9 +31,14 @@ const operations = Object.entries(document.paths ?? {}).flatMap(([path, pathItem
     .map(([method, operation]) => {
       if (!operation.operationId)
         throw new Error(`Operation at ${method.toUpperCase()} ${path} has no id`);
-      const parameters = [...(pathItem.parameters ?? []), ...(operation.parameters ?? [])].map(
-        parameter,
-      );
+      const parametersByKey = new Map();
+      for (const entry of [...(pathItem.parameters ?? []), ...(operation.parameters ?? [])]) {
+        const resolved = parameter(entry);
+        if (!resolved?.in || !resolved.name)
+          throw new Error(`Parameter at ${method.toUpperCase()} ${path} is malformed`);
+        parametersByKey.set(`${resolved.in}\0${resolved.name}`, resolved);
+      }
+      const parameters = [...parametersByKey.values()];
       const headers = parameters
         .filter((entry) => entry?.in === 'header')
         .map((entry) => entry.name)
@@ -34,10 +50,11 @@ const operations = Object.entries(document.paths ?? {}).flatMap(([path, pathItem
           required: entry.required === true,
           value: entry.schema?.const,
         }));
+      const security = operation.security === undefined ? document.security : operation.security;
       const authenticated =
-        operation.security === undefined
-          ? document.security?.length > 0
-          : operation.security.length > 0;
+        Array.isArray(security) &&
+        security.length > 0 &&
+        security.every((requirement) => Object.keys(requirement ?? {}).length > 0);
       return {
         id: operation.operationId,
         method: method.toUpperCase(),

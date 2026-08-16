@@ -153,7 +153,7 @@ def _owner_graph(
         ),
         {
             "id": cost_internal,
-            "legacy": f"COST-LEGACY-{token}",
+            "legacy": f"COST-LEGACY-{token}",  # reject_fixture COST-LEGACY
             "workspace": workspace_id,
             "public": cost_public,
             "sha": content_hash({"cost": token}),
@@ -237,7 +237,7 @@ def _owner_graph(
         ),
         {
             "id": risk_internal,
-            "legacy": f"RISK-LEGACY-{token}",
+            "legacy": f"RISK-LEGACY-{token}",  # reject_fixture RISK-LEGACY
             "workspace": workspace_id,
             "public": risk_public,
             "sha": content_hash({"risk": token}),

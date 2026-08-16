@@ -1,6 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { extname, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, extname, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { load } from 'js-yaml';
 
 const ignoredDirectories = new Set([
@@ -63,12 +63,14 @@ export const formalPublicIdSources = [
 const collect = async (path) => {
   const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
   if (!entries) return [path];
-  const nested = await Promise.all(
-    entries
-      .filter((entry) => !ignoredDirectories.has(entry.name))
-      .map((entry) => collect(resolve(path, entry.name))),
-  );
-  return nested.flat();
+  const files = [];
+  for (const entry of entries) {
+    if (ignoredDirectories.has(entry.name)) continue;
+    const child = resolve(path, entry.name);
+    if (entry.isFile()) files.push(child);
+    else if (entry.isDirectory()) files.push(...(await collect(child)));
+  }
+  return files;
 };
 
 export const collectFormalPublicIdFiles = async (
@@ -100,8 +102,13 @@ export const collectFormalPublicIdFiles = async (
 };
 
 const tokenPattern = /\b(?:[A-Z][A-Z0-9]{1,7})-[A-Za-z0-9][A-Za-z0-9-]*\b/g;
-const intentionalRejection =
-  /reject_fixture|must reject|reject|invalid|illegal|wrong|legacy|禁止|非法|错误|不合法|必须拒绝|短\s*ID|旧(?:格式|前缀|日期|序号)/i;
+const intentionalRejection = (token, context) => {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `(?:reject_fixture|must\\s+reject)[^\\n]*${escaped}|${escaped}[^\\n]*(?:reject_fixture|must\\s+reject)`,
+    'i',
+  ).test(context);
+};
 
 const schemaOrManifestJson = (file) =>
   /(?:^|[/\\])schemas?(?:[/\\]|$)/i.test(file) || /(?:manifest|schema)[^/\\]*\.json$/i.test(file);
@@ -115,7 +122,7 @@ const invalidTokens = (text, context, location, matchers) => {
     const canonical = matchers.get(prefix);
     const recognized = canonical !== undefined || prefix === 'MEM';
     if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
-    if (!intentionalRejection.test(context))
+    if (!intentionalRejection(token, context))
       failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
   }
   return failures;
@@ -177,7 +184,7 @@ export const scanFormalPublicIdSources = async ({ repositoryRoot, matchers, sour
 };
 
 const main = async () => {
-  const repositoryRoot = resolve(process.cwd(), '..');
+  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const contractPath = resolve(repositoryRoot, 'docs/后端系统技术方案/contracts/openapi-v1.yaml');
   const document = load(await readFile(contractPath, 'utf8'));
   const extension = document?.info?.['x-quantfoundry-public-id-schemas'];
@@ -186,14 +193,19 @@ const main = async () => {
   const schemas = Object.entries(extension).filter(([name]) => name !== 'any_public_semantic_id');
   if (schemas.length !== 34)
     throw new Error(`Expected 34 public-ID classes, found ${schemas.length}`);
-  const matchers = new Map(
-    schemas.map(([name, schema]) => {
-      const prefix = schema.examples?.[0]?.split('-')[0];
-      if (!prefix || schema.oneOf?.length !== 2)
-        throw new Error(`Malformed public-ID schema ${name}`);
-      return [prefix, schema.oneOf.map((branch) => new RegExp(branch.pattern))];
-    }),
-  );
+  const matchers = new Map();
+  for (const [name, schema] of schemas) {
+    const examples = schema.examples ?? [];
+    const prefixes = new Set(examples.map((example) => example.split('-')[0]));
+    const prefix = [...prefixes][0];
+    if (!prefix || examples.length !== 2 || schema.oneOf?.length !== 2)
+      throw new Error(`Malformed public-ID schema ${name}`);
+    const patterns = schema.oneOf.map((branch) => new RegExp(branch.pattern));
+    if (prefixes.size !== 1 || patterns.some((pattern) => examples.filter((example) => pattern.test(example)).length !== 1))
+      throw new Error(`Public-ID schema ${name} has inconsistent examples/patterns`);
+    if (matchers.has(prefix)) throw new Error(`Duplicate public-ID prefix ${prefix}`);
+    matchers.set(prefix, patterns);
+  }
 
   const { failures, scannedFiles, coverage } = await scanFormalPublicIdSources({
     repositoryRoot,

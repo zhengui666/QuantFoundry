@@ -850,7 +850,7 @@ export const EventObjectLocatorSchemas = {
   settings: z
     .object({
       object_id: z.literal('SETTINGS-DEFAULT'),
-      object_version: z.null(),
+      object_version: z.null().nullable(),
       object_revision: z.number().int().min(1),
     })
     .passthrough(),
@@ -859,7 +859,7 @@ export const EventObjectLocatorSchemas = {
       object_id: z
         .string()
         .regex(new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-      object_version: z.null(),
+      object_version: z.null().nullable(),
       object_revision: z.number().int().min(1),
     })
     .passthrough(),
@@ -873,7 +873,7 @@ export const EventObjectLocatorSchemas = {
         z.literal('RED_TEAM_RESEARCHER'),
         z.literal('PERFORMANCE_ANALYST'),
       ]),
-      object_version: z.null(),
+      object_version: z.null().nullable(),
       object_revision: z.number().int().min(1),
     })
     .passthrough(),
@@ -889,7 +889,7 @@ export const EventObjectLocatorSchemas = {
             new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      object_version: z.null(),
+      object_version: z.null().nullable(),
       object_revision: z.number().int().min(1),
     })
     .passthrough(),
@@ -1069,245 +1069,376 @@ export const ProblemContextSchema = z
           z.literal('agent_config'),
           z.literal('event_stream'),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
     object_id: z
-      .union([
-        z.union([
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(39)
-              .max(39)
-              .regex(
-                new RegExp(
-                  '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.literal('SETTINGS-DEFAULT'),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
-            .string()
-            .regex(
-              new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-            ),
-          z.union([
-            z.literal('RESEARCH_DIRECTOR'),
-            z.literal('FACTOR_SCIENTIST'),
-            z.literal('STRATEGY_SCIENTIST'),
-            z.literal('PORTFOLIO_ANALYST'),
-            z.literal('RED_TEAM_RESEARCHER'),
-            z.literal('PERFORMANCE_ANALYST'),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-        ]),
-        z.null(),
-      ])
+            .unknown()
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(29)
+                      .max(29)
+                      .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(39)
+                      .max(39)
+                      .regex(
+                        new RegExp(
+                          '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z.literal('SETTINGS-DEFAULT').safeParse(value).success,
+                z
+                  .string()
+                  .regex(
+                    new RegExp(
+                      '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z.literal('RESEARCH_DIRECTOR'),
+                    z.literal('FACTOR_SCIENTIST'),
+                    z.literal('STRATEGY_SCIENTIST'),
+                    z.literal('PORTFOLIO_ANALYST'),
+                    z.literal('RED_TEAM_RESEARCHER'),
+                    z.literal('PERFORMANCE_ANALYST'),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches === 0)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match at least one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches === 0)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match at least one canonical variant',
+          });
+      })
       .optional(),
     object_version: z.number().int().min(1).nullable().optional(),
     object_revision: z.number().int().min(1).nullable().optional(),
@@ -1327,7 +1458,7 @@ export const ProblemContextSchema = z
               ),
             ),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
     validation_id: z
@@ -1344,12 +1475,1455 @@ export const ProblemContextSchema = z
               ),
             ),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
     retry_after_seconds: z.number().int().min(1).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('job') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('research') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('conclusion') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('experiment') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('factor') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('strategy_version') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.number().int().min(1),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('validation') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('approval') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('review') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('capability') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('snapshot') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('tool_call') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('memo') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('notification') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('settings') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.literal('SETTINGS-DEFAULT').optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('provider_connection') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .string()
+                      .regex(
+                        new RegExp(
+                          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_config') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z.literal('RESEARCH_DIRECTOR'),
+                        z.literal('FACTOR_SCIENTIST'),
+                        z.literal('STRATEGY_SCIENTIST'),
+                        z.literal('PORTFOLIO_ANALYST'),
+                        z.literal('RED_TEAM_RESEARCHER'),
+                        z.literal('PERFORMANCE_ANALYST'),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('event_stream') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_id: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_type: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('job.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('job').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('research').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('research.conclusion.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('conclusion').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('experiment.created'),
+                z.literal('experiment.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('experiment').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('factor.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('factor').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('strategy_version').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('validation.created'),
+                z.literal('validation.updated'),
+                z.literal('validation.holdout.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('validation').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('approval').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('paper.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('review').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.provider.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.capability.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('capability').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.quality.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('snapshot').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('agent.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('tool.call.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('tool_call').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('memo').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('setup.completed') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('configuration.updated'),
+                z.literal('configuration.apply_failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('database.connection.updated'),
+                z.literal('database.connection.failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('notification').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_config').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('system.health.updated'),
+                z.literal('system.resync_required'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('event_stream').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  });
 export const ApiProblemSchema = z
   .object({
     type: z.string(),
@@ -1441,29 +3015,7 @@ export const ConfigurationCatalogSchema = z
     entries: z.array(ConfigurationCatalogEntrySchema),
   })
   .strict();
-export const ConfigurationValueWriteSchema = z
-  .object({
-    key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
-    value: z
-      .union([
-        z.string(),
-        z.number(),
-        z.boolean(),
-        z.object({}).passthrough(),
-        z.array(z.unknown()),
-        z.null(),
-      ])
-      .optional(),
-    secret: z.string().min(1).max(16384).optional(),
-  })
-  .strict()
-  .refine(
-    (value) =>
-      [['value'], ['secret']].some((required) =>
-        required.every((key) => (value as Record<string, unknown>)[key] !== undefined),
-      ),
-    { message: 'Object must satisfy one canonical variant' },
-  );
+export const ConfigurationValueWriteSchema = z.union([z.unknown(), z.unknown()]);
 export const ConfigurationCandidateRequestSchema = z
   .object({
     base_revision: z.number().int().min(1),
@@ -1475,14 +3027,21 @@ export const ConfigurationValueViewSchema = z
     key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
     sensitivity: z.union([z.literal('PUBLIC'), z.literal('MASKED'), z.literal('SECRET')]),
     configured: z.boolean(),
-    value: z.union([
-      z.string(),
-      z.number(),
-      z.boolean(),
-      z.object({}).passthrough(),
-      z.array(z.unknown()),
-      z.null(),
-    ]),
+    value: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z.string().safeParse(value).success,
+        z.number().safeParse(value).success,
+        z.boolean().safeParse(value).success,
+        z.object({}).passthrough().safeParse(value).success,
+        z.array(z.unknown()).safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches === 0)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match at least one canonical variant',
+        });
+    }),
     masked_hint: z.string().max(80).nullable(),
   })
   .strict();
@@ -1554,8 +3113,8 @@ export const DatabaseConnectionStatusSchema = z
     active_revision: z.number().int().min(1).nullable(),
     candidate_revision: z.number().int().min(1).nullable(),
     last_known_good_revision: z.number().int().min(1).nullable(),
-    active: z.union([DatabaseConnectionCandidateSchema, z.null()]),
-    candidate: z.union([DatabaseConnectionCandidateSchema, z.null()]),
+    active: z.union([DatabaseConnectionCandidateSchema, z.null().nullable()]),
+    candidate: z.union([DatabaseConnectionCandidateSchema, z.null().nullable()]),
     domain_operations: z.union([
       z.literal('AVAILABLE'),
       z.literal('READ_ONLY_RECOVERY'),
@@ -1628,7 +3187,7 @@ export const SetupStatusSchema = z
             new RegExp('^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     risk_policy_active: z.boolean(),
     risk_policy_id: z.union([
@@ -1644,7 +3203,7 @@ export const SetupStatusSchema = z
             ),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     cost_model_active: z.boolean(),
     cost_model_id: z.union([
@@ -1660,16 +3219,342 @@ export const SetupStatusSchema = z
             ),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
-    fallback_step: z.union([
-      z.literal('AI_PROVIDER'),
-      z.literal('RESEARCH_DEFAULTS'),
-      z.literal('RESEARCH_CONSTITUTION'),
-      z.literal(null),
-    ]),
+    fallback_step: z
+      .union([
+        z.literal('AI_PROVIDER'),
+        z.literal('RESEARCH_DEFAULTS'),
+        z.literal('RESEARCH_CONSTITUTION'),
+        z.literal(null),
+      ])
+      .nullable(),
   })
   .strict()
+  .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ ai_provider_configured: z.literal(true) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ ai_connection_id: z.string().min(1).optional() }).passthrough()
+              : z.object({ ai_connection_id: z.null().nullable().optional() }).passthrough()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ research_policy_active: z.literal(true) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    research_policy_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.object({ research_policy_id: z.null().nullable().optional() }).passthrough()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ risk_policy_active: z.literal(true) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    risk_policy_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.object({ risk_policy_id: z.null().nullable().optional() }).passthrough()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ cost_model_active: z.literal(true) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    cost_model_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.object({ cost_model_id: z.null().nullable().optional() }).passthrough()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ ai_provider_configured: z.literal(false) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ fallback_step: z.literal('AI_PROVIDER').optional() }).passthrough()
+              : z.unknown().superRefine((value, context) => {
+                  const conditional = z
+                    .object({ cost_model_active: z.literal(false) })
+                    .passthrough()
+                    .safeParse(value).success;
+                  const result = (
+                    conditional
+                      ? z
+                          .object({ fallback_step: z.literal('RESEARCH_DEFAULTS').optional() })
+                          .passthrough()
+                      : z.unknown().superRefine((value, context) => {
+                          const conditional = z
+                            .unknown()
+                            .superRefine((value, context) => {
+                              const matches = [
+                                z
+                                  .object({ research_policy_active: z.literal(false) })
+                                  .passthrough()
+                                  .safeParse(value).success,
+                                z
+                                  .object({ risk_policy_active: z.literal(false) })
+                                  .passthrough()
+                                  .safeParse(value).success,
+                              ].filter(Boolean).length;
+                              if (matches === 0)
+                                context.addIssue({
+                                  code: 'custom',
+                                  message: 'Value must match at least one canonical variant',
+                                });
+                            })
+                            .safeParse(value).success;
+                          const result = (
+                            conditional
+                              ? z
+                                  .object({
+                                    fallback_step: z.literal('RESEARCH_CONSTITUTION').optional(),
+                                  })
+                                  .passthrough()
+                              : z
+                                  .object({ fallback_step: z.null().nullable().optional() })
+                                  .passthrough()
+                          ).safeParse(value);
+                          if (!result.success)
+                            for (const issue of result.error.issues)
+                              context.addIssue({
+                                code: 'custom',
+                                path: issue.path as (string | number)[],
+                                message: issue.message,
+                              });
+                        })
+                  ).safeParse(value);
+                  if (!result.success)
+                    for (const issue of result.error.issues)
+                      context.addIssue({
+                        code: 'custom',
+                        path: issue.path as (string | number)[],
+                        message: issue.message,
+                      });
+                })
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ completed: z.literal(true) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    owner_session_ready: z.literal(true).optional(),
+                    ai_provider_configured: z.literal(true).optional(),
+                    ai_connection_id: z.string().min(1).optional(),
+                    research_policy_active: z.literal(true).optional(),
+                    research_policy_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    risk_policy_active: z.literal(true).optional(),
+                    risk_policy_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    cost_model_active: z.literal(true).optional(),
+                    cost_model_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    fallback_step: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  })
   .superRefine((value, context) => {
     const coupled = [
       ['ai_provider_configured', 'ai_connection_id'],
@@ -1855,7 +3740,7 @@ export const ConfigurationConsumerStateSchema = z
     desired_revision: z.number().int().min(1),
     applied_revision: z.number().int().min(1).nullable(),
     ack: z.union([z.literal('PENDING'), z.literal('ACKED'), z.literal('FAILED')]),
-    error_code: z.union([CanonicalErrorCodeSchema, z.null()]),
+    error_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
     heartbeat_at: z.iso.datetime(),
   })
   .strict();
@@ -1870,7 +3755,21 @@ export const ConfigurationActiveSchema = z
     updated_at: z.iso.datetime(),
   })
   .strict();
-export const SettingsDetailSchema = ConfigurationActiveSchema;
+export const SettingsDetailSchema = z
+  .object({})
+  .passthrough()
+  .superRefine((value, context) => {
+    for (const result of [ConfigurationActiveSchema.safeParse(value)]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  });
 export const ObjectRefSchema = z
   .object({
     type: z.union([
@@ -2294,6 +4193,1447 @@ export const ObjectRefSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('research_policy') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('risk_policy') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('cost_model') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('credential') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^CRED-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^CRED-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('capability') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('dataset') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^DSSET-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^DSSET-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('snapshot') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('data_quality_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^DQ-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^DQ-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('data_quality_issue') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^DQI-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^DQI-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('research') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('evidence') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^EVID-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^EVID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('conclusion') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('experiment') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('factor') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('strategy') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('validation') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('exposure') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^HOLD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^HOLD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('red_team_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^RT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('portfolio') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PORT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PORT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('memo') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('approval') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('paper') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('paper_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('paper_order') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PORD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PORD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('paper_fill') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^PFILL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^PFILL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('review') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('agent_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('tool_call') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('job') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('domain_event') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('audit_event') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^AUD-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^AUD-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('artifact') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^ART-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('notification') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('provenance') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PROV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PROV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  })
+  .superRefine((value, context) => {
     if (!PublicIdSchemas[value.type].safeParse(value.id).success)
       context.addIssue({
         code: 'custom',
@@ -2306,7 +5646,7 @@ export const ActionCapabilitySchema = z
     action: z.string(),
     visibility: z.union([z.literal('SHOW'), z.literal('HIDE')]),
     allowed: z.boolean(),
-    reason_code: z.union([CanonicalErrorCodeSchema, z.null()]),
+    reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
     reason_detail: z.string().nullable(),
     requires_confirmation: z.boolean(),
     idempotency_required: z.boolean(),
@@ -2339,7 +5679,7 @@ export const OverviewAttentionItemSchema = z
     object: ObjectRefSchema,
     title_key: z.string(),
     summary: z.string(),
-    reason_code: z.union([CanonicalErrorCodeSchema, z.null()]),
+    reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
   .strict();
@@ -2410,7 +5750,7 @@ export const OverviewActiveResearchItemSchema = z
       z.literal('STRONG'),
     ]),
     progress: JobProgressSchema,
-    current_agent: z.union([OverviewCurrentAgentSchema, z.null()]),
+    current_agent: z.union([OverviewCurrentAgentSchema, z.null().nullable()]),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     updated_at: z.iso.datetime(),
@@ -2449,7 +5789,7 @@ export const OverviewPaperSummarySchema = z
     since_start_return: z.string().nullable(),
     benchmark_since_start_return: z.string().nullable(),
     as_of_date: z.iso.date().nullable(),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
   })
   .strict();
 export const ChartXAxisSchema = z
@@ -2597,7 +5937,7 @@ export const OverviewReadModelSchema = z
     active_research: z.array(OverviewActiveResearchItemSchema),
     strategy_pipeline: OverviewStrategyPipelineSchema,
     paper_summary: OverviewPaperSummarySchema,
-    paper_performance_chart: z.union([ChartAggregateSchema, z.null()]),
+    paper_performance_chart: z.union([ChartAggregateSchema, z.null().nullable()]),
     recent_findings: z.array(OverviewRecentFindingSchema),
     agent_activity: z.array(OverviewAgentActivityItemSchema),
     data_health: OverviewDataHealthSchema,
@@ -2656,7 +5996,7 @@ export const ResearchCreateRequestSchema = z
               ),
             ),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
   })
@@ -2713,7 +6053,7 @@ export const ResearchConclusionReadModelSchema = z
     evidence_refs: z.array(ObjectRefSchema),
     uncertainties: z.array(z.string()),
     recommendation: z.string().nullable(),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     created_at: z.iso.datetime(),
   })
   .strict();
@@ -2740,7 +6080,7 @@ export const ResearchEvidenceResultLocatorSchema = z
   .object({
     result_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     metric_key: z.string().nullable(),
-    artifact: z.union([ObjectRefSchema, z.null()]),
+    artifact: z.union([ObjectRefSchema, z.null().nullable()]),
   })
   .strict();
 export const ResearchEvidenceItemSchema = z
@@ -2753,7 +6093,7 @@ export const ResearchEvidenceItemSchema = z
     strength: z.union([z.literal('WEAK'), z.literal('MODERATE'), z.literal('STRONG')]),
     limitations: z.string().nullable(),
     is_invalidated: z.boolean(),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     created_at: z.iso.datetime(),
   })
   .strict();
@@ -2781,19 +6121,19 @@ export const ResearchCurrentAgentWorkSchema = z
     ]),
     objective: z.string().nullable(),
     current_action: z.string().nullable(),
-    tool: z.union([NamedVersionSchema, z.null()]),
+    tool: z.union([NamedVersionSchema, z.null().nullable()]),
     next_action: z.string().nullable(),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     updated_at: z.iso.datetime(),
   })
   .strict();
 export const ResearchOverviewReadModelSchema = z
   .object({
     brief: ResearchBriefReadModelSchema,
-    current_conclusion: z.union([ResearchConclusionReadModelSchema, z.null()]),
+    current_conclusion: z.union([ResearchConclusionReadModelSchema, z.null().nullable()]),
     progress: z.array(ResearchPlanNodeReadModelSchema),
     latest_evidence: z.array(ResearchEvidenceItemSchema),
-    current_agent_work: z.union([ResearchCurrentAgentWorkSchema, z.null()]),
+    current_agent_work: z.union([ResearchCurrentAgentWorkSchema, z.null().nullable()]),
   })
   .strict();
 export const ResearchPlanReadModelSchema = z
@@ -2804,7 +6144,7 @@ export const ResearchPlanReadModelSchema = z
     rationale_summary: z.string().nullable(),
     nodes: z.array(ResearchPlanNodeReadModelSchema),
     content_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     created_at: z.iso.datetime(),
   })
   .strict();
@@ -2822,12 +6162,12 @@ export const ResearchTimelineItemSchema = z
     ]),
     agent_role: z.string().nullable(),
     objective: z.string().nullable(),
-    tool: z.union([NamedVersionSchema, z.null()]),
+    tool: z.union([NamedVersionSchema, z.null().nullable()]),
     result_summary: z.string().nullable(),
     decision_summary: z.string().nullable(),
     next_action: z.string().nullable(),
-    object: z.union([ObjectRefSchema, z.null()]),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    object: z.union([ObjectRefSchema, z.null().nullable()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     occurred_at: z.iso.datetime(),
   })
   .strict();
@@ -2873,9 +6213,9 @@ export const ResearchExperimentItemSchema = z
             new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     created_at: z.iso.datetime(),
   })
   .strict();
@@ -2892,7 +6232,7 @@ export const ArtifactReadModelSchema = z
     media_type: z.string(),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     size_bytes: z.number().int().min(0),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     created_at: z.iso.datetime(),
   })
   .strict();
@@ -2921,7 +6261,7 @@ export const ResearchAuditItemSchema = z
     actor: RequesterRefSchema,
     object: ObjectRefSchema,
     request_id: z.string(),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     occurred_at: z.iso.datetime(),
   })
   .strict();
@@ -2977,7 +6317,7 @@ export const ResearchDetailSchema = z
             ),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     current_job_id: z.union([
       z.union([
@@ -2990,10 +6330,10 @@ export const ResearchDetailSchema = z
             new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     overview: ResearchOverviewReadModelSchema,
-    plan: z.union([ResearchPlanReadModelSchema, z.null()]),
+    plan: z.union([ResearchPlanReadModelSchema, z.null().nullable()]),
     timeline: ResearchTimelinePageSchema,
     experiments: ResearchExperimentPageSchema,
     evidence: ResearchEvidencePageSchema,
@@ -3053,7 +6393,7 @@ export const ExperimentCreateRequestSchema = z
               ),
             ),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
     factor_version: z.number().int().min(1).nullable().optional(),
@@ -3071,7 +6411,7 @@ export const ExperimentCreateRequestSchema = z
               ),
             ),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
     strategy_version: z.number().int().min(1).nullable().optional(),
@@ -3159,9 +6499,9 @@ export const ExperimentSearchSetDimensionSchema = z
       .refine((items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length, {
         message: 'Array items must be unique',
       }),
-    minimum: z.null(),
-    maximum: z.null(),
-    step: z.null(),
+    minimum: z.null().nullable(),
+    maximum: z.null().nullable(),
+    step: z.null().nullable(),
   })
   .strict();
 export const ExperimentSearchRangeDimensionSchema = z
@@ -3206,9 +6546,9 @@ export const ExperimentSearchResultNotApplicableSchema = z
     state: z.literal('NOT_APPLICABLE'),
     evaluated_count: z.literal(0),
     selected_parameters: z.array(z.unknown()).max(0),
-    selected_metric: z.null(),
-    result_ref: z.null(),
-    failure_code: z.null(),
+    selected_metric: z.null().nullable(),
+    result_ref: z.null().nullable(),
+    failure_code: z.null().nullable(),
   })
   .strict();
 export const ExperimentSearchResultPendingSchema = z
@@ -3216,9 +6556,9 @@ export const ExperimentSearchResultPendingSchema = z
     state: z.literal('PENDING'),
     evaluated_count: z.literal(0),
     selected_parameters: z.array(z.unknown()).max(0),
-    selected_metric: z.null(),
-    result_ref: z.null(),
-    failure_code: z.null(),
+    selected_metric: z.null().nullable(),
+    result_ref: z.null().nullable(),
+    failure_code: z.null().nullable(),
   })
   .strict();
 export const ExperimentSearchResultRunningSchema = z
@@ -3226,9 +6566,9 @@ export const ExperimentSearchResultRunningSchema = z
     state: z.literal('RUNNING'),
     evaluated_count: z.number().int().min(0),
     selected_parameters: z.array(z.unknown()).max(0),
-    selected_metric: z.null(),
-    result_ref: z.null(),
-    failure_code: z.null(),
+    selected_metric: z.null().nullable(),
+    result_ref: z.null().nullable(),
+    failure_code: z.null().nullable(),
   })
   .strict();
 export const MetricSchema = z
@@ -3241,7 +6581,7 @@ export const ExperimentSearchResultCompletedSchema = z
     selected_parameters: z.array(ParameterSchema).min(1),
     selected_metric: MetricSchema,
     result_ref: ObjectRefSchema,
-    failure_code: z.null(),
+    failure_code: z.null().nullable(),
   })
   .strict();
 export const ExperimentSearchResultFailedSchema = z
@@ -3249,8 +6589,8 @@ export const ExperimentSearchResultFailedSchema = z
     state: z.literal('FAILED'),
     evaluated_count: z.number().int().min(0),
     selected_parameters: z.array(z.unknown()).max(0),
-    selected_metric: z.null(),
-    result_ref: z.null(),
+    selected_metric: z.null().nullable(),
+    result_ref: z.null().nullable(),
     failure_code: CanonicalErrorCodeSchema,
   })
   .strict();
@@ -3291,7 +6631,104 @@ export const PolicyRefSchema = z
     ]),
     version: z.number().int().min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('research_policy') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^RP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('risk_policy') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RISK-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RISK-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  });
 export const VersionedHashRefSchema = z
   .object({
     id: z.union([
@@ -3358,7 +6795,7 @@ export const ProvenanceSchema = z
             new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     source_experiment_id: z.union([
       z.union([
@@ -3371,7 +6808,7 @@ export const ProvenanceSchema = z
             new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     tool_call_id: z.union([
       z.union([
@@ -3386,7 +6823,7 @@ export const ProvenanceSchema = z
             ),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     data_snapshot_ids: z.array(
       z.union([
@@ -3401,79 +6838,123 @@ export const ProvenanceSchema = z
       ]),
     ),
     engine: NamedVersionSchema,
-    adapter: z.union([NamedVersionSchema, z.null()]),
+    adapter: z.union([NamedVersionSchema, z.null().nullable()]),
     code: CodeVersionSchema,
     policies: z.array(PolicyRefSchema),
     strategy: z.union([
-      z.intersection(
-        VersionedHashRefSchema,
-        z
-          .object({
-            id: z
-              .union([
-                z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                z
-                  .string()
-                  .min(42)
-                  .max(42)
-                  .regex(
-                    new RegExp(
-                      '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+      z.unknown().superRefine((value, context) => {
+        for (const result of [
+          VersionedHashRefSchema.safeParse(value),
+          z
+            .object({
+              id: z
+                .union([
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
                     ),
-                  ),
-              ])
-              .optional(),
-          })
-          .passthrough(),
-      ),
-      z.null(),
+                ])
+                .optional(),
+            })
+            .passthrough()
+            .safeParse(value),
+        ]) {
+          if (!result.success) {
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+          }
+        }
+      }),
+      z.null().nullable(),
     ]),
     factors: z.array(
-      z.intersection(
-        VersionedHashRefSchema,
-        z
-          .object({
-            id: z
-              .union([
-                z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                z
-                  .string()
-                  .min(40)
-                  .max(40)
-                  .regex(
-                    new RegExp(
-                      '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+      z.unknown().superRefine((value, context) => {
+        for (const result of [
+          VersionedHashRefSchema.safeParse(value),
+          z
+            .object({
+              id: z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
                     ),
-                  ),
-              ])
-              .optional(),
-          })
-          .passthrough(),
-      ),
+                ])
+                .optional(),
+            })
+            .passthrough()
+            .safeParse(value),
+        ]) {
+          if (!result.success) {
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+          }
+        }
+      }),
     ),
     cost_model: z.union([
-      z.intersection(
-        VersionedHashRefSchema,
-        z
-          .object({
-            id: z
-              .union([
-                z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                z
-                  .string()
-                  .min(41)
-                  .max(41)
-                  .regex(
-                    new RegExp(
-                      '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+      z.unknown().superRefine((value, context) => {
+        for (const result of [
+          VersionedHashRefSchema.safeParse(value),
+          z
+            .object({
+              id: z
+                .union([
+                  z
+                    .string()
+                    .min(31)
+                    .max(31)
+                    .regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(41)
+                    .max(41)
+                    .regex(
+                      new RegExp(
+                        '^COST-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
                     ),
-                  ),
-              ])
-              .optional(),
-          })
-          .passthrough(),
-      ),
-      z.null(),
+                ])
+                .optional(),
+            })
+            .passthrough()
+            .safeParse(value),
+        ]) {
+          if (!result.success) {
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+          }
+        }
+      }),
+      z.null().nullable(),
     ]),
     parameters_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')).nullable(),
     input_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -3514,7 +6995,7 @@ export const ExperimentDetailSchema = z
             new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     source_experiment_id: z.union([
       z.union([
@@ -3527,7 +7008,7 @@ export const ExperimentDetailSchema = z
             new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     research_revision_no: z.number().int().min(1),
     objective: z.string(),
@@ -3546,52 +7027,80 @@ export const ExperimentDetailSchema = z
         ),
     ]),
     factor_ref: z.union([
-      z.intersection(
-        VersionRefSchema,
-        z
-          .object({
-            id: z
-              .union([
-                z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                z
-                  .string()
-                  .min(40)
-                  .max(40)
-                  .regex(
-                    new RegExp(
-                      '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+      z.unknown().superRefine((value, context) => {
+        for (const result of [
+          VersionRefSchema.safeParse(value),
+          z
+            .object({
+              id: z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
                     ),
-                  ),
-              ])
-              .optional(),
-          })
-          .passthrough(),
-      ),
-      z.null(),
+                ])
+                .optional(),
+            })
+            .passthrough()
+            .safeParse(value),
+        ]) {
+          if (!result.success) {
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+          }
+        }
+      }),
+      z.null().nullable(),
     ]),
     strategy_ref: z.union([
-      z.intersection(
-        VersionRefSchema,
-        z
-          .object({
-            id: z
-              .union([
-                z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-                z
-                  .string()
-                  .min(42)
-                  .max(42)
-                  .regex(
-                    new RegExp(
-                      '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+      z.unknown().superRefine((value, context) => {
+        for (const result of [
+          VersionRefSchema.safeParse(value),
+          z
+            .object({
+              id: z
+                .union([
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
                     ),
-                  ),
-              ])
-              .optional(),
-          })
-          .passthrough(),
-      ),
-      z.null(),
+                ])
+                .optional(),
+            })
+            .passthrough()
+            .safeParse(value),
+        ]) {
+          if (!result.success) {
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+          }
+        }
+      }),
+      z.null().nullable(),
     ]),
     cost_model_id: z.union([
       z.string().min(31).max(31).regex(new RegExp('^COST-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
@@ -3606,12 +7115,12 @@ export const ExperimentDetailSchema = z
     parameters: z.array(ParameterSchema),
     parameters_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     search_space: z.array(ExperimentSearchDimensionSchema),
-    search_configuration: z.union([ExperimentSearchConfigurationSchema, z.null()]),
+    search_configuration: z.union([ExperimentSearchConfigurationSchema, z.null().nullable()]),
     search_result: ExperimentSearchResultSchema,
     metrics: z.array(MetricSchema),
     artifacts: z.array(ArtifactReadModelSchema),
     engine: NamedVersionSchema,
-    adapter: z.union([NamedVersionSchema, z.null()]),
+    adapter: z.union([NamedVersionSchema, z.null().nullable()]),
     code_version: z.string(),
     job_id: z.union([
       z.union([
@@ -3624,15 +7133,15 @@ export const ExperimentDetailSchema = z
             new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
-    provenance: z.union([ProvenanceSchema, z.null()]),
+    provenance: z.union([ProvenanceSchema, z.null().nullable()]),
     action_capabilities: z.array(ActionCapabilitySchema),
     started_at: z.iso.datetime().nullable(),
     finished_at: z.iso.datetime().nullable(),
     created_at: z.iso.datetime(),
     invalidated_at: z.iso.datetime().nullable(),
-    invalid_reason_code: z.union([CanonicalErrorCodeSchema, z.null()]),
+    invalid_reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
     invalid_reason_detail: z.string().nullable(),
   })
   .strict();
@@ -3773,7 +7282,7 @@ export const StrategyBacktestResultSummarySchema = z
             new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     provenance: ProvenanceRefSchema,
     started_at: z.iso.datetime().nullable(),
@@ -3791,9 +7300,9 @@ export const StrategyLatestBacktestAvailableSchema = z
 export const StrategyLatestBacktestUnavailableSchema = z
   .object({
     state: z.union([z.literal('EMPTY'), z.literal('LOCKED')]),
-    result: z.null(),
+    result: z.null().nullable(),
     metrics: z.array(z.unknown()).max(0),
-    chart: z.null(),
+    chart: z.null().nullable(),
   })
   .strict();
 export const StrategyLatestBacktestSchema = z.union([
@@ -3822,7 +7331,9 @@ export const StrategyValidationSummarySchema = z
       z.literal('FAILED'),
       z.literal('CANCELLED'),
     ]),
-    result: z.union([z.literal('PASS'), z.literal('WARN'), z.literal('FAIL'), z.literal(null)]),
+    result: z
+      .union([z.literal('PASS'), z.literal('WARN'), z.literal('FAIL'), z.literal(null)])
+      .nullable(),
     holdout_state: z.union([
       z.literal('LOCKED'),
       z.literal('APPROVAL_PENDING'),
@@ -3832,7 +7343,7 @@ export const StrategyValidationSummarySchema = z
       z.literal('FAILED'),
     ]),
     test_counts: ValidationResultCountsSchema,
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     revision: z.number().int().min(1),
   })
   .strict();
@@ -3882,7 +7393,7 @@ export const StrategyVersionDetailSchema = z
     spec_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     specification: StrategySpecificationSchema,
     latest_backtest: StrategyLatestBacktestSchema,
-    validation_summary: z.union([StrategyValidationSummarySchema, z.null()]),
+    validation_summary: z.union([StrategyValidationSummarySchema, z.null().nullable()]),
     artifacts: z.array(ArtifactReadModelSchema),
     provenance: z.array(ProvenanceRefSchema),
     frozen_at: z.iso.datetime().nullable(),
@@ -3905,7 +7416,7 @@ export const NewExperimentResourceRefSchema = z
           new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
         ),
     ]),
-    version: z.null(),
+    version: z.null().nullable(),
     revision: z.literal(1),
   })
   .strict();
@@ -3985,7 +7496,7 @@ export const ValidationTestResultSchema = z
     configuration_summary: z.string(),
     calculated_result: z.string().nullable(),
     interpretation: z.string().nullable(),
-    failure_code: z.union([CanonicalErrorCodeSchema, z.null()]),
+    failure_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
     failure_detail: z.string().nullable(),
     warning_codes: z.array(z.string()),
     artifact_ids: z.array(
@@ -4000,7 +7511,7 @@ export const ValidationTestResultSchema = z
           ),
       ]),
     ),
-    provenance: z.union([ProvenanceRefSchema, z.null()]),
+    provenance: z.union([ProvenanceRefSchema, z.null().nullable()]),
     override_permitted: z.literal(false),
   })
   .strict();
@@ -4016,27 +7527,39 @@ export const ValidationDetailSchema = z
           new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
         ),
     ]),
-    strategy: z.intersection(
-      VersionRefSchema,
-      z
-        .object({
-          id: z
-            .union([
-              z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-              z
-                .string()
-                .min(42)
-                .max(42)
-                .regex(
-                  new RegExp(
-                    '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    strategy: z.unknown().superRefine((value, context) => {
+      for (const result of [
+        VersionRefSchema.safeParse(value),
+        z
+          .object({
+            id: z
+              .union([
+                z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                z
+                  .string()
+                  .min(42)
+                  .max(42)
+                  .regex(
+                    new RegExp(
+                      '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
                   ),
-                ),
-            ])
-            .optional(),
-        })
-        .passthrough(),
-    ),
+              ])
+              .optional(),
+          })
+          .passthrough()
+          .safeParse(value),
+      ]) {
+        if (!result.success) {
+          for (const issue of result.error.issues)
+            context.addIssue({
+              code: 'custom',
+              path: issue.path as (string | number)[],
+              message: issue.message,
+            });
+        }
+      }
+    }),
     policy_id: z.union([
       z.string().min(29).max(29).regex(new RegExp('^RP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
       z
@@ -4056,7 +7579,9 @@ export const ValidationDetailSchema = z
       z.literal('FAILED'),
       z.literal('CANCELLED'),
     ]),
-    result: z.union([z.literal('PASS'), z.literal('WARN'), z.literal('FAIL'), z.literal(null)]),
+    result: z
+      .union([z.literal('PASS'), z.literal('WARN'), z.literal('FAIL'), z.literal(null)])
+      .nullable(),
     test_suite_version: z.string(),
     tests: z.array(ValidationTestResultSchema),
     warnings: z.array(z.string()),
@@ -4080,7 +7605,7 @@ export const ValidationDetailSchema = z
             new RegExp('^RT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     job_id: z.union([
       z.union([
@@ -4093,7 +7618,7 @@ export const ValidationDetailSchema = z
             new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
@@ -4146,7 +7671,7 @@ export const HoldoutGateSchema = z
     ]),
     exposure_count: z.number().int().min(0),
     period: DateRangeSchema,
-    approval: z.union([ApprovalSummarySchema, z.null()]),
+    approval: z.union([ApprovalSummarySchema, z.null().nullable()]),
     action_capabilities: z.array(ActionCapabilitySchema),
     revision: z.number().int().min(1),
     validation: ValidationDetailSchema.optional(),
@@ -4238,7 +7763,146 @@ export const ApprovalSubjectSchema = z
     revision: z.number().int().min(1),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('STRATEGY_VERSION') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('VALIDATION') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ type: z.literal('PAPER') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  });
 export const ApprovalListItemSchema = z
   .object({
     approval_id: z.union([
@@ -4355,7 +8019,7 @@ export const JobAcceptedSchema = z
     ]),
     status: z.union([z.literal('QUEUED'), z.literal('RUNNING')]),
     progress: JobProgressSchema,
-    resource_ref: z.union([ObjectRefSchema, z.null()]),
+    resource_ref: z.union([ObjectRefSchema, z.null().nullable()]),
     created_at: z.iso.datetime(),
   })
   .strict();
@@ -4363,7 +8027,7 @@ export const ApprovalDecisionResultSchema = z
   .object({
     approval: ApprovalDetailSchema,
     subject_ref: ObjectRefSchema,
-    next_job: z.union([JobAcceptedSchema, z.null()]),
+    next_job: z.union([JobAcceptedSchema, z.null().nullable()]),
   })
   .strict();
 export const MemoGenerateRequestSchema = z
@@ -4416,27 +8080,39 @@ export const MemoDetailSchema = z
           new RegExp('^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
         ),
     ]),
-    strategy: z.intersection(
-      VersionRefSchema,
-      z
-        .object({
-          id: z
-            .union([
-              z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-              z
-                .string()
-                .min(42)
-                .max(42)
-                .regex(
-                  new RegExp(
-                    '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    strategy: z.unknown().superRefine((value, context) => {
+      for (const result of [
+        VersionRefSchema.safeParse(value),
+        z
+          .object({
+            id: z
+              .union([
+                z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                z
+                  .string()
+                  .min(42)
+                  .max(42)
+                  .regex(
+                    new RegExp(
+                      '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
                   ),
-                ),
-            ])
-            .optional(),
-        })
-        .passthrough(),
-    ),
+              ])
+              .optional(),
+          })
+          .passthrough()
+          .safeParse(value),
+      ]) {
+        if (!result.success) {
+          for (const issue of result.error.issues)
+            context.addIssue({
+              code: 'custom',
+              path: issue.path as (string | number)[],
+              message: issue.message,
+            });
+        }
+      }
+    }),
     status: z.union([z.literal('GENERATING'), z.literal('FINAL'), z.literal('FAILED')]),
     sections: z.array(MemoSectionSchema),
     provenance: z.array(ProvenanceRefSchema),
@@ -4503,243 +8179,337 @@ export const JobResultRefSchema = z
         z.literal('agent_config'),
         z.literal('event_stream'),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
-    object_id: z.union([
-      z.union([
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(41)
-            .max(41)
-            .regex(
-              new RegExp(
-                '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(41)
-            .max(41)
-            .regex(
-              new RegExp(
-                '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(42)
-            .max(42)
-            .regex(
-              new RegExp(
-                '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(42)
-            .max(42)
-            .regex(
-              new RegExp(
-                '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(41)
-            .max(41)
-            .regex(
-              new RegExp(
-                '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(39)
-            .max(39)
-            .regex(
-              new RegExp(
-                '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(41)
-            .max(41)
-            .regex(
-              new RegExp(
-                '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(42)
-            .max(42)
-            .regex(
-              new RegExp(
-                '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(41)
-            .max(41)
-            .regex(
-              new RegExp(
-                '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.union([
-          z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(42)
-            .max(42)
-            .regex(
-              new RegExp(
-                '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-        z.literal('SETTINGS-DEFAULT'),
+    object_id: z.unknown().superRefine((value, context) => {
+      const matches = [
         z
-          .string()
-          .regex(
-            new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-        z.union([
-          z.literal('RESEARCH_DIRECTOR'),
-          z.literal('FACTOR_SCIENTIST'),
-          z.literal('STRATEGY_SCIENTIST'),
-          z.literal('PORTFOLIO_ANALYST'),
-          z.literal('RED_TEAM_RESEARCHER'),
-          z.literal('PERFORMANCE_ANALYST'),
-        ]),
-        z.union([
-          z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-          z
-            .string()
-            .min(40)
-            .max(40)
-            .regex(
-              new RegExp(
-                '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-              ),
-            ),
-        ]),
-      ]),
-      z.null(),
-    ]),
+          .unknown()
+          .superRefine((value, context) => {
+            const matches = [
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(31)
+                    .max(31)
+                    .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(41)
+                    .max(41)
+                    .regex(
+                      new RegExp(
+                        '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(31)
+                    .max(31)
+                    .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(41)
+                    .max(41)
+                    .regex(
+                      new RegExp(
+                        '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(31)
+                    .max(31)
+                    .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(41)
+                    .max(41)
+                    .regex(
+                      new RegExp(
+                        '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(39)
+                    .max(39)
+                    .regex(
+                      new RegExp(
+                        '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(31)
+                    .max(31)
+                    .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(41)
+                    .max(41)
+                    .regex(
+                      new RegExp(
+                        '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(31)
+                    .max(31)
+                    .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(41)
+                    .max(41)
+                    .regex(
+                      new RegExp(
+                        '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z
+                    .string()
+                    .min(32)
+                    .max(32)
+                    .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(42)
+                    .max(42)
+                    .regex(
+                      new RegExp(
+                        '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+              z.literal('SETTINGS-DEFAULT').safeParse(value).success,
+              z
+                .string()
+                .regex(
+                  new RegExp(
+                    '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  ),
+                )
+                .safeParse(value).success,
+              z
+                .union([
+                  z.literal('RESEARCH_DIRECTOR'),
+                  z.literal('FACTOR_SCIENTIST'),
+                  z.literal('STRATEGY_SCIENTIST'),
+                  z.literal('PORTFOLIO_ANALYST'),
+                  z.literal('RED_TEAM_RESEARCHER'),
+                  z.literal('PERFORMANCE_ANALYST'),
+                ])
+                .safeParse(value).success,
+              z
+                .union([
+                  z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                  z
+                    .string()
+                    .min(40)
+                    .max(40)
+                    .regex(
+                      new RegExp(
+                        '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                      ),
+                    ),
+                ])
+                .safeParse(value).success,
+            ].filter(Boolean).length;
+            if (matches === 0)
+              context.addIssue({
+                code: 'custom',
+                message: 'Value must match at least one canonical variant',
+              });
+          })
+          .safeParse(value).success,
+        z.null().nullable().safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches === 0)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match at least one canonical variant',
+        });
+    }),
     object_version: z.number().int().min(1).nullable(),
     object_revision: z.number().int().min(1).nullable(),
     artifact_id: z.union([
@@ -4753,10 +8523,1453 @@ export const JobResultRefSchema = z
             new RegExp('^ART-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('job') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('research') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('conclusion') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('experiment') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('factor') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('strategy_version') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.number().int().min(1),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('validation') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('approval') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('review') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('capability') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('snapshot') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('tool_call') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('memo') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('notification') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('settings') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.literal('SETTINGS-DEFAULT').optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('provider_connection') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .string()
+                      .regex(
+                        new RegExp(
+                          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_config') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z.literal('RESEARCH_DIRECTOR'),
+                        z.literal('FACTOR_SCIENTIST'),
+                        z.literal('STRATEGY_SCIENTIST'),
+                        z.literal('PORTFOLIO_ANALYST'),
+                        z.literal('RED_TEAM_RESEARCHER'),
+                        z.literal('PERFORMANCE_ANALYST'),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('event_stream') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_id: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_type: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('job.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('job').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('research').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('research.conclusion.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('conclusion').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('experiment.created'),
+                z.literal('experiment.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('experiment').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('factor.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('factor').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('strategy_version').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('validation.created'),
+                z.literal('validation.updated'),
+                z.literal('validation.holdout.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('validation').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('approval').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('paper.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('review').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.provider.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.capability.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('capability').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.quality.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('snapshot').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('agent.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('tool.call.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('tool_call').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('memo').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('setup.completed') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('configuration.updated'),
+                z.literal('configuration.apply_failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('database.connection.updated'),
+                z.literal('database.connection.failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('notification').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_config').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('system.health.updated'),
+                z.literal('system.resync_required'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('event_stream').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  });
 export const JobDetailSchema = z
   .object({
     job_id: z.union([
@@ -4779,8 +9992,8 @@ export const JobDetailSchema = z
       z.literal('CANCELLED'),
     ]),
     progress: JobProgressSchema,
-    error_code: z.union([CanonicalErrorCodeSchema, z.null()]),
-    result_ref: z.union([JobResultRefSchema, z.null()]),
+    error_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]),
+    result_ref: z.union([JobResultRefSchema, z.null().nullable()]),
     queued_at: z.iso.datetime(),
     started_at: z.iso.datetime().nullable(),
     finished_at: z.iso.datetime().nullable(),
@@ -4844,9 +10057,12 @@ export const EventPayloadSchema = z
   .object({
     status: z.string().nullable().optional(),
     state: z.string().nullable().optional(),
-    reason_code: z.union([CanonicalErrorCodeSchema, z.null()]).optional(),
+    reason_code: z.union([CanonicalErrorCodeSchema, z.null().nullable()]).optional(),
     resync_from_sequence: z.number().int().min(1).nullable().optional(),
-    progress_mode: z.union([z.literal('NONE'), z.literal('UNITS'), z.literal(null)]).optional(),
+    progress_mode: z
+      .union([z.literal('NONE'), z.literal('UNITS'), z.literal(null)])
+      .nullable()
+      .optional(),
     completed_units: z.number().int().min(0).nullable().optional(),
     total_units: z.number().int().min(1).nullable().optional(),
     current_step_key: z.string().nullable().optional(),
@@ -4864,10 +10080,10 @@ export const EventPayloadSchema = z
               ),
             ),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
-    role: z.union([AgentRoleKeySchema, z.null()]).optional(),
+    role: z.union([AgentRoleKeySchema, z.null().nullable()]).optional(),
     objective: z.string().nullable().optional(),
     research_id: z
       .union([
@@ -4883,7 +10099,7 @@ export const EventPayloadSchema = z
               ),
             ),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
     object_type: z
@@ -4911,251 +10127,1825 @@ export const EventPayloadSchema = z
           z.literal('agent_config'),
           z.literal('event_stream'),
         ]),
-        z.null(),
+        z.null().nullable(),
       ])
       .optional(),
     object_id: z
-      .union([
-        z.union([
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(39)
-              .max(39)
-              .regex(
-                new RegExp(
-                  '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(41)
-              .max(41)
-              .regex(
-                new RegExp(
-                  '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.union([
-            z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(42)
-              .max(42)
-              .regex(
-                new RegExp(
-                  '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-          z.literal('SETTINGS-DEFAULT'),
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
           z
-            .string()
-            .regex(
-              new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-            ),
-          z.union([
-            z.literal('RESEARCH_DIRECTOR'),
-            z.literal('FACTOR_SCIENTIST'),
-            z.literal('STRATEGY_SCIENTIST'),
-            z.literal('PORTFOLIO_ANALYST'),
-            z.literal('RED_TEAM_RESEARCHER'),
-            z.literal('PERFORMANCE_ANALYST'),
-          ]),
-          z.union([
-            z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-            z
-              .string()
-              .min(40)
-              .max(40)
-              .regex(
-                new RegExp(
-                  '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-                ),
-              ),
-          ]),
-        ]),
-        z.null(),
-      ])
+            .unknown()
+            .superRefine((value, context) => {
+              const matches = [
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(29)
+                      .max(29)
+                      .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(39)
+                      .max(39)
+                      .regex(
+                        new RegExp(
+                          '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(31)
+                      .max(31)
+                      .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(41)
+                      .max(41)
+                      .regex(
+                        new RegExp(
+                          '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(32)
+                      .max(32)
+                      .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(42)
+                      .max(42)
+                      .regex(
+                        new RegExp(
+                          '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+                z.literal('SETTINGS-DEFAULT').safeParse(value).success,
+                z
+                  .string()
+                  .regex(
+                    new RegExp(
+                      '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                    ),
+                  )
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z.literal('RESEARCH_DIRECTOR'),
+                    z.literal('FACTOR_SCIENTIST'),
+                    z.literal('STRATEGY_SCIENTIST'),
+                    z.literal('PORTFOLIO_ANALYST'),
+                    z.literal('RED_TEAM_RESEARCHER'),
+                    z.literal('PERFORMANCE_ANALYST'),
+                  ])
+                  .safeParse(value).success,
+                z
+                  .union([
+                    z
+                      .string()
+                      .min(30)
+                      .max(30)
+                      .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                    z
+                      .string()
+                      .min(40)
+                      .max(40)
+                      .regex(
+                        new RegExp(
+                          '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      ),
+                  ])
+                  .safeParse(value).success,
+              ].filter(Boolean).length;
+              if (matches === 0)
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Value must match at least one canonical variant',
+                });
+            })
+            .safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches === 0)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match at least one canonical variant',
+          });
+      })
       .optional(),
     object_version: z.number().int().min(1).nullable().optional(),
     object_revision: z.number().int().min(1).nullable().optional(),
-    waiting_on: z.union([EventWaitingOnSchema, z.null()]).optional(),
+    waiting_on: z.union([EventWaitingOnSchema, z.null().nullable()]).optional(),
   })
   .strict()
+  .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('job') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('research') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('conclusion') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('experiment') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('factor') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('strategy_version') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.number().int().min(1),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('validation') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('approval') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('review') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('capability') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('snapshot') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('tool_call') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('memo') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('notification') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('settings') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.literal('SETTINGS-DEFAULT').optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('provider_connection') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .string()
+                      .regex(
+                        new RegExp(
+                          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_config') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z.literal('RESEARCH_DIRECTOR'),
+                        z.literal('FACTOR_SCIENTIST'),
+                        z.literal('STRATEGY_SCIENTIST'),
+                        z.literal('PORTFOLIO_ANALYST'),
+                        z.literal('RED_TEAM_RESEARCHER'),
+                        z.literal('PERFORMANCE_ANALYST'),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('event_stream') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_id: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_type: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('job.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('job').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('research').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('research.conclusion.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('conclusion').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('experiment.created'),
+                z.literal('experiment.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('experiment').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('factor.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('factor').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('strategy_version').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('validation.created'),
+                z.literal('validation.updated'),
+                z.literal('validation.holdout.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('validation').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('approval').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('paper.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('review').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.provider.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.capability.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('capability').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.quality.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('snapshot').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('agent.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('tool.call.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('tool_call').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('memo').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('setup.completed') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('configuration.updated'),
+                z.literal('configuration.apply_failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('database.connection.updated'),
+                z.literal('database.connection.failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('notification').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_config').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('system.health.updated'),
+                z.literal('system.resync_required'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('event_stream').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  })
   .superRefine((value, context) => {
     const locatorKeys = ['object_type', 'object_id', 'object_version', 'object_revision'] as const;
     const present = locatorKeys.filter((key) => value[key] !== undefined);
@@ -5173,7 +11963,10 @@ export const EventPayloadSchema = z
             message: 'Null event payload locator must be wholly null',
           });
       } else if (value.object_type !== undefined) {
-        const result = EventObjectLocatorSchemas[value.object_type].safeParse(value);
+        const result =
+          EventObjectLocatorSchemas[
+            value.object_type as keyof typeof EventObjectLocatorSchemas
+          ].safeParse(value);
         if (!result.success)
           context.addIssue({ code: 'custom', message: 'Event payload object locator is invalid' });
       }
@@ -5218,218 +12011,284 @@ export const SseEnvelopeSchema = z
       z.literal('agent_config'),
       z.literal('event_stream'),
     ]),
-    object_id: z.union([
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+    object_id: z.unknown().superRefine((value, context) => {
+      const matches = [
+        z
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(39)
+              .max(39)
+              .regex(
+                new RegExp(
+                  '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(41)
+              .max(41)
+              .regex(
+                new RegExp(
+                  '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z
+          .union([
+            z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(42)
+              .max(42)
+              .regex(
+                new RegExp(
+                  '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+        z.literal('SETTINGS-DEFAULT').safeParse(value).success,
         z
           .string()
-          .min(40)
-          .max(40)
           .regex(
-            new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
+          )
+          .safeParse(value).success,
         z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+          .union([
+            z.literal('RESEARCH_DIRECTOR'),
+            z.literal('FACTOR_SCIENTIST'),
+            z.literal('STRATEGY_SCIENTIST'),
+            z.literal('PORTFOLIO_ANALYST'),
+            z.literal('RED_TEAM_RESEARCHER'),
+            z.literal('PERFORMANCE_ANALYST'),
+          ])
+          .safeParse(value).success,
         z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(29).max(29).regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(39)
-          .max(39)
-          .regex(
-            new RegExp('^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(31).max(31).regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(41)
-          .max(41)
-          .regex(
-            new RegExp(
-              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.union([
-        z.string().min(32).max(32).regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(42)
-          .max(42)
-          .regex(
-            new RegExp(
-              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-      ]),
-      z.literal('SETTINGS-DEFAULT'),
-      z
-        .string()
-        .regex(new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
-      z.union([
-        z.literal('RESEARCH_DIRECTOR'),
-        z.literal('FACTOR_SCIENTIST'),
-        z.literal('STRATEGY_SCIENTIST'),
-        z.literal('PORTFOLIO_ANALYST'),
-        z.literal('RED_TEAM_RESEARCHER'),
-        z.literal('PERFORMANCE_ANALYST'),
-      ]),
-      z.union([
-        z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
-        z
-          .string()
-          .min(40)
-          .max(40)
-          .regex(
-            new RegExp('^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
-          ),
-      ]),
-    ]),
+          .union([
+            z.string().min(30).max(30).regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+            z
+              .string()
+              .min(40)
+              .max(40)
+              .regex(
+                new RegExp(
+                  '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                ),
+              ),
+          ])
+          .safeParse(value).success,
+      ].filter(Boolean).length;
+      if (matches === 0)
+        context.addIssue({
+          code: 'custom',
+          message: 'Value must match at least one canonical variant',
+        });
+    }),
     object_version: z.number().int().min(1).nullable(),
     object_revision: z.number().int().min(1).nullable(),
     request_id: z.string().nullable(),
@@ -5444,7 +12303,7 @@ export const SseEnvelopeSchema = z
             new RegExp('^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     agent_run_id: z.union([
       z.union([
@@ -5459,7 +12318,7 @@ export const SseEnvelopeSchema = z
             ),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     tool_call_id: z.union([
       z.union([
@@ -5474,11 +12333,1454 @@ export const SseEnvelopeSchema = z
             ),
           ),
       ]),
-      z.null(),
+      z.null().nullable(),
     ]),
     payload: EventPayloadSchema,
   })
   .strict()
+  .superRefine((value, context) => {
+    for (const result of [
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('job') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^JOB-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^JOB-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('research') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^RSCH-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^RSCH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('conclusion') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^CONC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^CONC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('experiment') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EXP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EXP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('factor') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^FAC-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^FAC-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('strategy_version') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^STRAT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^STRAT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.number().int().min(1),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('validation') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^VAL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^VAL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('approval') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^APR-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^APR-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^PAPER-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^PAPER-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('paper_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^PRUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^PRUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('review') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^REV-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^REV-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('capability') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^CAP-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^CAP-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('snapshot') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(29)
+                          .max(29)
+                          .regex(new RegExp('^DS-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(39)
+                          .max(39)
+                          .regex(
+                            new RegExp(
+                              '^DS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_run') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^ARUN-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^ARUN-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('tool_call') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^TCALL-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^TCALL-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('memo') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(31)
+                          .max(31)
+                          .regex(new RegExp('^MEMO-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(41)
+                          .max(41)
+                          .regex(
+                            new RegExp(
+                              '^MEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('notification') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(32)
+                          .max(32)
+                          .regex(new RegExp('^NOTIF-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(42)
+                          .max(42)
+                          .regex(
+                            new RegExp(
+                              '^NOTIF-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('settings') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.literal('SETTINGS-DEFAULT').optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('provider_connection') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .string()
+                      .regex(
+                        new RegExp(
+                          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                        ),
+                      )
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('agent_config') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z.literal('RESEARCH_DIRECTOR'),
+                        z.literal('FACTOR_SCIENTIST'),
+                        z.literal('STRATEGY_SCIENTIST'),
+                        z.literal('PORTFOLIO_ANALYST'),
+                        z.literal('RED_TEAM_RESEARCHER'),
+                        z.literal('PERFORMANCE_ANALYST'),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.literal('event_stream') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z
+                      .union([
+                        z
+                          .string()
+                          .min(30)
+                          .max(30)
+                          .regex(new RegExp('^EVT-[0-7][0-9A-HJKMNP-TV-Z]{25}$')),
+                        z
+                          .string()
+                          .min(40)
+                          .max(40)
+                          .regex(
+                            new RegExp(
+                              '^EVT-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                            ),
+                          ),
+                      ])
+                      .optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.number().int().min(1),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_type: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_id: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ object_id: z.null().nullable() })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z
+                  .object({
+                    object_type: z.null().nullable().optional(),
+                    object_version: z.null().nullable().optional(),
+                    object_revision: z.null().nullable().optional(),
+                  })
+                  .passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('job.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('job').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('research').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('research.conclusion.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('conclusion').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('experiment.created'),
+                z.literal('experiment.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('experiment').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('factor.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('factor').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('strategy_version').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('validation.created'),
+                z.literal('validation.updated'),
+                z.literal('validation.holdout.updated'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('validation').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('approval').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('paper.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('paper_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('review').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.provider.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.capability.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('capability').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('data.quality.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('snapshot').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('agent.run.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_run').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('tool.call.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('tool_call').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('memo').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('setup.completed') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('configuration.updated'),
+                z.literal('configuration.apply_failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('settings').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('database.connection.updated'),
+                z.literal('database.connection.failed'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('provider_connection').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.created') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('notification').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({ event_type: z.literal('notification.updated') })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('agent_config').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+      z
+        .unknown()
+        .superRefine((value, context) => {
+          const conditional = z
+            .object({
+              event_type: z.union([
+                z.literal('system.health.updated'),
+                z.literal('system.resync_required'),
+              ]),
+            })
+            .passthrough()
+            .safeParse(value).success;
+          const result = (
+            conditional
+              ? z.object({ object_type: z.literal('event_stream').optional() }).passthrough()
+              : z.unknown()
+          ).safeParse(value);
+          if (!result.success)
+            for (const issue of result.error.issues)
+              context.addIssue({
+                code: 'custom',
+                path: issue.path as (string | number)[],
+                message: issue.message,
+              });
+        })
+        .safeParse(value),
+    ]) {
+      if (!result.success) {
+        for (const issue of result.error.issues)
+          context.addIssue({
+            code: 'custom',
+            path: issue.path as (string | number)[],
+            message: issue.message,
+          });
+      }
+    }
+  })
   .superRefine((value, context) => {
     if (EventTypeObjectTypeMap[value.event_type] !== value.object_type)
       context.addIssue({
@@ -5486,7 +13788,11 @@ export const SseEnvelopeSchema = z
         path: ['object_type'],
         message: 'Event type and object type must agree',
       });
-    if (!EventObjectLocatorSchemas[value.object_type].safeParse(value).success)
+    if (
+      !EventObjectLocatorSchemas[
+        value.object_type as keyof typeof EventObjectLocatorSchemas
+      ].safeParse(value).success
+    )
       context.addIssue({
         code: 'custom',
         path: ['object_id'],

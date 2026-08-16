@@ -1,10 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
 import { format } from 'prettier';
 
-const contractPath = resolve(process.cwd(), '../docs/后端系统技术方案/contracts/openapi-v1.yaml');
-const outputPath = resolve(process.cwd(), 'src/api/generated/runtime-schemas.ts');
+const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const contractPath = resolve(frontendRoot, '../docs/后端系统技术方案/contracts/openapi-v1.yaml');
+const outputPath = resolve(frontendRoot, 'src/api/generated/runtime-schemas.ts');
 const document = load(await readFile(contractPath, 'utf8'));
 const schemas = document?.components?.schemas;
 if (!schemas) throw new Error('Canonical OpenAPI component schemas were not found');
@@ -88,7 +90,18 @@ if (
   throw new Error('ObjectRef type/conditional mapping drifted from the 34 public-ID schemas');
 
 const quote = (value) => JSON.stringify(value);
-const refName = (ref) => ref.split('/').at(-1);
+const refName = (ref) => {
+  if (typeof ref !== 'string' || !ref.startsWith('#/components/schemas/'))
+    throw new Error(`Unsupported runtime schema reference: ${String(ref)}`);
+  const tokens = ref
+    .slice(2)
+    .split('/')
+    .map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
+  const name = tokens.at(-1);
+  if (!name || schemas[name] === undefined)
+    throw new Error(`Unresolved runtime schema reference: ${String(ref)}`);
+  return name;
+};
 const pascalCase = (value) =>
   value
     .split('_')
@@ -112,60 +125,94 @@ const addArrayConstraints = (expression, schema) => {
 const zodFor = (schema, schemaName) => {
   if (!schema) return 'z.unknown()';
   if (schema.$ref) return `${refName(schema.$ref)}Schema`;
-  if (schema.allOf?.length && (!schema.properties || Object.keys(schema.properties).length === 0)) {
-    const [first, ...rest] = schema.allOf.map((branch) => zodFor(branch));
-    return rest.reduce((left, right) => `z.intersection(${left}, ${right})`, first);
-  }
-  if (schema.oneOf && !schema.properties)
-    return `z.union([${schema.oneOf.map((branch) => zodFor(branch)).join(', ')}])`;
-  if (schema.anyOf) return `z.union([${schema.anyOf.map((branch) => zodFor(branch)).join(', ')}])`;
-  if (schema.allOf && !schema.type && !schema.properties) {
-    const [first, ...rest] = schema.allOf.map((branch) => zodFor(branch));
-    return rest.reduce((left, right) => `z.intersection(${left}, ${right})`, first);
-  }
-  if (schema.const !== undefined) return `z.literal(${quote(schema.const)})`;
-  if (schema.enum) return literalUnion(schema.enum);
+  const {
+    allOf = [],
+    anyOf = [],
+    oneOf = [],
+    if: condition,
+    then: thenSchema,
+    else: elseSchema,
+    not: notSchema,
+    ...baseSchema
+  } = schema;
+  let expression;
+  if (baseSchema.const !== undefined) expression = `z.literal(${quote(baseSchema.const)})`;
+  else if (baseSchema.enum) expression = literalUnion(baseSchema.enum);
 
-  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  const types = Array.isArray(baseSchema.type) ? baseSchema.type : [baseSchema.type];
   const nullable = types.includes('null');
   const type = types.find((candidate) => candidate !== 'null');
-  if (type === undefined && nullable) return 'z.null()';
+  if (!expression && type === undefined && nullable) expression = 'z.null()';
 
-  let expression;
-  if (type === 'string') {
+  if (!expression && type === 'string') {
     expression =
-      schema.format === 'date-time'
+      baseSchema.format === 'date-time'
         ? 'z.iso.datetime()'
-        : schema.format === 'date'
+        : baseSchema.format === 'date'
           ? 'z.iso.date()'
           : 'z.string()';
-    if (schema.minLength !== undefined) expression += `.min(${schema.minLength})`;
-    if (schema.maxLength !== undefined) expression += `.max(${schema.maxLength})`;
-    if (schema.pattern) expression += `.regex(new RegExp(${quote(schema.pattern)}))`;
-  } else if (type === 'integer' || type === 'number') {
+    if (baseSchema.minLength !== undefined) expression += `.min(${baseSchema.minLength})`;
+    if (baseSchema.maxLength !== undefined) expression += `.max(${baseSchema.maxLength})`;
+    if (baseSchema.pattern) expression += `.regex(new RegExp(${quote(baseSchema.pattern)}))`;
+  } else if (!expression && (type === 'integer' || type === 'number')) {
     expression = type === 'integer' ? 'z.number().int()' : 'z.number()';
-    if (schema.minimum !== undefined) expression += `.min(${schema.minimum})`;
-    if (schema.maximum !== undefined) expression += `.max(${schema.maximum})`;
-  } else if (type === 'boolean') expression = 'z.boolean()';
-  else if (type === 'array')
-    expression = addArrayConstraints(`z.array(${zodFor(schema.items)})`, schema);
-  else if (type === 'object' || schema.properties) {
-    const required = new Set(schema.required ?? []);
-    const properties = Object.entries(schema.properties ?? {}).map(([name, property]) => {
+    if (baseSchema.minimum !== undefined) expression += `.min(${baseSchema.minimum})`;
+    if (baseSchema.maximum !== undefined) expression += `.max(${baseSchema.maximum})`;
+  } else if (!expression && type === 'boolean') expression = 'z.boolean()';
+  else if (!expression && type === 'array')
+    expression = addArrayConstraints(`z.array(${zodFor(baseSchema.items)})`, baseSchema);
+  else if (!expression && (type === 'object' || baseSchema.properties)) {
+    const required = new Set(baseSchema.required ?? []);
+    const properties = Object.entries(baseSchema.properties ?? {}).map(([name, property]) => {
       const value = zodFor(property) + (required.has(name) ? '' : '.optional()');
       return `${quote(name)}: ${value}`;
     });
+    const composedObject =
+      allOf.length > 0 && properties.length === 0 && baseSchema.additionalProperties === false;
     expression = `z.object({${properties.join(',')}})`;
-    if (schema.additionalProperties === false) expression += '.strict()';
-    else if (typeof schema.additionalProperties === 'object')
-      expression += `.catchall(${zodFor(schema.additionalProperties)})`;
+    if (composedObject) expression += '.passthrough()';
+    else if (baseSchema.additionalProperties === false) expression += '.strict()';
+    else if (typeof baseSchema.additionalProperties === 'object')
+      expression += `.catchall(${zodFor(baseSchema.additionalProperties)})`;
     else expression += '.passthrough()';
-    if (schema.minProperties !== undefined)
-      expression += `.refine((value) => Object.keys(value).length >= ${schema.minProperties}, { message: 'Object requires at least ${schema.minProperties} properties' })`;
-  } else throw new Error(`Unsupported runtime schema: ${JSON.stringify(schema)}`);
+    if (baseSchema.minProperties !== undefined)
+      expression += `.refine((value) => Object.keys(value).length >= ${baseSchema.minProperties}, { message: 'Object requires at least ${baseSchema.minProperties} properties' })`;
+  } else if (!expression) expression = 'z.unknown()';
 
-  if (schema.oneOf?.length && schema.properties)
-    expression += `.refine((value) => ${JSON.stringify(schema.oneOf.map((branch) => branch.required ?? []))}.some((required) => required.every((key) => (value as Record<string, unknown>)[key] !== undefined)), { message: 'Object must satisfy one canonical variant' })`;
+  const addBranchIssues = (condition) =>
+    `.superRefine((value, context) => { ${condition} for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path as (string | number)[], message: issue.message }); } } })`;
+  if (allOf.length) {
+    const branches = allOf.map((branch) => zodFor(branch));
+    expression += addBranchIssues(
+      `for (const result of [${branches.map((branch) => `${branch}.safeParse(value)`).join(', ')}]) { if (!result.success) {`,
+    );
+  }
+  if (anyOf.length) {
+    const branches = anyOf.map((branch) => zodFor(branch));
+    expression += `.superRefine((value, context) => { const matches = [${branches
+      .map((branch) => `${branch}.safeParse(value).success`)
+      .join(', ')}].filter(Boolean).length; if (matches === 0) context.addIssue({ code: 'custom', message: 'Value must match at least one canonical variant' }); })`;
+  }
+  if (oneOf.length) {
+    const branches = oneOf.map((branch) => zodFor(branch));
+    if (oneOf.every((branch) => !branch.properties && branch.type !== 'object')) {
+      expression = `z.union([${branches.join(', ')}])`;
+    } else {
+      expression += `.superRefine((value, context) => { const matches = [${branches
+        .map((branch) => `${branch}.safeParse(value).success`)
+        .join(', ')}].filter(Boolean).length; if (matches !== 1) context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' }); })`;
+    }
+  }
+  if (condition) {
+    const conditionExpression = zodFor(condition);
+    const thenExpression = thenSchema ? zodFor(thenSchema) : null;
+    const elseExpression = elseSchema ? zodFor(elseSchema) : null;
+    expression += `.superRefine((value, context) => { const conditional = ${conditionExpression}.safeParse(value).success; const result = (conditional ? ${thenExpression ?? 'z.unknown()'} : ${elseExpression ?? 'z.unknown()'}).safeParse(value); if (!result.success) for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path as (string | number)[], message: issue.message }); })`;
+  }
+  if (notSchema) {
+    const notExpression = zodFor(notSchema);
+    expression += `.refine((value) => !${notExpression}.safeParse(value).success, { message: 'Value must not match the excluded schema' })`;
+  }
 
   if (schemaName === 'ExperimentSearchRangeDimension')
     expression += `.superRefine((value, context) => {
@@ -231,7 +278,7 @@ const zodFor = (schema, schemaName) => {
           if (value.object_id !== null || value.object_version !== null || value.object_revision !== null)
             context.addIssue({ code: 'custom', message: 'Null event payload locator must be wholly null' });
         } else if (value.object_type !== undefined) {
-          const result = EventObjectLocatorSchemas[value.object_type].safeParse(value);
+        const result = EventObjectLocatorSchemas[value.object_type as keyof typeof EventObjectLocatorSchemas].safeParse(value);
           if (!result.success)
             context.addIssue({ code: 'custom', message: 'Event payload object locator is invalid' });
         }
@@ -241,7 +288,7 @@ const zodFor = (schema, schemaName) => {
     expression += `.superRefine((value, context) => {
       if (EventTypeObjectTypeMap[value.event_type] !== value.object_type)
         context.addIssue({ code: 'custom', path: ['object_type'], message: 'Event type and object type must agree' });
-      if (!EventObjectLocatorSchemas[value.object_type].safeParse(value).success)
+      if (!EventObjectLocatorSchemas[value.object_type as keyof typeof EventObjectLocatorSchemas].safeParse(value).success)
         context.addIssue({ code: 'custom', path: ['object_id'], message: 'Event object locator is invalid' });
     })`;
   return nullable ? `${expression}.nullable()` : expression;
