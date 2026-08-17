@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -208,4 +209,7 @@ def test_internal_public_reference_lookups_are_sql_scoped() -> None:
         event.remove(main.engine, "before_cursor_execute", capture)
         session.close()
     assert len(statements) == 4
-    assert all("workspace_id" in statement for statement in statements)
+    assert all(
+        re.search(r"\bwhere\b.*\bworkspace_id\b", statement, re.S)
+        for statement in statements
+    )

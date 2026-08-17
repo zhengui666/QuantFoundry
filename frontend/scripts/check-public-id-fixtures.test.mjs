@@ -95,6 +95,17 @@ describe('public-ID repository fixture scanner', () => {
     }
   });
 
+  it('rejects malformed IDs in prose unless the text explicitly denotes grammar', () => {
+    expect(
+      scan('/repo/backend/schema/section14_manifest.json', {
+        description: invalidStrategyId,
+        constraint: 'invalid fixture (STRAT-ID?)',
+      }),
+    ).toHaveLength(2);
+    expect(scan('/repo/frontend/runtime.json', { id: 'STRAT-ID?' })).toHaveLength(1);
+    expect(scan('/repo/frontend/runtime.json', { id: 'STRAT-' })).toHaveLength(1);
+  });
+
   it('requires every declared formal source to exist and records it as scanned', async () => {
     const root = await mkdtemp(join(tmpdir(), 'qf-pid-formal-'));
     try {

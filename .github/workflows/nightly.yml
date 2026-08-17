@@ -27,6 +27,7 @@ jobs:
       QF_BUILD_ID: nightly-${{ github.run_id }}-${{ github.run_attempt }}
       QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
       QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
+      QF_CI_DISPOSABLE_DATABASE: '1'
       QF_SKIP_AUTO_CREATE: '1'
       QF_ARTIFACT_ROOT: /tmp/quantfoundry/artifacts
       QF_ARTIFACT_DIR: /tmp/quantfoundry/artifacts

@@ -209,7 +209,7 @@ def test_worker_driver_tolerates_bounded_slow_scheduling() -> None:
 
 def test_worker_driver_reports_redacted_terminal_failure() -> None:
     diagnostic = {
-        "agent_runs": [{"status": "WAITING_USER"}],
+        "agent_runs": [{"status": "WAITING_USER", "credential": "secret"}],
         "jobs": [{"status": "FAILED", "error_code": "JOB_FAILED"}],
     }
     with pytest.raises(RuntimeError, match="terminal failure") as caught:
@@ -223,8 +223,8 @@ def test_worker_driver_reports_redacted_terminal_failure() -> None:
                 diagnostic=diagnostic,
             ),
         )
-    assert json.dumps(diagnostic, sort_keys=True) in str(caught.value)
-    assert "credential" not in str(caught.value).lower()
+    assert '"credential": "[REDACTED]"' in str(caught.value)
+    assert "secret" not in str(caught.value)
 
 
 @pytest.mark.parametrize("repeat", range(3))

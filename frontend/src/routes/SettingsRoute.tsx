@@ -89,6 +89,11 @@ export function SettingsPage() {
   const [dbDraftIdentity, setDbDraftIdentity] = useState<string>();
   const [dbCandidateRevision, setDbCandidateRevision] = useState<number>();
   const [dbValidatedRevision, setDbValidatedRevision] = useState<number>();
+  const persistedValidatedRevision =
+    database.data?.body.candidate?.state === 'VALIDATED'
+      ? database.data.body.candidate.revision
+      : undefined;
+  const validatedRevision = dbValidatedRevision ?? persistedValidatedRevision;
   useEffect(() => {
     const current = database.data?.body.active;
     if (!current) return;
@@ -131,10 +136,14 @@ export function SettingsPage() {
     },
   });
   const validateDatabase = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const revision = dbCandidateRevision ?? database.data?.body.candidate?.revision;
       if (!revision) throw new Error('Database candidate revision is unavailable.');
-      return api.validateDatabaseConnectionCandidate(revision);
+      const result = await api.validateDatabaseConnectionCandidate(revision);
+      if (result.body.status !== 'VALID') {
+        throw new Error('Database connection validation failed.');
+      }
+      return result;
     },
     onSuccess: ({ body }) => {
       setDbValidatedRevision(body.revision);
@@ -145,8 +154,8 @@ export function SettingsPage() {
     mutationFn: () => {
       const etag = database.data?.etag;
       if (!etag) throw new Error('Database connection ETag is unavailable.');
-      if (!dbValidatedRevision) throw new Error('Validated database candidate is unavailable.');
-      return api.activateDatabaseConnection(etag, dbValidatedRevision);
+      if (!validatedRevision) throw new Error('Validated database candidate is unavailable.');
+      return api.activateDatabaseConnection(etag, validatedRevision);
     },
     onSuccess: () => {
       setDbCandidateRevision(undefined);
@@ -427,7 +436,7 @@ export function SettingsPage() {
             {t('settings.validateDatabase')}
           </button>
         )}
-        {dbValidatedRevision !== undefined && (
+        {validatedRevision !== undefined && (
           <button disabled={activateDatabase.isPending} onClick={() => activateDatabase.mutate()}>
             {t('settings.activateDatabase')}
           </button>

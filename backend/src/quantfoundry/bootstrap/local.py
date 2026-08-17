@@ -152,6 +152,7 @@ def seed_local(
     owner_id: str,
     owner_email: str,
     session_token: str,
+    ttl_hours: int = 30 * 24,
 ) -> dict[str, Any]:
     cost_root = Path(os.environ["QF_COST_MODEL_DIR"])
     policy_root = Path(os.environ["QF_POLICY_DIR"])
@@ -338,7 +339,7 @@ def seed_local(
                     token_sha256=token_sha256,
                     actor_id=owner_id,
                     workspace_id=workspace_id,
-                    expires_at=timestamp + timedelta(days=30),
+                    expires_at=timestamp + timedelta(hours=ttl_hours),
                 )
             )
         elif (
@@ -346,6 +347,18 @@ def seed_local(
             or existing_token.workspace_id != canonical_workspace_id(workspace_id)
         ):
             raise RuntimeError("session token is already bound to another principal")
+        elif (
+            existing_token.revoked_at is not None
+            or (
+                existing_token.expires_at.replace(tzinfo=UTC)
+                if existing_token.expires_at.tzinfo is None
+                else existing_token.expires_at
+            )
+            <= timestamp
+        ):
+            raise RuntimeError(
+                "session token is revoked or expired; provide a new token"
+            )
         active_policy = session.execute(
             select(ResearchPolicyVersionRow).where(
                 ResearchPolicyVersionRow.workspace_id == workspace_id,

@@ -141,18 +141,19 @@ def _database_exists(name: str) -> bool:
 
 
 def _safety_cleanup(process: subprocess.Popen[str], ready: dict[str, Any]) -> None:
-    process_group_id = ready.get("process_group_id")
-    if isinstance(process_group_id, int):
-        try:
-            os.killpg(process_group_id, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
     if process.poll() is None:
-        process.kill()
-    try:
-        process.communicate(timeout=5)
-    except subprocess.TimeoutExpired:
-        pass
+        process.send_signal(signal.SIGTERM)
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process_group_id = ready.get("process_group_id")
+            if isinstance(process_group_id, int):
+                try:
+                    os.killpg(process_group_id, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.kill()
+            process.communicate(timeout=5)
     database_name = ready.get("database_name")
     if isinstance(database_name, str):
         subprocess.run(

@@ -79,6 +79,7 @@ def main() -> int:
         owner_id=owner_id,
         owner_email=args.email,
         session_token=session_token,
+        ttl_hours=args.ttl_hours,
     )
     base_url = os.getenv("QF_BOOTSTRAP_API_URL", "http://api:8000/api/v1")
     auth = {"Authorization": f"Bearer {session_token}"}

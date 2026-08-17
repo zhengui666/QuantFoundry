@@ -349,6 +349,7 @@ def _validate_evidence(
     evidence = summary[_EVIDENCE_KEY]
     if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
         _block("ambiguous scheduler initialization evidence", deployment)
+    audit = audits[0]
 
     effective = _utc_timestamp(bind, evidence["effective_at_utc"], "effective_at_utc")
     initialization = _utc_timestamp(
@@ -367,6 +368,26 @@ def _validate_evidence(
         if baseline_suppressed is not None
         else None
     )
+    audit_occurred = _utc_timestamp(bind, audit["occurred_at"], "audit occurred_at")
+    audit_valid = (
+        audit.get("actor_type") == "SYSTEM"
+        and audit.get("actor_id") == "alembic:0017"
+        and audit.get("result") == "SUCCESS"
+        and audit.get("object_type") == "paper"
+        and audit.get("object_id") == deployment["paper_id"]
+        and audit.get("object_version") is None
+        and audit.get("object_revision") == baseline["revision"]
+        and audit_occurred == initialization
+        and audit.get("detail_artifact_id") is None
+        and audit.get("before_hash") is None
+        and audit.get("input_hash")
+        == _hash(
+            {"paper_id": deployment["paper_id"], "status": str(deployment["status"])}
+        )
+        and audit.get("after_hash") == _hash(evidence)
+    )
+    if not audit_valid:
+        _block("ambiguous scheduler initialization audit envelope", deployment)
     valid = (
         isinstance(evidence["state_transition_id"], str)
         and is_public_id("domain_event", evidence["state_transition_id"])
@@ -402,6 +423,20 @@ def _validate_evidence(
         {"commit_sha", "build_id"},
         "commit_build_locator",
     )
+    if evidence["actor"] != {"type": "SYSTEM", "id": "alembic:0017"}:
+        _block("ambiguous scheduler initialization actor", deployment)
+    if evidence["system"] != {"service": "alembic", "instance_id": "0017"}:
+        _block("ambiguous scheduler initialization system", deployment)
+    if evidence["commit_build_locator"] != {
+        "commit_sha": "migration-0017",
+        "build_id": "alembic-0017",
+    }:
+        _block("ambiguous scheduler initialization build locator", deployment)
+    canonical_audit = dict(audit)
+    canonical_audit.pop("event_hash", None)
+    canonical_audit["occurred_at"] = initialization
+    if audit.get("event_hash") != _hash(canonical_audit):
+        _block("ambiguous scheduler initialization audit hash", deployment)
     event_filters = [
         domain_events.c.workspace_id == deployment["workspace_id"],
         domain_events.c.event_id == evidence["state_transition_id"],
@@ -598,11 +633,24 @@ def _validate_baselines(bind: Connection) -> None:
         )
 
 
-def _next_sequence(table: Table, bind: Connection, workspace_id: Any) -> int:
+def _next_sequence(
+    table: Table,
+    bind: Connection,
+    workspace_id: Any,
+    watermarks: Table | None = None,
+) -> int:
     values = bind.execute(
         select(table.c.sequence).where(table.c.workspace_id == workspace_id)
     ).scalars()
-    return max((int(value) for value in values), default=0) + 1
+    current = max((int(value) for value in values), default=0)
+    if watermarks is not None:
+        watermark = bind.execute(
+            select(watermarks.c.last_sequence).where(
+                watermarks.c.workspace_id == workspace_id
+            )
+        ).scalar_one_or_none()
+        current = max(current, int(watermark or 0))
+    return current + 1
 
 
 def _previous_audit_hash(
@@ -628,7 +676,6 @@ def _hash(value: Mapping[str, Any]) -> str:
 
 def _insert_baseline(
     bind: Connection,
-    deployments: Table,
     states: Table,
     audit_events: Table,
     domain_events: Table,
@@ -679,7 +726,9 @@ def _insert_baseline(
     state_values = {key: value for key, value in state.items() if key in states.c}
     bind.execute(states.insert().values(**state_values))
 
-    domain_event_sequence = _next_sequence(domain_events, bind, workspace_id)
+    domain_event_sequence = _next_sequence(
+        domain_events, bind, workspace_id, event_stream_watermarks
+    )
     state_transition_id = f"EVT-{uuid.uuid4()}"
     evidence = {
         "state_transition_id": state_transition_id,
@@ -843,7 +892,6 @@ def _initialize_missing_baselines(bind: Connection) -> None:
             deployment_mapping["status"] = "DISABLED"
         _insert_baseline(
             bind,
-            deployments,
             states,
             audit_events,
             domain_events,

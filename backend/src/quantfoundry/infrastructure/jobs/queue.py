@@ -492,7 +492,12 @@ def reap_expired_jobs(
     rows = session.execute(statement.with_for_update(skip_locked=True)).scalars().all()
     retried = failed = 0
     for row in rows:
-        safe_retry = bool(row.retry_safe and row.attempt < row.max_attempts)
+        cancellation_requested = row.cancel_requested_at is not None
+        safe_retry = bool(
+            not cancellation_requested
+            and row.retry_safe
+            and row.attempt < row.max_attempts
+        )
         expired_owner = row.lease_owner
         expired_at = row.lease_expires_at
         expired_heartbeat = row.heartbeat_at
@@ -502,21 +507,35 @@ def reap_expired_jobs(
             if safe_retry and row.job_type == "PAPER_DAILY_RUN"
             else None
         )
-        if not safe_retry and row.job_type != "PAPER_DAILY_RUN":
+        if (
+            not safe_retry
+            and not cancellation_requested
+            and row.job_type != "PAPER_DAILY_RUN"
+        ):
             from quantfoundry.agents.runtime.runtime import fail_agent_run
             from quantfoundry.application.jobs.effects import apply_job_failure
 
             if row.queue_name == "agent":
                 fail_agent_run(session, row, LostLease("worker lease expired"))
             apply_job_failure(session, row)
-        row.status = "QUEUED" if safe_retry else "FAILED"
+        row.status = (
+            "CANCELLED"
+            if cancellation_requested
+            else "QUEUED"
+            if safe_retry
+            else "FAILED"
+        )
         row.error_code = (
-            "JOB_LEASE_LOST"
+            "JOB_CANCELLED"
+            if cancellation_requested
+            else "JOB_LEASE_LOST"
             if row.job_type == "PAPER_DAILY_RUN" or not safe_retry
             else None
         )
         row.error_detail = (
-            "lease expired; retry scheduled"
+            "lease expired after cancellation request"
+            if cancellation_requested
+            else "lease expired; retry scheduled"
             if safe_retry and row.job_type == "PAPER_DAILY_RUN"
             else None
             if safe_retry

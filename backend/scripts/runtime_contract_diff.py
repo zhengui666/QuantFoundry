@@ -92,23 +92,32 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
         result[key] = normalized_schema(document, value)
     branches = result.get("allOf")
     if isinstance(branches, list) and all(
-        isinstance(branch, dict)
-        and not any(key in branch for key in ("if", "then", "else", "oneOf", "anyOf"))
-        for branch in branches
+        isinstance(branch, dict) for branch in branches
     ):
-        result.pop("allOf")
-        properties = dict(result.pop("properties", {}))
-        required = list(result.pop("required", []))
-        for branch in branches:
-            properties.update(branch.get("properties", {}))
-            required.extend(branch.get("required", []))
-            for key, item in branch.items():
-                if key not in {"properties", "required"}:
-                    result[key] = item
-        if properties:
-            result["properties"] = properties
-        if required:
-            result["required"] = sorted(set(required))
+        branch_property_sets = [
+            set(branch.get("properties", {})) for branch in branches
+        ]
+        disjoint = sum(map(len, branch_property_sets)) == len(
+            set().union(*branch_property_sets)
+        )
+        composition_only = all(
+            set(branch) <= {"properties", "required"} for branch in branches
+        )
+        if disjoint and composition_only:
+            result.pop("allOf")
+            properties = dict(result.pop("properties", {}))
+            required = list(result.pop("required", []))
+            for branch in branches:
+                properties.update(branch.get("properties", {}))
+                required.extend(branch.get("required", []))
+            if properties:
+                result["properties"] = properties
+            if required:
+                result["required"] = sorted(set(required))
+        else:
+            result["allOf"] = sorted(
+                branches, key=lambda item: json.dumps(item, sort_keys=True)
+            )
     if "union" in result:
         string_branches = [
             branch
@@ -166,7 +175,7 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
         result.pop("type", None)
     if "const" in result:
         result.pop("type", None)
-    if "required" in result:
+    if isinstance(result.get("required"), list):
         result["required"] = sorted(result["required"])
     if result.get("format") in {"int32", "int64"}:
         result.pop("format")
@@ -179,12 +188,21 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
 
 
 def normalized_parameters(
-    document: dict[str, Any], operation: dict[str, Any]
+    document: dict[str, Any],
+    operation: dict[str, Any],
+    path_item: dict[str, Any] | None = None,
 ) -> list[Any]:
     values = []
+    effective: dict[tuple[str, str], Any] = {}
+    for raw in (path_item or {}).get("parameters", []):
+        parameter = resolve(document, raw)
+        effective[(parameter["name"], parameter["in"])] = parameter
     for raw in operation.get("parameters", []):
         parameter = resolve(document, raw)
-        schema = normalized_schema(document, parameter["schema"])
+        effective[(parameter["name"], parameter["in"])] = parameter
+    for parameter in effective.values():
+        location = parameter["in"]
+        schema = normalized_schema(document, parameter.get("schema"))
         if not parameter.get("required", False) and isinstance(schema, dict):
             non_null = [
                 branch
@@ -195,10 +213,33 @@ def normalized_parameters(
                 schema = non_null[0]
         values.append(
             (
-                parameter["in"],
-                parameter["name"].lower(),
+                location,
+                parameter["name"].lower()
+                if location == "header"
+                else parameter["name"],
                 parameter.get("required", False),
+                parameter.get(
+                    "style", "simple" if location in {"path", "header"} else "form"
+                ),
+                parameter.get(
+                    "explode",
+                    parameter.get(
+                        "style", "simple" if location in {"path", "header"} else "form"
+                    )
+                    == "form",
+                ),
+                parameter.get("allowReserved", False),
+                parameter.get("allowEmptyValue", False),
                 schema,
+                tuple(
+                    sorted(
+                        (
+                            media_type,
+                            normalized_schema(document, media.get("schema")),
+                        )
+                        for media_type, media in parameter.get("content", {}).items()
+                    )
+                ),
             )
         )
     return sorted(values, key=lambda value: (value[0], value[1]))
@@ -211,7 +252,7 @@ def normalized_security(value: Any) -> Any:
 
 
 errors: list[str] = []
-methods = {"get", "post", "put", "patch", "delete"}
+methods = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 canonical_operations = {
     (path, method): operation
     for path, path_item in canonical["paths"].items()
@@ -234,24 +275,24 @@ for key, expected in canonical_operations.items():
     label = f"{key[1].upper()} {key[0]}"
     if actual.get("operationId") != expected.get("operationId"):
         errors.append(f"{label}: operationId")
-    if normalized_parameters(canonical, expected) != normalized_parameters(
-        runtime, actual
-    ):
+    if normalized_parameters(
+        canonical, expected, canonical["paths"][key[0]]
+    ) != normalized_parameters(runtime, actual, runtime["paths"][key[0]]):
         errors.append(f"{label}: parameters")
-    expected_body = (
-        expected.get("requestBody", {})
-        .get("content", {})
-        .get("application/json", {})
-        .get("schema")
-    )
-    actual_body = (
-        actual.get("requestBody", {})
-        .get("content", {})
-        .get("application/json", {})
-        .get("schema")
-    )
-    if expected_body != actual_body:
-        errors.append(f"{label}: request body schema")
+    expected_request = resolve(canonical, expected.get("requestBody", {}))
+    actual_request = resolve(runtime, actual.get("requestBody", {}))
+    if expected_request.get("required", False) != actual_request.get("required", False):
+        errors.append(f"{label}: request body required")
+    expected_content = expected_request.get("content", {})
+    actual_content = actual_request.get("content", {})
+    if set(expected_content) != set(actual_content):
+        errors.append(f"{label}: request body content types")
+    for media_type, expected_media in expected_content.items():
+        actual_media = actual_content.get(media_type, {})
+        if normalized_schema(
+            canonical, expected_media.get("schema")
+        ) != normalized_schema(runtime, actual_media.get("schema")):
+            errors.append(f"{label}: request body {media_type} schema")
     if set(expected["responses"]) != set(actual["responses"]):
         errors.append(f"{label}: response statuses")
     for status, raw_expected_response in expected["responses"].items():
@@ -261,13 +302,21 @@ for key, expected in canonical_operations.items():
             actual_response.get("content", {})
         ):
             errors.append(f"{label}: response {status} content types")
-        if {name.lower() for name in expected_response.get("headers", {})} != {
-            name.lower() for name in actual_response.get("headers", {})
-        }:
+        expected_headers = {
+            name.lower(): normalized_schema(canonical, resolve(canonical, header))
+            for name, header in expected_response.get("headers", {}).items()
+        }
+        actual_headers = {
+            name.lower(): normalized_schema(runtime, resolve(runtime, header))
+            for name, header in actual_response.get("headers", {}).items()
+        }
+        if expected_headers != actual_headers:
             errors.append(f"{label}: response {status} headers")
         for media_type, expected_media in expected_response.get("content", {}).items():
             actual_media = actual_response.get("content", {}).get(media_type, {})
-            if expected_media.get("schema") != actual_media.get("schema"):
+            if normalized_schema(
+                canonical, expected_media.get("schema")
+            ) != normalized_schema(runtime, actual_media.get("schema")):
                 errors.append(f"{label}: response {status} {media_type} schema")
     expected_security = expected.get("security", canonical.get("security"))
     actual_security = actual.get("security", runtime.get("security"))
@@ -284,17 +333,32 @@ for schema_name, canonical_schema in canonical_schemas.items():
         errors.append(f"component schema differs: {schema_name}")
 
 expected_operation_count = canonical["info"]["x-quantfoundry-operation-count"]
-expected_error_count = len(canonical_schemas["CanonicalErrorCode"]["enum"])
-expected_schema_count = len(canonical_schemas)
+expected_error_count = canonical["info"]["x-quantfoundry-error-count"]
+expected_schema_count = canonical["info"]["x-quantfoundry-schema-count"]
 if expected_operation_count != len(canonical_operations):
     errors.append("canonical operation metadata differs from canonical paths")
-if expected_error_count != len(canonical_schemas["CanonicalErrorCode"]["enum"]):
+canonical_error_schema = canonical_schemas.get("CanonicalErrorCode")
+canonical_error_enum = (
+    canonical_error_schema.get("enum")
+    if isinstance(canonical_error_schema, dict)
+    else None
+)
+if not isinstance(canonical_error_enum, list):
+    errors.append("canonical error enum is missing or malformed")
+elif expected_error_count != len(canonical_error_enum):
     errors.append("canonical error metadata differs from canonical enum")
 if expected_schema_count != len(canonical_schemas):
     errors.append("canonical schema metadata differs from canonical components")
 if len(runtime_schemas) != expected_schema_count:
     errors.append("runtime schema count differs from canonical")
-if len(runtime_schemas["CanonicalErrorCode"]["enum"]) != expected_error_count:
+runtime_error_schema = runtime_schemas.get("CanonicalErrorCode")
+runtime_error_enum = (
+    runtime_error_schema.get("enum") if isinstance(runtime_error_schema, dict) else None
+)
+if (
+    not isinstance(runtime_error_enum, list)
+    or len(runtime_error_enum) != expected_error_count
+):
     errors.append("runtime canonical error count differs from canonical")
 if len(runtime_operations) != expected_operation_count:
     errors.append("runtime operation count differs from canonical metadata")

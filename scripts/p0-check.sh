@@ -43,6 +43,8 @@ expected_commit = os.environ["QF_RELEASE_COMMIT"]
 repo_root = pathlib.Path(os.environ["QF_RELEASE_REPO_ROOT"])
 sha_pattern = re.compile(r"^[0-9a-f]{40}$")
 sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
+MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
+MAX_REPORT_BYTES = 8 * 1024 * 1024
 github_build_pattern = re.compile(r"^github-actions/([1-9][0-9]*)$")
 repository_pattern = re.compile(r"^[^/\s]+/[^/\s]+$")
 placeholder_pattern = re.compile(r"(?i)^(?:placeholder|codeowners|todo|tbd|example|n/?a|unknown)$")
@@ -84,7 +86,7 @@ def commit_is_ancestor(verification_commit, release_commit):
 
 
 def valid_timestamp(value):
-    if invalid_value(value) or not value.endswith("Z"):
+    if invalid_value(value) or "T" not in value or not value.endswith("Z"):
         return False
     try:
         dt.datetime.fromisoformat(value[:-1] + "+00:00")
@@ -194,13 +196,22 @@ class RemoteVerifier:
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
             completed = subprocess.run(
-                ["gh", "api", endpoint, "--method", "GET"],
+                [
+                    "gh",
+                    "api",
+                    endpoint,
+                    "--method",
+                    "GET",
+                    *(["--header", "Accept: application/octet-stream"] if "/releases/assets/" in endpoint else []),
+                ],
                 env=self.env,
                 stdout=destination.open("wb"),
                 stderr=subprocess.PIPE,
             )
             if completed.returncode:
                 raise RuntimeError(f"gh api download failed for {endpoint}: {completed.stderr.decode(errors='replace').strip() or completed.returncode}")
+            if destination.stat().st_size > MAX_EVIDENCE_BYTES:
+                raise RuntimeError("downloaded evidence exceeds the size limit")
             try:
                 return destination.read_bytes()
             except OSError as error:
@@ -274,6 +285,8 @@ def read_embedded_report(blob, report_path, expected_sha256):
             matches = [member for member in archive.infolist() if member.filename == report_path and not member.is_dir()]
             if len(matches) != 1:
                 raise RuntimeError("evidence ZIP must contain exactly one declared report_path")
+            if matches[0].file_size > MAX_REPORT_BYTES:
+                raise RuntimeError("embedded evidence report exceeds the size limit")
             payload = archive.read(matches[0])
     except (OSError, zipfile.BadZipFile) as error:
         raise RuntimeError(f"evidence object is not a readable ZIP: {error}") from error
@@ -281,7 +294,7 @@ def read_embedded_report(blob, report_path, expected_sha256):
         raise RuntimeError("embedded evidence report SHA-256 does not match registry")
     try:
         report = json.loads(payload)
-    except json.JSONDecodeError as error:
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise RuntimeError(f"embedded evidence report is not JSON: {error}") from error
     if not isinstance(report, dict):
         raise RuntimeError("embedded evidence report must be a JSON object")
@@ -402,7 +415,7 @@ def validate_closed_evidence(blocker_id, item, remote):
 
 try:
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
-except (OSError, yaml.YAMLError) as error:
+except (OSError, UnicodeError, yaml.YAMLError) as error:
     print(json.dumps({"registry": str(registry_path), "result": "invalid", "error": str(error)}, ensure_ascii=False))
     raise SystemExit(2)
 

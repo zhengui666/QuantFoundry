@@ -10,8 +10,16 @@ docker compose --profile local --env-file "$environment_file" \
   up --build --detach --wait \
   local-provider api
 
-docker compose --profile local --env-file "$environment_file" run --rm --no-deps api \
-  python /workspace/scripts/bootstrap-general-key.py --label "$key_label"
+if docker compose --profile local --env-file "$environment_file" run --rm --no-deps api \
+  python /workspace/scripts/bootstrap-general-key.py --check; then
+  docker compose --profile local --env-file "$environment_file" run --rm --no-deps api \
+    python /workspace/scripts/bootstrap-general-key.py --label "$key_label"
+else
+  check_status="$?"
+  if [[ "$check_status" != 3 ]]; then
+    exit "$check_status"
+  fi
+fi
 
 # Workers must start after the first domain binding is activated.  Full-stack
 # CI activates that binding after this script returns, so it explicitly

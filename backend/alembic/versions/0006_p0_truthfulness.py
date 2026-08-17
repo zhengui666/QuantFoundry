@@ -153,6 +153,14 @@ def _replace_strategy_guard() -> None:
               ) THEN
                 RAISE EXCEPTION 'frozen strategy specification is immutable';
               END IF;
+              IF OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
+                   NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.detail IS DISTINCT FROM OLD.detail
+              ) THEN
+                RAISE EXCEPTION 'candidate strategy evidence must be append-only';
+              END IF;
               IF NOT (
                    NEW.state = OLD.state OR
                    (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
@@ -179,6 +187,7 @@ def _replace_strategy_guard() -> None:
         return
     for action in ("update", "delete"):
         op.execute(f"DROP TRIGGER IF EXISTS qf_strategy_versions_{action}_immutable")
+    op.execute("DROP TRIGGER IF EXISTS qf_strategy_versions_freeze_immutable")
     op.execute(
         """
         CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE
@@ -192,9 +201,13 @@ def _replace_strategy_guard() -> None:
         ON strategy_versions WHEN
           ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
              NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR
-             NEW.spec_sha256 != OLD.spec_sha256 OR NEW.frozen_at != OLD.frozen_at OR
+             NEW.spec_sha256 != OLD.spec_sha256 OR
+             (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
              COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR
              (NEW.state = OLD.state AND NEW.detail != OLD.detail)
+          )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
+             NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
+             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail
           )) OR NOT (
              NEW.state = OLD.state OR
              (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR

@@ -85,7 +85,7 @@ printf '%s\n' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"106fe374a92e902b4f0e119533680b51a640822d\"}\n"; exit 0; fi' \
-  'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then if [[ -n "$output" ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; else cat "$QF_REVIEW_MOCK_ARCHIVE"; fi; exit 0; fi' \
   'exit 1' > "$mock_gh"
 chmod +x "$mock_gh"
@@ -98,6 +98,24 @@ run_verifier() {
   local workflow_path="${5:-.github/workflows/independent-agent-review.yml@refs/heads/main}"
   env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" QF_REVIEW_MOCK_STATUS="$status" QF_REVIEW_MOCK_CONCLUSION="$conclusion" QF_REVIEW_MOCK_PATH="$workflow_path" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
 }
+
+python3 - "$fixture_dir/positive.json" "$fixture_dir/positive-attestation.json" "$commit_sha" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+locator, attestation, commit = map(pathlib.Path, sys.argv[1:])
+attestation.write_text(json.dumps({
+    "schema_version": "1.0.0",
+    "commit": str(commit),
+    "locator_sha256": hashlib.sha256(locator.read_bytes()).hexdigest(),
+    "result": "verified",
+}), encoding="utf-8")
+PY
+
+env QF_INDEPENDENT_REVIEW_OFFLINE=1 QF_INDEPENDENT_REVIEW_ATTESTATION="$fixture_dir/positive-attestation.json" \
+  "$repo_root/scripts/ci/verify-independent-review-report.sh" "$fixture_dir/positive.json" "$commit_sha"
 
 run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip"
 if run_verifier "$fixture_dir/wrong-content-commit.json" "$fixture_dir/wrong-content-commit.zip" >/dev/null 2>&1; then

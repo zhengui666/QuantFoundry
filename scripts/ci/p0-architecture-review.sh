@@ -31,13 +31,32 @@ if [[ -e "$legacy_component" ]]; then
   exit 1
 fi
 
-legacy_imports="$(
-  /usr/bin/grep -R -n -E '^(from|import) app(\.| import)' "$repo_root/backend/src/quantfoundry" || true
-)"
-if [[ -n "$legacy_imports" ]]; then
-  printf '%s\n' 'canonical backend must not import legacy app modules' >&2
-  printf '%s\n' "$legacy_imports" >&2
-  exit 1
-fi
+python3 - "$repo_root/backend/src/quantfoundry" <<'PY'
+import ast
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+violations = []
+for path in root.rglob("*.py"):
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError) as error:
+        raise SystemExit(f"cannot parse {path}: {error}") from error
+    for node in ast.walk(tree):
+        module = None
+        if isinstance(node, ast.ImportFrom) and node.level == 0:
+            module = node.module or ""
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "app" or alias.name.startswith("app."):
+                    violations.append(f"{path}:{node.lineno}: import {alias.name}")
+        if module == "app" or module.startswith("app."):
+            violations.append(f"{path}:{node.lineno}: from {module} import ...")
+if violations:
+    print("canonical backend must not import legacy app modules", file=sys.stderr)
+    print("\n".join(violations), file=sys.stderr)
+    raise SystemExit(1)
+PY
 
 printf '%s\n' '{"gate":"p0-architecture-review","result":"pass"}'

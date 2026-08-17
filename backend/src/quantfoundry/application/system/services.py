@@ -42,7 +42,7 @@ def _database_state(session: Session, required_tables: set[str]) -> str:
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
         return "HEALTHY" if current == _alembic_head() else "DEGRADED"
-    except (CommandError, SQLAlchemyError, OSError, ValueError):
+    except CommandError, SQLAlchemyError, OSError, ValueError:
         return "UNAVAILABLE"
 
 
@@ -114,7 +114,7 @@ def _artifact_state() -> str:
             <= now + timedelta(seconds=30)
             else "DEGRADED"
         )
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except OSError, ValueError, KeyError, TypeError, json.JSONDecodeError:
         return "UNAVAILABLE"
 
 

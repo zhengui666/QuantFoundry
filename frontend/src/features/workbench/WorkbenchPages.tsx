@@ -3077,7 +3077,8 @@ export function ApprovalPage() {
               successSignal={decide.isSuccess ? decide.submittedAt : 0}
               onBeforeOpen={async () => {
                 setDecisionError(undefined);
-                await query.refetch();
+                const refreshed = await query.refetch();
+                if (refreshed.error) throw refreshed.error;
               }}
               onConfirm={() => makeDecision('approve')}
             >
@@ -3095,7 +3096,8 @@ export function ApprovalPage() {
               successSignal={decide.isSuccess ? decide.submittedAt : 0}
               onBeforeOpen={async () => {
                 setDecisionError(undefined);
-                await query.refetch();
+                const refreshed = await query.refetch();
+                if (refreshed.error) throw refreshed.error;
               }}
               confirmDisabled={!reason.trim()}
               onConfirm={() => makeDecision('reject')}
@@ -3141,82 +3143,93 @@ function DecisionDialog({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [openError, setOpenError] = useState<unknown>();
   useEffect(() => {
     if (successSignal > 0) setOpen(false);
   }, [successSignal]);
   if (item.visibility === 'HIDE') return null;
-  if (!item.requires_confirmation)
+  if (!item.requires_confirmation && !confirmDisabled)
     return <Capability item={item} label={label} busy={busy} onClick={onConfirm} />;
   return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          setOpen(false);
-          return;
-        }
-        setRefreshing(true);
-        void onBeforeOpen().then(() => {
-          setRefreshing(false);
-          setOpen(true);
-        });
-      }}
-    >
-      <Dialog.Trigger asChild>
-        <Capability
-          item={item}
-          label={label}
-          busy={busy || refreshing}
-          confirmationHandled
-          onClick={() => undefined}
-        />
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="decision-dialog" aria-describedby={undefined}>
-          <Dialog.Title>{title}</Dialog.Title>
-          <dl className="definition">
-            <dt>{t('approval.subjectId')}</dt>
-            <dd>{detail.subject.id}</dd>
-            <dt>{t('approval.versionRevision')}</dt>
-            <dd>
-              {detail.subject.version ?? '—'} / {detail.subject.revision}
-            </dd>
-            <dt>{t('approval.approvalRevision')}</dt>
-            <dd>{detail.revision}</dd>
-            <dt>{t('approval.subjectHash')}</dt>
-            <dd>
-              <code>{detail.subject.sha256}</code>
-            </dd>
-          </dl>
-          <h3>{t('approval.effects')}</h3>
-          {detail.effects.map((effect) => (
-            <p key={effect.code}>
-              <strong>{effect.code}</strong> {effect.detail}
-            </p>
-          ))}
-          <h3>{t('approval.prerequisites')}</h3>
-          {detail.prerequisites.map((prerequisite) => (
-            <p key={prerequisite.key}>
-              <Badge>{prerequisite.state}</Badge> <strong>{prerequisite.key}</strong>{' '}
-              {prerequisite.detail}
-            </p>
-          ))}
-          {children}
-          {error !== undefined && <Problem error={error} />}
-          <button
-            data-testid={`capability-confirm-${item.action}`}
-            onClick={onConfirm}
-            disabled={busy || confirmDisabled || !item.allowed}
-          >
-            {busy ? t('common.saving') : t('approval.confirmVersioned')}
-          </button>
-          <Dialog.Close asChild>
-            <button className="secondary">{t('common.cancel')}</button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <>
+      <Dialog.Root
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setOpen(false);
+            return;
+          }
+          setOpenError(undefined);
+          setRefreshing(true);
+          void onBeforeOpen()
+            .then(() => {
+              setRefreshing(false);
+              setOpen(true);
+            })
+            .catch((error) => {
+              setRefreshing(false);
+              setOpen(false);
+              setOpenError(error);
+            });
+        }}
+      >
+        <Dialog.Trigger asChild>
+          <Capability
+            item={item}
+            label={label}
+            busy={busy || refreshing}
+            confirmationHandled
+            onClick={() => undefined}
+          />
+        </Dialog.Trigger>
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="decision-dialog" aria-describedby={undefined}>
+            <Dialog.Title>{title}</Dialog.Title>
+            <dl className="definition">
+              <dt>{t('approval.subjectId')}</dt>
+              <dd>{detail.subject.id}</dd>
+              <dt>{t('approval.versionRevision')}</dt>
+              <dd>
+                {detail.subject.version ?? '—'} / {detail.subject.revision}
+              </dd>
+              <dt>{t('approval.approvalRevision')}</dt>
+              <dd>{detail.revision}</dd>
+              <dt>{t('approval.subjectHash')}</dt>
+              <dd>
+                <code>{detail.subject.sha256}</code>
+              </dd>
+            </dl>
+            <h3>{t('approval.effects')}</h3>
+            {detail.effects.map((effect) => (
+              <p key={effect.code}>
+                <strong>{effect.code}</strong> {effect.detail}
+              </p>
+            ))}
+            <h3>{t('approval.prerequisites')}</h3>
+            {detail.prerequisites.map((prerequisite) => (
+              <p key={prerequisite.key}>
+                <Badge>{prerequisite.state}</Badge> <strong>{prerequisite.key}</strong>{' '}
+                {prerequisite.detail}
+              </p>
+            ))}
+            {children}
+            {error !== undefined && <Problem error={error} />}
+            <button
+              data-testid={`capability-confirm-${item.action}`}
+              onClick={onConfirm}
+              disabled={busy || confirmDisabled || !item.allowed}
+            >
+              {busy ? t('common.saving') : t('approval.confirmVersioned')}
+            </button>
+            <Dialog.Close asChild>
+              <button className="secondary">{t('common.cancel')}</button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      {openError !== undefined && <Problem error={openError} />}
+    </>
   );
 }
 

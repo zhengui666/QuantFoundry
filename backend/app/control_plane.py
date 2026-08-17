@@ -13,6 +13,7 @@ import tempfile
 import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -103,6 +104,15 @@ PH = PasswordHasher()
 DUMMY_VERIFIER = PH.hash("quantfoundry-invalid-access-key")
 CONTROL_METADATA = MetaData()
 _DOMAIN_SWITCH_LOCK = RLock()
+_IDEMPOTENCY_SESSION: ContextVar[Session | None] = ContextVar(
+    "qf_idempotency_session", default=None
+)
+_IDEMPOTENCY_POST_COMMIT: ContextVar[list[Callable[[], None]] | None] = ContextVar(
+    "qf_idempotency_post_commit", default=None
+)
+_IDEMPOTENCY_ROLLBACK: ContextVar[list[Callable[[], None]] | None] = ContextVar(
+    "qf_idempotency_rollback", default=None
+)
 
 
 def _serialize_domain_switch(function):
@@ -314,6 +324,16 @@ CONTROL_ENGINE = _engine()
 ControlSessionLocal = sessionmaker(bind=CONTROL_ENGINE, expire_on_commit=False)
 
 
+@contextmanager
+def _control_transaction():
+    session = _IDEMPOTENCY_SESSION.get()
+    if session is not None:
+        yield session
+        return
+    with ControlSessionLocal.begin() as session:
+        yield session
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -377,14 +397,48 @@ def _encode_idempotent_result(
     return status, jsonable_encoder(result), headers
 
 
+def _idempotency_aad(record: ControlIdempotencyRecord) -> bytes:
+    return f"qf-idempotency:{record.principal}:{record.operation}:{record.idempotency_key}".encode()
+
+
+def _protect_idempotent_body(record: ControlIdempotencyRecord, body: Any) -> Any:
+    if not isinstance(body, dict) or not isinstance(body.get("secret"), str):
+        return body
+    envelope, key_id = _seal(
+        json.dumps(body, sort_keys=True, separators=(",", ":")),
+        aad=_idempotency_aad(record),
+    )
+    return {
+        "__qf_encrypted_response__": base64.b64encode(envelope).decode(),
+        "key_id": key_id,
+    }
+
+
 def _replay_idempotent(record: ControlIdempotencyRecord) -> Response:
     if record.response_status == 204 or record.response_body is None:
         return Response(
             status_code=record.response_status or 200,
             headers=record.response_headers or {},
         )
+    body = record.response_body
+    if isinstance(body, dict) and "__qf_encrypted_response__" in body:
+        try:
+            envelope = base64.b64decode(body["__qf_encrypted_response__"])
+            body = json.loads(
+                _open(
+                    envelope,
+                    aad=_idempotency_aad(record),
+                    key_id=body.get("key_id"),
+                )
+            )
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+            return _problem(
+                409,
+                "IDEMPOTENCY_RESPONSE_UNAVAILABLE",
+                "idempotent response encryption key is unavailable",
+            )
     return JSONResponse(
-        content=record.response_body,
+        content=body,
         status_code=record.response_status or 200,
         headers=record.response_headers or {},
     )
@@ -405,8 +459,41 @@ def _with_idempotency(operation: str, success_status: int = 200):
                 else str(getattr(request.state, "actor", None) or "anonymous")
             )
             fingerprint = _idempotency_fingerprint(kwargs)
-            now = _now()
-            with ControlSessionLocal.begin() as db:
+
+            def run(db: Session) -> Any:
+                now = _now()
+                values = {
+                    "principal": principal,
+                    "operation": operation,
+                    "idempotency_key": key,
+                    "request_sha256": fingerprint,
+                    "status": "PENDING",
+                    "created_at": now,
+                    "lease_expires_at": now + timedelta(minutes=5),
+                }
+                dialect = db.get_bind().dialect.name
+                if dialect == "sqlite":
+                    from sqlalchemy.dialects.sqlite import insert as dialect_insert
+                elif dialect == "postgresql":
+                    from sqlalchemy.dialects.postgresql import insert as dialect_insert
+                else:
+                    raise RuntimeError(
+                        f"unsupported control database dialect: {dialect}"
+                    )
+                claimed = (
+                    db.execute(
+                        dialect_insert(ControlIdempotencyRecord)
+                        .values(**values)
+                        .on_conflict_do_nothing(
+                            index_elements=[
+                                ControlIdempotencyRecord.principal,
+                                ControlIdempotencyRecord.operation,
+                                ControlIdempotencyRecord.idempotency_key,
+                            ]
+                        )
+                    ).rowcount
+                    == 1
+                )
                 record = db.scalar(
                     select(ControlIdempotencyRecord)
                     .where(
@@ -416,7 +503,9 @@ def _with_idempotency(operation: str, success_status: int = 200):
                     )
                     .with_for_update()
                 )
-                if record is not None:
+                if record is None:
+                    raise RuntimeError("idempotency record claim disappeared")
+                if not claimed:
                     if record.request_sha256 != fingerprint:
                         return _problem(
                             409,
@@ -434,49 +523,50 @@ def _with_idempotency(operation: str, success_status: int = 200):
                         )
                     record.status = "PENDING"
                     record.lease_expires_at = now + timedelta(minutes=5)
-                else:
-                    record = ControlIdempotencyRecord(
-                        principal=principal,
-                        operation=operation,
-                        idempotency_key=key,
-                        request_sha256=fingerprint,
-                        status="PENDING",
-                        created_at=now,
-                        lease_expires_at=now + timedelta(minutes=5),
+                try:
+                    result = function(*args, **kwargs)
+                    status, body, headers = _encode_idempotent_result(
+                        result, success_status
                     )
-                    db.add(record)
+                    record.status = "COMPLETED"
+                    record.response_status = status
+                    record.response_body = _protect_idempotent_body(record, body)
+                    record.response_headers = headers
+                    record.completed_at = _now()
+                    record.lease_expires_at = record.completed_at
+                    return result
+                except Exception:
+                    record.status = "ABANDONED"
+                    record.lease_expires_at = _now()
+                    raise
+
+            session = _IDEMPOTENCY_SESSION.get()
+            if session is not None:
+                return run(session)
+            post_commit: list[Callable[[], None]] = []
+            rollback: list[Callable[[], None]] = []
+            post_token = _IDEMPOTENCY_POST_COMMIT.set(post_commit)
+            rollback_token = _IDEMPOTENCY_ROLLBACK.set(rollback)
+            committed = False
             try:
-                result = function(*args, **kwargs)
-            except Exception:
                 with ControlSessionLocal.begin() as db:
-                    failed = db.scalar(
-                        select(ControlIdempotencyRecord).where(
-                            ControlIdempotencyRecord.principal == principal,
-                            ControlIdempotencyRecord.operation == operation,
-                            ControlIdempotencyRecord.idempotency_key == key,
-                        )
-                    )
-                    if failed is not None:
-                        failed.status = "ABANDONED"
-                        failed.lease_expires_at = _now()
+                    token = _IDEMPOTENCY_SESSION.set(db)
+                    try:
+                        result = run(db)
+                    finally:
+                        _IDEMPOTENCY_SESSION.reset(token)
+                committed = True
+                for callback in post_commit:
+                    callback()
+                return result
+            except Exception:
+                if not committed:
+                    for callback in reversed(rollback):
+                        callback()
                 raise
-            status, body, headers = _encode_idempotent_result(result, success_status)
-            with ControlSessionLocal.begin() as db:
-                completed = db.scalar(
-                    select(ControlIdempotencyRecord).where(
-                        ControlIdempotencyRecord.principal == principal,
-                        ControlIdempotencyRecord.operation == operation,
-                        ControlIdempotencyRecord.idempotency_key == key,
-                    )
-                )
-                if completed is not None:
-                    completed.status = "COMPLETED"
-                    completed.response_status = status
-                    completed.response_body = body
-                    completed.response_headers = headers
-                    completed.completed_at = _now()
-                    completed.lease_expires_at = completed.completed_at
-            return result
+            finally:
+                _IDEMPOTENCY_POST_COMMIT.reset(post_token)
+                _IDEMPOTENCY_ROLLBACK.reset(rollback_token)
 
         return wrapped
 
@@ -837,7 +927,9 @@ def _session_context(request: Request) -> OwnerSession | JSONResponse:
     if not token:
         return _problem(401, "UNAUTHENTICATED", "Authentication required")
     digest = hashlib.sha256(token.encode()).hexdigest()
-    with ControlSessionLocal() as session:
+    existing_session = _IDEMPOTENCY_SESSION.get()
+    session = existing_session or ControlSessionLocal()
+    try:
         row = session.scalar(
             select(OwnerSession).where(OwnerSession.token_sha256 == digest)
         )
@@ -858,10 +950,14 @@ def _session_context(request: Request) -> OwnerSession | JSONResponse:
             return _problem(401, "UNAUTHENTICATED", "Authentication required")
         row.last_seen_at = now
         row.idle_expires_at = min(now + timedelta(hours=12), absolute_expires_at)
-        session.commit()
+        if existing_session is None:
+            session.commit()
         request.state.control_session_id = row.session_id
         request.state.control_key_id = key.key_id
         return row
+    finally:
+        if existing_session is None:
+            session.close()
 
 
 def require_session(request: Request) -> OwnerSession:
@@ -1054,100 +1150,6 @@ def _config_active(session: Session) -> dict[str, Any]:
     }
 
 
-def activate_configuration_revision(
-    revision: int, if_match: str | None
-) -> tuple[dict[str, Any] | JSONResponse, int]:
-    """Activate one validated Control DB revision with a singleton CAS."""
-    with ControlSessionLocal.begin() as db:
-        active = db.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
-        current_revision = active.active_revision if active else 1
-        mismatch = _if_match(if_match, "config", current_revision)
-        if mismatch is not None:
-            return mismatch, current_revision
-        candidate = db.get(ConfigurationRevision, revision)
-        if candidate is None:
-            return _problem(
-                404, "RESOURCE_NOT_FOUND", "configuration revision not found"
-            ), current_revision
-        if (
-            active is not None
-            and active.active_revision == revision
-            and candidate.state == "ACTIVE"
-        ):
-            return _config_active(db), revision
-        if candidate.state != "VALIDATED":
-            return _problem(
-                409, "CONFIGURATION_VALIDATION_FAILED", "candidate is not validated"
-            ), current_revision
-        old_revision = active.active_revision if active else revision
-        if active is None:
-            db.add(
-                ActiveConfiguration(
-                    active_revision=revision,
-                    last_known_good_revision=revision,
-                    updated_at=_now(),
-                )
-            )
-        else:
-            result = db.execute(
-                update(ActiveConfiguration)
-                .where(
-                    ActiveConfiguration.singleton_key == "CONFIGURATION-DEFAULT",
-                    ActiveConfiguration.active_revision == old_revision,
-                )
-                .values(
-                    active_revision=revision,
-                    last_known_good_revision=old_revision,
-                    candidate_revision=None,
-                    updated_at=_now(),
-                )
-            )
-            if result.rowcount != 1:
-                return _problem(
-                    412, "REVISION_MISMATCH", "revision does not match"
-                ), current_revision
-        candidate.state = "ACTIVE"
-        candidate.activated_at = _now()
-        for consumer in sorted(
-            {
-                consumer
-                for row in db.scalars(select(ConfigurationCatalogRow))
-                for consumer in row.consumers
-            }
-        ):
-            state = db.get(ConfigurationConsumerState, consumer)
-            if state is None:
-                db.add(
-                    ConfigurationConsumerState(
-                        consumer=consumer,
-                        desired_revision=revision,
-                        applied_revision=None,
-                        ack="PENDING",
-                        heartbeat_at=_now(),
-                        instance_id="control-plane",
-                        build_sha="0" * 64,
-                    )
-                )
-            else:
-                state.desired_revision = revision
-                state.ack = "PENDING"
-                state.error_code = None
-                state.heartbeat_at = _now()
-        bootstrap = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
-        if bootstrap is not None:
-            bootstrap.active_configuration_revision = revision
-            bootstrap.last_known_good_configuration_revision = old_revision
-            bootstrap.updated_at = _now()
-        _audit(
-            db,
-            "CONFIG_ACTIVATED",
-            None,
-            {"revision": revision},
-            config_revision=revision,
-        )
-        return _config_active(db), revision
-
-
 def active_runtime_snapshot() -> dict[str, Any]:
     """Return the non-secret singleton runtime projection for Agent admission."""
     with ControlSessionLocal() as session:
@@ -1270,7 +1272,7 @@ def _database_secret(row: DomainDatabaseConnectionRevision) -> dict[str, str]:
 
 def _database_url(
     row: DomainDatabaseConnectionRevision, secret: dict[str, str]
-) -> tuple[str, dict[str, Any], str | None]:
+) -> tuple[str, dict[str, Any], list[str]]:
     payload = row.nonsecret_payload
     username = quote(str(payload["username"]), safe="")
     password = quote(str(secret.get("password", "")), safe="")
@@ -1285,7 +1287,7 @@ def _database_url(
             "VERIFY_FULL": "verify-full",
         }[tls_mode],
     }
-    ca_path: str | None = None
+    temp_paths: list[str] = []
     if tls_mode != "DISABLED":
         ca_pem = secret.get("ca_certificate_pem")
         if not ca_pem:
@@ -1294,20 +1296,28 @@ def _database_url(
             mode="w", encoding="utf-8", delete=False
         ) as handle:
             handle.write(ca_pem)
-            ca_path = handle.name
-        connect_args["sslrootcert"] = ca_path
-    return url, connect_args, ca_path
+            temp_paths.append(handle.name)
+        connect_args["sslrootcert"] = temp_paths[-1]
+    client_key = secret.get("client_key_pem")
+    if client_key:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", delete=False
+        ) as handle:
+            handle.write(client_key)
+            temp_paths.append(handle.name)
+        connect_args["sslkey"] = temp_paths[-1]
+    return url, connect_args, temp_paths
 
 
 def _probe_database(
     row: DomainDatabaseConnectionRevision,
 ) -> tuple[list[DatabaseConnectionCheck], str | None]:
     secret = _database_secret(row)
-    ca_path: str | None = None
+    temp_paths: list[str] = []
     probe_engine: Any | None = None
     checks: list[DatabaseConnectionCheck] = []
     try:
-        url, connect_args, ca_path = _database_url(row, secret)
+        url, connect_args, temp_paths = _database_url(row, secret)
         probe_engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
         with probe_engine.connect() as connection:
             checks.append(
@@ -1402,12 +1412,44 @@ def _probe_database(
     finally:
         if probe_engine is not None:
             probe_engine.dispose()
-        if ca_path:
+        for path in temp_paths:
             try:
-                Path(ca_path).unlink(missing_ok=True)
+                Path(path).unlink(missing_ok=True)
             except OSError:
                 pass
     return checks, failure
+
+
+def _dispose_engine(engine: Any) -> None:
+    if engine is None:
+        return
+    paths = list(getattr(engine, "_qf_tls_paths", []))
+    engine.dispose()
+    for path in paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _publish_domain_database(candidate_engine: Any) -> Any:
+    from app import main as domain_main
+    from quantfoundry.api import app as canonical_main
+
+    previous_engine = domain_main.engine
+    candidate_engine._qf_previous_available = bool(  # type: ignore[attr-defined]
+        getattr(domain_main.app.state, "domain_database_available", False)
+    )
+    candidate_engine._qf_previous_canonical_available = bool(  # type: ignore[attr-defined]
+        getattr(canonical_main.app.state, "domain_database_available", False)
+    )
+    domain_main.SessionLocal.configure(bind=candidate_engine)
+    domain_main.engine = candidate_engine
+    domain_main.app.state.domain_database_available = True
+    canonical_main.SessionLocal.configure(bind=candidate_engine)
+    canonical_main.engine = candidate_engine
+    canonical_main.app.state.domain_database_available = True
+    return previous_engine
 
 
 @_serialize_domain_switch
@@ -1416,34 +1458,29 @@ def _rebind_domain_database(
 ) -> tuple[Any, Any]:
     """Switch the domain session factory only after a fresh canary succeeds."""
     secret = _database_secret(row)
-    url, connect_args, ca_path = _database_url(row, secret)
+    url, connect_args, temp_paths = _database_url(row, secret)
     candidate_engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
+    candidate_engine._qf_tls_paths = temp_paths  # type: ignore[attr-defined]
     try:
         with candidate_engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1").scalar_one()
-        from app import main as domain_main
-        from quantfoundry.api import app as canonical_main
+        post_commit = _IDEMPOTENCY_POST_COMMIT.get()
+        if post_commit is not None:
+            rollback = _IDEMPOTENCY_ROLLBACK.get()
 
-        previous_engine = domain_main.engine
-        domain_main.SessionLocal.configure(bind=candidate_engine)
-        domain_main.engine = candidate_engine
-        domain_main.app.state.domain_database_available = True
-        # The worker/scheduler import the canonical module directly while the
-        # compatibility API imports ``app.main``. Keep both bindings in sync
-        # after a control-plane database activation.
-        canonical_main.SessionLocal.configure(bind=candidate_engine)
-        canonical_main.engine = candidate_engine
-        canonical_main.app.state.domain_database_available = True
-        if ca_path:
-            candidate_engine._qf_ca_path = ca_path  # type: ignore[attr-defined]
+            def publish() -> None:
+                previous = _publish_domain_database(candidate_engine)
+                _dispose_engine(previous)
+
+            post_commit.append(publish)
+            if rollback is not None:
+                rollback.append(lambda: _dispose_engine(candidate_engine))
+            return None, candidate_engine
+        previous_engine = _publish_domain_database(candidate_engine)
+        _dispose_engine(previous_engine)
         return previous_engine, candidate_engine
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
-        candidate_engine.dispose()
-        if ca_path:
-            try:
-                Path(ca_path).unlink(missing_ok=True)
-            except OSError:
-                pass
+        _dispose_engine(candidate_engine)
         raise
 
 
@@ -1453,18 +1490,20 @@ def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> Non
     from app import main as domain_main
     from quantfoundry.api import app as canonical_main
 
+    if previous_engine is None:
+        _dispose_engine(candidate_engine)
+        return
     domain_main.SessionLocal.configure(bind=previous_engine)
     domain_main.engine = previous_engine
+    domain_main.app.state.domain_database_available = getattr(
+        candidate_engine, "_qf_previous_available", False
+    )
     canonical_main.SessionLocal.configure(bind=previous_engine)
     canonical_main.engine = previous_engine
-    canonical_main.app.state.domain_database_available = True
-    candidate_engine.dispose()
-    ca_path = getattr(candidate_engine, "_qf_ca_path", None)
-    if ca_path:
-        try:
-            Path(ca_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+    canonical_main.app.state.domain_database_available = getattr(
+        candidate_engine, "_qf_previous_canonical_available", False
+    )
+    _dispose_engine(candidate_engine)
 
 
 def restore_active_domain_database() -> None:
@@ -1818,7 +1857,7 @@ def build_router() -> APIRouter:
         now = _now()
         per_key_salt = secrets.token_bytes(16)
         peppered, pepper_key_id = _peppered_secret(secret, per_key_salt)
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             row = GeneralAccessKey(
                 key_id=key_id,
                 label=data.label,
@@ -1883,26 +1922,31 @@ def build_router() -> APIRouter:
             mismatch = _if_match(if_match, "key", row.revision)
             if mismatch is not None:
                 return mismatch
+            now = _now()
             active = list(
                 db.scalars(
                     select(GeneralAccessKey)
-                    .where(GeneralAccessKey.status == "ACTIVE")
+                    .where(
+                        GeneralAccessKey.status == "ACTIVE",
+                        (GeneralAccessKey.expires_at.is_(None))
+                        | (GeneralAccessKey.expires_at > now),
+                    )
                     .with_for_update()
                 )
             )
-            if row.status == "ACTIVE" and len(active) <= 1:
+            if _key_active(row, now) and len(active) <= 1:
                 return _problem(
                     409,
                     "LAST_ACTIVE_KEY_REQUIRED",
                     "at least one active key is required",
                 )
             row.status = status
-            row.revoked_at = _now()
+            row.revoked_at = now
             row.revision += 1
             db.query(OwnerSession).filter(
                 OwnerSession.access_key_id == row.key_id,
                 OwnerSession.revoked_at.is_(None),
-            ).update({"revoked_at": _now(), "revoke_reason": status})
+            ).update({"revoked_at": now, "revoke_reason": status})
             _audit(
                 db,
                 "KEY_REVOKED" if status == "REVOKED" else "KEY_EXPIRED",
@@ -1954,7 +1998,7 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             old = db.get(GeneralAccessKey, key_id)
             if old is None:
                 return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
@@ -2037,7 +2081,7 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             active = db.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
             mismatch = _if_match(
                 if_match, "config", active.active_revision if active else 1
@@ -2146,7 +2190,7 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             candidate = db.scalar(
                 select(ConfigurationRevision)
                 .where(ConfigurationRevision.state == "CANDIDATE")
@@ -2257,7 +2301,7 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             active = db.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
             mismatch = _if_match(
                 if_match, "config", active.active_revision if active else 1
@@ -2276,6 +2320,13 @@ def build_router() -> APIRouter:
             if candidate is None or candidate.state != "VALIDATED":
                 return _problem(
                     409, "CONFIGURATION_VALIDATION_FAILED", "candidate is not validated"
+                )
+            expected_base = active.active_revision if active else 1
+            if candidate.base_revision != expected_base:
+                return _problem(
+                    412,
+                    "REVISION_MISMATCH",
+                    "candidate base revision does not match active configuration",
                 )
             old = active.active_revision if active else candidate.revision
             if active is None:
@@ -2301,6 +2352,10 @@ def build_router() -> APIRouter:
                 )
                 if result.rowcount != 1:
                     return _problem(412, "REVISION_MISMATCH", "revision does not match")
+            if active is not None and old != candidate.revision:
+                old_candidate = db.get(ConfigurationRevision, old)
+                if old_candidate is not None:
+                    old_candidate.state = "SUPERSEDED"
             candidate.state = "ACTIVE"
             candidate.activated_at = _now()
             for consumer in sorted(
@@ -2395,7 +2450,7 @@ def build_router() -> APIRouter:
         if error is not None:
             return error
         source_revision = data.source_revision
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             active = db.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
             mismatch = _if_match(
                 if_match, "config", active.active_revision if active else 1
@@ -2495,6 +2550,7 @@ def build_router() -> APIRouter:
                     )
                 )
             else:
+                old_candidate = db.get(ConfigurationRevision, active.active_revision)
                 result = db.execute(
                     update(ActiveConfiguration)
                     .where(
@@ -2509,6 +2565,8 @@ def build_router() -> APIRouter:
                 )
                 if result.rowcount != 1:
                     return _problem(412, "REVISION_MISMATCH", "revision does not match")
+                if old_candidate is not None:
+                    old_candidate.state = "SUPERSEDED"
             for consumer in sorted(
                 {
                     c
@@ -2574,15 +2632,13 @@ def build_router() -> APIRouter:
                 .order_by(desc(DomainDatabaseConnectionRevision.revision))
             )
             state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+            readiness = (
+                state.readiness_state
+                if state and state.readiness_state in {"BOOTSTRAP_LOCKED", "DEGRADED"}
+                else ("READY" if active else "DATABASE_DISCONNECTED")
+            )
             payload = {
-                "state": "READY"
-                if active
-                else (
-                    state.readiness_state
-                    if state
-                    and state.readiness_state in {"BOOTSTRAP_LOCKED", "DEGRADED"}
-                    else "DATABASE_DISCONNECTED"
-                ),
+                "state": readiness,
                 "active_revision": active.revision if active else None,
                 "candidate_revision": candidate.revision if candidate else None,
                 "last_known_good_revision": state.last_known_good_database_connection_revision
@@ -2590,7 +2646,9 @@ def build_router() -> APIRouter:
                 else None,
                 "active": _database_candidate_view(active) if active else None,
                 "candidate": _database_candidate_view(candidate) if candidate else None,
-                "domain_operations": "AVAILABLE" if active else "READ_ONLY_RECOVERY",
+                "domain_operations": "AVAILABLE"
+                if readiness == "READY" and active
+                else "READ_ONLY_RECOVERY",
                 "checked_at": _now(),
             }
             response.headers["ETag"] = f'W/"database:{payload["active_revision"] or 0}"'
@@ -2622,7 +2680,7 @@ def build_router() -> APIRouter:
             if key in connection_dict
         }
         username = connection_dict.pop("username", None)
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             active = db.scalar(
                 select(DomainDatabaseConnectionRevision)
                 .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
@@ -2651,6 +2709,9 @@ def build_router() -> APIRouter:
                 "client_key_configured": "client_key_pem" in secret_payload,
             }
             current_revision = active.revision if active else 0
+            mismatch = _if_match(if_match, "database", current_revision)
+            if mismatch is not None:
+                return mismatch
             if data.base_revision != max(current_revision, 1):
                 return _problem(
                     412, "REVISION_MISMATCH", "base revision does not match"
@@ -2710,7 +2771,7 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
+        with _control_transaction() as db:
             row = db.scalar(
                 select(DomainDatabaseConnectionRevision).where(
                     DomainDatabaseConnectionRevision.revision == candidate_revision,
@@ -2767,7 +2828,7 @@ def build_router() -> APIRouter:
         restored = False
         switched = False
         try:
-            with ControlSessionLocal.begin() as db:
+            with _control_transaction() as db:
                 active = db.scalar(
                     select(DomainDatabaseConnectionRevision)
                     .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
@@ -2788,6 +2849,12 @@ def build_router() -> APIRouter:
                         409,
                         "DATABASE_CONNECTION_FAILED",
                         "candidate must pass validation before activation",
+                    )
+                if candidate.base_revision != max(current_revision, 1):
+                    return _problem(
+                        412,
+                        "REVISION_MISMATCH",
+                        "candidate base revision does not match active database",
                     )
                 _checks, probe_failure = _probe_database(candidate)
                 if probe_failure is not None:
@@ -2903,7 +2970,7 @@ def build_router() -> APIRouter:
         switched = False
         restored = False
         try:
-            with ControlSessionLocal.begin() as db:
+            with _control_transaction() as db:
                 active = db.scalar(
                     select(DomainDatabaseConnectionRevision)
                     .where(DomainDatabaseConnectionRevision.state == "ACTIVE")

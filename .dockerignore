@@ -1,8 +1,9 @@
 .git
 .github
-.env
-.env.*
+**/.env
+**/.env.*
 !.env.example
+!**/.env.example
 .DS_Store
 **/.venv
 **/venv
@@ -31,8 +32,8 @@ artifacts
 data
 logs
 evidence
-credentials
-secrets
+**/credentials/**
+**/secrets/**
 docs/**
 !docs/后端系统技术方案/
 docs/后端系统技术方案/**

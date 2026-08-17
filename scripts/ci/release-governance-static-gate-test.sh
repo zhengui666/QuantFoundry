@@ -41,4 +41,23 @@ PY
   cp "$repo_root/.github/workflows/rc-release.yml" "$fixture_root/.github/workflows/rc-release.yml"
 done
 
+python3 - "$fixture_root/.github/workflows/rc-release.yml" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+text = text.replace("    permissions:\n      contents: read\n      actions: read\n", "    permissions:\n      contents: read\n      actions: read\n      packages: write\n", 1)
+path.write_text(text, encoding="utf-8")
+PY
+if QF_RELEASE_GOVERNANCE_ROOT="$fixture_root" QF_RELEASE_GOVERNANCE_SKIP_FIXTURES=1 \
+  "$repo_root/scripts/ci/release-governance-static-gate.sh" >"$fixture_root/extra-permission-gate.out" 2>&1; then
+  printf '%s\n' 'Expected extra permission fixture to fail.' >&2
+  exit 1
+fi
+grep -Fq 'rc-release preflight job must request only contents: read and actions: read' "$fixture_root/extra-permission-gate.out" || {
+  cat "$fixture_root/extra-permission-gate.out" >&2
+  exit 1
+}
+
 printf '%s\n' '{"result":"pass","gate":"release-governance-static-fixtures"}'

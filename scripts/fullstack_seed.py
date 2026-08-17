@@ -298,7 +298,11 @@ def activate_fullstack_database(
         "POST",
         "/database/connection/candidate/validate",
         expected=200,
-        headers={**auth, "Idempotency-Key": f"{prefix}-db-validate"},
+        headers={
+            **auth,
+            "X-Candidate-Revision": str(candidate["revision"]),
+            "Idempotency-Key": f"{prefix}-db-validate",
+        },
     )
     request_json(
         client,
@@ -308,6 +312,7 @@ def activate_fullstack_database(
         headers={
             **auth,
             "If-Match": etag,
+            "X-Candidate-Revision": str(candidate["revision"]),
             "Idempotency-Key": f"{prefix}-db-activate",
         },
     )

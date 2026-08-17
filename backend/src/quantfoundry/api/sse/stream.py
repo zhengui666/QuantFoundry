@@ -102,12 +102,9 @@ async def durable_event_stream(
 ) -> AsyncIterator[str]:
     cursor = last_event_id or 0
     heartbeat_at = time.monotonic() + heartbeat_seconds
-    first_poll = True
     while True:
 
-        def poll(
-            *, cursor_value: int = cursor, first_poll_value: bool = first_poll
-        ) -> tuple[list[Any], int | None]:
+        def poll(*, cursor_value: int = cursor) -> tuple[list[Any], int | None]:
             session = session_factory()
             try:
                 earliest = session.execute(
@@ -135,18 +132,18 @@ async def durable_event_stream(
                     if stream_state is not None
                     else None
                 )
-                if first_poll_value and last_event_id is not None:
-                    if watermark is not None and last_event_id > watermark:
+                has_cursor = last_event_id is not None or cursor_value > 0
+                if has_cursor:
+                    if watermark is not None and cursor_value > watermark:
                         return [], int(watermark) + 1
                     if (
                         expired_through is not None
                         and expired_through > 0
-                        and last_event_id <= expired_through
+                        and cursor_value <= expired_through
                     ):
                         resume_sequence = (
                             earliest.sequence
-                            if earliest is not None
-                            and earliest.sequence > last_event_id
+                            if earliest is not None and earliest.sequence > cursor_value
                             else int(watermark or 0) + 1
                         )
                         return [], resume_sequence
@@ -163,6 +160,19 @@ async def durable_event_stream(
                     .scalars()
                     .all()
                 )
+                if watermark_model is not None and cursor_value > 0:
+                    if stream_state is not None:
+                        session.expire(stream_state)
+                    current_state = session.get(watermark_model, workspace_id)
+                    if (
+                        current_state is not None
+                        and cursor_value <= current_state.expired_through_sequence
+                    ):
+                        return [], (
+                            events[0].sequence
+                            if events
+                            else int(current_state.last_sequence) + 1
+                        )
                 return events, None
             finally:
                 session.close()
@@ -171,12 +181,11 @@ async def durable_event_stream(
         if resync_sequence is not None:
             yield _resync_wire(envelope, resync_sequence, now)
             return
-        first_poll = False
         if events:
             for event in events:
                 try:
                     wire = _wire(event, envelope)
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except json.JSONDecodeError, TypeError, ValueError:
                     yield _resync_wire(
                         envelope,
                         event.sequence,

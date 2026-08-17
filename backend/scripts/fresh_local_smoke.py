@@ -37,7 +37,7 @@ def _key(label: str) -> str:
 def _diagnostic_experiment_status(detail: str) -> str | None:
     try:
         value = json.loads(detail)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return "INVALID_DETAIL"
     return value.get("status") if isinstance(value, dict) else "INVALID_DETAIL"
 
@@ -62,6 +62,18 @@ class WorkflowObservation:
     diagnostic: dict[str, Any]
 
 
+def _redact_diagnostic(value: Any) -> Any:
+    sensitive = {"api_key", "credential", "password", "private_key", "secret", "token"}
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if key.lower() in sensitive else _redact_diagnostic(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_diagnostic(item) for item in value]
+    return value
+
+
 def _drive_worker_turns(
     run_agent: Callable[[int], int],
     run_core: Callable[[int], int],
@@ -80,22 +92,22 @@ def _drive_worker_turns(
         last = inspect()
         observed_analyze_wait |= last.analyze_wait
         if last.finished:
-            return observed_analyze_wait, last.diagnostic
+            return observed_analyze_wait, _redact_diagnostic(last.diagnostic)
         if last.terminal_failure:
             raise RuntimeError(
                 "fresh local Research workflow reached a terminal failure: "
-                + json.dumps(last.diagnostic, sort_keys=True)
+                + json.dumps(_redact_diagnostic(last.diagnostic), sort_keys=True)
             )
 
         progressed += run_core(turn)
         last = inspect()
         observed_analyze_wait |= last.analyze_wait
         if last.finished:
-            return observed_analyze_wait, last.diagnostic
+            return observed_analyze_wait, _redact_diagnostic(last.diagnostic)
         if last.terminal_failure:
             raise RuntimeError(
                 "fresh local Research workflow reached a terminal failure: "
-                + json.dumps(last.diagnostic, sort_keys=True)
+                + json.dumps(_redact_diagnostic(last.diagnostic), sort_keys=True)
             )
         if progressed:
             idle_turns = 0
@@ -104,9 +116,13 @@ def _drive_worker_turns(
         if idle_turns >= max_idle_turns:
             raise RuntimeError(
                 "fresh local Research workflow stalled: "
-                + json.dumps(last.diagnostic, sort_keys=True)
+                + json.dumps(_redact_diagnostic(last.diagnostic), sort_keys=True)
             )
-    diagnostic = last.diagnostic if last is not None else {"state": "unobserved"}
+    diagnostic = (
+        _redact_diagnostic(last.diagnostic)
+        if last is not None
+        else {"state": "unobserved"}
+    )
     raise RuntimeError(
         "fresh local Research workflow exceeded worker budget: "
         + json.dumps(diagnostic, sort_keys=True)

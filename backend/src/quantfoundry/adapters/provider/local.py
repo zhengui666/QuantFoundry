@@ -208,7 +208,7 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             if len(body) != length:
                 raise ValueError("incomplete request body")
             request = json.loads(body)
-        except (ValueError, json.JSONDecodeError):
+        except ValueError, json.JSONDecodeError:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
             return
         if not isinstance(request, dict) or not isinstance(request.get("model"), str):
@@ -244,7 +244,7 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             if self.server.deterministic_research_plan and not self.server.actions:
                 try:
                     action = self._deterministic_action(request)
-                except (ValueError, json.JSONDecodeError):
+                except ValueError, json.JSONDecodeError:
                     self._json(
                         HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"}
                     )

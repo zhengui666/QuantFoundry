@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import select
@@ -79,7 +80,8 @@ def _define_factor(
     if research is None or research.workspace_id != run.workspace_id:
         raise ToolExecutionError("research is unavailable to this workspace")
     factor_id = new_id("FAC")
-    created_at = now()
+    created_at = datetime.now(UTC)
+    created_at_wire = created_at.isoformat().replace("+00:00", "Z")
     detail = {
         **payload,
         "factor_id": factor_id,
@@ -88,8 +90,8 @@ def _define_factor(
         "definition_sha256": content_hash(payload),
         "revision": 1,
         "action_capabilities": [cap("analyze")],
-        "created_at": created_at,
-        "updated_at": created_at,
+        "created_at": created_at_wire,
+        "updated_at": created_at_wire,
     }
     session.add(
         FactorRow(
@@ -99,6 +101,8 @@ def _define_factor(
             name=payload["name"],
             category=payload["category"],
             created_by=run.role,
+            created_at=created_at,
+            updated_at=created_at,
             revision=1,
             detail=json.dumps(detail),
         )
@@ -132,6 +136,8 @@ def _define_strategy(
         for row in factors
     ):
         raise ToolExecutionError("strategy references an unavailable factor")
+    if any(item.get("factor_version") != 1 for item in payload["signals"]):
+        raise ToolExecutionError("only factor version 1 is supported")
     cost = session.execute(
         select(CostModelVersionRow)
         .where(
@@ -152,7 +158,8 @@ def _define_strategy(
         raise ToolExecutionError("strategy cost model version is inconsistent")
     strategy_id = new_id("STRAT")
     digest = content_hash(payload)
-    created_at = now()
+    created_at = datetime.now(UTC)
+    created_at_wire = created_at.isoformat().replace("+00:00", "Z")
     specification = {
         key: payload[key]
         for key in (
@@ -201,36 +208,38 @@ def _define_strategy(
             "frozen_by": None,
             "revision": 1,
             "action_capabilities": strategy_action_capabilities("CANDIDATE"),
-            "created_at": created_at,
+            "created_at": created_at_wire,
         },
     )
-    session.add(
-        StrategyRow(
-            id=strategy_id,
-            workspace_id=run.workspace_id,
-            research_id=research.id,
-            name=payload["name"],
-            revision=1,
-            detail=json.dumps(detail),
-        )
+    strategy_row = StrategyRow(
+        id=strategy_id,
+        workspace_id=run.workspace_id,
+        research_id=research.id,
+        name=payload["name"],
+        created_at=created_at,
+        updated_at=created_at,
+        revision=1,
+        detail=json.dumps(detail),
     )
-    session.flush()
-    session.add(
-        StrategyVersionRow(
-            id=new_id("SV"),
-            workspace_id=run.workspace_id,
-            strategy_id=strategy_id,
-            cost_model_ref_id=cost.internal_id,
-            **strategy_storage_fields(
-                detail, lifecycle_state="CANDIDATE", is_frozen=False
-            ),
-            version=1,
-            state="CANDIDATE",
-            spec_sha256=digest,
-            revision=1,
-            detail=json.dumps(detail),
-        )
+    session.add(strategy_row)
+    session.flush([strategy_row])
+    strategy_version = StrategyVersionRow(
+        id=new_id("SV"),
+        workspace_id=run.workspace_id,
+        strategy_ref_id=strategy_row.internal_id,
+        strategy_id=strategy_id,
+        cost_model_ref_id=cost.internal_id,
+        **strategy_storage_fields(detail, lifecycle_state="CANDIDATE", is_frozen=False),
+        research_period_range=payload["research_period"],
+        validation_period_range=payload["validation_period"],
+        holdout_period_range=payload["holdout_period"],
+        version=1,
+        state="CANDIDATE",
+        spec_sha256=digest,
+        revision=1,
+        detail=json.dumps(detail),
     )
+    session.add(strategy_version)
     emit(
         session,
         "strategy_version",
@@ -603,6 +612,7 @@ def execute_tool(
         version_row = cast(Any, version)
         next_revision = cast(int, version.revision) + 1
         version_row.state = "VALIDATING"
+        version_row.lifecycle_state = "VALIDATING"
         version_row.revision = next_revision
         version_detail = json.loads(cast(str, version.detail))
         version_detail.update(
@@ -614,6 +624,16 @@ def execute_tool(
         )
         version_row.detail = json.dumps(
             validated_payload("StrategyVersionDetail", version_detail)
+        )
+        emit(
+            session,
+            "strategy_version",
+            version.strategy_id,
+            next_revision,
+            "strategy.updated",
+            payload={"state": "VALIDATING", "status": "VALIDATING"},
+            object_version=version.version,
+            agent_run_id=cast(str, run.id),
         )
         created_at = now()
         session.add(

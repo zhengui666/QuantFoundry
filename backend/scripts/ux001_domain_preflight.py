@@ -53,7 +53,7 @@ def main() -> int:
                         else "QUARANTINE"
                     ),
                 }
-    except (SQLAlchemyError, ValueError):
+    except SQLAlchemyError, ValueError:
         report = {
             "users": None,
             "workspaces": None,

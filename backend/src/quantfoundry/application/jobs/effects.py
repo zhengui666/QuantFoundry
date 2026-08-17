@@ -415,7 +415,7 @@ def _artifact(
             "storage_key": storage_key,
             "media_type": "application/json",
             "size_bytes": size_bytes,
-            "publication_state": "PUBLISHED",
+            "publication_state": "STAGED",
             "created_at": created_at.isoformat().replace("+00:00", "Z"),
         },
         artifact_id,
@@ -469,7 +469,7 @@ def _parquet_artifact(
             "storage_key": storage_key,
             "media_type": "application/vnd.apache.parquet",
             "size_bytes": size_bytes,
-            "publication_state": "PUBLISHED",
+            "publication_state": "STAGED",
             "created_at": created_at.isoformat().replace("+00:00", "Z"),
         },
         artifact_id,
@@ -917,8 +917,9 @@ def _complete_experiment(
     )
     row.detail = json.dumps(validated_payload("ExperimentDetail", detail))
     row.revision += 1
-    session.flush()
+    # Commit final evidence and its immutable marker in one UPDATE.
     row.immutable = True
+    session.flush()
     emit(
         session,
         "experiment",
@@ -1466,19 +1467,24 @@ def _complete_validation(
     )
     cost = load_cost_model(strategy_detail["cost_model_id"])
     policy = load_validation_policy(inputs["policy_id"])
+    policy_version = inputs.get("policy_version")
+    policy_sha256 = inputs.get("policy_sha256")
+    if not isinstance(policy_version, int) or isinstance(policy_version, bool):
+        raise InvalidJobState("validation policy version is missing")
     policy_row = session.execute(
         select(ResearchPolicyVersionRow).where(
             ResearchPolicyVersionRow.workspace_id == job.workspace_id,
             ResearchPolicyVersionRow.policy_id == inputs["policy_id"],
             ResearchPolicyVersionRow.policy_family == "validation",
-            ResearchPolicyVersionRow.version == inputs.get("policy_version"),
+            ResearchPolicyVersionRow.version == policy_version,
             ResearchPolicyVersionRow.status == "ACTIVE",
         )
     ).scalar_one_or_none()
-    if "policy_version" in inputs and (
+    if (
         policy_row is None
-        or policy.version != inputs["policy_version"]
-        or content_hash(policy_row.rules) != inputs.get("policy_sha256")
+        or policy.version != policy_version
+        or policy_sha256 != policy_row.content_sha256
+        or content_hash(policy_row.rules) != policy_sha256
     ):
         raise InvalidJobState("validation policy binding changed")
     metrics = simulation_metrics(
@@ -1714,6 +1720,28 @@ def _expose_holdout(
         or strategy.state != "VALIDATED"
     ):
         raise InvalidJobState("holdout strategy is not validated")
+    validation_runs = Base.metadata.tables["validation_runs"]
+    validation_run = (
+        session.execute(
+            select(validation_runs).where(
+                validation_runs.c.validation_id == validation.id,
+                validation_runs.c.workspace_id == job.workspace_id,
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if validation_run is None:
+        raise InvalidJobState("holdout validation run is missing")
+    validation_policy_row = session.execute(
+        select(ResearchPolicyVersionRow).where(
+            ResearchPolicyVersionRow.internal_id == validation_run["policy_id"],
+            ResearchPolicyVersionRow.workspace_id == job.workspace_id,
+            ResearchPolicyVersionRow.policy_family == "validation",
+        )
+    ).scalar_one_or_none()
+    if validation_policy_row is None:
+        raise InvalidJobState("holdout validation policy is missing")
     strategy_detail = json.loads(strategy.detail)
     exposure_id = new_id("HEXP")
     backtest_job, _ = _completed_backtest(session, strategy)
@@ -1743,7 +1771,13 @@ def _expose_holdout(
         cost,
         strategy_detail,
     )
-    policy = load_validation_policy(json.loads(validation.detail)["policy_id"])
+    policy = load_validation_policy(validation_policy_row.policy_id)
+    if (
+        policy.version != validation_policy_row.version
+        or content_hash(validation_policy_row.rules)
+        != validation_policy_row.content_sha256
+    ):
+        raise InvalidJobState("holdout validation policy binding changed")
     holdout_result, holdout_failures = holdout_policy_result(calculated, policy)
     metrics = [
         {
@@ -1801,15 +1835,37 @@ def _expose_holdout(
         },
     )
     artifact_id = _artifact(session, job, "holdout_result", result)
+    artifact = session.execute(
+        select(ArtifactRow).where(
+            ArtifactRow.artifact_id == artifact_id,
+            ArtifactRow.workspace_id == job.workspace_id,
+        )
+    ).scalar_one()
+    provenance_table = Base.metadata.tables["provenance_records"]
+    provenance_ref_id = session.execute(
+        select(provenance_table.c.id).where(
+            provenance_table.c.provenance_id == provenance["provenance_id"],
+            provenance_table.c.workspace_id == job.workspace_id,
+        )
+    ).scalar_one_or_none()
+    if provenance_ref_id is None:
+        raise InvalidJobState("holdout provenance is missing")
     exposure = HoldoutExposureRow(
         id=exposure_id,
         workspace_id=job.workspace_id,
         validation_id=validation.id,
+        validation_run_ref_id=validation_run["id"],
+        strategy_version_ref_id=strategy.internal_id,
         strategy_version_id=strategy.id,
+        approval_ref_id=approval.internal_id,
         approval_id=approval.id,
         job_id=job.id,
         result_artifact_id=artifact_id,
+        result_artifact_ref_id=artifact.id,
         provenance_id=provenance["provenance_id"],
+        provenance_ref_id=provenance_ref_id,
+        exposed_by_job_ref_id=job.internal_id,
+        holdout_period=json.dumps(strategy_detail["holdout_period"]),
         result_sha256=content_hash(result),
         period=json.dumps(strategy_detail["holdout_period"]),
         result=json.dumps(result),
@@ -1855,7 +1911,7 @@ def _expose_holdout(
         "validation.holdout.updated",
         payload={
             "state": "EXPOSED",
-            "status": "COMPLETED",
+            "status": validation_status,
         },
         job_id=job.id,
         correlation_id=job.correlation_id,
@@ -1985,8 +2041,11 @@ def _run_backtest(
         strategy is None
         or strategy.workspace_id != job.workspace_id
         or strategy.state != "CANDIDATE"
+        or strategy.strategy_id != inputs["strategy_id"]
+        or strategy.version != inputs["strategy_version"]
+        or strategy.spec_sha256 != inputs["strategy_spec_sha256"]
     ):
-        raise InvalidJobState("candidate strategy version is missing")
+        raise InvalidJobState("candidate strategy version is missing or changed")
     strategy_detail = json.loads(strategy.detail)
     signal_rows, factor_bindings = _strategy_signal_rows(
         session,
@@ -2248,6 +2307,9 @@ def _run_parameter_sensitivity(
         or strategy.workspace_id != job.workspace_id
         or snapshot.workspace_id != job.workspace_id
         or strategy.state != "CANDIDATE"
+        or strategy.strategy_id != inputs.get("strategy_id")
+        or strategy.version != inputs.get("strategy_version")
+        or strategy.spec_sha256 != inputs.get("strategy_spec_sha256")
     ):
         raise InvalidJobState("parameter sensitivity subjects are unavailable")
     detail = json.loads(strategy.detail)
@@ -2270,6 +2332,22 @@ def _run_parameter_sensitivity(
         values = [detail["rules"]["selection_count"]]
     counts = sorted({int(value) for value in values if int(value) >= 1})
     cost = load_cost_model(inputs["cost_model_id"])
+    if "cost_model_version" not in inputs or "cost_model_sha256" not in inputs:
+        raise InvalidJobState("parameter sensitivity cost model binding is missing")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == inputs["cost_model_id"],
+            CostModelVersionRow.version == inputs["cost_model_version"],
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or cost_row.content_sha256 != inputs["cost_model_sha256"]
+        or cost.version != cost_row.version
+    ):
+        raise InvalidJobState("parameter sensitivity cost model binding changed")
     results = [
         {
             "selection_count": count,

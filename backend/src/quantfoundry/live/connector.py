@@ -197,8 +197,12 @@ class Instrument:
             (self.base_currency, self.quote_currency)
         ):
             raise ValueError("base_currency and quote_currency are required")
-        if self.asset_class == "CRYPTO_PERPETUAL" and not self.margin_currency:
-            raise ValueError("perpetual margin_currency is required")
+        if self.asset_class == "CRYPTO_PERPETUAL" and not all(
+            (self.multiplier, self.margin_currency)
+        ):
+            raise ValueError("perpetual multiplier and margin_currency are required")
+        if self.asset_class == "CRYPTO_PERPETUAL":
+            _decimal(self.multiplier or "", field_name="multiplier", positive=True)
 
     def to_wire(self) -> dict[str, Any]:
         value = {
@@ -562,11 +566,15 @@ class ConnectorClient:
 
     def accounts(self) -> list[dict[str, Any]]:
         value = self._request("GET", "/v1/accounts").get("accounts")
-        if not value or not all(
-            isinstance(item, dict)
-            and isinstance(item.get("account_id"), str)
-            and bool(item["account_id"])
-            for item in value
+        if (
+            not isinstance(value, list)
+            or not value
+            or not all(
+                isinstance(item, dict)
+                and isinstance(item.get("account_id"), str)
+                and bool(item["account_id"])
+                for item in value
+            )
         ):
             raise ConnectorProtocolError("accounts response is invalid")
         return value

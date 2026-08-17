@@ -148,10 +148,18 @@ def _create_immutability_guards() -> None:
                  AND (
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256
+                 ) THEN
+                RAISE EXCEPTION 'strategy evidence cannot change while freezing';
+              END IF;
+              IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE'
+                 AND (
+                   NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
                    NEW.detail IS DISTINCT FROM OLD.detail
                  ) THEN
-                RAISE EXCEPTION 'strategy evidence cannot change while freezing';
+                RAISE EXCEPTION 'candidate strategy evidence must be append-only';
               END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
@@ -170,7 +178,7 @@ def _create_immutability_guards() -> None:
               IF OLD.immutable THEN
                 RAISE EXCEPTION 'completed experiment cannot be changed';
               END IF;
-              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NOT NEW.immutable
                  AND (
                    NEW.research_id IS DISTINCT FROM OLD.research_id OR
                    NEW.detail IS DISTINCT FROM OLD.detail OR
@@ -218,6 +226,31 @@ def _create_immutability_guards() -> None:
             "CREATE TRIGGER qf_approval_requests_immutable BEFORE UPDATE OR DELETE "
             "ON approval_requests FOR EACH ROW EXECUTE FUNCTION qf_reject_terminal_approval_change()"
         )
+        op.execute(
+            """
+            CREATE FUNCTION qf_reject_pending_approval_evidence_change() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'UPDATE' AND (
+                NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+              ) THEN
+                RAISE EXCEPTION 'approval evidence cannot be changed';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+            "ON approval_requests FOR EACH ROW EXECUTE FUNCTION qf_reject_pending_approval_evidence_change()"
+        )
         return
 
     for table in (
@@ -260,15 +293,25 @@ def _create_immutability_guards() -> None:
         "CREATE TRIGGER qf_strategy_versions_freeze_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND ("
         "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
-        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256) "
         "BEGIN SELECT RAISE(ABORT, 'strategy evidence cannot change while freezing'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE "
-        "ON experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND ("
+        "ON experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
         "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
         "NEW.revision IS NOT OLD.revision) "
         "BEGIN SELECT RAISE(ABORT, 'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+        "ON approval_requests WHEN NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR NEW.subject_type IS NOT OLD.subject_type OR "
+        "NEW.subject_id IS NOT OLD.subject_id OR NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256 BEGIN SELECT "
+        "RAISE(ABORT, 'approval evidence cannot be changed'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE "
@@ -432,6 +475,10 @@ def _drop_immutability_guards() -> None:
         op.execute("DROP FUNCTION qf_reject_completed_experiment_change()")
         op.execute("DROP FUNCTION qf_reject_unexpired_event_delete()")
         op.execute("DROP FUNCTION qf_reject_terminal_approval_change()")
+        op.execute(
+            "DROP TRIGGER qf_approval_requests_pending_evidence_immutable ON approval_requests"
+        )
+        op.execute("DROP FUNCTION qf_reject_pending_approval_evidence_change()")
         return
     for table in (
         "audit_events",
@@ -448,6 +495,7 @@ def _drop_immutability_guards() -> None:
             op.execute(f"DROP TRIGGER qf_{table}_{action}_immutable")
     op.execute("DROP TRIGGER qf_strategy_versions_freeze_immutable")
     op.execute("DROP TRIGGER qf_experiments_complete_immutable")
+    op.execute("DROP TRIGGER qf_approval_requests_pending_evidence_immutable")
     op.execute("DROP TRIGGER qf_approval_requests_resolve_immutable")
 
 

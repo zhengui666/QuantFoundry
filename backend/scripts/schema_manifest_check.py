@@ -42,7 +42,6 @@ from scripts.generate_schema_manifest import DEFAULT_DOCUMENT, extract_manifest
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PHYSICAL_PATH = BACKEND_ROOT / "alembic/versions/0016_section14_physical.json"
 _TYPE_ARGS = re.compile(r"^(varchar|char|numeric)\((\d+)(?:,(\d+))?\)$")
-_UNIQUE_COLUMNS = re.compile(r"UNIQUE\(([^)]+)\)", re.IGNORECASE)
 _FK = re.compile(r"FK\s+([a-z0-9_]+)\(([^)]+)\)", re.IGNORECASE)
 _COMPOSITE_FK = re.compile(
     r"FK\s*\(([^)]+)\)\s*(?:->|→)\s*([a-z0-9_]+)\(([^)]+)\)",
@@ -133,10 +132,10 @@ def _actual_type(value: Any, dialect: str) -> tuple[Any, ...]:
     aliases = {
         "biginteger": "bigint",
         "smallinteger": "smallint",
-        "datetime": "timestamptz",
+        "datetime": "timestamptz" if getattr(value, "timezone", False) else "timestamp",
         "uuid": "uuid",
         "largebinary": "bytea",
-        "json": "jsonb" if dialect == "postgresql" else "jsonb",
+        "json": "json" if dialect == "postgresql" else "jsonb",
         "text": "text",
         "date": "date",
         "boolean": "boolean",
@@ -199,58 +198,6 @@ def _type_matches(expected: str, actual: Any, dialect: str) -> bool:
     if wanted in {("varchar",), ("char",)} and got[:1] == wanted:
         return got[1:] == (None,)
     return wanted == got
-
-
-def _expected_primary_key(table_spec: dict[str, Any]) -> tuple[str, ...]:
-    columns: list[str] = []
-    for column in table_spec["columns"]:
-        constraints = column["constraints"]
-        if constraints == "PK" or constraints.startswith("PK "):
-            columns.append(column["name"])
-        composite = re.search(r"PK\(([^)]+)\)", constraints)
-        if composite:
-            columns.extend(item.strip() for item in composite.group(1).split(","))
-    return tuple(dict.fromkeys(columns))
-
-
-def _expected_unique_constraints(
-    table_spec: dict[str, Any],
-) -> set[tuple[str, ...]]:
-    result: set[tuple[str, ...]] = set()
-    for column in table_spec["columns"]:
-        constraints = column["constraints"]
-        for match in _UNIQUE_COLUMNS.finditer(constraints):
-            if constraints[match.end() :].lstrip().upper().startswith("WHERE "):
-                continue
-            result.add(tuple(item.strip() for item in match.group(1).split(",")))
-        if (
-            not _UNIQUE_COLUMNS.search(constraints)
-            and re.search(r"(?:^|,\s*)UNIQUE(?:,|$)", constraints)
-            and "partial unique" not in constraints.lower()
-        ):
-            result.add((column["name"],))
-    return result
-
-
-def _expected_indexes(
-    table_spec: dict[str, Any],
-) -> set[tuple[tuple[str, ...], bool]]:
-    result: set[tuple[tuple[str, ...], bool]] = set()
-    for column in table_spec["columns"]:
-        constraints = column["constraints"]
-        index = re.search(r"INDEX(?:\(([^)]+)\))?", constraints, re.IGNORECASE)
-        if index:
-            columns = (
-                tuple(item.strip() for item in index.group(1).split(","))
-                if index.group(1)
-                else (column["name"],)
-            )
-            result.add((columns, False))
-        for match in _UNIQUE_COLUMNS.finditer(constraints):
-            if constraints[match.end() :].lstrip().upper().startswith("WHERE "):
-                columns = tuple(item.strip() for item in match.group(1).split(","))
-                result.add((columns, True))
-    return result
 
 
 def _expected_foreign_keys(
@@ -583,11 +530,11 @@ def _check_postgres_helpers(
                     ]
                 },
             ).all()
-            actual = {str(row[0]): row for row in rows}
+            actual = {(str(row[0]), str(row[1])): row for row in rows}
             expected_comment = f"qf-contract-sha256:{helper_contract['sha256']}"
             for function in helper_contract["functions"]:
                 name = str(function["name"])
-                row = actual.get(name)
+                row = actual.get((name, str(function["identity_arguments"])))
                 if row is None:
                     errors.append(f"database:missing-helper:{name}")
                     continue
@@ -1071,8 +1018,11 @@ def _postgres_parsed_expected_indexes(
                         parsed = connection.execute(
                             text(
                                 "SELECT pg_get_expr(i.indpred, i.indrelid) "
-                                "FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid "
-                                "WHERE c.relname=:index_name"
+                                "FROM pg_index i "
+                                "JOIN pg_class c ON c.oid=i.indexrelid "
+                                "JOIN pg_namespace n ON n.oid=c.relnamespace "
+                                "WHERE c.relname=:index_name "
+                                "AND n.oid=pg_my_temp_schema()"
                             ),
                             {"index_name": temporary_index},
                         ).scalar_one()

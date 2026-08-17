@@ -15,6 +15,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table_name in (
+        "control_idempotency_records",
         "configuration_values",
         "owner_sessions",
         "bootstrap_audit_events",

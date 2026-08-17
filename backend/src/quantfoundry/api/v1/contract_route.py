@@ -107,15 +107,10 @@ class CanonicalRoute(APIRoute):
                 return invalid_request_response(request, error)
 
             response = await original(request)
-            if (
-                not 200 <= response.status_code < 300
-                or response.media_type == "text/event-stream"
-            ):
-                return response
             declared = operation.get("responses", {}).get(str(response.status_code))
             if declared is None:
                 return _problem(
-                    request, "handler returned an undocumented success status"
+                    request, "handler returned an undocumented response status"
                 )
             for header_name, raw_header in declared.get("headers", {}).items():
                 if header_name.lower() not in response.headers:
@@ -135,6 +130,12 @@ class CanonicalRoute(APIRoute):
                     )
             content_type = response.headers.get("content-type", "").split(";", 1)[0]
             declared_content = declared.get("content", {})
+            if response.media_type == "text/event-stream":
+                if "text/event-stream" not in declared_content:
+                    return _problem(
+                        request, "handler returned an undeclared SSE content type"
+                    )
+                return response
             if not declared_content:
                 return response
             response_body = getattr(response, "body", b"")
@@ -143,18 +144,21 @@ class CanonicalRoute(APIRoute):
             if not response_body:
                 return _problem(request, "handler omitted declared response content")
             media = declared_content.get(content_type)
-            if content_type == "text/markdown":
-                return response
             if media is None:
                 return _problem(
                     request, "handler returned an undeclared response content type"
                 )
+            if content_type == "text/markdown":
+                return response
             reference = media.get("schema", {}).get("$ref")
             if reference and hasattr(response, "body"):
                 try:
                     decoded_body = json.loads(response_body)
                     validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
-                    if operation.get("operationId") == "completeSetup":
+                    if (
+                        200 <= response.status_code < 300
+                        and operation.get("operationId") == "completeSetup"
+                    ):
                         expected_etag = f'W/"config:{decoded_body["active_revision"]}"'
                         if response.headers.get("etag") != expected_etag:
                             return _problem(

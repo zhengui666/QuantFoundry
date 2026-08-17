@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
           scripts/ci/release-governance-static-gate.sh
           scripts/ci/p0-architecture-review.sh
-          actionlint .github/workflows/*.yml
+          actionlint .github/workflows/*.{yml,yaml}
       - name: Verify published release supply-chain evidence
         if: ${{ inputs.release_tag != '' }}
         shell: bash
@@ -55,8 +55,14 @@ jobs:
           scripts/ci/supply-chain-review.sh "$RELEASE_TAG" "$release_commit"
       - name: Produce commit-bound independent review report
         shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          if [[ -n "$RELEASE_TAG" ]]; then
+            release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+            test "$release_commit" = "$GITHUB_SHA"
+          fi
           mkdir -p "$RUNNER_TEMP/qf-p0-review-evidence"
           python3 - "$GITHUB_SHA" "$GITHUB_RUN_ID" "$RUNNER_TEMP/qf-p0-review-evidence/independent-review-report.json" <<'PY'
           import hashlib
@@ -96,7 +102,7 @@ jobs:
               "commands": [
                   {"command": "scripts/ci/release-governance-static-gate.sh", "result": "pass", "exit_code": 0},
                   {"command": "scripts/ci/p0-architecture-review.sh", "result": "pass", "exit_code": 0},
-                  {"command": "actionlint .github/workflows/*.yml", "result": "pass", "exit_code": 0},
+                  {"command": "actionlint .github/workflows/*.{yml,yaml}", "result": "pass", "exit_code": 0},
               ],
           }
           pathlib.Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -104,12 +110,12 @@ jobs:
           uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
             --command "scripts/ci/release-governance-static-gate.sh" \
             --command "scripts/ci/p0-architecture-review.sh" \
-            --command "actionlint .github/workflows/*.yml"
-          if [[ -n "${{ inputs.release_tag }}" ]]; then
-            release_commit="$(git rev-parse "refs/tags/${{ inputs.release_tag }}^{commit}")"
+            --command "actionlint .github/workflows/*.{yml,yaml}"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
             uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
-              --command "scripts/ci/supply-chain-review.sh ${{ inputs.release_tag }} $release_commit"
+              --command "scripts/ci/supply-chain-review.sh $RELEASE_TAG $release_commit"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -404,7 +404,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
     market_rows = [
         {
             "event_time": f"{day}T21:00:00Z",
-            "available_at": f"{day}T21:01:00Z",
+            "available_at": f"{day}T21:00:00Z",
             "symbol": symbol,
             "close": 100 + day_index * multiplier,
             "benchmark_close": 100 + day_index,

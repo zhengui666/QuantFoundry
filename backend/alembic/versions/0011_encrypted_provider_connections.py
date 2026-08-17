@@ -20,6 +20,15 @@ def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         bind.execute(sa.text("LOCK TABLE setup_bindings IN ACCESS EXCLUSIVE MODE"))
+    elif bind.dialect.name == "sqlite":
+        if bind.in_transaction():
+            # Alembic may have already opened a deferred transaction; a no-op
+            # write upgrades it to SQLite's RESERVED lock before the check.
+            bind.execute(
+                sa.text("UPDATE setup_bindings SET workspace_id = workspace_id WHERE 0")
+            )
+        else:
+            bind.exec_driver_sql("BEGIN IMMEDIATE")
     existing_bindings = bind.execute(
         sa.text("SELECT COUNT(*) FROM setup_bindings")
     ).scalar_one()
@@ -46,7 +55,7 @@ def upgrade() -> None:
         ),
         sa.Column("provider_id", sa.String(64), nullable=False),
         sa.Column("kind", sa.String(8), nullable=False),
-        sa.Column("model_name", sa.String(128)),
+        sa.Column("model_name", sa.String(128), nullable=False),
         sa.Column("ciphertext", sa.LargeBinary(), nullable=False),
         sa.Column("nonce", sa.LargeBinary(), nullable=False),
         sa.Column("key_id", sa.String(64), nullable=False),

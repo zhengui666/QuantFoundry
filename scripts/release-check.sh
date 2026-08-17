@@ -14,6 +14,20 @@ git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   exit 2
 }
 
+remote_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+canonical_repository="zhengui666/QuantFoundry"
+[[ -z "${GITHUB_REPOSITORY:-}" || "$GITHUB_REPOSITORY" == "$canonical_repository" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"GITHUB_REPOSITORY is not the trusted repository"}' >&2
+  exit 1
+}
+case "$remote_url" in
+  "https://github.com/${canonical_repository}.git"|"https://github.com/${canonical_repository}"|"git@github.com:${canonical_repository}.git"|"git@github.com:${canonical_repository}") ;;
+  *)
+    printf '%s\n' '{"result":"invalid","reason":"origin is not the canonical GitHub repository"}' >&2
+    exit 1
+    ;;
+esac
+
 local_tag_object="$(git -C "$repo_root" show-ref --verify --hash "refs/tags/$tag")" || {
   printf '{"result":"invalid","reason":"required refs/tags/%s is missing"}\n' "$tag" >&2
   exit 2
@@ -48,5 +62,18 @@ remote_tag_object_recheck="$(git -C "$repo_root" ls-remote --exit-code --refs or
   exit 1
 }
 
+final_head="$(git -C "$repo_root" rev-parse HEAD)"
+final_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
+[[ "$final_head" == "$tag_target" && -z "$final_status" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"worktree or HEAD changed during release preflight"}' >&2
+  exit 1
+}
+
 QF_RELEASE_COMMIT="$tag_target" "$repo_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
+post_p0_head="$(git -C "$repo_root" rev-parse HEAD)"
+post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
+[[ "$post_p0_head" == "$tag_target" && -z "$post_p0_status" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"worktree or HEAD changed during P0 verification"}' >&2
+  exit 1
+}
 printf '{"result":"pass","tag":"%s","commit":"%s","p0":"closed","tag_object":"%s"}\n' "$tag" "$tag_target" "$local_tag_object"

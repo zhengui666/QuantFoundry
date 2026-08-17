@@ -62,8 +62,8 @@ def _market_row(
     partition: str = "VALIDATION",
 ) -> dict[str, object]:
     return {
-        "event_time": f"{day}T21:00:00Z",
-        "available_at": f"{day}T21:01:00Z",
+        "event_time": f"{day}T20:00:00Z",
+        "available_at": f"{day}T20:00:00Z",
         "date": day,
         "symbol": symbol,
         "close": close,
@@ -584,8 +584,8 @@ def test_validation_failure_blocks_approval_without_direct_state_mutation() -> N
     ]
     rows = [
         {
-            "event_time": f"{day}T21:00:00Z",
-            "available_at": f"{day}T21:01:00Z",
+            "event_time": f"{day}T20:00:00Z",
+            "available_at": f"{day}T20:00:00Z",
             "symbol": symbol,
             "close": 100 + index * multiplier,
             "benchmark_close": 100 + index,

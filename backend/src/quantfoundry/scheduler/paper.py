@@ -210,7 +210,7 @@ class PaperScheduler:
                 candidate, calendar_version = self._candidate(
                     session, deployment, state, schedule, timestamp
                 )
-            except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
+            except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
                 # Invalid configuration is fail-closed. No run/job/order is created.
                 continue
             if candidate is not None:
@@ -496,6 +496,7 @@ class PaperScheduler:
             "paper_id": deployment["paper_id"],
             "paper_run_id": run_id,
             "trading_date": day.isoformat(),
+            "trading_calendar": _calendar_label(schedule, calendar_version),
             "execution_assumption_revision": int(deployment["revision"]),
             "execution_assumption_sha256": content_hash(
                 deployment["execution_assumption"]
@@ -618,7 +619,9 @@ class PaperScheduler:
             raise PaperSchedulerError("PaperDailyRun deployment is missing")
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
-            _, calendar_version = self._is_trading_day(schedule, row["trading_date"])
+            is_trading_day, calendar_version = self._is_trading_day(
+                schedule, row["trading_date"]
+            )
         except InvalidExecutionAssumption as error:
             self._finish_run(
                 session,
@@ -636,6 +639,35 @@ class PaperScheduler:
             raise PaperSchedulerError(
                 "PaperDailyRun configuration failed closed"
             ) from error
+        expected_calendar = inputs.get("trading_calendar")
+        if not is_trading_day:
+            self._finish_run(
+                session,
+                deployment,
+                row,
+                job,
+                "BLOCKED",
+                "NON_TRADING_DAY",
+                "NONE",
+                False,
+                "NOT_APPLICABLE",
+                block_reason_code="NON_TRADING_DAY",
+            )
+            return None
+        if expected_calendar != _calendar_label(schedule, calendar_version):
+            self._finish_run(
+                session,
+                deployment,
+                row,
+                job,
+                "BLOCKED",
+                "CALENDAR_VERSION_MISMATCH",
+                "NONE",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                block_reason_code="CALENDAR_VERSION_MISMATCH",
+            )
+            return None
         now = datetime.now(UTC)
         if row["status"] == "QUEUED":
             session.execute(
@@ -781,8 +813,83 @@ class PaperScheduler:
     ) -> GateDecision:
         snapshots = Base.metadata.tables["dataset_snapshots"]
         quality = Base.metadata.tables["data_quality_runs"]
-        row = (
-            session.execute(
+        strategies = Base.metadata.tables["strategy_versions"]
+        strategy = session.execute(
+            select(strategies.c.required_dataset_refs).where(
+                strategies.c.workspace_id == deployment["workspace_id"],
+                strategies.c.id == deployment["strategy_version_id"],
+            )
+        ).scalar_one_or_none()
+        if strategy is None:
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "bound strategy version is unavailable",
+                {},
+            )
+        if isinstance(strategy, str):
+            try:
+                strategy = json.loads(strategy)
+            except json.JSONDecodeError:
+                strategy = None
+        if not isinstance(strategy, list):
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "required dataset references are invalid",
+                {},
+            )
+        required_refs = [
+            value
+            if isinstance(value, str)
+            else next(
+                (
+                    value.get(key)
+                    for key in ("dataset_id", "id", "public_id")
+                    if isinstance(value, dict) and isinstance(value.get(key), str)
+                ),
+                None,
+            )
+            for value in strategy
+        ]
+        if any(value is None for value in required_refs):
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "required dataset references are incomplete",
+                {},
+            )
+        required_refs = list(dict.fromkeys(cast(list[str], required_refs)))
+        datasets = Base.metadata.tables["datasets"]
+        if required_refs:
+            dataset_rows = session.execute(
+                select(datasets.c.id, datasets.c.dataset_id).where(
+                    datasets.c.workspace_id == deployment["workspace_id"]
+                )
+            ).mappings()
+            dataset_ids = [
+                row["id"]
+                for row in dataset_rows
+                if str(row["id"]) in required_refs
+                or str(row["dataset_id"]) in required_refs
+            ]
+            if len(dataset_ids) != len(required_refs):
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "REJECTED",
+                    "DATA_SNAPSHOT_MISSING",
+                    "a required dataset is not bound in the workspace",
+                    {"required_dataset_refs": required_refs},
+                )
+        else:
+            dataset_ids = [None]
+
+        rows = []
+        for dataset_id in dataset_ids:
+            statement = (
                 select(
                     snapshots.c.id.label("snapshot_internal_id"),
                     snapshots.c.snapshot_id.label("snapshot_public_id"),
@@ -813,57 +920,63 @@ class PaperScheduler:
                 )
                 .limit(1)
             )
-            .mappings()
-            .one_or_none()
-        )
-        if row is None:
-            return GateDecision(
-                "DATA_QUALITY",
-                "REJECTED",
-                "DATA_SNAPSHOT_MISSING",
-                "no eligible snapshot",
-                {},
-            )
+            if dataset_id is not None:
+                statement = statement.where(snapshots.c.dataset_id == dataset_id)
+            row = session.execute(statement).mappings().one_or_none()
+            if row is None:
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "REJECTED",
+                    "DATA_SNAPSHOT_MISSING",
+                    "no eligible snapshot for every required dataset",
+                    {"required_dataset_refs": required_refs},
+                )
+            rows.append(row)
+
         values = {
-            "data_snapshot_id": row["snapshot_internal_id"],
-            "data_quality_run_id": row["quality_internal_id"],
-            "coverage_end": row["coverage_end"],
-            "as_of_time": row["as_of_time"],
-            "stale_data_detected": row["stale_data_detected"],
+            "data_snapshot_ids": [row["snapshot_internal_id"] for row in rows],
+            "data_quality_run_ids": [row["quality_internal_id"] for row in rows],
+            "data_snapshot_id": rows[0]["snapshot_internal_id"],
+            "data_quality_run_id": rows[0]["quality_internal_id"],
+            "coverage_end": min(row["coverage_end"] for row in rows),
+            "as_of_time": max(row["as_of_time"] for row in rows),
+            "stale_data_detected": any(row["stale_data_detected"] for row in rows),
+            "required_dataset_refs": required_refs,
         }
-        if row["quality_status"] != "COMPLETED" or row["result_state"] is None:
-            return GateDecision(
-                "DATA_QUALITY",
-                "UNKNOWN",
-                "DATA_QUALITY_RESULT_UNKNOWN",
-                "quality result is not terminal",
-                values,
-            )
-        if (
-            row["result_state"] == "BLOCKED"
-            or row["lookahead_detected"] is True
-            or row["survivorship_safe"] is False
-        ):
-            return GateDecision(
-                "DATA_QUALITY",
-                "REJECTED",
-                "DATA_QUALITY_BLOCKED",
-                "deterministic data-quality gate rejected",
-                values,
-            )
-        if row["result_state"] not in {"HEALTHY", "WARN"}:
-            return GateDecision(
-                "DATA_QUALITY",
-                "UNKNOWN",
-                "DATA_QUALITY_RESULT_UNKNOWN",
-                "quality result is not recognized",
-                values,
-            )
+        for row in rows:
+            if row["quality_status"] != "COMPLETED" or row["result_state"] is None:
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "UNKNOWN",
+                    "DATA_QUALITY_RESULT_UNKNOWN",
+                    "quality result is not terminal",
+                    values,
+                )
+            if (
+                row["result_state"] == "BLOCKED"
+                or row["lookahead_detected"] is True
+                or row["survivorship_safe"] is False
+            ):
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "REJECTED",
+                    "DATA_QUALITY_BLOCKED",
+                    "deterministic data-quality gate rejected",
+                    values,
+                )
+            if row["result_state"] not in {"HEALTHY", "WARN"}:
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "UNKNOWN",
+                    "DATA_QUALITY_RESULT_UNKNOWN",
+                    "quality result is not recognized",
+                    values,
+                )
         return GateDecision(
             "DATA_QUALITY",
             "PASSED",
             "DATA_QUALITY_PASSED",
-            "quality result accepted",
+            "quality result accepted for every required dataset",
             values,
         )
 
@@ -1022,7 +1135,7 @@ class PaperScheduler:
                 "max_strategy_weight": Decimal(policy["max_strategy_weight"]),
                 "max_turnover": Decimal(policy["max_turnover"]),
             }
-        except (InvalidOperation, KeyError, TypeError, ValueError):
+        except InvalidOperation, KeyError, TypeError, ValueError:
             return GateDecision(
                 "RISK",
                 "UNKNOWN",
@@ -1269,7 +1382,7 @@ class PaperScheduler:
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
             _, calendar_version = self._is_trading_day(schedule, run["trading_date"])
-        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
+        except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
             self._finish_run(
                 session,
                 deployment,

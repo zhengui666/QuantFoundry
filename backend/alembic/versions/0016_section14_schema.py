@@ -821,6 +821,8 @@ def _resolve_locator(
             "object_revision": row.get("sequence") or row.get("revision"),
         }
     elif expected_object_type is not None:
+        if values["object_type"] not in {None, expected_object_type}:
+            return "event locator object_type disagrees with event type"
         values["object_type"] = expected_object_type
     object_type = values["object_type"]
     object_id = values["object_id"]
@@ -831,24 +833,42 @@ def _resolve_locator(
         )
         if len(authority) != 1:
             return f"ordinary locator authority count is {len(authority)}"
+        expected_version, expected_revision = authority[0]
+        if (
+            values["object_version"] is not None
+            and values["object_version"] != expected_version
+        ):
+            return "ordinary locator version disagrees with authority"
+        if (
+            values["object_revision"] is not None
+            and values["object_revision"] != expected_revision
+        ):
+            return "ordinary locator revision disagrees with authority"
+        values["object_version"] = expected_version
+        values["object_revision"] = expected_revision
     elif object_type == "strategy_version":
         strategy_authority = _strategy_authority(
             source_rows, workspace_id, object_id, values["object_version"]
         )
         if len(strategy_authority) != 1:
             return f"strategy version authority count is {len(strategy_authority)}"
-        values["object_version"] = strategy_authority[0][0]
-        values["object_revision"] = (
-            values["object_revision"] or strategy_authority[0][1]
-        )
+        expected_version, expected_revision = strategy_authority[0]
+        values["object_version"] = expected_version
+        values["object_revision"] = values["object_revision"] or expected_revision
     elif object_type in {"settings", "provider_connection", "agent_config"}:
         authority = _special_authority(
             source_rows, workspace_id, str(object_type), object_id
         )
         if len(authority) != 1:
             return f"special locator authority count is {len(authority)}"
+        expected_revision = authority[0][1]
+        if (
+            values["object_revision"] is not None
+            and values["object_revision"] != expected_revision
+        ):
+            return "special locator revision disagrees with authority"
         values["object_version"] = None
-        values["object_revision"] = values["object_revision"] or authority[0][1]
+        values["object_revision"] = expected_revision
     elif object_type != "event_stream":
         return "locator object_type is not closed"
     if not locator_quartet_valid(
@@ -1280,71 +1300,6 @@ def _restore_exact_source(
             )
 
 
-def _capture_domain_events(bind: Any) -> list[dict[str, Any]]:
-    if "domain_events" not in inspect(bind).get_table_names(schema=None):
-        return []
-    metadata = MetaData()
-    table = Table("domain_events", metadata, autoload_with=bind)
-    return [
-        dict(row)
-        for row in bind.execute(select(table).order_by(table.c.sequence)).mappings()
-    ]
-
-
-def _restore_domain_events(
-    bind: Any, metadata: MetaData, rows: list[dict[str, Any]]
-) -> None:
-    if not rows or "domain_events" not in metadata.tables:
-        return
-    target = metadata.tables["domain_events"]
-    workspace_ids = {_workspace_uuid(row.get("workspace_id")) for row in rows}
-    if "users" in metadata.tables and "workspaces" in metadata.tables:
-        users = metadata.tables["users"]
-        workspaces = metadata.tables["workspaces"]
-        for workspace_id in sorted(workspace_ids, key=str):
-            owner_id = f"migration-owner:{workspace_id}"
-            bind.execute(
-                users.insert().values(
-                    id=owner_id,
-                    email=f"migration-{workspace_id}@invalid.local",
-                    role="OWNER",
-                    revision=1,
-                )
-            )
-            bind.execute(
-                workspaces.insert().values(
-                    id=workspace_id,
-                    owner_id=owner_id,
-                    name="Migrated workspace",
-                    revision=1,
-                )
-            )
-    restored: list[dict[str, Any]] = []
-    for source in rows:
-        values = {key: value for key, value in source.items() if key in target.c}
-        if "schema_version" in target.c:
-            values.setdefault("schema_version", 1)
-        values["workspace_id"] = _workspace_uuid(values.get("workspace_id"))
-        values["event_id"] = _public_id(values.get("event_id"), "EVT")
-        values["object_id"] = _public_id(values.get("object_id"), "EVT")
-        for field, prefix in (
-            ("job_id", "JOB"),
-            ("agent_run_id", "ARUN"),
-            ("tool_call_id", "TCALL"),
-        ):
-            if values.get(field) is not None:
-                values[field] = _public_id(values[field], prefix)
-        for column in target.c:
-            if (
-                column.name in values
-                and isinstance(column.type, JSON)
-                and isinstance(values[column.name], str)
-            ):
-                values[column.name] = json.loads(values[column.name])
-        restored.append(values)
-    bind.execute(target.insert(), restored)
-
-
 def _drop_application_tables() -> None:
     bind = op.get_bind()
     names = _application_table_names(bind)
@@ -1559,7 +1514,7 @@ def _install_guards() -> None:
             )
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE ON "
-        "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND ("
+        "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
         "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
         "NEW.revision IS NOT OLD.revision) BEGIN SELECT RAISE(ABORT, "
         "'experiment evidence cannot change while completing'); END"
@@ -1617,9 +1572,9 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
     target_is_current = snapshot == CURRENT
     # A downgrade snapshot is only a recovery aid.  The next upgrade must
     # read the live downgraded tables so writes made between revisions survive.
-    if target_is_current:
+    roundtrip_preexisting = bool(_backup_names(bind, _ROUNDTRIP_BACKUP_PREFIX))
+    if target_is_current and not roundtrip_preexisting:
         _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)
-    roundtrip_preexisting = False
     source_schema = _sqlite_source_schema(bind) if bind.dialect.name == "sqlite" else []
     _backup_tables(bind, _SOURCE_BACKUP_PREFIX, replace=True)
     source_rows = _read_backup_rows(bind, _SOURCE_BACKUP_PREFIX)

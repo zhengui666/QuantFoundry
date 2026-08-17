@@ -283,10 +283,18 @@ def _require_disposable_migration_gate(database_url: str) -> None:
     engine = create_engine(database_url)
     try:
         with engine.connect() as connection:
-            markers = connection.execute(
-                text(f"SELECT marker FROM {MIGRATION_GATE_MARKER_TABLE} ORDER BY marker")
-            ).scalars().all()
-            database_name = connection.execute(text("SELECT current_database()")).scalar_one()
+            markers = (
+                connection.execute(
+                    text(
+                        f"SELECT marker FROM {MIGRATION_GATE_MARKER_TABLE} ORDER BY marker"
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            database_name = connection.execute(
+                text("SELECT current_database()")
+            ).scalar_one()
         if markers != [marker]:
             raise RuntimeError(
                 "target database is not the disposable migration gate database: "

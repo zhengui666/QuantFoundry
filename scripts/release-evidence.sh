@@ -55,10 +55,13 @@ collect_oci_sbom() {
     "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
     | python3 -c 'import json,sys; value=json.load(sys.stdin).get("token"); assert isinstance(value,str) and value; print(value)')"
   GHCR_BEARER_TOKEN="$token" python3 - "https://ghcr.io" "$repository" "$digest" "$output_file" <<'PY'
+import hashlib
 import json
 import os
 import pathlib
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
 
 registry, repository, subject_digest, output_name = sys.argv[1:]
@@ -70,16 +73,19 @@ accept = ", ".join((
     "application/vnd.docker.distribution.manifest.v2+json",
 ))
 
-def get(path, media_type=accept):
+def get(path, media_type=accept, expected_digest=None):
     request = urllib.request.Request(
         f"{registry}/v2/{repository}/{path}",
         headers={"Authorization": f"Bearer {token}", "Accept": media_type},
     )
     with urllib.request.urlopen(request) as response:
-        return response.read()
+        payload = response.read()
+    if expected_digest and hashlib.sha256(payload).hexdigest() != expected_digest.removeprefix("sha256:"):
+        raise SystemExit(f"registry digest mismatch for {path}")
+    return payload
 
 def descriptors_for_referrers():
-    image = json.loads(get(f"manifests/{subject_digest}").decode("utf-8"))
+    image = json.loads(get(f"manifests/{subject_digest}", expected_digest=subject_digest).decode("utf-8"))
     descriptors = image.get("manifests", [])
     if descriptors:
         return descriptors
@@ -101,12 +107,18 @@ if not attestations:
     raise SystemExit("published image has no BuildKit attestation manifest bound to its digest")
 
 for descriptor in attestations:
-    manifest = json.loads(get(f"manifests/{descriptor['digest']}").decode("utf-8"))
+    descriptor_digest = descriptor.get("digest")
+    if not isinstance(descriptor_digest, str) or not descriptor_digest.startswith("sha256:"):
+        raise SystemExit("attestation descriptor has no valid digest")
+    manifest = json.loads(get(f"manifests/{descriptor_digest}", expected_digest=descriptor_digest).decode("utf-8"))
     for layer in manifest.get("layers", []):
         predicate_type = layer.get("annotations", {}).get("in-toto.io/predicate-type")
         if predicate_type != "https://spdx.dev/Document":
             continue
-        payload = get(f"blobs/{layer['digest']}", "application/vnd.in-toto+json")
+        layer_digest = layer.get("digest")
+        if not isinstance(layer_digest, str) or not layer_digest.startswith("sha256:"):
+            raise SystemExit("SBOM layer has no valid digest")
+        payload = get(f"blobs/{layer_digest}", "application/vnd.in-toto+json", layer_digest)
         envelope = json.loads(payload.decode("utf-8"))
         document = envelope.get("predicate")
         if not isinstance(document, dict) or not isinstance(document.get("spdxVersion"), str):
@@ -141,6 +153,8 @@ def record(path):
     path = pathlib.Path(path)
     if not path.is_file():
         raise SystemExit(f"required evidence input is missing: {path}")
+    if path.is_symlink():
+        raise SystemExit(f"symlink evidence input is not allowed: {path}")
     return {"path": str(path.relative_to(root)) if path.is_relative_to(root) else str(path.relative_to(output)), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 required = [
@@ -167,10 +181,35 @@ migrations = sorted((root / "backend/alembic/versions").glob("*.py"))
 reports = [output / "result.json", output / "steps.ndjson"]
 if not migrations or any(not path.is_file() for path in reports):
     raise SystemExit("Alembic migrations and structured RC gate reports are required")
+if any(path.is_symlink() for path in migrations + reports):
+    raise SystemExit("symlink release evidence input is not allowed")
 if (output / "release-assets").exists() or (output / "SHA256SUMS").exists():
     raise SystemExit("release asset staging directory and SHA256SUMS must not pre-exist")
 
-evidence_files = sorted(path for path in output.rglob("*") if path.is_file() and path.name not in {"release-manifest.json", "SHA256SUMS"})
+for path in output.rglob("*.log"):
+    relative = path.relative_to(output)
+    if (
+        path.is_file()
+        and not path.is_symlink()
+        and "release-assets" not in relative.parts
+        and relative.parts
+        and relative.parts[0] == "logs"
+        and path.stat().st_size == 0
+    ):
+        path.write_text("command completed successfully with no stdout/stderr\n", encoding="utf-8")
+
+evidence_files = sorted(
+    path
+    for path in output.rglob("*")
+    if path.is_file()
+    and not path.is_symlink()
+    and path.name not in {"release-manifest.json", "SHA256SUMS"}
+)
+if any(path.is_symlink() for path in output.rglob("*")):
+    raise SystemExit("symlink release evidence input is not allowed")
+for path in required:
+    if not path.is_file() or path.is_symlink():
+        raise SystemExit(f"required evidence input is missing or unsafe: {path}")
 
 def asset_name(source):
     if source in {"release-manifest.json", "SHA256SUMS"}:
@@ -268,21 +307,13 @@ if {"release-manifest.json", "SHA256SUMS"} - set(names):
 if not {"release-manifest.json", "SHA256SUMS"}.issubset(sources):
     raise SystemExit("release asset inventory must map release-manifest.json and SHA256SUMS sources")
 
+if any(path.is_symlink() for path in output.rglob("*")):
+    raise SystemExit("symlink release asset source is not allowed")
 source_files = {
     path.relative_to(output).as_posix()
     for path in output.rglob("*")
     if path.is_file() and "release-assets" not in path.relative_to(output).parts and path.name != "SHA256SUMS"
 }
-for path in output.rglob("*.log"):
-    relative = path.relative_to(output)
-    if (
-        path.is_file()
-        and "release-assets" not in relative.parts
-        and relative.parts
-        and relative.parts[0] == "logs"
-        and path.stat().st_size == 0
-    ):
-        path.write_text("command completed successfully with no stdout/stderr\\n", encoding="utf-8")
 
 empty_source_files = {
     path.relative_to(output).as_posix()
@@ -308,11 +339,14 @@ staging.mkdir()
 for item in inventory:
     if item["source"] == "SHA256SUMS":
         continue
-    shutil.copyfile(output / item["source"], staging / item["name"])
+    source = output / item["source"]
+    if not source.is_file() or source.is_symlink() or not source.resolve().is_relative_to(output):
+        raise SystemExit(f"release asset source is missing or escapes output: {item['source']}")
+    shutil.copyfile(source, staging / item["name"])
 
 checksum_entries = []
 for path in sorted(staging.iterdir(), key=lambda candidate: candidate.name):
-    if not path.is_file():
+    if not path.is_file() or path.is_symlink():
         raise SystemExit(f"release asset staging contains a non-file: {path.name}")
     checksum_entries.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n")
 checksum_path = output / "SHA256SUMS"
@@ -334,6 +368,8 @@ for line in checksum_path.read_text(encoding="utf-8").splitlines():
 if set(checksums) != staged_names - {checksum_name}:
     raise SystemExit("SHA256SUMS inventory does not exactly match uploaded assets excluding itself")
 for name, digest in checksums.items():
+    if (staging / name).is_symlink():
+        raise SystemExit(f"release asset staging contains a symlink: {name}")
     if hashlib.sha256((staging / name).read_bytes()).hexdigest() != digest:
         raise SystemExit(f"SHA256SUMS digest mismatch for {name}")
 PY
@@ -389,8 +425,9 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
-from urllib.parse import quote
+from urllib.parse import quote, urljoin, urlparse
 
 tag, commit, output_name = sys.argv[1:]
 repository = os.environ["GITHUB_REPOSITORY"]
@@ -410,13 +447,20 @@ def gh_json(endpoint):
     except json.JSONDecodeError as error:
         raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
 
-releases = gh_json(f"/repos/{repository}/releases?per_page=100")
-if not isinstance(releases, list):
-    raise SystemExit("remote releases inventory is invalid")
-matching = [item for item in releases if isinstance(item, dict) and item.get("tag_name") == tag]
-if len(matching) != 1:
-    raise SystemExit("remote draft release is missing or not unique")
-release = matching[0]
+tag_ref = gh_json(f"/repos/{repository}/git/ref/tags/{quote(tag, safe='')}")
+tag_object = tag_ref.get("object", {})
+seen_tag_objects = set()
+while tag_object.get("type") == "tag":
+    tag_sha = tag_object.get("sha")
+    if not isinstance(tag_sha, str) or tag_sha in seen_tag_objects:
+        raise SystemExit("remote annotated tag contains a cycle or invalid tag object")
+    seen_tag_objects.add(tag_sha)
+    tag_object = gh_json(f"/repos/{repository}/git/tags/{tag_sha}").get("object", {})
+if tag_object.get("type") != "commit" or tag_object.get("sha") != commit:
+    raise SystemExit("remote tag does not resolve to the requested commit")
+release = gh_json(f"/repos/{repository}/releases/tags/{quote(tag, safe='')}")
+if not isinstance(release, dict) or release.get("tag_name") != tag:
+    raise SystemExit("remote draft release is missing or invalid")
 if release.get("draft") is not True:
     raise SystemExit("remote release is not a draft")
 if release.get("target_commitish") != commit:
@@ -443,8 +487,24 @@ def download(name):
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, request, response, code, msg, headers, new):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
     try:
-        with urllib.request.urlopen(request) as response:
+        with opener.open(request) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        if error.code not in {301, 302, 303, 307, 308}:
+            raise
+        location = error.headers.get("Location")
+        redirect_url = urljoin(request.full_url, location or "")
+        parsed = urlparse(redirect_url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise SystemExit(f"remote asset redirect is not a safe HTTPS URL: {name}") from error
+        redirect_request = urllib.request.Request(redirect_url, headers={"Accept": "application/octet-stream"})
+        with opener.open(redirect_request) as response:
             return response.read()
     except Exception as error:
         raise SystemExit(f"cannot download remote release asset {name}: {error}") from error

@@ -164,8 +164,13 @@ class CodexRuntimeConfig:
             parsed_url = urlsplit(base_url)
         except ValueError as error:
             raise AgentRuntimeError("Remote Codex endpoint is invalid") from error
+        is_local_http = parsed_url.scheme == "http" and parsed_url.hostname in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }
         if (
-            parsed_url.scheme not in {"http", "https"}
+            (parsed_url.scheme != "https" and not is_local_http)
             or not parsed_url.netloc
             or parsed_url.username is not None
             or parsed_url.password is not None
@@ -310,15 +315,19 @@ class RemoteCodexModel:
         if not isinstance(action, dict):
             raise AgentRuntimeError("Remote Codex action is not a JSON object")
         usage = payload.get("usage") if isinstance(payload, dict) else None
-        if isinstance(usage, dict):
-            action.setdefault(
-                "input_tokens",
-                usage.get("prompt_tokens", usage.get("input_tokens", 0)),
-            )
-            action.setdefault(
-                "output_tokens",
-                usage.get("completion_tokens", usage.get("output_tokens", 0)),
-            )
+        if not isinstance(usage, dict):
+            raise AgentRuntimeError("Remote Codex usage metadata is missing")
+        input_tokens = usage.get("prompt_tokens", usage.get("input_tokens", 0))
+        output_tokens = usage.get("completion_tokens", usage.get("output_tokens", 0))
+        if any(
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not 0 <= value <= 10_000_000
+            for value in (input_tokens, output_tokens)
+        ):
+            raise AgentRuntimeError("Remote Codex usage metadata is invalid")
+        action["input_tokens"] = input_tokens
+        action["output_tokens"] = output_tokens
         return action
 
 
@@ -381,7 +390,7 @@ def _active_control_plane_connection() -> dict[str, str] | None:
         from app.control_plane import active_remote_codex_connection
 
         value = active_remote_codex_connection()
-    except (ImportError, OSError, RuntimeError, ValueError):
+    except ImportError, OSError, RuntimeError, ValueError:
         return None
     if not isinstance(value, dict):
         return None
@@ -406,7 +415,7 @@ def _control_plane_remote_mode() -> bool:
             "openai-compatible",
             "remote-codex",
         }
-    except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+    except ImportError, OSError, RuntimeError, ValueError, TypeError:
         return False
 
 
@@ -1532,8 +1541,17 @@ def advance_agent_run(
     action_type = action.get("type")
     row.model_call_count += 1
     row.step_count += 1
-    row.input_tokens += int(action.get("input_tokens", 0))
-    row.output_tokens += int(action.get("output_tokens", 0))
+    input_tokens = action.get("input_tokens", 0)
+    output_tokens = action.get("output_tokens", 0)
+    if any(
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 0 <= value <= 10_000_000
+        for value in (input_tokens, output_tokens)
+    ):
+        raise AgentRuntimeError("model usage accounting is invalid")
+    row.input_tokens += input_tokens
+    row.output_tokens += output_tokens
     checkpoint["model_action_index"] += 1
     if action_type == "conclude":
         _require_research_completion_evidence(session, row)
@@ -1580,31 +1598,60 @@ def advance_agent_run(
         checkpoint["semantic_call_hashes"].append(semantic_hash)
         checkpoint["result_refs"].append(json.loads(existing.result_summary or "{}"))
 
-    def wait_for(existing: ToolCallRow) -> AgentStep:
+    def wait_for(existing: ToolCallRow) -> AgentStep | None:
         if not existing.job_id:
             raise AgentRuntimeError("active semantic tool call has no child job")
         waiting_call = existing
         if existing.agent_run_id != row.id:
-            waiting_call = ToolCallRow(
-                id=new_id("TCALL"),
-                workspace_id=row.workspace_id,
-                agent_run_id=row.id,
-                tool_name=name,
-                tool_version=definition["version"],
-                status="RUNNING",
-                input_payload=json.dumps(arguments),
-                input=arguments,
-                input_sha256=semantic_hash,
-                semantic_scope=f"wait:{row.id}:{semantic_hash[:12]}",
-                objective=row.objective,
-                research_id=row.research_id,
-                policy_version_ref=policy_version_ref,
-                job_id=existing.job_id,
-                warnings=json.dumps([{"code": "SEMANTIC_DEDUP_WAIT"}]),
-                started_at=now,
-            )
-            session.add(waiting_call)
-            session.flush()
+            wait_scope = f"wait:{row.id}:{semantic_hash[:12]}"
+            waiting_call = session.execute(
+                select(ToolCallRow)
+                .where(
+                    ToolCallRow.workspace_id == row.workspace_id,
+                    ToolCallRow.agent_run_id == row.id,
+                    ToolCallRow.semantic_scope == wait_scope,
+                    ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
+                )
+                .with_for_update()
+            ).scalar_one_or_none()
+            if waiting_call is None:
+                waiting_call = ToolCallRow(
+                    id=new_id("TCALL"),
+                    workspace_id=row.workspace_id,
+                    agent_run_id=row.id,
+                    tool_name=name,
+                    tool_version=definition["version"],
+                    status="RUNNING",
+                    input_payload=json.dumps(arguments),
+                    input=arguments,
+                    input_sha256=semantic_hash,
+                    semantic_scope=wait_scope,
+                    objective=row.objective,
+                    research_id=row.research_id,
+                    policy_version_ref=policy_version_ref,
+                    job_id=existing.job_id,
+                    warnings=json.dumps([{"code": "SEMANTIC_DEDUP_WAIT"}]),
+                    started_at=now,
+                )
+                try:
+                    with session.begin_nested():
+                        session.add(waiting_call)
+                        session.flush()
+                except IntegrityError:
+                    waiting_call = session.execute(
+                        select(ToolCallRow)
+                        .where(
+                            ToolCallRow.workspace_id == row.workspace_id,
+                            ToolCallRow.agent_run_id == row.id,
+                            ToolCallRow.semantic_scope == wait_scope,
+                            ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
+                        )
+                        .with_for_update()
+                    ).scalar_one()
+            if waiting_call.status == "SUCCESS":
+                replay(waiting_call)
+                row.tool_call_count += 1
+                return None
         row.tool_call_count += 1
         return _suspend_for_child_job(
             session,
@@ -1628,7 +1675,9 @@ def advance_agent_run(
     if prior is not None and prior.status == "SUCCESS":
         replay(prior)
     elif prior is not None:
-        return wait_for(prior)
+        step = wait_for(prior)
+        if step is not None:
+            return step
     else:
         from quantfoundry.agents.tools.executors import execute_tool
 
@@ -1670,7 +1719,9 @@ def advance_agent_run(
             if winner.status == "SUCCESS":
                 replay(winner)
             else:
-                return wait_for(winner)
+                step = wait_for(winner)
+                if step is not None:
+                    return step
         else:
             tool_call = candidate
     if tool_call is not None:
@@ -1827,7 +1878,12 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     row.decision_summary = failure
     row.ended_at = now
     row.revision += 1
-    _research_status(session, row, "WAITING_USER")
+    if (
+        row.role == "RESEARCH_DIRECTOR"
+        and row.parent_agent_run_id is None
+        and row.root_agent_run_id is None
+    ):
+        _research_status(session, row, "WAITING_USER")
     running_calls = (
         session.execute(
             select(ToolCallRow).where(

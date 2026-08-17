@@ -198,8 +198,10 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
         try:
             close = float(raw["close"])
             benchmark_close = float(raw["benchmark_close"])
-            split_factor = float(raw.get("split_factor") or 1.0)
-            dividend = float(raw.get("dividend") or 0.0)
+            split_factor = float(
+                1.0 if raw.get("split_factor") is None else raw["split_factor"]
+            )
+            dividend = float(0.0 if raw.get("dividend") is None else raw["dividend"])
         except (TypeError, ValueError) as error:
             raise EngineInputError("market prices must be numeric") from error
         local_date = event_time.astimezone(timezone).date().isoformat()
@@ -333,22 +335,32 @@ def load_validation_policy(policy_id: str) -> ValidationPolicy:
     data_quality = value["data_quality"]
     if not all(isinstance(item, dict) for item in (validation, holdout, data_quality)):
         raise EngineInputError("validation policy sections must be objects")
+    integer_values = (
+        value.get("version"),
+        validation.get("min_observations"),
+        holdout.get("min_observations"),
+        value.get("multiple_testing_max_evaluations"),
+        data_quality.get("min_rows"),
+        data_quality.get("min_symbols"),
+    )
+    if any(
+        not isinstance(item, int) or isinstance(item, bool) for item in integer_values
+    ):
+        raise EngineInputError("validation policy integer values are invalid")
     try:
         policy = ValidationPolicy(
             policy_id=policy_id,
-            version=int(value["version"]),
-            validation_min_observations=int(validation["min_observations"]),
+            version=value["version"],
+            validation_min_observations=validation["min_observations"],
             validation_min_sharpe=float(validation["min_sharpe"]),
             validation_max_drawdown_floor=float(validation["max_drawdown_floor"]),
-            holdout_min_observations=int(holdout["min_observations"]),
+            holdout_min_observations=holdout["min_observations"],
             holdout_min_total_return=float(holdout["min_total_return"]),
             holdout_min_sharpe=float(holdout["min_sharpe"]),
             holdout_max_drawdown_floor=float(holdout["max_drawdown_floor"]),
-            multiple_testing_max_evaluations=int(
-                value["multiple_testing_max_evaluations"]
-            ),
-            data_min_rows=int(data_quality["min_rows"]),
-            data_min_symbols=int(data_quality["min_symbols"]),
+            multiple_testing_max_evaluations=value["multiple_testing_max_evaluations"],
+            data_min_rows=data_quality["min_rows"],
+            data_min_symbols=data_quality["min_symbols"],
             data_max_late_release_fraction=float(
                 data_quality["max_late_release_fraction"]
             ),
@@ -383,8 +395,15 @@ def data_quality_profile(
     bundle: DatasetBundle, policy: ValidationPolicy
 ) -> dict[str, Any]:
     symbols = {row["symbol"] for row in bundle.rows}
+    timezone = ZoneInfo(bundle.timezone)
     late_release_count = sum(
-        1 for row in bundle.rows if row["available_at"][:10] > row["date"]
+        1
+        for row in bundle.rows
+        if _parse_timestamp(row["available_at"], "available_at")
+        .astimezone(timezone)
+        .date()
+        .isoformat()
+        > row["date"]
     )
     late_fraction = late_release_count / len(bundle.rows)
     failures = []
@@ -515,6 +534,36 @@ def _ranks(values: list[float]) -> list[float]:
     return ranks
 
 
+def _adjusted_price_map(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, float]]:
+    """Return split-adjusted total-return prices without resetting action state."""
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[row["symbol"]].append(row)
+    result: dict[str, dict[str, float]] = defaultdict(dict)
+    for symbol, history in grouped.items():
+        adjusted_level: float | None = None
+        previous_close: float | None = None
+        for row in sorted(history, key=lambda item: item["date"]):
+            close = float(row["close"])
+            split_factor = float(row.get("split_factor", 1.0))
+            dividend = float(row.get("dividend", 0.0))
+            if previous_close is None:
+                price = close + dividend
+            else:
+                gross_return = (close + dividend) * split_factor / previous_close
+                if not math.isfinite(gross_return) or gross_return <= 0:
+                    raise EngineInputError("adjusted market return is invalid")
+                price = (adjusted_level or previous_close) * gross_return
+            if not math.isfinite(price) or price <= 0:
+                raise EngineInputError("adjusted market price is invalid")
+            result[row["date"]][symbol] = price
+            adjusted_level = price
+            previous_close = close
+    return result
+
+
 def compute_factor_rows(
     rows: list[dict[str, Any]],
     expression: str,
@@ -539,9 +588,15 @@ def compute_factor_rows(
         by_symbol[row["symbol"]].append(row)
     calculated: list[dict[str, Any]] = []
     for history in by_symbol.values():
+        adjusted = _adjusted_price_map(history)
         for index in range(lookback, len(history)):
             current = history[index]
             knowledge_time = _parse_timestamp(current["event_time"], "event_time")
+            if (
+                _parse_timestamp(current["available_at"], "available_at")
+                > knowledge_time
+            ):
+                continue
             available_history = [
                 item
                 for item in history[:index]
@@ -551,12 +606,8 @@ def compute_factor_rows(
             if len(available_history) < lookback:
                 continue
             prior = available_history[-lookback]
-            current_price = float(current["close"]) * float(
-                current.get("split_factor", 1.0)
-            ) + float(current.get("dividend", 0.0))
-            prior_price = float(prior["close"]) * float(
-                prior.get("split_factor", 1.0)
-            ) + float(prior.get("dividend", 0.0))
+            current_price = adjusted[current["date"]][current["symbol"]]
+            prior_price = adjusted[prior["date"]][prior["symbol"]]
             score = current_price / prior_price - 1.0
             if operation == "mean_reversion":
                 score *= -1
@@ -572,11 +623,12 @@ def factor_metrics(rows: list[dict[str, Any]], horizons: list[int]) -> dict[str,
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
     prices: dict[str, dict[str, float]] = defaultdict(dict)
     sectors: dict[str, dict[str, str]] = defaultdict(dict)
+    adjusted_prices = _adjusted_price_map(rows)
     for row in rows:
         by_date[row["date"]][row["symbol"]] = float(
             row.get("factor_score", row["close"])
         )
-        prices[row["date"]][row["symbol"]] = float(row["close"])
+        prices[row["date"]][row["symbol"]] = adjusted_prices[row["date"]][row["symbol"]]
         sectors[row["date"]][row["symbol"]] = str(row.get("sector", "__all__"))
     dates = sorted(by_date)
     result: dict[str, Any] = {"horizons": {}}
@@ -744,26 +796,20 @@ def _portfolio_returns(
         raise EngineInputError("unsupported rebalance frequency")
 
     price_history: dict[str, list[float]] = defaultdict(list)
+    adjusted_prices = _adjusted_price_map(rows)
     for index in range(len(dates) - 1):
         today, tomorrow = dates[index], dates[index + 1]
         next_rows = by_date[tomorrow]
-        next_event_time = min(
-            _parse_timestamp(row["event_time"], "event_time")
-            for row in next_rows.values()
-        )
         today_rows = {
             symbol: row
             for symbol, row in by_date[today].items()
-            if max(
-                _parse_timestamp(row["event_time"], "event_time"),
-                _parse_timestamp(row["available_at"], "available_at"),
-            )
-            <= next_event_time
+            if _parse_timestamp(row["available_at"], "available_at")
+            <= _parse_timestamp(row["event_time"], "event_time")
         }
         if not today_rows:
             continue
-        for symbol, market_row in today_rows.items():
-            price_history[symbol].append(float(market_row["close"]))
+        for symbol in today_rows:
+            price_history[symbol].append(adjusted_prices[today][symbol])
         ranked = sorted(
             (
                 symbol
@@ -841,18 +887,8 @@ def _portfolio_returns(
             for symbol in universe
         )
         asset_returns = {
-            symbol: (
-                (
-                    float(next_rows[symbol]["close"])
-                    * float(next_rows[symbol].get("split_factor", 1.0))
-                    + float(next_rows[symbol].get("dividend", 0.0))
-                )
-                / (
-                    float(today_rows[symbol]["close"])
-                    + float(today_rows[symbol].get("dividend", 0.0))
-                )
-                - 1.0
-            )
+            symbol: adjusted_prices[tomorrow][symbol] / adjusted_prices[today][symbol]
+            - 1.0
             for symbol in target
         }
         gross = sum(weight * asset_returns[symbol] for symbol, weight in target.items())
@@ -887,7 +923,7 @@ def _portfolio_returns(
             symbol: weight * (1.0 + asset_returns[symbol]) / (1.0 + net)
             for symbol, weight in target.items()
         }
-        final_weights = target
+        final_weights = previous_weights.copy()
     if not net_returns:
         raise EngineInputError("simulation requires at least two comparable sessions")
     return net_returns, benchmark_returns, turnovers, trade_count, final_weights
@@ -896,10 +932,13 @@ def _portfolio_returns(
 def _risk_contribution(
     rows: list[dict[str, Any]], weights: dict[str, float]
 ) -> dict[str, float]:
+    adjusted_prices = _adjusted_price_map(rows)
     by_symbol: dict[str, dict[str, float]] = defaultdict(dict)
     for row in rows:
         if row["symbol"] in weights:
-            by_symbol[row["symbol"]][row["date"]] = float(row["close"])
+            by_symbol[row["symbol"]][row["date"]] = adjusted_prices[row["date"]][
+                row["symbol"]
+            ]
     return_maps: dict[str, dict[str, float]] = {}
     for symbol, prices in by_symbol.items():
         dates = sorted(prices)

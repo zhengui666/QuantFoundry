@@ -7,6 +7,51 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 [[ -n "$report_path" && -f "$report_path" ]] || { printf '%s\n' 'Independent review report is required and must be an existing file.' >&2; exit 2; }
 [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'Expected commit must be a full lowercase SHA.' >&2; exit 2; }
+if [[ "$report_path" != /* ]]; then
+  report_path="$PWD/$report_path"
+fi
+report_path="$(cd "$(dirname "$report_path")" && pwd)/$(basename "$report_path")"
+
+if [[ "${QF_INDEPENDENT_REVIEW_OFFLINE:-0}" == 1 ]]; then
+  attestation_path="${QF_INDEPENDENT_REVIEW_ATTESTATION:-}"
+  [[ -f "$attestation_path" ]] || { printf '%s\n' 'Independent review attestation is required for offline verification.' >&2; exit 2; }
+  python3 - "$report_path" "$expected_commit" "$attestation_path" <<'PY'
+import hashlib
+import json
+import pathlib
+import re
+import sys
+from urllib.parse import urlparse
+
+report_path, expected_commit, attestation_path = map(pathlib.Path, sys.argv[1:])
+report = json.loads(report_path.read_text(encoding="utf-8"))
+attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+if set(report) != {
+    "schema_version", "content_type", "commit", "verifier_role", "result", "github_run_id",
+    "artifact_uri", "artifact_sha256", "artifact_report",
+}:
+    raise SystemExit("offline independent review locator has an invalid field set")
+if report["schema_version"] != "1.0.0" or report["content_type"] != "application/vnd.quantfoundry.independent-review+json;version=1":
+    raise SystemExit("offline independent review locator schema is invalid")
+if report["commit"] != str(expected_commit) or report["verifier_role"] != "Independent Review Agent" or report["result"] != "approved":
+    raise SystemExit("offline independent review locator is not bound to an approved review")
+if not isinstance(report["github_run_id"], int) or report["github_run_id"] < 1:
+    raise SystemExit("offline independent review locator run id is invalid")
+if urlparse(report["artifact_uri"]).scheme != "https" or "github.com" not in report["artifact_uri"]:
+    raise SystemExit("offline independent review locator artifact URI is invalid")
+if not re.fullmatch(r"[0-9a-f]{64}", report["artifact_sha256"]):
+    raise SystemExit("offline independent review locator artifact digest is invalid")
+artifact_report = report["artifact_report"]
+if not isinstance(artifact_report, dict) or set(artifact_report) != {"path", "sha256"} or artifact_report["path"] != "independent-review-report.json" or not re.fullmatch(r"[0-9a-f]{64}", artifact_report["sha256"]):
+    raise SystemExit("offline independent review locator report digest is invalid")
+if set(attestation) != {"schema_version", "commit", "locator_sha256", "result"} or attestation.get("schema_version") != "1.0.0" or attestation.get("commit") != str(expected_commit) or attestation.get("result") != "verified":
+    raise SystemExit("offline independent review attestation is invalid")
+if attestation.get("locator_sha256") != hashlib.sha256(report_path.read_bytes()).hexdigest():
+    raise SystemExit("offline independent review attestation does not match locator")
+PY
+  exit 0
+fi
+
 [[ -n "${GITHUB_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || { printf '%s\n' 'GITHUB_TOKEN and GITHUB_REPOSITORY are required to verify independent review evidence.' >&2; exit 2; }
 command -v gh >/dev/null || { printf '%s\n' 'gh is required to verify independent review evidence.' >&2; exit 2; }
 
@@ -80,6 +125,8 @@ if not isinstance(artifact_report, dict) or set(artifact_report) != {"path", "sh
 artifact_report_path, artifact_report_sha256 = artifact_report["path"], artifact_report["sha256"]
 if not isinstance(artifact_report_path, str) or not artifact_report_path or artifact_report_path.startswith("/") or any(part in {"", ".", ".."} for part in artifact_report_path.split("/")):
     raise SystemExit("independent review artifact_report path is invalid")
+if artifact_report_path != "independent-review-report.json":
+    raise SystemExit("independent review artifact_report path is not canonical")
 if not isinstance(artifact_report_sha256, str) or not sha256_pattern.fullmatch(artifact_report_sha256):
     raise SystemExit("independent review artifact_report sha256 is invalid")
 parsed = urlparse(artifact_uri if isinstance(artifact_uri, str) else "")
@@ -121,7 +168,11 @@ if workflow_source.get("sha") != trusted_workflow_blob_sha:
     raise SystemExit("independent review workflow is not the trusted revision")
 artifact_id = match.group(3)
 artifact = gh_json(f"/repos/{repository}/actions/artifacts/{artifact_id}")
-if artifact.get("expired") or artifact.get("workflow_run", {}).get("id") != run_id:
+if (
+    artifact.get("name") != f"independent-agent-review-{run_id}"
+    or artifact.get("expired")
+    or artifact.get("workflow_run", {}).get("id") != run_id
+):
     raise SystemExit("independent review report artifact is missing, expired, or not bound to its run")
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-") as directory:
     output = pathlib.Path(directory) / "report.zip"

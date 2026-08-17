@@ -80,14 +80,22 @@ export function Capability({
   if (item.visibility === 'HIDE') return null;
   const executable = item.allowed && onClick !== undefined;
   const actionLabel = label ?? t(`action.${item.action}`, { defaultValue: item.action });
-  const run = () => {
-    void onClick?.();
+  const run = async () => {
+    setConfirmationError(undefined);
+    try {
+      await onClick?.();
+    } catch (error) {
+      setConfirmationError(error instanceof Error ? error.message : t('error.connection'));
+    }
+  };
+  const runSafely = () => {
+    void run();
   };
   const button = (
     <button
       data-testid={`capability-action-${item.action}`}
       data-requires-confirmation={String(item.requires_confirmation)}
-      onClick={item.requires_confirmation && !confirmationHandled ? undefined : run}
+      onClick={item.requires_confirmation && !confirmationHandled ? undefined : runSafely}
       disabled={!executable || busy}
       title={
         item.allowed
@@ -101,7 +109,13 @@ export function Capability({
       {!item.allowed && ` · ${t('capability.unavailable')}`}
     </button>
   );
-  if (!executable || !item.requires_confirmation || confirmationHandled) return button;
+  if (!executable || !item.requires_confirmation || confirmationHandled)
+    return (
+      <>
+        {button}
+        {confirmationError && <State kind="error">{confirmationError}</State>}
+      </>
+    );
   const confirm = async () => {
     if (!onClick) return;
     setConfirmationPending(true);

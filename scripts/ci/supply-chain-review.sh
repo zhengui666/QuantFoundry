@@ -68,6 +68,27 @@ if not required.issubset(names):
     raise SystemExit("release manifest and SHA256SUMS are required assets")
 PY
 
+python3 - "$work_dir" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+release = json.loads((root / "release.json").read_text(encoding="utf-8"))
+expected = {
+    asset["name"]
+    for asset in release.get("assets", [])
+    if isinstance(asset, dict) and isinstance(asset.get("name"), str)
+}
+listed = set()
+for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+    digest, separator, name = line.partition("  ")
+    if len(digest) != 64 or not separator or not name:
+        raise SystemExit("SHA256SUMS contains an invalid entry")
+    listed.add(name.removeprefix("*"))
+if listed != expected - {"SHA256SUMS"}:
+    raise SystemExit("SHA256SUMS must cover every release asset except itself")
+PY
 (cd "$work_dir" && sha256sum --check --strict SHA256SUMS)
 
 python3 - "$work_dir" "$tag" "$commit" <<'PY'
@@ -102,6 +123,11 @@ required_sources = {
 sources = {item.get("source") for item in inventory if isinstance(item, dict)}
 if not required_sources.issubset(sources):
     raise SystemExit("release inventory is missing supply-chain or P0 snapshots")
+asset_path = {
+    item["source"]: root / item["name"]
+    for item in inventory
+    if isinstance(item, dict) and isinstance(item.get("source"), str) and isinstance(item.get("name"), str)
+}
 images = manifest.get("images")
 compose = manifest.get("compose_images")
 if not isinstance(images, list) or len(images) != 2 or not isinstance(compose, dict):
@@ -111,7 +137,46 @@ for image in images:
     if not isinstance(name, str) or not isinstance(digest, str) or not digest.startswith("sha256:"):
         raise SystemExit("invalid image digest in release manifest")
     subprocess = __import__("subprocess")
-    subprocess.run(["docker", "buildx", "imagetools", "inspect", f"{name}@{digest}"], check=True)
+    subject = f"{name}@{digest}"
+    subprocess.run(["docker", "buildx", "imagetools", "inspect", subject], check=True)
+    verified = subprocess.run(
+        [
+            "gh",
+            "attestation",
+            "verify",
+            f"oci://{subject}",
+            "--repo",
+            expected_repository,
+            "--format",
+            "json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        verification = json.loads(verified.stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"GitHub attestation verification returned invalid JSON for {name}") from error
+    serialized = json.dumps(verification, sort_keys=True)
+    if digest not in serialized or expected_repository not in serialized or expected_commit not in serialized:
+        raise SystemExit(f"verified attestation for {name} is not bound to repository, digest, and commit")
+    for kind, relative in (
+        ("attestation", f"attestations/{'backend' if image is images[0] else 'frontend'}.json"),
+        ("provenance", f"provenance/{'backend' if image is images[0] else 'frontend'}.json"),
+        ("signature", f"signature-verification/{'backend' if image is images[0] else 'frontend'}.json"),
+    ):
+        try:
+            evidence = json.loads(asset_path[relative].read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise SystemExit(f"invalid {kind} evidence for {name}: {error}") from error
+        evidence_text = json.dumps(evidence, sort_keys=True)
+        if digest not in evidence_text or expected_repository not in evidence_text or expected_commit not in evidence_text:
+            raise SystemExit(f"{kind} evidence for {name} is not bound to repository, digest, and commit")
+    sbom_name = 'backend' if image is images[0] else 'frontend'
+    sbom = json.loads(asset_path[f"sbom/{sbom_name}.spdx.json"].read_text(encoding="utf-8"))
+    if not isinstance(sbom.get("spdxVersion"), str) or not isinstance(sbom.get("packages"), list):
+        raise SystemExit(f"{sbom_name} SBOM is not a valid SPDX document")
     if image is images[0] and compose.get("api") != f"{name}@{digest}":
         raise SystemExit("Compose backend binding does not match image digest")
     if image is images[1] and compose.get("frontend") != f"{name}@{digest}":

@@ -45,7 +45,9 @@ def _uuid(value: Any = None) -> uuid.UUID:
     return value if isinstance(value, uuid.UUID) else uuid.uuid4()
 
 
-def _source_row(connection: Any, table: Table, workspace_id: Any = None) -> dict[str, Any]:
+def _source_row(
+    connection: Any, table: Table, workspace_id: Any = None
+) -> dict[str, Any]:
     statement = select(table)
     if workspace_id is not None and "workspace_id" in table.c:
         statement = statement.where(table.c.workspace_id == workspace_id)
@@ -66,9 +68,7 @@ def _insert(connection: Any, table: Table, values: dict[str, Any]) -> None:
 
 def _rechain_audit_events(connection: Any, table: Table) -> None:
     """Recompute the disposable fixture's audit chain after row surgery."""
-    workspaces = connection.execute(
-        select(table.c.workspace_id).distinct()
-    ).scalars()
+    workspaces = connection.execute(select(table.c.workspace_id).distinct()).scalars()
     for workspace_id in workspaces:
         previous: str | None = None
         rows = connection.execute(
@@ -113,7 +113,9 @@ def _rechain_audit_events(connection: Any, table: Table) -> None:
             previous = event_hash
 
 
-def _clone(connection: Any, table: Table, source: dict[str, Any], index: int) -> dict[str, Any]:
+def _clone(
+    connection: Any, table: Table, source: dict[str, Any], index: int
+) -> dict[str, Any]:
     values = {name: value for name, value in source.items() if name in table.c}
     if "id" in values:
         values["id"] = _uuid()
@@ -205,9 +207,7 @@ def _clone_gate_row(
 ) -> dict[str, Any]:
     values = _clone(connection, table, source, index)
     if table.name in {"audit_events", "domain_events"}:
-        values["sequence"] = _next_sequence(
-            connection, table, values["workspace_id"]
-        )
+        values["sequence"] = _next_sequence(connection, table, values["workspace_id"])
     if table.name == "audit_events":
         previous = connection.execute(
             select(table.c.event_hash)
@@ -235,9 +235,7 @@ def _clone_gate_row(
             ]
 
         def unused(rows: list[dict[str, Any]], key: str, column: str) -> dict[str, Any]:
-            used = set(
-                connection.execute(select(table.c[column])).scalars()
-            )
+            used = set(connection.execute(select(table.c[column])).scalars())
             for row in rows:
                 if row[key] not in used:
                     return row
@@ -262,6 +260,21 @@ def _clone_gate_row(
         if not validation_runs:
             raise RuntimeError("migration gate fixture requires a validation run")
         validation_run = validation_runs[index % len(validation_runs)]
+        validation = metadata.tables["validations"]
+        validation_row = (
+            connection.execute(
+                select(validation).where(
+                    validation.c.workspace_id == workspace_id,
+                    validation.c.id == validation_run["validation_id"],
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if validation_row is None:
+            raise RuntimeError(
+                "migration gate fixture validation run has no validation dependency"
+            )
         values.update(
             {
                 "exposure_id": f"HOLD-{uuid.uuid4()}",
@@ -269,7 +282,7 @@ def _clone_gate_row(
                 "approval_public_id": approval["approval_id"],
                 "job_id": job["job_id"],
                 "exposed_by_job_id": job["id"],
-                "validation_id": f"VAL-{uuid.uuid4()}",
+                "validation_id": validation_row["id"],
                 "validation_run_id": validation_run["id"],
             }
         )
@@ -278,8 +291,7 @@ def _clone_gate_row(
             select(
                 metadata.tables["jobs"].c.id,
                 metadata.tables["jobs"].c.job_id,
-            )
-            .where(metadata.tables["jobs"].c.workspace_id == values["workspace_id"])
+            ).where(metadata.tables["jobs"].c.workspace_id == values["workspace_id"])
         ).all()
         if len(jobs) < 2:
             raise RuntimeError("migration gate fixture requires two jobs per workspace")
@@ -295,10 +307,14 @@ def _clone_gate_row(
         for offset in range(len(jobs) * len(jobs)):
             candidate = jobs[(index + offset) % len(jobs)]
             dependency = jobs[(index + offset + 1) % len(jobs)]
-            if candidate.job_id != dependency.job_id and (
-                candidate.job_id,
-                dependency.job_id,
-            ) not in existing:
+            if (
+                candidate.job_id != dependency.job_id
+                and (
+                    candidate.job_id,
+                    dependency.job_id,
+                )
+                not in existing
+            ):
                 source_job, dependency_job = candidate, dependency
                 break
         if source_job is None or dependency_job is None:
@@ -316,7 +332,9 @@ def _clone_gate_row(
 
 def _ensure_rows(connection: Any, metadata: MetaData, name: str, floor: int) -> None:
     table = metadata.tables[name]
-    count = int(connection.execute(select(func.count()).select_from(table)).scalar_one())
+    count = int(
+        connection.execute(select(func.count()).select_from(table)).scalar_one()
+    )
     if count >= floor:
         return
     source = _source_row(connection, table)
@@ -336,9 +354,13 @@ def _ensure_workspace_dependency(
     workspace_id: str,
 ) -> dict[str, Any]:
     table = metadata.tables[name]
-    row = connection.execute(
-        select(table).where(table.c.workspace_id == workspace_id).limit(1)
-    ).mappings().first()
+    row = (
+        connection.execute(
+            select(table).where(table.c.workspace_id == workspace_id).limit(1)
+        )
+        .mappings()
+        .first()
+    )
     if row is not None:
         return dict(row)
     source = _source_row(connection, table)
@@ -348,7 +370,9 @@ def _ensure_workspace_dependency(
     return values
 
 
-def _ensure_settings_record(connection: Any, metadata: MetaData, workspace_id: str) -> None:
+def _ensure_settings_record(
+    connection: Any, metadata: MetaData, workspace_id: str
+) -> None:
     table = metadata.tables["records"]
     found = connection.execute(
         select(table.c.id).where(
@@ -376,17 +400,25 @@ def _ensure_settings_record(connection: Any, metadata: MetaData, workspace_id: s
 
 
 def _ensure_app_settings(
-    connection: Any, metadata: MetaData, workspace_id: str, index: int
+    connection: Any, metadata: MetaData, workspace_id: str
 ) -> None:
     table = metadata.tables["app_settings"]
     if connection.execute(
         select(table.c.id).where(table.c.workspace_id == workspace_id)
     ).first():
         return
-    ai = _ensure_workspace_dependency(connection, metadata, "model_provider_connections", workspace_id)
-    research = _ensure_workspace_dependency(connection, metadata, "research_policy_versions", workspace_id)
-    risk = _ensure_workspace_dependency(connection, metadata, "risk_policy_versions", workspace_id)
-    cost = _ensure_workspace_dependency(connection, metadata, "cost_model_versions", workspace_id)
+    ai = _ensure_workspace_dependency(
+        connection, metadata, "model_provider_connections", workspace_id
+    )
+    research = _ensure_workspace_dependency(
+        connection, metadata, "research_policy_versions", workspace_id
+    )
+    risk = _ensure_workspace_dependency(
+        connection, metadata, "risk_policy_versions", workspace_id
+    )
+    cost = _ensure_workspace_dependency(
+        connection, metadata, "cost_model_versions", workspace_id
+    )
     now = _now()
     _insert(
         connection,
@@ -415,17 +447,27 @@ def _ensure_app_settings(
     )
 
 
-def _ensure_setup_binding(connection: Any, metadata: MetaData, workspace_id: str) -> None:
+def _ensure_setup_binding(
+    connection: Any, metadata: MetaData, workspace_id: str
+) -> None:
     table = metadata.tables["setup_bindings"]
     if connection.execute(
         select(table.c.workspace_id).where(table.c.workspace_id == workspace_id)
     ).first():
         return
     _ensure_settings_record(connection, metadata, workspace_id)
-    ai = _ensure_workspace_dependency(connection, metadata, "model_provider_connections", workspace_id)
-    research = _ensure_workspace_dependency(connection, metadata, "research_policy_versions", workspace_id)
-    risk = _ensure_workspace_dependency(connection, metadata, "risk_policy_versions", workspace_id)
-    cost = _ensure_workspace_dependency(connection, metadata, "cost_model_versions", workspace_id)
+    ai = _ensure_workspace_dependency(
+        connection, metadata, "model_provider_connections", workspace_id
+    )
+    research = _ensure_workspace_dependency(
+        connection, metadata, "research_policy_versions", workspace_id
+    )
+    risk = _ensure_workspace_dependency(
+        connection, metadata, "risk_policy_versions", workspace_id
+    )
+    cost = _ensure_workspace_dependency(
+        connection, metadata, "cost_model_versions", workspace_id
+    )
     now = _now()
     _insert(
         connection,
@@ -453,7 +495,10 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
     only this disposable CI database before taking its fingerprint.
     """
     migration = runpy.run_path(
-        str(BACKEND_ROOT / "alembic/versions/0017_paper_scheduler_state_initialization.py")
+        str(
+            BACKEND_ROOT
+            / "alembic/versions/0017_paper_scheduler_state_initialization.py"
+        )
     )
     # The repeated application suite intentionally emits multiple scheduler
     # evidence events. Rebuild this disposable evidence stream deterministically
@@ -469,7 +514,8 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             event_ids = []
             evidence_rows = connection.execute(
                 select(audit_table.c.id, audit_table.c.summary).where(
-                    audit_table.c.action_type == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+                    audit_table.c.action_type
+                    == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
                     audit_table.c.object_type == "paper",
                 )
             ).mappings()
@@ -480,7 +526,9 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
                         summary = json.loads(summary)
                     except json.JSONDecodeError:
                         continue
-                evidence = summary.get(evidence_key) if isinstance(summary, dict) else None
+                evidence = (
+                    summary.get(evidence_key) if isinstance(summary, dict) else None
+                )
                 state_transition_id = (
                     evidence.get("state_transition_id")
                     if isinstance(evidence, dict)
@@ -490,7 +538,9 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
                     audit_ids.append(row["id"])
                     event_ids.append(state_transition_id)
             if audit_ids:
-                connection.execute(audit_table.delete().where(audit_table.c.id.in_(audit_ids)))
+                connection.execute(
+                    audit_table.delete().where(audit_table.c.id.in_(audit_ids))
+                )
             if event_ids:
                 connection.execute(
                     event_table.delete().where(event_table.c.event_id.in_(event_ids))
@@ -515,8 +565,7 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
     heads = metadata.tables["audit_chain_heads"]
     watermarks = metadata.tables["event_stream_watermarks"]
     workspace_ids = {
-        row[0]
-        for row in connection.execute(select(deployments.c.workspace_id)).all()
+        row[0] for row in connection.execute(select(deployments.c.workspace_id)).all()
     }
     for workspace_id in workspace_ids:
         _rechain_audit_events(connection, audits)
@@ -534,7 +583,9 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             result = connection.execute(
                 heads.update()
                 .where(heads.c.workspace_id == workspace_id)
-                .values(event_sha256=latest_audit.event_hash, revision=latest_audit.sequence)
+                .values(
+                    event_sha256=latest_audit.event_hash, revision=latest_audit.sequence
+                )
             )
             if result.rowcount == 0:
                 connection.execute(
@@ -571,11 +622,15 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
     status_for_target = {"ACTIVE": "ACTIVE", "PAUSED": "PAUSED", "DISABLED": "DISABLED"}
     for deployment in connection.execute(select(deployments)).mappings().all():
         pair = (deployment["workspace_id"], deployment["id"])
-        state_rows = connection.execute(
-            select(states).where(
-                states.c.workspace_id == pair[0], states.c.paper_id == pair[1]
+        state_rows = (
+            connection.execute(
+                select(states).where(
+                    states.c.workspace_id == pair[0], states.c.paper_id == pair[1]
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         if len(state_rows) > 1:
             raise RuntimeError(f"ambiguous scheduler fixture state: {pair!r}")
         if not state_rows:
@@ -607,16 +662,19 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
         target = str(state_rows[0]["scheduler_status"])
         if target not in status_for_target:
             raise RuntimeError(f"invalid scheduler fixture state: {pair!r}")
-        audit_rows = connection.execute(
-            select(audits)
-            .where(
-                audits.c.workspace_id == pair[0],
-                audits.c.object_type == "paper",
-                audits.c.object_id == deployment["paper_id"],
-                audits.c.action_type == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
-                audits.c.detail_artifact_id.is_(None),
+        audit_rows = (
+            connection.execute(
+                select(audits).where(
+                    audits.c.workspace_id == pair[0],
+                    audits.c.object_type == "paper",
+                    audits.c.object_id == deployment["paper_id"],
+                    audits.c.action_type == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+                    audits.c.detail_artifact_id.is_(None),
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         if not audit_rows:
             connection.execute(
                 states.delete()
@@ -653,18 +711,25 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             continue
         if len(audit_rows) > 1:
             raise RuntimeError(f"ambiguous scheduler fixture evidence: {pair!r}")
-        event_rows = connection.execute(
-            select(events)
-            .where(
-                events.c.workspace_id == pair[0],
-                events.c.event_type == "paper.updated",
-                events.c.object_type == "paper",
-                events.c.object_id == deployment["paper_id"],
+        summary = audit_rows[0]["summary"]
+        if isinstance(summary, str):
+            summary = json.loads(summary)
+        evidence = summary[migration["_EVIDENCE_KEY"]]
+        transition_id = evidence["state_transition_id"]
+        event_rows = (
+            connection.execute(
+                select(events).where(
+                    events.c.workspace_id == pair[0],
+                    events.c.event_id == transition_id,
+                    events.c.event_type == "paper.updated",
+                    events.c.object_type == "paper",
+                    events.c.object_id == deployment["paper_id"],
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         if not event_rows:
-            summary = audit_rows[0]["summary"]
-            evidence = summary["paper_scheduler_state_evidence.v1"]
             instant = datetime.fromisoformat(
                 str(evidence["initialization_utc"]).replace("Z", "+00:00")
             ).astimezone(UTC)
@@ -672,7 +737,7 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             connection.execute(
                 events.insert().values(
                     sequence=sequence,
-                    event_id=f"EVT-{uuid.uuid4()}",
+                    event_id=transition_id,
                     workspace_id=pair[0],
                     actor_id="alembic:0017",
                     event_type="paper.updated",
@@ -720,7 +785,9 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             connection.execute(
                 heads.update()
                 .where(heads.c.workspace_id == workspace_id)
-                .values(event_sha256=latest_audit.event_hash, revision=latest_audit.sequence)
+                .values(
+                    event_sha256=latest_audit.event_hash, revision=latest_audit.sequence
+                )
             )
         latest_event = connection.execute(
             select(events.c.sequence)
@@ -738,7 +805,9 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
 
 def populate(database_url: str) -> dict[str, int]:
     if os.getenv("QF_ALLOW_MIGRATION_GATE_SEED") != "1":
-        raise RuntimeError("migration gate fixture requires QF_ALLOW_MIGRATION_GATE_SEED=1")
+        raise RuntimeError(
+            "migration gate fixture requires QF_ALLOW_MIGRATION_GATE_SEED=1"
+        )
     import json
 
     manifest = json.loads(GATE_MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -756,7 +825,7 @@ def populate(database_url: str) -> dict[str, int]:
                 raise RuntimeError("migration gate fixture requires two workspaces")
             _repair_scheduler_fixture(connection, metadata)
             for workspace_id in workspaces[:2]:
-                _ensure_app_settings(connection, metadata, workspace_id, 0)
+                _ensure_app_settings(connection, metadata, workspace_id)
                 _ensure_setup_binding(connection, metadata, workspace_id)
             for name in floors:
                 if name in {"app_settings", "setup_bindings"}:

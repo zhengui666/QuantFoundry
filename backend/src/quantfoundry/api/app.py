@@ -1954,7 +1954,7 @@ def remote_codex_mode() -> bool:
     try:
         snapshot = remote_codex_projection()
         return snapshot[0].lower() in {"openai-compatible", "remote-codex"}
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError:
         return False
 
 
@@ -1967,7 +1967,7 @@ def remote_codex_projection() -> tuple[str, str]:
         provider = str(snapshot.get("model_provider") or "remote-codex")
         if model != "unconfigured":
             return provider, model
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError:
         pass
     return ("remote-codex", os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL))
 
@@ -2945,7 +2945,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3520,7 +3520,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+    except httpx.HTTPError, KeyError, TypeError, ValueError:
         return False
     return payload.get("model_name") in available_models
 
@@ -3560,7 +3560,7 @@ def validate_live_connector(
                 accounts = connector.accounts()
             finally:
                 connector.close()
-        except (ConnectorError, ValueError):
+        except ConnectorError, ValueError:
             return 200, {
                 "connection_id": data.connection_id,
                 "state": "FAILED",
@@ -5268,7 +5268,12 @@ def validation(
             s,
             "VALIDATION",
             {"type": "validation", "id": i, "version": None, "revision": 1},
-            input_payload={"validation_id": i, **payload},
+            input_payload={
+                "validation_id": i,
+                "policy_version": policy.version,
+                "policy_sha256": policy.content_sha256,
+                **payload,
+            },
         )
         created_at = NOW()
         d = validated_payload(
@@ -6064,7 +6069,7 @@ def agent_config_payload(row):
                 or snapshot.get("effective_configuration_revision")
                 or 1
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             ai_connection_id = "CODEX-DEFAULT"
     return {
         "role_key": row.role,
@@ -6214,7 +6219,7 @@ def agent_run(
             from app.control_plane import active_runtime_snapshot
 
             snapshot = active_runtime_snapshot()
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             snapshot = {}
         ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
         ai_connection_revision = int(
@@ -6295,7 +6300,7 @@ def tool_call(
             configuration_sha256 = str(
                 snapshot.get("effective_configuration_sha256") or configuration_sha256
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             pass
     return {
         "tool_call_id": r.id,
@@ -6462,7 +6467,28 @@ def application_openapi() -> dict[str, Any]:
             operation["security"] = canonical_operation.get(
                 "security", specification.get("security")
             )
-            canonical_parameters = canonical_operation.get("parameters", [])
+            canonical_parameters = [
+                *specification["paths"][path].get("parameters", []),
+                *canonical_operation.get("parameters", []),
+            ]
+            runtime_parameters = operation.setdefault("parameters", [])
+            parameter_keys = {
+                (parameter.get("name"), parameter.get("in"))
+                for parameter in runtime_parameters
+                if isinstance(parameter, dict)
+            }
+            for raw_parameter in canonical_parameters:
+                parameter = (
+                    specification["components"]["parameters"][
+                        raw_parameter["$ref"].rsplit("/", 1)[-1]
+                    ]
+                    if "$ref" in raw_parameter
+                    else raw_parameter
+                )
+                key = (parameter.get("name"), parameter.get("in"))
+                if key not in parameter_keys:
+                    runtime_parameters.append(deepcopy(raw_parameter))
+                    parameter_keys.add(key)
             required_headers = {
                 (
                     specification["components"]["parameters"][

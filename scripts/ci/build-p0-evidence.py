@@ -52,7 +52,11 @@ def args() -> argparse.Namespace:
 def read_commands(options: argparse.Namespace) -> list[dict[str, Any]]:
     if options.result_file:
         result = json.loads(options.result_file.read_text(encoding="utf-8"))
-        if result.get("result") != "pass":
+        if (
+            result.get("result") != "pass"
+            or result.get("exit_code") != 0
+            or result.get("commit") != options.commit_sha
+        ):
             raise SystemExit("P0 evidence requires a passing gate result")
         steps = result.get("steps")
         if not isinstance(steps, list) or not steps:
@@ -68,6 +72,11 @@ def read_commands(options: argparse.Namespace) -> list[dict[str, Any]]:
         return commands
     if not options.command:
         raise SystemExit("at least one verified command is required")
+    if any(
+        not isinstance(value, str) or not value.strip() or "\n" in value
+        for value in options.command
+    ):
+        raise SystemExit("command evidence requires non-empty single-line commands")
     return [
         {"command": value, "result": "pass", "exit_code": 0}
         for value in options.command

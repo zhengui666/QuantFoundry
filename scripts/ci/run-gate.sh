@@ -124,8 +124,8 @@ require_ci_environment() {
     write_result ci-build-identity 'QF_GIT_COMMIT must equal checkout HEAD' 2 'CI commit identity does not match checkout HEAD'
     exit 2
   fi
-  if [[ "${QF_DATABASE_URL:-}" != postgresql+psycopg://* || "${QF_ALEMBIC_URL:-}" != "$QF_DATABASE_URL" || "${QF_SKIP_AUTO_CREATE:-}" != 1 ]]; then
-    write_result ci-postgres 'QF_DATABASE_URL/QF_ALEMBIC_URL/QF_SKIP_AUTO_CREATE are required' 2 'missing real PostgreSQL CI configuration'
+  if [[ "${QF_CI_DISPOSABLE_DATABASE:-}" != 1 || "${QF_DATABASE_URL:-}" != postgresql+psycopg://* || "${QF_ALEMBIC_URL:-}" != "$QF_DATABASE_URL" || "${QF_SKIP_AUTO_CREATE:-}" != 1 ]]; then
+    write_result ci-postgres 'QF_CI_DISPOSABLE_DATABASE/QF_DATABASE_URL/QF_ALEMBIC_URL/QF_SKIP_AUTO_CREATE are required' 2 'missing explicitly disposable real PostgreSQL CI configuration'
     exit 2
   fi
 }

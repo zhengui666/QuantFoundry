@@ -131,7 +131,7 @@ def upgrade() -> None:
             server_default="LOCAL",
         ),
         sa.Column("storage_key", sa.Text(), nullable=False, unique=True),
-        sa.Column("size_bytes", sa.Integer(), nullable=False),
+        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
         sa.Column("sha256", sa.String(64), nullable=False),
         sa.Column("schema_name", sa.String(96)),
         sa.Column("schema_version", sa.Integer()),
@@ -208,4 +208,7 @@ def downgrade() -> None:
                 .scalar_one()
             )
             if other_objects == 0:
+                op.execute("DROP TABLE agent_checkpoint._qf_owned_0014")
                 op.execute("DROP SCHEMA agent_checkpoint")
+            else:
+                op.execute("DROP TABLE agent_checkpoint._qf_owned_0014")

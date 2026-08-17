@@ -154,7 +154,7 @@ x-quantfoundry-security-rules:
 x-quantfoundry-csrf-parameter: &CsrfHeader
   in: header
   name: X-CSRF-Token
-  required: false
+  required: true
   schema: {type: string, minLength: 32, maxLength: 256}
 x-quantfoundry-protected-mutation: &ProtectedMutation
   security:

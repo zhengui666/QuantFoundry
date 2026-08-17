@@ -126,11 +126,18 @@ const intentionalRejection = (token, context) => {
   ).test(context);
 };
 
-const schemaOrManifestJson = (file) =>
-  /(?:^|[/\\])schemas?(?:[/\\]|$)/i.test(file) || /(?:manifest|schema)[^/\\]*\.json$/i.test(file);
-const jsonProseKeys = new Set(['constraint', 'constraints', 'description', 'descriptions']);
+const grammarNotation = (token, context) => {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (
+    new RegExp('(?:`' + escaped + '`|' + escaped + '@(?:[A-Za-z]|version)\\b)', 'i').test(
+      context,
+    ) || new RegExp(`\\b${escaped}\\b[^\\n]*(?:notation|grammar)`, 'i').test(context)
+  );
+};
 
-const invalidTokens = (text, context, location, matchers) => {
+const jsonIdKeys = /^(?:id|value|token|key|[a-z0-9]+_(?:id|ref|token|key))$/i;
+
+const invalidTokens = (text, context, location, matchers, key = '') => {
   const failures = [];
   const matches = [
     ...text.matchAll(tokenPattern),
@@ -142,8 +149,6 @@ const invalidTokens = (text, context, location, matchers) => {
   ];
   for (const match of matches) {
     const token = match[0];
-    const nextCharacter = text[match.index + token.length] ?? '';
-    if (match[2] !== '' && /[()[\]{}?*+\\%]/.test(nextCharacter)) continue;
     const rawPrefix = match[1] ?? '';
     const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
@@ -156,7 +161,19 @@ const invalidTokens = (text, context, location, matchers) => {
       (canonical !== undefined && (rawPrefix === prefix || looksLikeLowercaseId)) ||
       (prefix === 'MEM' && rawPrefix === prefix);
     if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
+    if (match[2] !== '' && grammarNotation(token, context)) continue;
     if (!intentionalRejection(token, context))
+      failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
+  }
+  if (
+    jsonIdKeys.test(key) &&
+    /^([A-Za-z][A-Za-z0-9]*)-$/.test(text) &&
+    matchers.has(text.slice(0, -1).toUpperCase())
+  ) {
+    const token = text;
+    const prefix = token.slice(0, -1).toUpperCase();
+    const canonical = matchers.get(prefix);
+    if (canonical && !canonical.some((matcher) => matcher.test(token)))
       failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
   }
   return failures;
@@ -184,10 +201,9 @@ const scanJson = (file, content, matchers) => {
   }
 
   const failures = [];
-  const skipProse = schemaOrManifestJson(file);
   const visit = (node, path, key = '') => {
     if (typeof node === 'string') {
-      failures.push(...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers));
+      failures.push(...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers, key));
       return;
     }
     if (Array.isArray(node)) {
@@ -196,7 +212,6 @@ const scanJson = (file, content, matchers) => {
     }
     if (!node || typeof node !== 'object') return;
     for (const [key, entry] of Object.entries(node)) {
-      if (skipProse && jsonProseKeys.has(key.toLowerCase())) continue;
       visit(entry, `${path}.${key}`, key);
     }
   };

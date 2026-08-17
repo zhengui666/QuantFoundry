@@ -1342,10 +1342,18 @@ export function streamEvents(
     active?.abort();
     active = new AbortController();
     const controller = active;
+    const connectionScope = streamScope;
+    const connectionCursorKey = `qf.sse.cursor:${connectionScope}`;
+    let connectionLast = last;
+    const current = () =>
+      !stopped &&
+      !controller.signal.aborted &&
+      active === controller &&
+      streamScope === connectionScope;
     void (async () => {
       try {
         const headers: Record<string, string> = { Accept: 'text/event-stream' };
-        if (last) headers['Last-Event-ID'] = String(last);
+        if (connectionLast) headers['Last-Event-ID'] = String(connectionLast);
         const response = await fetch(pathFor('streamEvents'), {
           method: operationMap.streamEvents.method,
           headers: headersFor('streamEvents', { headers }),
@@ -1373,8 +1381,9 @@ export function streamEvents(
         onState?.('connected');
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = '';
-        while (!stopped && !controller.signal.aborted) {
+        while (current()) {
           const part = await reader.read();
+          if (!current()) return;
           if (part.done) break;
           buffer += part.value;
           const rawFrames = buffer.split(/\r?\n\r?\n/);
@@ -1386,6 +1395,7 @@ export function streamEvents(
             } catch {
               consecutiveContractSkews += 1;
               await onResync();
+              if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
                 onState?.('client-update-required');
@@ -1398,6 +1408,7 @@ export function streamEvents(
             if (!event || !isSafeHoldoutNotification(event)) {
               consecutiveContractSkews += 1;
               await onResync();
+              if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
                 onState?.('client-update-required');
@@ -1408,18 +1419,24 @@ export function streamEvents(
               continue;
             }
             consecutiveContractSkews = 0;
-            if (event.sequence <= last) continue;
-            const hasGap = last > 0 && event.sequence > last + 1;
+            if (event.sequence <= connectionLast) continue;
+            const hasGap = connectionLast > 0 && event.sequence > connectionLast + 1;
             if (event.event_type === 'system.resync_required') {
               await onResync();
-              last = event.sequence;
-              transientStorage.set(cursorKey(), String(last));
+              if (!current()) return;
+              connectionLast = event.sequence;
+              last = connectionLast;
+              transientStorage.set(connectionCursorKey, String(connectionLast));
               continue;
             }
-            if (hasGap) await onResync();
+            if (hasGap) {
+              await onResync();
+              if (!current()) return;
+            }
             onEvent(event);
-            last = event.sequence;
-            transientStorage.set(cursorKey(), String(last));
+            connectionLast = event.sequence;
+            last = connectionLast;
+            transientStorage.set(connectionCursorKey, String(connectionLast));
           }
         }
       } catch (error) {
@@ -1431,9 +1448,10 @@ export function streamEvents(
         if (!stopped && !controller.signal.aborted) {
           onState?.('degraded');
           await onResync();
+          if (!current()) return;
         }
       }
-      if (!stopped && !authorizationBlocked && !contractBlocked && !controller.signal.aborted) {
+      if (current() && !authorizationBlocked && !contractBlocked) {
         attempts += 1;
         if (consecutiveContractSkews === 0) onState?.('reconnecting');
         reconnectTimer = window.setTimeout(

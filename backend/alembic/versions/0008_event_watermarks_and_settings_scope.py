@@ -16,7 +16,44 @@ branch_labels = None
 depends_on = None
 
 
+def _scope_domain_event_primary_key() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    primary_key = inspector.get_pk_constraint("domain_events")
+    columns = primary_key.get("constrained_columns", [])
+    if columns == ["workspace_id", "sequence"] or columns == [
+        "sequence",
+        "workspace_id",
+    ]:
+        return
+    if bind.dialect.name == "sqlite":
+        triggers = [
+            row[0]
+            for row in bind.execute(
+                sa.text(
+                    "SELECT sql FROM sqlite_master "
+                    "WHERE type = 'trigger' AND tbl_name = 'domain_events' "
+                    "AND sql IS NOT NULL ORDER BY name"
+                )
+            )
+        ]
+        with op.batch_alter_table("domain_events", recreate="always") as batch:
+            batch.create_primary_key("pk_domain_events", ["workspace_id", "sequence"])
+        for sql in triggers:
+            op.execute(sql)
+        return
+    if primary_key.get("name"):
+        op.drop_constraint(primary_key["name"], "domain_events", type_="primary")
+    op.create_primary_key(
+        "pk_domain_events", "domain_events", ["workspace_id", "sequence"]
+    )
+
+
 def upgrade() -> None:
+    # Materialize legacy system events before workspace_id becomes part of the key.
+    op.execute(
+        "UPDATE domain_events SET workspace_id = 'system' WHERE workspace_id IS NULL"
+    )
     op.create_table(
         "event_stream_watermarks",
         sa.Column("workspace_id", sa.String(), primary_key=True),
@@ -34,6 +71,7 @@ def upgrade() -> None:
         GROUP BY COALESCE(workspace_id, 'system')
         """
     )
+    _scope_domain_event_primary_key()
     op.execute(
         """
         UPDATE records

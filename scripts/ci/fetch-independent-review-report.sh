@@ -65,7 +65,13 @@ if not isinstance(run, dict) or not isinstance(run.get("id"), int):
     raise SystemExit("no successful independent-agent-review workflow run is bound to the current commit")
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review run must be a completed successful workflow_dispatch run")
-if run.get("path", "").split("@", 1)[0] != ".github/workflows/independent-agent-review.yml":
+workflow_reference = run.get("path", "")
+workflow_path, separator, executed_ref = workflow_reference.partition("@")
+if (
+    workflow_path != ".github/workflows/independent-agent-review.yml"
+    or not separator
+    or not executed_ref
+):
     raise SystemExit("independent review run used an unauthorized workflow")
 workflow_id = run.get("workflow_id")
 if not isinstance(workflow_id, int) or workflow_id < 1:
@@ -73,13 +79,9 @@ if not isinstance(workflow_id, int) or workflow_id < 1:
 workflow = gh_json(f"/repos/{repository}/actions/workflows/independent-agent-review.yml")
 if workflow.get("id") != workflow_id or workflow.get("path") != ".github/workflows/independent-agent-review.yml":
     raise SystemExit("independent review run workflow identity is not canonical")
-repository_info = gh_json(f"/repos/{repository}")
-default_branch = repository_info.get("default_branch")
-if not isinstance(default_branch, str) or not default_branch:
-    raise SystemExit("repository default branch is unavailable")
 workflow_source = gh_json(
     f"/repos/{repository}/contents/.github/workflows/independent-agent-review.yml"
-    f"?ref={default_branch}"
+    f"?ref={commit}"
 )
 if workflow_source.get("sha") != trusted_workflow_blob_sha:
     raise SystemExit("independent review workflow is not the trusted revision")
@@ -162,5 +164,16 @@ locator = {
     "artifact_sha256": hashlib.sha256(archive).hexdigest(),
     "artifact_report": {"path": "independent-review-report.json", "sha256": hashlib.sha256(payload).hexdigest()},
 }
-pathlib.Path(output_name).write_text(json.dumps(locator, sort_keys=True) + "\n", encoding="utf-8")
+destination = pathlib.Path(output_name)
+temporary = tempfile.NamedTemporaryFile(
+    mode="w", encoding="utf-8", dir=destination.parent, delete=False
+)
+try:
+    with temporary:
+        temporary.write(json.dumps(locator, sort_keys=True) + "\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+    os.replace(temporary.name, destination)
+finally:
+    pathlib.Path(temporary.name).unlink(missing_ok=True)
 PY

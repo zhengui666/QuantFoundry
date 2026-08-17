@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 import subprocess
 import sys
@@ -458,6 +459,11 @@ def generate(output: Path = OUTPUT) -> str:
     specification: dict[str, Any] = yaml.safe_load(CONTRACT.read_text())
     schemas = specification["components"]["schemas"]
     generation_specification = _merge_structural_all_of(specification, schemas)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix="qf-generated-api-", suffix=".py"
+    )
+    os.close(descriptor)
+    work_output = Path(temporary_name)
     with tempfile.TemporaryDirectory() as input_directory:
         generation_input = Path(input_directory) / CONTRACT.name
         generation_input.write_text(
@@ -472,7 +478,7 @@ def generate(output: Path = OUTPUT) -> str:
             "--input-file-type",
             "openapi",
             "--output",
-            str(output),
+            str(work_output),
             "--output-model-type",
             "pydantic_v2.BaseModel",
             "--target-python-version",
@@ -490,7 +496,7 @@ def generate(output: Path = OUTPUT) -> str:
             "--disable-timestamp",
         ]
         subprocess.run(command, check=True)
-    source = output.read_text()
+        source = work_output.read_text()
     source = source.replace(
         "from datetime import date\n",
         "from datetime import date\nfrom decimal import Decimal, InvalidOperation\n",
@@ -555,7 +561,7 @@ def generate(output: Path = OUTPUT) -> str:
                 "    def validate_conditional_constraints(self):\n"
                 f"        validator = Draft202012Validator({validation_schema!r})\n"
                 "        errors = sorted(\n"
-                "            validator.iter_errors(self.model_dump(mode='json')),\n"
+                "            validator.iter_errors(self.model_dump(mode='json', by_alias=True, exclude_unset=True)),\n"
                 "            key=lambda error: list(error.absolute_path),\n"
                 "        )\n"
                 "        if errors:\n"
@@ -594,6 +600,8 @@ def generate(output: Path = OUTPUT) -> str:
         "                values = [Decimal(value) for value in self.values]\n"
         "            except InvalidOperation as error:\n"
         "                raise ValueError('INTEGER set values must be numeric integers') from error\n"
+        "            if any(not value.is_finite() for value in values):\n"
+        "                raise ValueError('INTEGER set values must be finite')\n"
         "            if any(value != value.to_integral_value() for value in values):\n"
         "                raise ValueError('INTEGER set values must be integral')\n"
         "        return self\n",
@@ -657,12 +665,17 @@ def generate(output: Path = OUTPUT) -> str:
     source += "".join(missing_root_models)
     source += f"\n\nSCHEMA_NAMES = (\n    {schema_names},\n)\n"
     source += "\n__all__ = [*SCHEMA_NAMES, 'SCHEMA_NAMES']\n"
-    output.write_text(source)
-    subprocess.run([sys.executable, "-m", "ruff", "format", str(output)], check=True)
+    work_output.write_text(source)
     subprocess.run(
-        [sys.executable, "-m", "ruff", "check", "--fix", str(output)], check=True
+        [sys.executable, "-m", "ruff", "format", str(work_output)], check=True
     )
-    return output.read_text()
+    subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--fix", str(work_output)], check=True
+    )
+    source = work_output.read_text()
+    output.write_text(source)
+    work_output.unlink(missing_ok=True)
+    return source
 
 
 if __name__ == "__main__":

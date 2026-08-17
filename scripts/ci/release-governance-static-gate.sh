@@ -10,6 +10,8 @@ import pathlib
 import re
 import sys
 
+import yaml
+
 root = pathlib.Path(sys.argv[1])
 errors = []
 
@@ -17,9 +19,21 @@ def read(relative):
     return (root / relative).read_text(encoding="utf-8")
 
 run_gate = read("scripts/ci/run-gate.sh")
-for required in ("known-issues-review", "fresh-compose-migration", "pg18-migration", "backup-restore", "p0-require-closed-except-supply-chain", "release-governance-static"):
-    if required not in run_gate:
-        errors.append(f"run-gate rc path is missing {required}")
+run_step_calls = {
+    name: command.strip()
+    for name, command in re.findall(r"(?m)^\s*run_step\s+([A-Za-z0-9_-]+)\s+(.+?)\s*$", run_gate)
+}
+required_run_steps = {
+    "known-issues-review": "scripts/release-known-issues-check.sh",
+    "fresh-compose-migration": "make fullstack",
+    "pg18-migration": "make pg18",
+    "backup-restore": "tests/test_event_migration_and_bootstrap.py",
+    "p0-require-closed-except-supply-chain": "scripts/p0-check.sh",
+    "release-governance-static": "scripts/ci/release-governance-static-gate.sh",
+}
+for name, expected in required_run_steps.items():
+    if name not in run_step_calls or expected not in run_step_calls[name]:
+        errors.append(f"run-gate rc path is missing executable run_step {name}: {expected}")
 if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
     errors.append("agent-change gate does not require and validate an independent review report")
 if "fetch-independent-review-report.sh" not in run_gate:
@@ -62,36 +76,84 @@ except SyntaxError as error:
     errors.append(f"api healthcheck is not Python AST-compatible: {error.msg}")
 
 rc = read(".github/workflows/rc-release.yml")
-if not re.search(r"(?m)^permissions:\n  contents: read$", rc):
+try:
+    rc_document = yaml.safe_load(rc)
+except yaml.YAMLError as error:
+    errors.append(f"rc-release is not valid YAML: {error}")
+    rc_document = {}
+if not isinstance(rc_document, dict) or rc_document.get("permissions") != {"contents": "read"}:
     errors.append("rc-release top-level permissions must default to contents: read")
+rc_jobs = rc_document.get("jobs", {}) if isinstance(rc_document, dict) else {}
 for job in ("preflight", "rc"):
-    match = re.search(rf"(?ms)^  {job}:\n(.*?)(?=^  [A-Za-z][A-Za-z0-9_-]*:|\Z)", rc)
-    if not match or not re.search(r"(?m)^    permissions:\n      contents: read\n      actions: read$", match.group(1)):
+    if not isinstance(rc_jobs, dict) or not isinstance(rc_jobs.get(job), dict) or rc_jobs[job].get("permissions") != {"contents": "read", "actions": "read"}:
         errors.append(f"rc-release {job} job must request only contents: read and actions: read for online P0 artifact verification")
-publish = rc.split("  publish:", 1)[-1]
-for required in ("contents: write", "packages: write", "attestations: write", "id-token: write"):
-    if required not in publish:
-        errors.append(f"rc-release publish job lacks required scoped permission {required}")
+publish_job = rc_jobs.get("publish") if isinstance(rc_jobs, dict) else None
+if not isinstance(publish_job, dict):
+    errors.append("rc-release publish job is missing")
+else:
+    expected_publish_permissions = {
+        "contents": "write",
+        "packages": "write",
+        "attestations": "write",
+        "id-token": "write",
+        "actions": "read",
+    }
+    if publish_job.get("permissions") != expected_publish_permissions:
+        errors.append("rc-release publish job permissions are not the canonical minimal set")
+    publish_runs = [
+        step.get("run", "")
+        for step in publish_job.get("steps", [])
+        if isinstance(step, dict) and isinstance(step.get("run", ""), str)
+    ]
+    for required in (
+        "scripts/release-evidence.sh create-or-validate-draft",
+        "scripts/release-evidence.sh package-assets evidence",
+        "scripts/release-evidence.sh verify-remote-assets",
+        'gh release edit "$TAG" --draft=false',
+    ):
+        if not any(required in run for run in publish_runs):
+            errors.append(f"rc-release publish job lacks executable control {required}")
 if "scripts/ci/run-gate.sh rc" not in rc:
     errors.append("rc-release does not invoke the canonical rc run-gate entrypoint")
-if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/release-assets" not in rc or "--clobber" in rc:
+if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/release-assets" not in rc or "--clobber" not in rc:
     errors.append("rc-release does not package and upload unique release assets safely")
-if "create-or-validate-draft" not in publish or "verify-remote-assets" not in rc or "gh release edit \"$TAG\" --draft=false" not in rc:
-    errors.append("rc-release does not create-or-validate, remotely verify, and publish a draft release")
+if "verify-remote-assets" not in rc:
+    errors.append("rc-release does not remotely verify the draft release")
 if "Create commit-bound draft release" in rc or "gh release create" in rc.split("  rc:", 1)[1].split("  publish:", 1)[0]:
     errors.append("rc-release must not create a draft from the read-only rc job")
-if publish.index("create-or-validate-draft") > publish.index("docker/build-push-action"):
+draft_step = next(
+    (index for index, step in enumerate(publish_job.get("steps", []))
+     if isinstance(step, dict) and "create-or-validate-draft" in step.get("run", "")),
+    None,
+)
+image_step = next(
+    (index for index, step in enumerate(publish_job.get("steps", []))
+     if isinstance(step, dict) and step.get("uses", "").startswith("docker/build-push-action@")),
+    None,
+)
+if draft_step is None or image_step is None or draft_step > image_step:
     errors.append("rc-release must create or validate the draft before image publication")
 
 agent = read(".github/workflows/agent-change-gate.yml")
+try:
+    agent_document = yaml.safe_load(agent)
+except yaml.YAMLError as error:
+    errors.append(f"agent-change-gate is not valid YAML: {error}")
+    agent_document = {}
 for required in ("AGENTS.md", "PROJECT_BACKGROUND.md", "docs/治理/**", ".github/workflows/**", "scripts/ci/**", "scripts/release*"):
     if required not in agent:
         errors.append(f"agent-change-gate path coverage misses {required}")
 if "paths-ignore:" in agent or "independent_review_evidence" in agent or "review required" in agent:
     errors.append("agent-change-gate contains an unsafe exclusion or self-generated review placeholder")
-if "QF_INDEPENDENT_REVIEW_REPORT" in agent or "docs/治理/independent-review-report.json" in agent:
+if "docs/治理/independent-review-report.json" in agent:
     errors.append("agent-change-gate must not trust a repository-local review locator")
-if not re.search(r"(?m)^permissions:\n  contents: read\n  actions: read$", agent):
+if "actions/download-artifact" not in agent or "QF_INDEPENDENT_REVIEW_ATTESTATION" not in agent or "QF_INDEPENDENT_REVIEW_OFFLINE" not in agent:
+    errors.append("agent-change-gate must consume a trusted downloaded review locator with offline attestation")
+agent_jobs = agent_document.get("jobs", {}) if isinstance(agent_document, dict) else {}
+agent_contract_job = agent_jobs.get("agent-contract") if isinstance(agent_jobs, dict) else None
+if isinstance(agent_contract_job, dict) and "GITHUB_TOKEN" in agent_contract_job.get("env", {}):
+    errors.append("agent-change-gate agent-contract must not expose GITHUB_TOKEN to PR-controlled steps")
+if not isinstance(agent_document, dict) or agent_document.get("permissions") != {"contents": "read", "actions": "read"}:
     errors.append("agent-change-gate must request only the required actions: read permission for artifact verification")
 
 independent_review = read(".github/workflows/independent-agent-review.yml")
@@ -111,7 +173,10 @@ for required in ("artifact_report", "zipfile", "reviewed_paths", "review_scope_s
     if required not in review_verifier:
         errors.append(f"independent review verifier lacks artifact-content validation: {required}")
 
-for workflow in sorted((root / ".github/workflows").glob("*.yml")):
+workflow_paths = sorted(
+    [*root.joinpath(".github/workflows").glob("*.yml"), *root.joinpath(".github/workflows").glob("*.yaml")]
+)
+for workflow in workflow_paths:
     text = workflow.read_text(encoding="utf-8")
     if "apt-get install --yes shellcheck" in text:
         errors.append(f"{workflow.relative_to(root)} installs an unpinned apt ShellCheck")

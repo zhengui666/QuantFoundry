@@ -8,6 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_ROOT = ROOT / "docs/后端系统技术方案/contracts"
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 
 
 def load(name: str) -> dict:
@@ -15,6 +16,11 @@ def load(name: str) -> dict:
     if not isinstance(value, dict):
         raise AssertionError(f"{name} must contain an object")
     return value
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
 
 
 def main() -> int:
@@ -27,23 +33,50 @@ def main() -> int:
         1
         for path_item in openapi["paths"].values()
         for method in path_item
-        if method in {"get", "post", "put", "patch", "delete"}
+        if method in HTTP_METHODS
     )
     schemas = len(openapi["components"]["schemas"])
     errors = len(openapi["components"]["schemas"]["CanonicalErrorCode"]["enum"])
     expected = openapi["info"]
-    assert expected["x-quantfoundry-contract-revision"] == "UX001_D1_R1"
-    assert operations == expected["x-quantfoundry-operation-count"] == 66
-    assert schemas == expected["x-quantfoundry-schema-count"] == 188
-    assert errors == expected["x-quantfoundry-error-count"] == 75
-    assert "cookieSession" in openapi["components"]["securitySchemes"]
-    assert "bearerAuth" not in openapi["components"]["securitySchemes"]
+    require(
+        all(
+            document.get("schema_version") == "UX001_D1_R1"
+            for document in (catalog, bootstrap, matrix)
+        ),
+        "schema version mismatch",
+    )
+    require(
+        expected["x-quantfoundry-contract-revision"] == "UX001_D1_R1",
+        "unexpected contract revision",
+    )
+    require(
+        operations == expected["x-quantfoundry-operation-count"] == 66,
+        "operation count mismatch",
+    )
+    require(
+        schemas == expected["x-quantfoundry-schema-count"] == 188,
+        "schema count mismatch",
+    )
+    require(
+        errors == expected["x-quantfoundry-error-count"] == 75, "error count mismatch"
+    )
+    require(
+        "cookieSession" in openapi["components"]["securitySchemes"],
+        "cookieSession is missing",
+    )
+    require(
+        "bearerAuth" not in openapi["components"]["securitySchemes"],
+        "bearerAuth must not be present",
+    )
 
-    assert catalog["status"] == "FROZEN"
-    assert catalog["scope"] == "INSTALLATION"
+    require(catalog["status"] == "FROZEN", "catalog is not frozen")
+    require(catalog["scope"] == "INSTALLATION", "catalog scope is invalid")
     keys = [entry["key"] for entry in catalog["entries"]]
-    assert keys and len(keys) == len(set(keys))
-    assert all(entry["scope"] == "INSTALLATION" for entry in catalog["entries"])
+    require(keys and len(keys) == len(set(keys)), "catalog keys are not unique")
+    require(
+        all(entry["scope"] == "INSTALLATION" for entry in catalog["entries"]),
+        "catalog entry scope is invalid",
+    )
     required_entry_fields = {
         "key",
         "group",
@@ -57,25 +90,61 @@ def main() -> int:
         "validator",
         "safe_range",
     }
-    assert all(required_entry_fields <= set(entry) for entry in catalog["entries"])
-    assert (
-        expected["x-quantfoundry-configuration-catalog-version"]
-        == catalog["catalog_version"]
+    require(
+        all(required_entry_fields <= set(entry) for entry in catalog["entries"]),
+        "catalog entry fields are incomplete",
     )
-    assert expected["x-quantfoundry-configuration-entry-count"] == len(keys) == 16
+    require(
+        expected["x-quantfoundry-configuration-catalog-version"]
+        == catalog["catalog_version"],
+        "catalog version mismatch",
+    )
+    require(
+        expected["x-quantfoundry-configuration-entry-count"] == len(keys) == 16,
+        "catalog entry count mismatch",
+    )
 
-    assert bootstrap["status"] == "TARGET_SCHEMA_FROZEN"
-    assert bootstrap["authority"]["physical_source"].startswith("SQLAlchemy")
-    assert len(bootstrap["relations"]) == 11
-    assert bootstrap["domain_transition"]["target_status"] == "TARGET_TRANSITION_FROZEN"
+    require(
+        bootstrap["status"] == "TARGET_SCHEMA_FROZEN", "bootstrap schema is not frozen"
+    )
+    require(
+        bootstrap["authority"]["physical_source"].startswith("SQLAlchemy"),
+        "bootstrap authority is invalid",
+    )
+    require(len(bootstrap["relations"]) == 11, "bootstrap relation count mismatch")
+    require(
+        bootstrap["domain_transition"]["target_status"] == "TARGET_TRANSITION_FROZEN",
+        "domain transition is not frozen",
+    )
 
-    assert matrix["status"] == "FROZEN"
-    assert matrix["counts"] == {
-        "operations": 66,
-        "schemas": 188,
-        "errors": 75,
-        "semantic_tools": 13,
+    require(matrix["status"] == "FROZEN", "test matrix is not frozen")
+    require(
+        matrix["counts"]
+        == {
+            "operations": 66,
+            "schemas": 188,
+            "errors": 75,
+            "semantic_tools": 13,
+        },
+        "test matrix counts mismatch",
+    )
+    operation_ids = {
+        operation["operationId"]
+        for path_item in openapi["paths"].values()
+        for method, operation in path_item.items()
+        if method in HTTP_METHODS
+        and isinstance(operation, dict)
+        and "operationId" in operation
     }
+    matrix_operation_ids = {
+        operation_id
+        for family in matrix["families"]
+        for operation_id in family.get("operations", [])
+    }
+    require(
+        matrix_operation_ids <= operation_ids,
+        "test matrix contains unknown operation IDs",
+    )
     print("OK: UX-001 D1 machine contract bundle is internally consistent")
     return 0
 

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
 http_port="${QF_FULLSTACK_HTTP_PORT:-18080}"
 case "$http_port" in
   '' | *[!0-9]*) printf '%s\n' 'QF_FULLSTACK_HTTP_PORT must be numeric.' >&2; exit 1 ;;

@@ -100,8 +100,13 @@ def upgrade() -> None:
             """
             CREATE FUNCTION qf_reject_approval_evidence_change() RETURNS trigger AS $$
             BEGIN
-              IF TG_OP = 'DELETE' OR NEW.status IS DISTINCT FROM OLD.status
-                 OR NEW.validation_id IS DISTINCT FROM OLD.validation_id THEN
+              IF TG_OP = 'DELETE' OR NEW.validation_id IS DISTINCT FROM OLD.validation_id
+                 OR (NEW.status IS DISTINCT FROM OLD.status AND NOT EXISTS (
+                   SELECT 1 FROM validations v
+                   WHERE v.id = OLD.validation_id
+                     AND v.holdout_state = 'APPROVAL_PENDING'
+                     AND OLD.status = 'PENDING'
+                 )) THEN
                 IF EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id
                   AND ((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING')
                     OR (v.holdout_state IN ('UNLOCKED', 'RUNNING') AND OLD.status = 'APPROVED'))) THEN
@@ -156,7 +161,7 @@ def upgrade() -> None:
     )
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_binding BEFORE UPDATE OF "
-        "holdout_state, exposure_count ON validations WHEN "
+        "holdout_state, exposure_count, strategy_version_id ON validations WHEN "
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
         "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'PENDING')) OR "
@@ -177,7 +182,10 @@ def upgrade() -> None:
         "ON approval_requests WHEN EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id "
         "AND ((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING') OR "
         "(v.holdout_state IN ('UNLOCKED', 'RUNNING') AND OLD.status = 'APPROVED'))) "
-        "AND (NEW.status != OLD.status OR NEW.validation_id != OLD.validation_id) BEGIN SELECT "
+        "AND (NEW.validation_id IS NOT OLD.validation_id OR "
+        "(NEW.status IS NOT OLD.status AND NOT EXISTS (SELECT 1 FROM validations v2 "
+        "WHERE v2.id = OLD.validation_id AND v2.holdout_state = 'APPROVAL_PENDING' "
+        "AND OLD.status = 'PENDING'))) BEGIN SELECT "
         "RAISE(ABORT, 'approval evidence is referenced by active validation'); END"
     )
     op.execute(

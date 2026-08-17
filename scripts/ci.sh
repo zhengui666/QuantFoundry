@@ -27,8 +27,8 @@ platform_static() {
   docker compose --project-directory "$repo_root" --env-file "$repo_root/.env.example" config --quiet
   docker compose --project-directory "$repo_root" --profile local \
     --env-file "$repo_root/.env.example" config --quiet
-  shellcheck "$repo_root"/scripts/*.sh
-  actionlint "$repo_root"/.github/workflows/*.yml
+  /usr/bin/find "$repo_root/scripts" -type f -name '*.sh' -exec shellcheck {} +
+  /usr/bin/find "$repo_root/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -exec actionlint {} +
 }
 
 governance_check() {
@@ -100,6 +100,10 @@ frontend_static() {
 }
 
 require_postgres() {
+  [[ "${QF_CI_DISPOSABLE_DATABASE:-}" == "1" ]] || {
+    printf '%s\n' 'QF_CI_DISPOSABLE_DATABASE=1 is required before CI may mutate PostgreSQL.' >&2
+    exit 1
+  }
   [[ "${QF_DATABASE_URL:-}" == postgresql+psycopg://* ]] || {
     printf '%s\n' 'QF_DATABASE_URL must target real PostgreSQL for integration and migration gates.' >&2
     exit 1

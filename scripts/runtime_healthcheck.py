@@ -23,10 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-age-seconds", type=int, default=120)
     parser.add_argument(
         "--instance-id",
-        default=os.getenv("QF_RUNTIME_INSTANCE_ID")
-        or os.getenv("QF_WORKER_ID")
-        or os.getenv("QF_SCHEDULER_ID")
-        or socket.gethostname(),
+        default=None,
     )
     args = parser.parse_args()
     if args.component == "worker" and args.queue is None:
@@ -35,6 +32,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--queue is invalid for scheduler health checks")
     if args.max_age_seconds < 1:
         parser.error("--max-age-seconds must be positive")
+    if args.instance_id is None:
+        if args.component == "worker":
+            args.instance_id = os.getenv("QF_WORKER_ID") or socket.gethostname()
+        else:
+            args.instance_id = os.getenv("QF_SCHEDULER_ID")
+            if not args.instance_id:
+                parser.error("--instance-id or QF_SCHEDULER_ID is required for scheduler")
     return args
 
 

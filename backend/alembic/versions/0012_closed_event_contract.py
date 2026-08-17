@@ -58,8 +58,8 @@ EVENT_TYPES = (
 )
 
 
-def _migrated_public_id(prefix: str, sequence: int) -> str:
-    digest = hashlib.sha256(f"{prefix}:{sequence}".encode()).hexdigest()
+def _migrated_public_id(prefix: str, workspace_id: str, sequence: int) -> str:
+    digest = hashlib.sha256(f"{prefix}:{workspace_id}:{sequence}".encode()).hexdigest()
     uuid4 = (
         f"{digest[:8]}-{digest[8:12]}-4{digest[13:16]}-8{digest[17:20]}-{digest[20:32]}"
     )
@@ -132,7 +132,10 @@ def upgrade() -> None:
     )
     rows = (
         connection.execute(
-            sa.text("SELECT sequence, event_id, event_type FROM domain_events")
+            sa.text(
+                "SELECT workspace_id, sequence, event_id, event_type "
+                "FROM domain_events"
+            )
         )
         .mappings()
         .all()
@@ -159,13 +162,16 @@ def upgrade() -> None:
                     request_id = COALESCE(request_id, :request_id),
                     occurred_at = COALESCE(occurred_at, :occurred_at),
                     expires_at = COALESCE(expires_at, :expires_at)
-                WHERE sequence = :sequence
+                WHERE workspace_id = :workspace_id AND sequence = :sequence
                 """
             ),
             {
+                "workspace_id": row["workspace_id"],
                 "sequence": row["sequence"],
                 "event_id": row["event_id"]
-                or _migrated_public_id("EVT", row["sequence"]),
+                or _migrated_public_id(
+                    "EVT", row["workspace_id"], row["sequence"]
+                ),
                 "event_type": event_type,
                 "payload": payload,
                 "request_id": f"REQ-MIGRATED-{row['sequence']}",

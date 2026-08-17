@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
+from quantfoundry.api.app import Base
 from quantfoundry.contracts.events.locator import (
     job_result_ref_valid,
     locator_quartet_valid,
@@ -19,11 +20,6 @@ from quantfoundry.contracts.events.locator import (
     register_sqlite_functions,
 )
 from quantfoundry.infrastructure.db.physical_schema import load_physical_metadata
-
-try:
-    from quantfoundry.api.app import Base
-except SyntaxError:
-    Base = None
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 UUID_SUFFIX = "550e8400-e29b-41d4-a716-446655440000"
@@ -66,8 +62,6 @@ def _catalog_check_sql(connection: Connection, table_name: str, check_name: str)
 
 
 def _check_sql(table_name: str, constraint_name: str) -> str:
-    if Base is None:
-        pytest.skip("app.main import is blocked by repository syntax errors")
     table = Base.metadata.tables[table_name]
     constraint = next(
         item for item in table.constraints if item.name == constraint_name
