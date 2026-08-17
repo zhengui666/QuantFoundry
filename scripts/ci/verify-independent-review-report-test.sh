@@ -27,9 +27,9 @@ criteria = [
     "Independent review commands completed successfully on the reviewed commit.",
 ]
 scope_paths = [
-    "AGENTS.md", "PROJECT_BACKGROUND.md", "backend/src/quantfoundry", "backend/workers",
+    "AGENTS.md", "PROJECT_BACKGROUND.md", "backend/src/quantfoundry", "backend/app/agent_runtime.py", "backend/app/agent_runtime", "backend/workers",
     "docs/Agent技术方案", "docs/后端系统技术方案/contracts/tools", "docs/治理",
-    ".github/workflows", "scripts/ci", "scripts/release-evidence.sh", "scripts/release-check.sh",
+    ".github/workflows", "scripts/ci", "scripts/ci.sh", "scripts/tool_contract_check.py", "scripts/release-check.sh", "scripts/release-evidence.sh", "scripts/release-known-issues-check.sh",
 ]
 scope_digest = hashlib.sha256(subprocess.check_output([
     "git", "-C", repository_root, "ls-tree", "-r", "--full-tree", commit, "--", *scope_paths,
@@ -84,7 +84,7 @@ printf '%s\n' \
   'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
-  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"106fe374a92e902b4f0e119533680b51a640822d\"}\n"; exit 0; fi' \
+  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"4ecbf36ee23502a5b845f211e008335c0248b231\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then if [[ -n "$output" ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; else cat "$QF_REVIEW_MOCK_ARCHIVE"; fi; exit 0; fi' \
   'exit 1' > "$mock_gh"

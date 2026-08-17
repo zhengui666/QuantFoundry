@@ -8,6 +8,7 @@ never written to a file, environment variable, database column, or log.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import sys
 
 from sqlalchemy import select
@@ -37,7 +38,22 @@ def main() -> int:
                     ).limit(1)
                 ) is not None
             return 3 if has_active else 0
-        print(issue_access_key(args.label.strip()))
+        issued_key = issue_access_key(args.label.strip())
+        try:
+            print(issued_key, flush=True)
+        except (BrokenPipeError, OSError) as error:
+            key_id = issued_key.split(".", 1)[0][4:]
+            with ControlSessionLocal.begin() as session:
+                row = session.get(GeneralAccessKey, key_id)
+                if row is not None and row.status == "ACTIVE":
+                    row.status = "REVOKED"
+                    row.revoked_at = datetime.now(timezone.utc)
+                    row.revision += 1
+            print(
+                f"access-key bootstrap delivery failed; issued key {key_id} was revoked: {error}",
+                file=sys.stderr,
+            )
+            return 1
     except (RuntimeError, ValueError) as error:
         print(f"access-key bootstrap failed: {error}", file=sys.stderr)
         return 1

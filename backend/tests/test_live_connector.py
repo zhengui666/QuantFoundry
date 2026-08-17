@@ -103,7 +103,7 @@ def test_signed_submit_is_idempotent_and_capability_gated() -> None:
     )
     expected = hmac.new(b"secret", canonical.encode(), hashlib.sha256).hexdigest()
     assert response["broker_order_id"] == "b-1"
-    assert request.headers["Idempotency-Key"] == "LORD-1"
+    assert request.headers["Idempotency-Key"] == "acct-1:LORD-1"
     assert request.headers["X-QF-Signature"] == f"v1={expected}"
     assert json.loads(body)["quantity"] == "2"
 
@@ -226,6 +226,7 @@ def test_activation_and_fill_rules_fail_closed() -> None:
         current=status,
         fill_id="fill-1",
         known_fill_ids=ids,
+        known_fill_quantities={"fill-1": "0.5"},
         cumulative_quantity="0.5",
         order_quantity="1",
         previous_cumulative_quantity="0.5",

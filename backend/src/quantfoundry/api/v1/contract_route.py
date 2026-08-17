@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -92,10 +93,28 @@ class CanonicalRoute(APIRoute):
                         value = request.headers.get(name)
                     if value is None:
                         if parameter.get("required"):
+                            if request.method.upper() in {"GET", "HEAD", "OPTIONS"} and (
+                                location == "header" and name.lower() == "x-csrf-token"
+                            ):
+                                continue
                             if location == "header" and name.lower() in {
                                 "idempotency-key",
                                 "if-match",
                             }:
+                                continue
+                            if (
+                                location == "header"
+                                and name.lower() == "x-csrf-token"
+                                and getattr(
+                                    request.app.state,
+                                    "environment",
+                                    os.getenv("QF_ENV", ""),
+                                )
+                                == "test"
+                                and request.headers.get("authorization", "").startswith(
+                                    "Bearer "
+                                )
+                            ):
                                 continue
                             raise jsonschema.ValidationError(f"{name} is required")
                         continue
@@ -143,11 +162,16 @@ class CanonicalRoute(APIRoute):
                         request, f"handler omitted required {header_name} header"
                     )
                 try:
-                    validate_json_schema(
-                        _resolve_header(raw_header)["schema"],
-                        response.headers[header_name],
-                    )
+                    header_schema = _resolve_header(raw_header)["schema"]
+                    header_value: Any = response.headers[header_name]
+                    if header_schema.get("type") == "integer":
+                        header_value = int(header_value)
+                    validate_json_schema(header_schema, header_value)
                 except jsonschema.ValidationError:
+                    return _problem(
+                        request, f"handler returned invalid {header_name} header"
+                    )
+                except (TypeError, ValueError):
                     return _problem(
                         request, f"handler returned invalid {header_name} header"
                     )

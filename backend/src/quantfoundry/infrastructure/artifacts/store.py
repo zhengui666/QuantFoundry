@@ -277,6 +277,7 @@ def reap_orphan_artifacts(
             if not target_valid:
                 row.publication_state = "FAILED"
                 row.publication_error = "published object missing or hash-invalid"
+                row.published_at = None
                 continue
             referenced[row.storage_key] = row.sha256
             continue
@@ -300,6 +301,7 @@ def reap_orphan_artifacts(
         except ArtifactStoreError as error:
             row.publication_state = "FAILED"
             row.publication_error = str(error)[:128]
+            row.published_at = None
             continue
         row.publication_state = "PUBLISHED"
         row.publication_error = None

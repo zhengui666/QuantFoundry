@@ -157,6 +157,10 @@ def upgrade() -> None:
             ["records.workspace_id", "records.id"],
             name="fk_setup_bindings_settings_record_records",
         ),
+        sa.CheckConstraint(
+            "settings_record_id = 'SETTINGS-DEFAULT'",
+            name="setup_bindings_settings_record_key",
+        ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "ai_connection_id", "ai_connection_kind"],
             [

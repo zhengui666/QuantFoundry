@@ -35,12 +35,16 @@ def main() -> int:
                         "SELECT "
                         "(SELECT count(*) FROM users) AS users, "
                         "(SELECT count(*) FROM workspaces) AS workspaces, "
-                        "(SELECT count(*) FROM users WHERE role = 'OWNER') AS owners"
+                        "(SELECT count(*) FROM users WHERE role = 'OWNER') AS owners, "
+                        "(SELECT count(*) FROM workspaces w "
+                        "JOIN users u ON u.id = w.owner_id "
+                        "WHERE u.role = 'OWNER') AS owner_workspaces"
                     )
                 ).one()
                 users = int(row.users)
                 workspaces = int(row.workspaces)
                 owners = int(row.owners)
+                owner_workspaces = int(row.owner_workspaces)
                 report = {
                     "users": users,
                     "workspaces": workspaces,
@@ -49,7 +53,10 @@ def main() -> int:
                         "EMPTY"
                         if users == 0 and workspaces == 0
                         else "READY"
-                        if users == 1 and workspaces == 1 and owners == 1
+                        if users == 1
+                        and workspaces == 1
+                        and owners == 1
+                        and owner_workspaces == 1
                         else "QUARANTINE"
                     ),
                 }

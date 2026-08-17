@@ -74,25 +74,32 @@ def _rechain_audit_events(connection: Any, table: Table) -> None:
             / "alembic/versions/0017_paper_scheduler_state_initialization.py"
         )
     )["_hash"]
-    workspaces = connection.execute(select(table.c.workspace_id).distinct()).scalars()
-    for workspace_id in workspaces:
-        previous: str | None = None
-        rows = connection.execute(
-            select(table)
-            .where(table.c.workspace_id == workspace_id)
-            .order_by(table.c.sequence)
-        ).mappings()
-        for row in rows:
-            canonical = dict(row)
-            canonical["prev_event_hash"] = previous
-            canonical.pop("event_hash", None)
-            event_hash = migration_hash(canonical)
-            connection.execute(
-                table.update()
-                .where(table.c.id == row["id"])
-                .values(prev_event_hash=previous, event_hash=event_hash)
-            )
-            previous = event_hash
+    disable_triggers = connection.dialect.name == "postgresql"
+    if disable_triggers:
+        connection.exec_driver_sql("ALTER TABLE audit_events DISABLE TRIGGER USER")
+    try:
+        workspaces = connection.execute(select(table.c.workspace_id).distinct()).scalars()
+        for workspace_id in workspaces:
+            previous: str | None = None
+            rows = connection.execute(
+                select(table)
+                .where(table.c.workspace_id == workspace_id)
+                .order_by(table.c.sequence)
+            ).mappings()
+            for row in rows:
+                canonical = dict(row)
+                canonical["prev_event_hash"] = previous
+                canonical.pop("event_hash", None)
+                event_hash = migration_hash(canonical)
+                connection.execute(
+                    table.update()
+                    .where(table.c.id == row["id"])
+                    .values(prev_event_hash=previous, event_hash=event_hash)
+                )
+                previous = event_hash
+    finally:
+        if disable_triggers:
+            connection.exec_driver_sql("ALTER TABLE audit_events ENABLE TRIGGER USER")
 
 
 def _clone(

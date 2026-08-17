@@ -120,6 +120,22 @@ for descriptor in attestations:
             raise SystemExit("SBOM layer has no valid digest")
         payload = get(f"blobs/{layer_digest}", "application/vnd.in-toto+json", layer_digest)
         envelope = json.loads(payload.decode("utf-8"))
+        if (
+            envelope.get("_type") not in {
+                "https://in-toto.io/Statement/v0.1",
+                "https://in-toto.io/Statement/v1",
+            }
+            or envelope.get("predicateType") != "https://spdx.dev/Document"
+        ):
+            raise SystemExit("SBOM layer did not contain an SPDX in-toto statement")
+        subjects = envelope.get("subject")
+        if not isinstance(subjects, list) or not any(
+            isinstance(subject, dict)
+            and isinstance(subject.get("digest"), dict)
+            and subject["digest"].get("sha256") == subject_digest.removeprefix("sha256:")
+            for subject in subjects
+        ):
+            raise SystemExit("SBOM attestation is not bound to the requested image digest")
         document = envelope.get("predicate")
         if not isinstance(document, dict) or not isinstance(document.get("spdxVersion"), str):
             raise SystemExit("SBOM attestation did not contain an SPDX document")

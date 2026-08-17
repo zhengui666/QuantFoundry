@@ -193,6 +193,29 @@ def test_dataset_rejects_intraday_duplicates_and_non_pit_rows(
     with pytest.raises(EngineInputError, match="duplicate market row"):
         load_dataset(dataset_id)
 
+    non_pit_id = "DSSET-550e8400-e29b-41d4-a716-446655440014"
+    _metadata(tmp_path, non_pit_id)
+    non_pit_rows = [
+        {
+            "event_time": "2020-06-02T21:00:00Z",
+            "available_at": "2020-06-02T20:59:59Z",
+            "symbol": "AAA",
+            "close": 100,
+            "benchmark_close": 100,
+            "partition": "RESEARCH",
+        }
+    ]
+    (tmp_path / f"{non_pit_id}.csv").write_text(
+        ",".join(columns)
+        + "\n"
+        + "\n".join(
+            ",".join(str(row[column]) for column in columns) for row in non_pit_rows
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(EngineInputError, match="available_at cannot precede event_time"):
+        load_dataset(non_pit_id)
+
 
 def test_simulation_does_not_use_late_release_for_prior_decision() -> None:
     rows = [

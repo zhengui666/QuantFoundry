@@ -354,6 +354,14 @@ expected_error_count = canonical["info"]["x-quantfoundry-error-count"]
 expected_schema_count = canonical["info"]["x-quantfoundry-schema-count"]
 if expected_operation_count != len(canonical_operations):
     errors.append("canonical operation metadata differs from canonical paths")
+canonical_security_schemes = canonical.get("components", {}).get(
+    "securitySchemes", {}
+)
+runtime_security_schemes = runtime.get("components", {}).get("securitySchemes", {})
+if normalized_schema(canonical, canonical_security_schemes) != normalized_schema(
+    runtime, runtime_security_schemes
+):
+    errors.append("security schemes differ")
 canonical_error_schema = canonical_schemas.get("CanonicalErrorCode")
 canonical_error_enum = (
     canonical_error_schema.get("enum")

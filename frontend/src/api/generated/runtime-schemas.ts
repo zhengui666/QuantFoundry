@@ -1196,8 +1196,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   research: z
@@ -1231,8 +1231,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   conclusion: z
@@ -1266,8 +1266,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   experiment: z
@@ -1301,8 +1301,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   factor: z
@@ -1336,8 +1336,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   strategy_version: z
@@ -1371,8 +1371,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1),
-      object_revision: z.number().int().min(1),
+      object_version: z.number().int().safe().min(1),
+      object_revision: z.number().int().safe().min(1),
     })
     .passthrough(),
   validation: z
@@ -1406,8 +1406,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   approval: z
@@ -1441,8 +1441,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   paper: z
@@ -1476,8 +1476,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   paper_run: z
@@ -1511,8 +1511,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   review: z
@@ -1546,8 +1546,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   capability: z
@@ -1581,8 +1581,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   snapshot: z
@@ -1616,8 +1616,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   agent_run: z
@@ -1651,8 +1651,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   tool_call: z
@@ -1686,8 +1686,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   memo: z
@@ -1721,8 +1721,8 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   notification: z
@@ -1756,15 +1756,15 @@ export const EventObjectLocatorSchemas = {
               message: 'Value must match exactly one canonical variant',
             });
         }),
-      object_version: z.number().int().min(1).nullable(),
-      object_revision: z.number().int().min(1).nullable(),
+      object_version: z.number().int().safe().min(1).nullable(),
+      object_revision: z.number().int().safe().min(1).nullable(),
     })
     .passthrough(),
   settings: z
     .object({
       object_id: z.literal('SETTINGS-DEFAULT'),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().safe().min(1),
     })
     .passthrough(),
   provider_connection: z
@@ -1773,7 +1773,7 @@ export const EventObjectLocatorSchemas = {
         .string()
         .regex(new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().safe().min(1),
     })
     .passthrough(),
   agent_config: z
@@ -1787,7 +1787,7 @@ export const EventObjectLocatorSchemas = {
         z.literal('PERFORMANCE_ANALYST'),
       ]),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().safe().min(1),
     })
     .passthrough(),
   event_stream: z
@@ -1822,7 +1822,7 @@ export const EventObjectLocatorSchemas = {
             });
         }),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().safe().min(1),
     })
     .passthrough(),
 } as const;
@@ -2598,10 +2598,10 @@ export const ProblemContextSchema = z
           });
       })
       .optional(),
-    object_version: z.number().int().min(1).nullable().optional(),
-    object_revision: z.number().int().min(1).nullable().optional(),
-    expected_revision: z.number().int().min(1).nullable().optional(),
-    actual_revision: z.number().int().min(1).nullable().optional(),
+    object_version: z.number().int().safe().min(1).nullable().optional(),
+    object_revision: z.number().int().safe().min(1).nullable().optional(),
+    expected_revision: z.number().int().safe().min(1).nullable().optional(),
+    actual_revision: z.number().int().safe().min(1).nullable().optional(),
     approval_id: z
       .unknown()
       .superRefine((value, context) => {
@@ -2688,7 +2688,7 @@ export const ProblemContextSchema = z
           });
       })
       .optional(),
-    retry_after_seconds: z.number().int().min(1).nullable().optional(),
+    retry_after_seconds: z.number().int().safe().min(1).nullable().optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -3004,8 +3004,8 @@ export const ProblemContextSchema = z
                           });
                       })
                       .optional(),
-                    object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_version: z.number().int().safe().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -3626,7 +3626,7 @@ export const ProblemContextSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -3660,7 +3660,7 @@ export const ProblemContextSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -3696,7 +3696,7 @@ export const ProblemContextSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -3752,7 +3752,7 @@ export const ProblemContextSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -4394,7 +4394,7 @@ export const ApiProblemSchema = z
   .object({
     type: z.url(),
     title: z.string(),
-    status: z.number().int().min(400).max(599),
+    status: z.number().int().safe().min(400).max(599),
     code: CanonicalErrorCodeSchema,
     detail: z.string().nullable(),
     instance: z.string().nullable(),
@@ -4421,7 +4421,7 @@ export const GeneralAccessKeyMetadataSchema = z
     status: z.union([z.literal('ACTIVE'), z.literal('REVOKED'), z.literal('EXPIRED')]),
     expires_at: z.iso.datetime({ offset: true }).nullable(),
     last_used_at: z.iso.datetime({ offset: true }).nullable(),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -4462,7 +4462,7 @@ export const ConfigurationCatalogEntrySchema = z
   .object({
     key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
     group: z.string().min(1).max(64),
-    schema_version: z.number().int().min(1),
+    schema_version: z.number().int().safe().min(1),
     scope: z.literal('INSTALLATION'),
     sensitivity: z.union([z.literal('PUBLIC'), z.literal('MASKED'), z.literal('SECRET')]),
     apply_mode: z.union([
@@ -4547,7 +4547,7 @@ export const ConfigurationValueWriteSchema = z
   });
 export const ConfigurationCandidateRequestSchema = z
   .object({
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().safe().min(1),
     values: z.array(ConfigurationValueWriteSchema).min(1),
   })
   .strict();
@@ -4576,7 +4576,7 @@ export const ConfigurationValueViewSchema = z
   .strict();
 export const ConfigurationCandidateSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     state: z.union([
       z.literal('CANDIDATE'),
       z.literal('VALIDATED'),
@@ -4585,7 +4585,7 @@ export const ConfigurationCandidateSchema = z
       z.literal('ACTIVE'),
       z.literal('SUPERSEDED'),
     ]),
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().safe().min(1),
     catalog_version: z.string(),
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -4594,7 +4594,7 @@ export const ConfigurationCandidateSchema = z
   .strict();
 export const ConfigurationValidationResultSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     errors: z.array(FieldErrorSchema),
     warnings: z.array(FieldErrorSchema),
@@ -4602,14 +4602,14 @@ export const ConfigurationValidationResultSchema = z
   })
   .strict();
 export const ConfigurationActivateRequestSchema = z
-  .object({ revision: z.number().int().min(1) })
+  .object({ revision: z.number().int().safe().min(1) })
   .strict();
 export const ConfigurationRollbackRequestSchema = z
-  .object({ source_revision: z.number().int().min(1) })
+  .object({ source_revision: z.number().int().safe().min(1) })
   .strict();
 export const DatabaseConnectionCandidateSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     state: z.union([
       z.literal('CANDIDATE'),
       z.literal('VALIDATED'),
@@ -4617,9 +4617,9 @@ export const DatabaseConnectionCandidateSchema = z
       z.literal('FAILED'),
       z.literal('SUPERSEDED'),
     ]),
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().safe().min(1),
     host: z.string().min(1).max(253),
-    port: z.number().int().min(1).max(65535),
+    port: z.number().int().safe().min(1).max(65535),
     database: z.string().min(1).max(63),
     tls_mode: z.union([z.literal('DISABLED'), z.literal('VERIFY_CA'), z.literal('VERIFY_FULL')]),
     username_masked: z.string().min(1).max(80),
@@ -4639,9 +4639,9 @@ export const DatabaseConnectionStatusSchema = z
       z.literal('READY'),
       z.literal('DEGRADED'),
     ]),
-    active_revision: z.number().int().min(1).nullable(),
-    candidate_revision: z.number().int().min(1).nullable(),
-    last_known_good_revision: z.number().int().min(1).nullable(),
+    active_revision: z.number().int().safe().min(1).nullable(),
+    candidate_revision: z.number().int().safe().min(1).nullable(),
+    last_known_good_revision: z.number().int().safe().min(1).nullable(),
     active: z.unknown().superRefine((value, context) => {
       const matches = [
         DatabaseConnectionCandidateSchema.safeParse(value).success,
@@ -4674,11 +4674,11 @@ export const DatabaseConnectionStatusSchema = z
   .strict();
 export const DatabaseConnectionCandidateRequestSchema = z
   .object({
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().safe().min(1),
     connection: z
       .object({
         host: z.string().min(1).max(253),
-        port: z.number().int().min(1).max(65535),
+        port: z.number().int().safe().min(1).max(65535),
         database: z.string().min(1).max(63),
         tls_mode: z.union([
           z.literal('DISABLED'),
@@ -4711,7 +4711,7 @@ export const DatabaseConnectionCheckSchema = z
   .strict();
 export const DatabaseConnectionValidationResultSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     checks: z.array(DatabaseConnectionCheckSchema).min(1),
     validated_at: z.iso.datetime({ offset: true }),
@@ -5458,13 +5458,13 @@ export const SetupProviderConnectionValidationResultSchema = z
       });
   });
 export const SetupCompleteRequestSchema = z
-  .object({ configuration_revision: z.number().int().min(1) })
+  .object({ configuration_revision: z.number().int().safe().min(1) })
   .strict();
 export const ConfigurationConsumerStateSchema = z
   .object({
     consumer: z.string().min(1).max(80),
-    desired_revision: z.number().int().min(1),
-    applied_revision: z.number().int().min(1).nullable(),
+    desired_revision: z.number().int().safe().min(1),
+    applied_revision: z.number().int().safe().min(1).nullable(),
     ack: z.union([z.literal('PENDING'), z.literal('ACKED'), z.literal('FAILED')]),
     error_code: z.unknown().superRefine((value, context) => {
       const matches = [
@@ -5482,8 +5482,8 @@ export const ConfigurationConsumerStateSchema = z
   .strict();
 export const ConfigurationActiveSchema = z
   .object({
-    active_revision: z.number().int().min(1),
-    last_known_good_revision: z.number().int().min(1),
+    active_revision: z.number().int().safe().min(1),
+    last_known_good_revision: z.number().int().safe().min(1),
     catalog_version: z.string(),
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -5545,8 +5545,8 @@ export const ObjectRefSchema = z
       z.literal('provenance'),
     ]),
     id: z.unknown(),
-    version: z.number().int().min(1).nullable(),
-    revision: z.number().int().min(1),
+    version: z.number().int().safe().min(1).nullable(),
+    revision: z.number().int().safe().min(1),
   })
   .strict()
   .superRefine((value, context) => {
@@ -5634,8 +5634,8 @@ export const ResearchStatusSchema = z.union([
 export const JobProgressSchema = z
   .object({
     mode: z.union([z.literal('NONE'), z.literal('UNITS')]),
-    completed_units: z.number().int().min(0).nullable(),
-    total_units: z.number().int().min(1).nullable(),
+    completed_units: z.number().int().safe().min(0).nullable(),
+    total_units: z.number().int().safe().min(1).nullable(),
     unit: z.string().nullable(),
     percent: z.number().min(0).max(100).nullable(),
     current_step_key: z.string().nullable(),
@@ -5736,18 +5736,18 @@ export const OverviewActiveResearchItemSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
 export const OverviewStrategyPipelineSchema = z
   .object({
-    candidate: z.number().int().min(0),
-    frozen: z.number().int().min(0),
-    validating: z.number().int().min(0),
-    validated: z.number().int().min(0),
-    paper: z.number().int().min(0),
+    candidate: z.number().int().safe().min(0),
+    frozen: z.number().int().safe().min(0),
+    validating: z.number().int().safe().min(0),
+    validated: z.number().int().safe().min(0),
+    paper: z.number().int().safe().min(0),
   })
   .strict();
 export const ProvenanceRefSchema = z
@@ -5785,7 +5785,7 @@ export const ProvenanceRefSchema = z
   .strict();
 export const OverviewPaperSummarySchema = z
   .object({
-    active_count: z.number().int().min(0),
+    active_count: z.number().int().safe().min(0),
     total_nav: z.string().nullable(),
     currency: z.string().regex(new RegExp('^[A-Z]{3}$')),
     daily_return: z.string().nullable(),
@@ -5821,7 +5821,7 @@ export const ChartValueFormatSchema = z
       z.literal('CURRENCY'),
       z.literal('INTEGER'),
     ]),
-    precision: z.number().int().min(0).max(18).nullable(),
+    precision: z.number().int().safe().min(0).max(18).nullable(),
   })
   .strict();
 export const ChartPointSchema = z
@@ -5878,8 +5878,8 @@ export const ChartSummarySchema = z
 export const ChartDownsamplingSchema = z
   .object({
     applied: z.boolean(),
-    source_points: z.number().int().min(0),
-    returned_points: z.number().int().min(0),
+    source_points: z.number().int().safe().min(0),
+    returned_points: z.number().int().safe().min(0),
     method: z.string().nullable(),
   })
   .strict();
@@ -5969,8 +5969,8 @@ export const OverviewDataHealthSchema = z
       z.literal('BLOCKED'),
       z.literal('UNKNOWN'),
     ]),
-    blocker_count: z.number().int().min(0),
-    warning_count: z.number().int().min(0),
+    blocker_count: z.number().int().safe().min(0),
+    warning_count: z.number().int().safe().min(0),
     checked_at: z.iso.datetime({ offset: true }),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
@@ -5978,7 +5978,7 @@ export const OverviewDataHealthSchema = z
 export const OverviewReadModelSchema = z
   .object({
     as_of: z.iso.datetime({ offset: true }),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     needs_attention: z.array(OverviewAttentionItemSchema),
     active_research: z.array(OverviewActiveResearchItemSchema),
     strategy_pipeline: OverviewStrategyPipelineSchema,
@@ -6042,8 +6042,8 @@ export const ResearchSummarySchema = z
       z.literal('SUPPORTIVE'),
       z.literal('STRONG'),
     ]),
-    current_revision_no: z.number().int().min(1),
-    revision: z.number().int().min(1),
+    current_revision_no: z.number().int().safe().min(1),
+    revision: z.number().int().safe().min(1),
     updated_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -6104,7 +6104,7 @@ export const ResearchCreateRequestSchema = z
   .strict();
 export const ResearchStartRequestSchema = z
   .object({
-    research_revision_no: z.number().int().min(1),
+    research_revision_no: z.number().int().safe().min(1),
     capability_evaluation_confirmed: z.literal(true),
   })
   .strict();
@@ -6118,7 +6118,7 @@ export const UniverseSpecSchema = z
 export const DateRangeSchema = z.object({ start: z.iso.date(), end: z.iso.date() }).strict();
 export const ResearchBriefReadModelSchema = z
   .object({
-    revision_no: z.number().int().min(1),
+    revision_no: z.number().int().safe().min(1),
     question: z.string(),
     hypothesis: z.string().nullable(),
     economic_rationale: z.string().nullable(),
@@ -6202,8 +6202,8 @@ export const ResearchPlanNodeReadModelSchema = z
     depends_on: z.array(z.string()),
     objective: z.string().nullable(),
     finding_summary: z.string().nullable(),
-    experiment_count: z.number().int().min(0),
-    sort_order: z.number().int(),
+    experiment_count: z.number().int().safe().min(0),
+    sort_order: z.number().int().safe(),
   })
   .strict();
 export const ResearchEvidenceResultLocatorSchema = z
@@ -6347,8 +6347,8 @@ export const ResearchOverviewReadModelSchema = z
   .strict();
 export const ResearchPlanReadModelSchema = z
   .object({
-    plan_version: z.number().int().min(1),
-    source_revision_no: z.number().int().min(1),
+    plan_version: z.number().int().safe().min(1),
+    source_revision_no: z.number().int().safe().min(1),
     status: z.union([z.literal('ACTIVE'), z.literal('SUPERSEDED')]),
     rationale_summary: z.string().nullable(),
     nodes: z.array(ResearchPlanNodeReadModelSchema),
@@ -6536,7 +6536,7 @@ export const ArtifactReadModelSchema = z
     kind: z.string(),
     media_type: z.string(),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    size_bytes: z.number().int().min(0),
+    size_bytes: z.number().int().safe().min(0),
     provenance: z.unknown().superRefine((value, context) => {
       const matches = [
         ProvenanceRefSchema.safeParse(value).success,
@@ -6654,8 +6654,8 @@ export const ResearchDetailSchema = z
       z.literal('SUPPORTIVE'),
       z.literal('STRONG'),
     ]),
-    current_revision_no: z.number().int().min(1),
-    active_plan_version: z.number().int().min(1).nullable(),
+    current_revision_no: z.number().int().safe().min(1),
+    active_plan_version: z.number().int().safe().min(1).nullable(),
     research_policy_id: z
       .string()
       .min(29)
@@ -6783,7 +6783,7 @@ export const ResearchDetailSchema = z
     evidence: ResearchEvidencePageSchema,
     artifacts: ArtifactPageSchema,
     audit: ResearchAuditPageSchema,
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     created_at: z.iso.datetime({ offset: true }),
     updated_at: z.iso.datetime({ offset: true }),
@@ -6791,6 +6791,68 @@ export const ResearchDetailSchema = z
   })
   .strict();
 export const ParameterSchema = z.object({ key: z.string(), value: z.string() }).strict();
+export const ExperimentSearchSetDimensionSchema = z
+  .object({
+    parameter_key: z.string(),
+    value_type: z.union([
+      z.literal('INTEGER'),
+      z.literal('DECIMAL'),
+      z.literal('STRING'),
+      z.literal('BOOLEAN'),
+    ]),
+    kind: z.literal('SET'),
+    values: z
+      .array(z.string())
+      .min(1)
+      .refine((items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length, {
+        message: 'Array items must be unique',
+      }),
+    minimum: z.null().nullable(),
+    maximum: z.null().nullable(),
+    step: z.null().nullable(),
+  })
+  .strict();
+export const ExperimentSearchRangeDimensionSchema = z
+  .object({
+    parameter_key: z.string(),
+    value_type: z.union([z.literal('INTEGER'), z.literal('DECIMAL')]),
+    kind: z.literal('RANGE'),
+    values: z.array(z.unknown()).max(0),
+    minimum: z.string().regex(new RegExp('^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$')),
+    maximum: z.string().regex(new RegExp('^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$')),
+    step: z.string().regex(new RegExp('^(0\\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\\.[0-9]+)?)$')),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const minimum = Number(value.minimum);
+    const maximum = Number(value.maximum);
+    const step = Number(value.step);
+    if (!(minimum < maximum))
+      context.addIssue({ code: 'custom', message: 'minimum must be less than maximum' });
+    if (!(step > 0)) context.addIssue({ code: 'custom', message: 'step must be positive' });
+    if (value.value_type === 'INTEGER' && ![minimum, maximum, step].every(Number.isInteger))
+      context.addIssue({
+        code: 'custom',
+        message: 'INTEGER ranges require integral bounds and step',
+      });
+  });
+export const ExperimentSearchDimensionSchema = z.unknown().superRefine((value, context) => {
+  const matches = [
+    ExperimentSearchSetDimensionSchema.safeParse(value).success,
+    ExperimentSearchRangeDimensionSchema.safeParse(value).success,
+  ].filter(Boolean).length;
+  if (matches !== 1)
+    context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' });
+});
+export const ExperimentSearchConfigurationSchema = z
+  .object({
+    method: z.union([z.literal('GRID'), z.literal('RANDOM')]),
+    objective_metric_key: z.string(),
+    objective_direction: z.union([z.literal('MAXIMIZE'), z.literal('MINIMIZE')]),
+    max_evaluations: z.number().int().safe().min(1),
+    seed: z.number().int().safe().nullable(),
+  })
+  .strict();
 export const ExperimentCreateRequestSchema = z
   .object({
     research_id: z
@@ -6822,7 +6884,7 @@ export const ExperimentCreateRequestSchema = z
             message: 'Value must match exactly one canonical variant',
           });
       }),
-    research_revision_no: z.number().int().min(1),
+    research_revision_no: z.number().int().safe().min(1),
     objective: z.string(),
     hypothesis: z.string(),
     experiment_type: z.union([
@@ -6904,7 +6966,7 @@ export const ExperimentCreateRequestSchema = z
           });
       })
       .optional(),
-    factor_version: z.number().int().min(1).nullable().optional(),
+    factor_version: z.number().int().safe().min(1).nullable().optional(),
     strategy_id: z
       .unknown()
       .superRefine((value, context) => {
@@ -6948,7 +7010,7 @@ export const ExperimentCreateRequestSchema = z
           });
       })
       .optional(),
-    strategy_version: z.number().int().min(1).nullable().optional(),
+    strategy_version: z.number().int().safe().min(1).nullable().optional(),
     cost_model_id: z
       .string()
       .min(31)
@@ -6979,6 +7041,21 @@ export const ExperimentCreateRequestSchema = z
           });
       }),
     parameters: z.array(ParameterSchema),
+    search_space: z.array(ExperimentSearchDimensionSchema).optional(),
+    search_configuration: z
+      .unknown()
+      .superRefine((value, context) => {
+        const matches = [
+          ExperimentSearchConfigurationSchema.safeParse(value).success,
+          z.null().nullable().safeParse(value).success,
+        ].filter(Boolean).length;
+        if (matches !== 1)
+          context.addIssue({
+            code: 'custom',
+            message: 'Value must match exactly one canonical variant',
+          });
+      })
+      .optional(),
     engine_key: z.string(),
     engine_version: z.string(),
   })
@@ -7082,69 +7159,7 @@ export const VersionRefSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    version: z.number().int().min(1),
-  })
-  .strict();
-export const ExperimentSearchSetDimensionSchema = z
-  .object({
-    parameter_key: z.string(),
-    value_type: z.union([
-      z.literal('INTEGER'),
-      z.literal('DECIMAL'),
-      z.literal('STRING'),
-      z.literal('BOOLEAN'),
-    ]),
-    kind: z.literal('SET'),
-    values: z
-      .array(z.string())
-      .min(1)
-      .refine((items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length, {
-        message: 'Array items must be unique',
-      }),
-    minimum: z.null().nullable(),
-    maximum: z.null().nullable(),
-    step: z.null().nullable(),
-  })
-  .strict();
-export const ExperimentSearchRangeDimensionSchema = z
-  .object({
-    parameter_key: z.string(),
-    value_type: z.union([z.literal('INTEGER'), z.literal('DECIMAL')]),
-    kind: z.literal('RANGE'),
-    values: z.array(z.unknown()).max(0),
-    minimum: z.string().regex(new RegExp('^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$')),
-    maximum: z.string().regex(new RegExp('^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$')),
-    step: z.string().regex(new RegExp('^(0\\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\\.[0-9]+)?)$')),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    const minimum = Number(value.minimum);
-    const maximum = Number(value.maximum);
-    const step = Number(value.step);
-    if (!(minimum < maximum))
-      context.addIssue({ code: 'custom', message: 'minimum must be less than maximum' });
-    if (!(step > 0)) context.addIssue({ code: 'custom', message: 'step must be positive' });
-    if (value.value_type === 'INTEGER' && ![minimum, maximum, step].every(Number.isInteger))
-      context.addIssue({
-        code: 'custom',
-        message: 'INTEGER ranges require integral bounds and step',
-      });
-  });
-export const ExperimentSearchDimensionSchema = z.unknown().superRefine((value, context) => {
-  const matches = [
-    ExperimentSearchSetDimensionSchema.safeParse(value).success,
-    ExperimentSearchRangeDimensionSchema.safeParse(value).success,
-  ].filter(Boolean).length;
-  if (matches !== 1)
-    context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' });
-});
-export const ExperimentSearchConfigurationSchema = z
-  .object({
-    method: z.union([z.literal('GRID'), z.literal('RANDOM')]),
-    objective_metric_key: z.string(),
-    objective_direction: z.union([z.literal('MAXIMIZE'), z.literal('MINIMIZE')]),
-    max_evaluations: z.number().int().min(1),
-    seed: z.number().int().nullable(),
+    version: z.number().int().safe().min(1),
   })
   .strict();
 export const ExperimentSearchResultNotApplicableSchema = z
@@ -7170,7 +7185,7 @@ export const ExperimentSearchResultPendingSchema = z
 export const ExperimentSearchResultRunningSchema = z
   .object({
     state: z.literal('RUNNING'),
-    evaluated_count: z.number().int().min(0),
+    evaluated_count: z.number().int().safe().min(0),
     selected_parameters: z.array(z.unknown()).max(0),
     selected_metric: z.null().nullable(),
     result_ref: z.null().nullable(),
@@ -7183,7 +7198,7 @@ export const MetricSchema = z
 export const ExperimentSearchResultCompletedSchema = z
   .object({
     state: z.literal('COMPLETED'),
-    evaluated_count: z.number().int().min(1),
+    evaluated_count: z.number().int().safe().min(1),
     selected_parameters: z.array(ParameterSchema).min(1),
     selected_metric: MetricSchema,
     result_ref: ObjectRefSchema,
@@ -7193,7 +7208,7 @@ export const ExperimentSearchResultCompletedSchema = z
 export const ExperimentSearchResultFailedSchema = z
   .object({
     state: z.literal('FAILED'),
-    evaluated_count: z.number().int().min(0),
+    evaluated_count: z.number().int().safe().min(0),
     selected_parameters: z.array(z.unknown()).max(0),
     selected_metric: z.null().nullable(),
     result_ref: z.null().nullable(),
@@ -7284,7 +7299,7 @@ export const PolicyRefSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    version: z.number().int().min(1),
+    version: z.number().int().safe().min(1),
   })
   .strict()
   .superRefine((value, context) => {
@@ -7509,7 +7524,7 @@ export const VersionedHashRefSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    version: z.number().int().min(1),
+    version: z.number().int().safe().min(1),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
   .strict();
@@ -8031,7 +8046,7 @@ export const ExperimentDetailSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    research_revision_no: z.number().int().min(1),
+    research_revision_no: z.number().int().safe().min(1),
     objective: z.string(),
     hypothesis: z.string(),
     experiment_type: z.string(),
@@ -8350,14 +8365,14 @@ export const StrategySignalSchema = z
             message: 'Value must match exactly one canonical variant',
           });
       }),
-    factor_version: z.number().int().min(1),
+    factor_version: z.number().int().safe().min(1),
     direction: z.union([z.literal('LONG'), z.literal('SHORT')]),
     weight: z.string(),
   })
   .strict();
 export const StrategyRulesSchema = z
   .object({
-    selection_count: z.number().int().min(1),
+    selection_count: z.number().int().safe().min(1),
     weighting: z.union([z.literal('EQUAL'), z.literal('SCORE'), z.literal('VOLATILITY')]),
     rebalance_frequency: z.union([
       z.literal('DAILY'),
@@ -8630,13 +8645,13 @@ export const StrategyLatestBacktestSchema = z.unknown().superRefine((value, cont
 });
 export const ValidationResultCountsSchema = z
   .object({
-    pending: z.number().int().min(0),
-    running: z.number().int().min(0),
-    pass: z.number().int().min(0),
-    warn: z.number().int().min(0),
-    fail: z.number().int().min(0),
-    locked: z.number().int().min(0),
-    skipped: z.number().int().min(0),
+    pending: z.number().int().safe().min(0),
+    running: z.number().int().safe().min(0),
+    pass: z.number().int().safe().min(0),
+    warn: z.number().int().safe().min(0),
+    fail: z.number().int().safe().min(0),
+    locked: z.number().int().safe().min(0),
+    skipped: z.number().int().safe().min(0),
   })
   .strict();
 export const StrategyValidationSummarySchema = z
@@ -8673,7 +8688,7 @@ export const StrategyValidationSummarySchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
   })
   .strict();
 export const StrategyVersionDetailSchema = z
@@ -8708,7 +8723,7 @@ export const StrategyVersionDetailSchema = z
           });
       }),
     name: z.string(),
-    version: z.number().int().min(1),
+    version: z.number().int().safe().min(1),
     lifecycle_state: z.union([
       z.literal('CANDIDATE'),
       z.literal('FROZEN'),
@@ -8775,7 +8790,7 @@ export const StrategyVersionDetailSchema = z
     provenance: z.array(ProvenanceRefSchema),
     frozen_at: z.iso.datetime({ offset: true }).nullable(),
     frozen_by: z.string().nullable(),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     created_at: z.iso.datetime({ offset: true }),
   })
@@ -8915,7 +8930,7 @@ export const ValidationCreateRequestSchema = z
             message: 'Value must match exactly one canonical variant',
           });
       }),
-    strategy_version: z.number().int().min(1),
+    strategy_version: z.number().int().safe().min(1),
     policy_id: z
       .string()
       .min(29)
@@ -8953,7 +8968,7 @@ export const ValidationCreateRequestSchema = z
 export const ValidationTestResultSchema = z
   .object({
     test_key: z.string(),
-    attempt_no: z.number().int().min(1),
+    attempt_no: z.number().int().safe().min(1),
     test_version: z.string(),
     state: z.union([
       z.literal('PENDING'),
@@ -9239,7 +9254,7 @@ export const ValidationDetailSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     started_at: z.iso.datetime({ offset: true }).nullable(),
     finished_at: z.iso.datetime({ offset: true }).nullable(),
@@ -9284,7 +9299,7 @@ export const ApprovalSummarySchema = z
       z.literal('STALE'),
       z.literal('CANCELLED'),
     ]),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
   })
   .strict();
 export const HoldoutGateSchema = z
@@ -9326,7 +9341,7 @@ export const HoldoutGateSchema = z
       z.literal('EXPOSED'),
       z.literal('FAILED'),
     ]),
-    exposure_count: z.number().int().min(0),
+    exposure_count: z.number().int().safe().min(0),
     period: DateRangeSchema,
     approval: z.unknown().superRefine((value, context) => {
       const matches = [
@@ -9340,7 +9355,7 @@ export const HoldoutGateSchema = z
         });
     }),
     action_capabilities: z.array(ActionCapabilitySchema),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     validation: ValidationDetailSchema.optional(),
   })
   .strict();
@@ -9546,8 +9561,8 @@ export const ApprovalSubjectSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    version: z.number().int().min(1).nullable(),
-    revision: z.number().int().min(1),
+    version: z.number().int().safe().min(1).nullable(),
+    revision: z.number().int().safe().min(1),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
   .strict()
@@ -9775,7 +9790,7 @@ export const ApprovalListItemSchema = z
     ]),
     requested_at: z.iso.datetime({ offset: true }),
     decided_at: z.iso.datetime({ offset: true }).nullable(),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
   .strict();
@@ -9853,7 +9868,7 @@ export const ApprovalDetailSchema = z
     ]),
     requested_at: z.iso.datetime({ offset: true }),
     decided_at: z.iso.datetime({ offset: true }).nullable(),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
   .strict();
@@ -9961,7 +9976,7 @@ export const MemoGenerateRequestSchema = z
             message: 'Value must match exactly one canonical variant',
           });
       }),
-    strategy_version: z.number().int().min(1),
+    strategy_version: z.number().int().safe().min(1),
   })
   .strict();
 export const MemoEvidenceLinkSchema = z
@@ -10089,7 +10104,7 @@ export const MemoDetailSchema = z
     status: z.union([z.literal('GENERATING'), z.literal('FINAL'), z.literal('FAILED')]),
     sections: z.array(MemoSectionSchema),
     provenance: z.array(ProvenanceRefSchema),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     created_at: z.iso.datetime({ offset: true }),
     updated_at: z.iso.datetime({ offset: true }),
@@ -10102,12 +10117,12 @@ export const AgentConfigSchema = z
     model_provider: z.string(),
     model_name: z.string(),
     ai_connection_id: z.string(),
-    ai_connection_revision: z.number().int().min(1),
+    ai_connection_revision: z.number().int().safe().min(1),
     runtime_profile: z.string(),
-    tool_timeout_seconds: z.number().int().min(1),
-    max_steps_override: z.number().int().min(1).nullable(),
-    max_tool_calls_override: z.number().int().min(1).nullable(),
-    revision: z.number().int().min(1),
+    tool_timeout_seconds: z.number().int().safe().min(1),
+    max_steps_override: z.number().int().safe().min(1).nullable(),
+    max_tool_calls_override: z.number().int().safe().min(1).nullable(),
+    revision: z.number().int().safe().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
     created_at: z.iso.datetime({ offset: true }),
     updated_at: z.iso.datetime({ offset: true }),
@@ -10118,9 +10133,9 @@ export const AgentConfigUpdateSchema = z
   .object({
     enabled: z.boolean().optional(),
     runtime_profile: z.string().min(1).max(32).optional(),
-    tool_timeout_seconds: z.number().int().min(1).optional(),
-    max_steps_override: z.number().int().min(1).nullable().optional(),
-    max_tool_calls_override: z.number().int().min(1).nullable().optional(),
+    tool_timeout_seconds: z.number().int().safe().min(1).optional(),
+    max_steps_override: z.number().int().safe().min(1).nullable().optional(),
+    max_tool_calls_override: z.number().int().safe().min(1).nullable().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length >= 1, {
@@ -10744,8 +10759,8 @@ export const JobResultRefSchema = z
           message: 'Value must match at least one canonical variant',
         });
     }),
-    object_version: z.number().int().min(1).nullable(),
-    object_revision: z.number().int().min(1).nullable(),
+    object_version: z.number().int().safe().min(1).nullable(),
+    object_revision: z.number().int().safe().min(1).nullable(),
     artifact_id: z.unknown().superRefine((value, context) => {
       const matches = [
         z
@@ -11101,8 +11116,8 @@ export const JobResultRefSchema = z
                           });
                       })
                       .optional(),
-                    object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_version: z.number().int().safe().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -11723,7 +11738,7 @@ export const JobResultRefSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -11757,7 +11772,7 @@ export const JobResultRefSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -11793,7 +11808,7 @@ export const JobResultRefSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -11849,7 +11864,7 @@ export const JobResultRefSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -12514,7 +12529,7 @@ export const JobDetailSchema = z
     started_at: z.iso.datetime({ offset: true }).nullable(),
     finished_at: z.iso.datetime({ offset: true }).nullable(),
     last_updated_at: z.iso.datetime({ offset: true }),
-    revision: z.number().int().min(1),
+    revision: z.number().int().safe().min(1),
   })
   .strict();
 export const EventTypeSchema = z.union([
@@ -12606,13 +12621,13 @@ export const EventPayloadSchema = z
           });
       })
       .optional(),
-    resync_from_sequence: z.number().int().min(1).nullable().optional(),
+    resync_from_sequence: z.number().int().safe().min(1).nullable().optional(),
     progress_mode: z
       .union([z.literal('NONE'), z.literal('UNITS'), z.literal(null)])
       .nullable()
       .optional(),
-    completed_units: z.number().int().min(0).nullable().optional(),
-    total_units: z.number().int().min(1).nullable().optional(),
+    completed_units: z.number().int().safe().min(0).nullable().optional(),
+    total_units: z.number().int().safe().min(1).nullable().optional(),
     current_step_key: z.string().nullable().optional(),
     agent_run_id: z
       .unknown()
@@ -13337,8 +13352,8 @@ export const EventPayloadSchema = z
           });
       })
       .optional(),
-    object_version: z.number().int().min(1).nullable().optional(),
-    object_revision: z.number().int().min(1).nullable().optional(),
+    object_version: z.number().int().safe().min(1).nullable().optional(),
+    object_revision: z.number().int().safe().min(1).nullable().optional(),
     waiting_on: z
       .unknown()
       .superRefine((value, context) => {
@@ -13668,8 +13683,8 @@ export const EventPayloadSchema = z
                           });
                       })
                       .optional(),
-                    object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_version: z.number().int().safe().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -14290,7 +14305,7 @@ export const EventPayloadSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -14324,7 +14339,7 @@ export const EventPayloadSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -14360,7 +14375,7 @@ export const EventPayloadSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -14416,7 +14431,7 @@ export const EventPayloadSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -15112,7 +15127,7 @@ export const SseEnvelopeSchema = z
             message: 'Value must match exactly one canonical variant',
           });
       }),
-    sequence: z.number().int().min(1),
+    sequence: z.number().int().safe().min(1),
     event_type: EventTypeSchema,
     occurred_at: z.iso.datetime({ offset: true }),
     object_type: z.union([
@@ -15704,8 +15719,8 @@ export const SseEnvelopeSchema = z
           message: 'Value must match at least one canonical variant',
         });
     }),
-    object_version: z.number().int().min(1).nullable(),
-    object_revision: z.number().int().min(1).nullable(),
+    object_version: z.number().int().safe().min(1).nullable(),
+    object_revision: z.number().int().safe().min(1).nullable(),
     request_id: z.string().nullable(),
     job_id: z.unknown().superRefine((value, context) => {
       const matches = [
@@ -16143,8 +16158,8 @@ export const SseEnvelopeSchema = z
                           });
                       })
                       .optional(),
-                    object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_version: z.number().int().safe().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -16765,7 +16780,7 @@ export const SseEnvelopeSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -16799,7 +16814,7 @@ export const SseEnvelopeSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -16835,7 +16850,7 @@ export const SseEnvelopeSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()
@@ -16891,7 +16906,7 @@ export const SseEnvelopeSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().safe().min(1),
                   })
                   .passthrough()
               : z.unknown()

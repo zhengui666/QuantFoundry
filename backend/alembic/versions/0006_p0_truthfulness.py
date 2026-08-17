@@ -226,6 +226,29 @@ def _replace_strategy_guard() -> None:
         BEGIN SELECT RAISE(ABORT, 'non-candidate strategy version cannot be deleted'); END
         """
     )
+    op.execute(
+        """
+        CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE
+        ON strategy_versions WHEN
+          ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
+             NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
+             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail OR
+             (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
+             COALESCE(NEW.workspace_id, '') IS NOT COALESCE(OLD.workspace_id, '')
+          )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
+             NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
+             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail
+          )) OR NOT (
+             NEW.state = OLD.state OR
+             (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
+             (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
+             (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
+             (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+             (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
+          )
+        BEGIN SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END
+        """
+    )
 
 
 def _scope_existing_foreign_keys() -> None:

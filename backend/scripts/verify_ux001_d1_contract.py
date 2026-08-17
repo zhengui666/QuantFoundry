@@ -28,6 +28,7 @@ def main() -> int:
     catalog = load("configuration-catalog-v1.yaml")
     bootstrap = load("bootstrap-control-v1.yaml")
     matrix = load("ux001-d1-test-matrix.yaml")
+    registry = load("tools/v1-p0.yaml")
 
     operations = sum(
         1
@@ -118,16 +119,25 @@ def main() -> int:
     )
 
     require(matrix["status"] == "FROZEN", "test matrix is not frozen")
+    tools = registry.get("tools")
+    require(isinstance(tools, list), "semantic tool registry is malformed")
+    tool_identities = {
+        (tool.get("name"), tool.get("version"))
+        for tool in tools
+        if isinstance(tool, dict)
+    }
+    require(len(tools) == len(tool_identities), "semantic tool identities are not unique")
     require(
         matrix["counts"]
         == {
             "operations": 66,
             "schemas": 188,
             "errors": 75,
-            "semantic_tools": 13,
+            "semantic_tools": len(tools),
         },
         "test matrix counts mismatch",
     )
+    require(len(tools) == 13, "semantic tool registry count mismatch")
     operation_ids = []
     for path, path_item in openapi["paths"].items():
         for method, operation in path_item.items():

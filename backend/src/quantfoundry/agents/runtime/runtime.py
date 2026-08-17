@@ -1172,27 +1172,29 @@ def _require_research_completion_evidence(session: Session, row: AgentRunRow) ->
 
     if row.role != "RESEARCH_DIRECTOR" or row.research_id is None:
         return
-    experiment = (
-        session.execute(
-            select(ExperimentRow).where(
-                ExperimentRow.workspace_id == row.workspace_id,
-                ExperimentRow.research_id == row.research_id,
-                ExperimentRow.immutable.is_(True),
-            )
+    experiments = session.execute(
+        select(ExperimentRow).where(
+            ExperimentRow.workspace_id == row.workspace_id,
+            ExperimentRow.research_id == row.research_id,
+            ExperimentRow.immutable.is_(True),
         )
-        .scalars()
-        .first()
+    ).scalars()
+    found = False
+    for experiment in experiments:
+        found = True
+        detail = json.loads(experiment.detail)
+        if (
+            detail.get("status") == "COMPLETED"
+            and detail.get("validity_state") == "VALID"
+            and detail.get("artifacts")
+            and isinstance(detail.get("provenance"), dict)
+        ):
+            return
+    raise AgentRuntimeError(
+        "RESEARCH_COMPLETION_EVIDENCE_INVALID"
+        if found
+        else "RESEARCH_COMPLETION_EVIDENCE_MISSING"
     )
-    if experiment is None:
-        raise AgentRuntimeError("RESEARCH_COMPLETION_EVIDENCE_MISSING")
-    detail = json.loads(experiment.detail)
-    if (
-        detail.get("status") != "COMPLETED"
-        or detail.get("validity_state") != "VALID"
-        or not detail.get("artifacts")
-        or not isinstance(detail.get("provenance"), dict)
-    ):
-        raise AgentRuntimeError("RESEARCH_COMPLETION_EVIDENCE_INVALID")
 
 
 def _suspend_for_child_job(
@@ -1919,6 +1921,58 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
             "status": "FAILED",
             "reason_code": "AGENT_OUTPUT_INVALID",
         },
+        job_id=job.id,
+        agent_run_id=row.id,
+        correlation_id=job.correlation_id,
+    )
+
+
+def cancel_agent_run(session: Session, job: JobRow) -> None:
+    """Close an agent run when its owning job is cancelled."""
+    inputs = json.loads(job.input_payload)
+    run_id = inputs.get("agent_run_id")
+    row = session.execute(
+        select(AgentRunRow)
+        .where(
+            AgentRunRow.id == run_id,
+            AgentRunRow.workspace_id == job.workspace_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if row is None or row.status in {"COMPLETED", "CANCELLED", "FAILED"}:
+        return
+    now = datetime.now(UTC)
+    checkpoint = _checkpoint(row)
+    checkpoint.update(
+        {
+            "safe_checkpoint": "CANCELLED",
+            "checkpointed_at": now.isoformat().replace("+00:00", "Z"),
+        }
+    )
+    row.checkpoint = json.dumps(checkpoint)
+    row.status = "CANCELLED"
+    row.decision_summary = "JOB_CANCELLED"
+    row.ended_at = now
+    row.revision += 1
+    if row.role == "RESEARCH_DIRECTOR" and row.parent_agent_run_id is None:
+        _research_status(session, row, "WAITING_USER")
+    for tool_call in session.execute(
+        select(ToolCallRow).where(
+            ToolCallRow.agent_run_id == row.id,
+            ToolCallRow.workspace_id == row.workspace_id,
+            ToolCallRow.status == "RUNNING",
+        )
+    ).scalars():
+        tool_call.status = "ERROR"
+        tool_call.warnings = json.dumps([{"code": "JOB_CANCELLED"}])
+        tool_call.finished_at = now
+    emit(
+        session,
+        "agent_run",
+        row.id,
+        row.revision,
+        "agent.run.updated",
+        payload={"state": "CANCELLED", "status": "CANCELLED", "reason_code": "JOB_CANCELLED"},
         job_id=job.id,
         agent_run_id=row.id,
         correlation_id=job.correlation_id,

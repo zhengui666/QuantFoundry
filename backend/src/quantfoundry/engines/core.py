@@ -575,7 +575,15 @@ def compute_factor_rows(
     for key, value in (parameters or {}).items():
         resolved = resolved.replace("{" + key + "}", value)
     if resolved == "close":
-        return [{**row, "factor_score": float(row["close"])} for row in rows]
+        calculated = [
+            {**row, "factor_score": float(row["close"])}
+            for row in rows
+            if _parse_timestamp(row["available_at"], "available_at")
+            <= _parse_timestamp(row["event_time"], "event_time")
+        ]
+        if not calculated:
+            raise EngineInputError("factor formula has no PIT-visible rows")
+        return calculated
     match = re.fullmatch(r"(momentum|return|mean_reversion)_(\d+)", resolved)
     if match is None:
         raise EngineInputError(f"unsupported factor expression: {expression}")

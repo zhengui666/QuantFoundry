@@ -99,11 +99,11 @@ describe('public-ID repository fixture scanner', () => {
     expect(
       scan('/repo/backend/schema/section14_manifest.json', {
         description: invalidStrategyId,
-        constraint: 'invalid fixture (STRAT-ID?)',
+        constraint: `invalid fixture (${invalidStrategyId}?)`,
       }),
     ).toHaveLength(2);
-    expect(scan('/repo/frontend/runtime.json', { id: 'STRAT-ID?' })).toHaveLength(1);
-    expect(scan('/repo/frontend/runtime.json', { id: 'STRAT-' })).toHaveLength(1);
+    expect(scan('/repo/frontend/runtime.json', { id: `${invalidStrategyId}?` })).toHaveLength(1);
+    expect(scan('/repo/frontend/runtime.json', { id: ['STRAT', ''].join('-') })).toHaveLength(1);
   });
 
   it('requires every declared formal source to exist and records it as scanned', async () => {

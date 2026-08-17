@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import sys
 
 import httpx
@@ -86,7 +87,7 @@ def main() -> int:
         )
         base_url = os.getenv("QF_BOOTSTRAP_API_URL", "http://api:8000/api/v1")
         auth = {"Authorization": f"Bearer {session_token}"}
-        key_prefix = f"local-bootstrap-{workspace_id}"
+        key_prefix = f"local-bootstrap-{workspace_id}-{secrets.token_hex(16)}"
         with httpx.Client(base_url=base_url, timeout=15) as client:
             ai = request_json(
                 client,

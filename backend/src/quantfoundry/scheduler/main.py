@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import socket
 import time
 from datetime import UTC, datetime
 
@@ -19,10 +18,7 @@ from quantfoundry.workers.main import cleanup_expired_events
 
 
 def scheduler_id() -> str:
-    return (
-        os.getenv("QF_SCHEDULER_ID")
-        or f"{socket.gethostname()}:{os.getpid()}:scheduler"
-    )
+    return os.getenv("QF_SCHEDULER_ID") or "scheduler"
 
 
 def _domain_ready() -> bool:

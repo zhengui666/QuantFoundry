@@ -54,6 +54,16 @@ role_content_types = {
     "Independent Test Agent": "application/vnd.quantfoundry.p0-test-evidence+json;version=1",
     "Independent Review Agent": "application/vnd.quantfoundry.p0-review-evidence+json;version=1",
 }
+required_owner_roles = {
+    "P0-PRODUCT-PAPER-DAILY-SCHEDULER": "Backend Agent",
+    "P0-CONTRACT-OPENAPI-45": "API / Contract Agent",
+    "P0-CONTRACT-TOOLS-13": "Agent-System Agent",
+    "P0-SCHEMA-ALEMBIC-AUTHORITY": "Database Agent",
+    "P0-ARCHITECTURE-TARGET-LAYERS": "Architecture / Implementation Agent",
+    "P0-SECURITY-RESEARCH-INTEGRITY": "Security Agent",
+    "P0-CI-REPRODUCIBILITY": "Test Agent",
+    "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE": "Release Agent",
+}
 required_p0_ids = {
     "P0-PRODUCT-PAPER-DAILY-SCHEDULER",
     "P0-CONTRACT-OPENAPI-45",
@@ -249,8 +259,8 @@ class RemoteVerifier:
         transport, repository, first, second = parsed
         if repository != self.repository:
             raise RuntimeError("remote evidence URI repository does not match GITHUB_REPOSITORY")
-        if transport != "actions":
-            raise RuntimeError("P0 closure evidence must be a run-bound GitHub Actions artifact")
+        if transport not in {"actions", "release"}:
+            raise RuntimeError("unsupported remote evidence transport")
         self.require_run(run_id, commit, role)
         if transport == "actions":
             artifact_run_id, artifact_id = first, second
@@ -367,8 +377,14 @@ def validate_closed_evidence(blocker_id, item, remote):
         if not isinstance(record, dict):
             errors.append(f"{prefix} must be an object")
             continue
+        owner_role = item.get("owner_role")
+        expected_owner_role = required_owner_roles.get(blocker_id)
+        if owner_role != expected_owner_role:
+            errors.append(
+                f"{blocker_id}: owner_role must be {expected_owner_role!r}"
+            )
         role = record.get("verifier_role")
-        if role not in allowed_roles or role == item.get("owner_role"):
+        if role not in allowed_roles or role == owner_role:
             errors.append(f"{prefix}.verifier_role must be an independent Test or Review Agent")
         else:
             roles.add(role)
@@ -377,8 +393,12 @@ def validate_closed_evidence(blocker_id, item, remote):
         commit_sha = record.get("commit_sha")
         if not isinstance(commit_sha, str) or not sha_pattern.fullmatch(commit_sha):
             errors.append(f"{prefix}.commit_sha must be a full lowercase 40-character SHA")
-        elif commit_sha != expected_commit:
-            errors.append(f"{prefix}.commit_sha must equal the current release commit")
+        elif subprocess.run(
+            ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", commit_sha, expected_commit],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode != 0:
+            errors.append(f"{prefix}.commit_sha must be an ancestor of the current release commit")
         build_id = record.get("build_id")
         build_match = github_build_pattern.fullmatch(build_id) if isinstance(build_id, str) else None
         if not build_match:

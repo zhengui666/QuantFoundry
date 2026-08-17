@@ -20,29 +20,59 @@ def read(relative):
     return (root / relative).read_text(encoding="utf-8")
 
 run_gate = read("scripts/ci/run-gate.sh")
-run_step_calls = {
-    name: command.strip()
-    for name, command in re.findall(r"(?m)^\s*run_step\s+([A-Za-z0-9_-]+)\s+(.+?)\s*$", run_gate)
-}
+run_rc_match = re.search(
+    r'(?ms)^run_rc\(\) \{\n(?P<body>.*?)^case "\$gate" in', run_gate
+)
+run_rc_body = run_rc_match.group("body") if run_rc_match else ""
+run_step_entries = re.findall(
+    r"(?m)^\s*run_step\s+([A-Za-z0-9_-]+)\s+(.+?)\s*$", run_rc_body
+)
+run_step_calls = dict(run_step_entries)
+run_agent_match = re.search(
+    r"(?ms)^run_agent_change\(\) \{\n(?P<body>.*?)^\}\n\n",
+    run_gate,
+)
+run_agent_body = run_agent_match.group("body") if run_agent_match else ""
 
-def shell_tokens(command):
-    tokens = shlex.split(command, comments=True, posix=True)
+
+def shell_command_nodes(command):
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";|&()")
+    lexer.commenters = "#"
+    lexer.whitespace_split = True
+    tokens = list(lexer)
+    nodes = []
+    current = []
+    previous = None
+    for token in tokens + [";"]:
+        if token in {";", "&&", "||", "|", "(", ")"}:
+            if current:
+                nodes.append((previous, current))
+            current = []
+            previous = token
+        else:
+            current.append(token)
     expanded = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        expanded.append(token)
-        if token == "-c" and index + 1 < len(tokens):
-            expanded.extend(shell_tokens(tokens[index + 1]))
-            index += 1
-        index += 1
+    for operator, node in nodes:
+        if (node[:1] == ["bash"] or node[:1] == ["sh"]) and "-c" in node:
+            script = node[node.index("-c") + 1 :]
+            if script:
+                expanded.extend(shell_command_nodes(" ".join(script)))
+        else:
+            expanded.append((operator, node))
     return expanded
 
 
 def contains_command(command, expected):
-    actual = shell_tokens(command)
     wanted = shlex.split(expected, comments=True, posix=True)
-    return any(actual[index : index + len(wanted)] == wanted for index in range(len(actual) - len(wanted) + 1))
+    for operator, node in shell_command_nodes(command):
+        if not node or node[0] in {"false", "true", "echo", "printf", "exit"}:
+            continue
+        actual = node[next((index for index, token in enumerate(node) if "=" not in token), 0) :]
+        if actual[: len(wanted)] == wanted and operator != "&&":
+            return True
+        if wanted[0] in actual and actual[actual.index(wanted[0]) :][: len(wanted)] == wanted:
+            return True
+    return False
 
 
 required_run_steps = {
@@ -56,7 +86,10 @@ required_run_steps = {
 for name, expected in required_run_steps.items():
     if name not in run_step_calls or not contains_command(run_step_calls[name], expected):
         errors.append(f"run-gate rc path is missing executable run_step {name}: {expected}")
-if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
+if (
+    "QF_INDEPENDENT_REVIEW_REPORT" not in run_agent_body
+    or "verify-independent-review-report.sh" not in run_agent_body
+):
     errors.append("agent-change gate does not require the bound independent review report")
 
 ci_script = read("scripts/ci.sh")

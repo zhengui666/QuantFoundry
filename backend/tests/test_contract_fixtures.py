@@ -58,7 +58,10 @@ def test_complete_setup_etag_corruption_fails_closed(etag: str | None) -> None:
 
     response = TestClient(invalid_app).post(
         "/api/v1/setup/complete",
-        headers={"Idempotency-Key": "etag-corruption-proof"},
+        headers={
+            "Idempotency-Key": "etag-corruption-proof",
+            "X-CSRF-Token": "t" * 32,
+        },
         json={"configuration_revision": 1},
     )
     assert response.status_code == 500

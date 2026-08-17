@@ -624,7 +624,7 @@ class PaperScheduler:
             is_trading_day, calendar_version = self._is_trading_day(
                 schedule, row["trading_date"]
             )
-        except InvalidExecutionAssumption as error:
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError) as error:
             self._finish_run(
                 session,
                 deployment,
@@ -1196,6 +1196,7 @@ class PaperScheduler:
         reason_code: str,
         now: datetime | None = None,
         lease_snapshot: LeaseSnapshot | None = None,
+        status: str = "FAILED",
     ) -> None:
         """Fail uncertain recovery closed; no automatic Paper replay is legal."""
         if job.job_type != "PAPER_DAILY_RUN":
@@ -1238,7 +1239,7 @@ class PaperScheduler:
                 deployment,
                 row,
                 job,
-                "FAILED",
+                status,
                 "CONFIGURATION_INVALID",
                 "UNKNOWN_POST_SIDE_EFFECT",
                 True,
@@ -1254,7 +1255,7 @@ class PaperScheduler:
             deployment,
             row,
             job,
-            "FAILED",
+            status,
             reason_code,
             "UNKNOWN_POST_SIDE_EFFECT",
             True,

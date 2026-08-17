@@ -165,6 +165,7 @@ def upgrade() -> None:
         sa.Column("base_revision", sa.BigInteger),
         sa.Column("nonsecret_payload", sa.JSON, nullable=False),
         sa.Column("ciphertext_envelope", sa.LargeBinary, nullable=False),
+        sa.Column("secret_key_id", sa.String(128)),
         sa.Column("validation_sha256", sa.String(64)),
         sa.Column("failure_code", sa.String(128)),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -357,6 +358,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_configuration_values_sensitivity "
+            "ON configuration_values"
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_bootstrap_audit_append_only "
+            "ON bootstrap_audit_events"
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_bootstrap_audit_immutable "
+            "ON bootstrap_audit_events"
+        )
     for table_name in (
         "control_idempotency_records",
         "configuration_values",
@@ -364,10 +379,17 @@ def downgrade() -> None:
         "bootstrap_audit_events",
         "configuration_consumer_states",
         "active_configuration",
+        "bootstrap_state",
         "domain_database_connection_revisions",
         "configuration_revisions",
         "configuration_catalog",
-        "bootstrap_state",
         "general_access_keys",
     ):
         op.drop_table(table_name)
+    if bind.dialect.name == "postgresql":
+        for function_name in (
+            "qf_validate_configuration_value",
+            "qf_validate_bootstrap_audit_insert",
+            "qf_reject_bootstrap_audit_change",
+        ):
+            op.execute(f"DROP FUNCTION IF EXISTS {function_name}()")

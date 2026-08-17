@@ -152,6 +152,16 @@ expected_ids = [
     "P0-CI-REPRODUCIBILITY",
     "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE",
 ]
+owner_roles = {
+    "P0-PRODUCT-PAPER-DAILY-SCHEDULER": "Backend Agent",
+    "P0-CONTRACT-OPENAPI-45": "API / Contract Agent",
+    "P0-CONTRACT-TOOLS-13": "Agent-System Agent",
+    "P0-SCHEMA-ALEMBIC-AUTHORITY": "Database Agent",
+    "P0-ARCHITECTURE-TARGET-LAYERS": "Architecture / Implementation Agent",
+    "P0-SECURITY-RESEARCH-INTEGRITY": "Security Agent",
+    "P0-CI-REPRODUCIBILITY": "Test Agent",
+    "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE": "Release Agent",
+}
 test = record(metadata["test"])
 review = record(metadata["review"])
 status = "closed"
@@ -178,7 +188,7 @@ elif case == "release-asset-positive":
 def blocker(blocker_id):
     return {
         "id": blocker_id,
-        "owner_role": "Release Agent",
+        "owner_role": owner_roles[blocker_id],
         "closure_criteria": [criterion],
         "status": status,
         "release_blocking": True,

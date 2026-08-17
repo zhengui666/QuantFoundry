@@ -129,9 +129,12 @@ const intentionalRejection = (token, context) => {
 const grammarNotation = (token, context, file, key = '') => {
   const extension = extname(file).toLowerCase();
   const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(key);
-  const proseSource = extension === '.md' || extension === '.yaml' || extension === '.yml';
-  const manifestProse = extension === '.json' && /(?:manifest|schema)/i.test(file) && proseField;
-  if (!proseSource && !manifestProse) return false;
+  const proseSource = extension === '.md';
+  const structuredProse =
+    (extension === '.yaml' || extension === '.yml' ||
+      (extension === '.json' && /(?:manifest|schema)/i.test(file))) &&
+    proseField;
+  if (!proseSource && !structuredProse) return false;
   if (proseSource && !/\b(?:grammar|notation|locator|prefix|placeholder)\b/i.test(context))
     return false;
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -151,6 +154,7 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
     const canonical = fieldMatch && matchers.get(fieldMatch[1].toUpperCase());
     if (canonical && !canonical.some((matcher) => matcher.test(text))) {
       failures.push(`${location}: unmarked invalid public-ID fixture ${text}`);
+      return failures;
     }
   }
   const matches = [

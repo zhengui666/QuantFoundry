@@ -31,7 +31,7 @@ export async function startCanonicalSseProbe(
     signal: controller.signal,
   });
   const responseBody = response.body;
-  const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
   if (response.status !== 200 || mediaType !== 'text/event-stream' || !responseBody) {
     controller.abort();
     throw new Error(

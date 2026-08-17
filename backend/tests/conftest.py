@@ -74,6 +74,10 @@ else:
     # PostgreSQL tests are always Alembic-only.  Never let a caller's inherited
     # environment silently turn the suite into a metadata.create_all test.
     os.environ["QF_ALLOW_TEST_SCHEMA_BOOTSTRAP"] = "0"
+if os.getenv("QF_CONTROL_DB_URL"):
+    raise RuntimeError(
+        "QF_CONTROL_DB_URL is forbidden for tests because control-plane teardown is destructive"
+    )
 os.environ.setdefault(
     "QF_TEST_AUTH_TOKENS",
     json.dumps(
@@ -359,6 +363,7 @@ def isolate_control_plane_between_tests():
     """Keep one test's activated remote endpoint from leaking into the next."""
     yield
     from app.control_plane import (
+        CONTROL_ENGINE,
         ActiveConfiguration,
         BootstrapState,
         ConfigurationRevision,
@@ -370,6 +375,12 @@ def isolate_control_plane_between_tests():
 
     try:
         control_path = _control_path().resolve()
+        bound_url = CONTROL_ENGINE.url
+        bound_path = Path(bound_url.database or "").resolve()
+        if bound_url.get_backend_name() != "sqlite" or bound_path != control_path:
+            raise RuntimeError(
+                f"refusing destructive control DB teardown against {CONTROL_ENGINE.url}"
+            )
         try:
             control_path.relative_to(_TEST_RUNTIME_ROOT.resolve())
         except ValueError as error:
@@ -397,8 +408,13 @@ def isolate_control_plane_between_tests():
         with SessionLocal.begin() as session:
             session.query(AgentConfigRow).update(
                 {
+                    AgentConfigRow.enabled: True,
                     AgentConfigRow.model_provider: "local-deterministic",
                     AgentConfigRow.model_name: "local-test-v1",
+                    AgentConfigRow.runtime_profile: "DEFAULT",
+                    AgentConfigRow.tool_timeout_seconds: 30,
+                    AgentConfigRow.max_steps_override: None,
+                    AgentConfigRow.max_tool_calls_override: None,
                 },
                 synchronize_session=False,
             )

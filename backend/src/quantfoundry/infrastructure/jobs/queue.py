@@ -295,6 +295,9 @@ def request_cancellation(
         raise JobNotCancellable(job_id)
     row.cancel_requested_at = timestamp
     if row.status == "QUEUED":
+        from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+        apply_job_cancellation(session, row)
         row.status = "CANCELLED"
         row.finished_at = timestamp
     row.revision += 1

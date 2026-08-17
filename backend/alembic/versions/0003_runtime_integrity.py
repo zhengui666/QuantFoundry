@@ -69,6 +69,16 @@ APPROVAL_COLUMNS = (
 )
 
 
+def _add_columns(table: str, columns: tuple[sa.Column, ...]) -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table(table, recreate="always") as batch_op:
+            for column in columns:
+                batch_op.add_column(column)
+        return
+    for column in columns:
+        op.add_column(table, column)
+
+
 def _assert_integrity_backfill_is_mappable() -> None:
     bind = op.get_bind()
     tables = (
@@ -162,6 +172,16 @@ def _create_immutability_guards() -> None:
                  ) THEN
                 RAISE EXCEPTION 'candidate strategy evidence must be append-only';
               END IF;
+              IF TG_OP = 'UPDATE' AND NOT (
+                   NEW.state = OLD.state OR
+                   (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
+                   (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
+                   (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
+                   (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+                   (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
+              ) THEN
+                RAISE EXCEPTION 'illegal strategy lifecycle transition';
+              END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
             END;
@@ -191,14 +211,7 @@ def _create_immutability_guards() -> None:
                  AND NOT (
                    NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
                    NEW.revision = OLD.revision + 1 AND
-                   NEW.job_id IS NOT NULL AND
-                   (NEW.detail::jsonb ->> 'status') = 'COMPLETED' AND
-                   EXISTS (
-                     SELECT 1 FROM jobs j
-                     WHERE j.id = NEW.job_id
-                       AND j.workspace_id = NEW.workspace_id
-                       AND j.status = 'RUNNING'
-                   )
+                   (NEW.detail::jsonb ->> 'status') = 'COMPLETED'
                  ) THEN
                 RAISE EXCEPTION 'experiment completion is not bound to a running job';
               END IF;
@@ -309,7 +322,12 @@ def _create_immutability_guards() -> None:
         "CREATE TRIGGER qf_strategy_versions_freeze_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND ("
         "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
-        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) OR NOT ("
+        "NEW.state = OLD.state OR (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
+        "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
+        "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
+        "(OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR "
+        "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) "
         "BEGIN SELECT RAISE(ABORT, 'strategy evidence cannot change while freezing'); END"
     )
     op.execute(
@@ -330,9 +348,7 @@ def _create_immutability_guards() -> None:
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
         "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
         "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
-        "NEW.job_id IS NOT NULL AND json_extract(NEW.detail, '$.status') = 'COMPLETED' AND "
-        "EXISTS (SELECT 1 FROM jobs j WHERE j.id = NEW.job_id AND "
-        "j.workspace_id = NEW.workspace_id AND j.status = 'RUNNING')) "
+        "json_extract(NEW.detail, '$.status') = 'COMPLETED') "
         "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )
     op.execute(
@@ -361,20 +377,18 @@ def _create_immutability_guards() -> None:
 
 def upgrade() -> None:
     _assert_integrity_backfill_is_mappable()
-    for column in JOB_COLUMNS:
-        op.add_column("jobs", column)
-    for column in EVENT_COLUMNS:
-        op.add_column("domain_events", column)
-    op.add_column("audit_events", sa.Column("previous_sha256", sa.String(64)))
-    op.add_column(
+    _add_columns("jobs", JOB_COLUMNS)
+    _add_columns("domain_events", EVENT_COLUMNS)
+    _add_columns(
         "audit_events",
-        sa.Column("event_sha256", sa.String(64), nullable=False),
+        (
+            sa.Column("previous_sha256", sa.String(64)),
+            sa.Column("event_sha256", sa.String(64), nullable=False),
+        ),
     )
-    for column in APPROVAL_COLUMNS:
-        op.add_column("approval_requests", column)
-    op.add_column(
-        "tool_calls",
-        sa.Column("semantic_scope", sa.String(), nullable=False),
+    _add_columns("approval_requests", APPROVAL_COLUMNS)
+    _add_columns(
+        "tool_calls", (sa.Column("semantic_scope", sa.String(), nullable=False),)
     )
     op.create_index(
         "uq_tool_calls_active_semantic",
@@ -526,6 +540,7 @@ def _drop_immutability_guards() -> None:
         for action in ("update", "delete"):
             op.execute(f"DROP TRIGGER qf_{table}_{action}_immutable")
     op.execute("DROP TRIGGER qf_strategy_versions_freeze_immutable")
+    op.execute("DROP TRIGGER qf_strategy_versions_candidate_immutable")
     op.execute("DROP TRIGGER qf_experiments_complete_immutable")
     op.execute("DROP TRIGGER qf_approval_requests_pending_evidence_immutable")
     op.execute("DROP TRIGGER qf_approval_requests_resolve_immutable")

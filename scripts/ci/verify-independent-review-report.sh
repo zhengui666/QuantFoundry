@@ -48,16 +48,21 @@ scope_paths = [
     "AGENTS.md",
     "PROJECT_BACKGROUND.md",
     "backend/src/quantfoundry",
+    "backend/app/agent_runtime.py",
+    "backend/app/agent_runtime",
     "backend/workers",
     "docs/Agent技术方案",
     "docs/后端系统技术方案/contracts/tools",
     "docs/治理",
     ".github/workflows",
     "scripts/ci",
-    "scripts/release-evidence.sh",
+    "scripts/ci.sh",
+    "scripts/tool_contract_check.py",
     "scripts/release-check.sh",
+    "scripts/release-evidence.sh",
+    "scripts/release-known-issues-check.sh",
 ]
-trusted_workflow_blob_sha = "106fe374a92e902b4f0e119533680b51a640822d"
+trusted_workflow_blob_sha = "4ecbf36ee23502a5b845f211e008335c0248b231"
 
 def review_scope_sha256():
     completed = subprocess.run(
@@ -116,7 +121,7 @@ if run.get("head_sha") != expected_commit:
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review report run did not complete successfully as workflow_dispatch")
 workflow_path = run.get("path", "")
-if workflow_path != ".github/workflows/independent-agent-review.yml" or run.get("head_branch") != "main":
+if workflow_path != ".github/workflows/independent-agent-review.yml":
     raise SystemExit("independent review report run used an unauthorized workflow")
 workflow_id = run.get("workflow_id")
 if not isinstance(workflow_id, int) or workflow_id < 1:

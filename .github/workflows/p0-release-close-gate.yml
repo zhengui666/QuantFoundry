@@ -40,12 +40,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           QF_RELEASE_TAG: ${{ inputs.release_tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           git fetch --tags --force origin
           tag_commit="$(git rev-parse "refs/tags/$QF_RELEASE_TAG^{commit}")"
           [[ -n "$tag_commit" ]]
-          trusted_commit="$(git rev-parse "origin/${{ github.event.repository.default_branch }}")"
+          trusted_commit="$(git rev-parse "origin/$DEFAULT_BRANCH")"
           test "$(git rev-parse HEAD)" = "$trusted_commit"
           release_root="$RUNNER_TEMP/qf-release-$tag_commit"
           git worktree add --detach "$release_root" "$tag_commit"

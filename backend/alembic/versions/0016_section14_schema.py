@@ -1547,7 +1547,7 @@ def _install_guards() -> None:
         "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND ("
         "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
-        "NEW.frozen_at IS NOT OLD.frozen_at OR "
+        "(OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR "
         "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
         "(NEW.state = OLD.state AND NEW.detail != OLD.detail))) OR NOT ("
         "NEW.state = OLD.state OR "

@@ -281,17 +281,6 @@ def activate_fullstack_database(
         "tls_mode": "DISABLED",
         "pool_profile": "fullstack-ci",
     }
-    active = current.get("active")
-    if current.get("active_revision") is not None:
-        if (
-            current.get("state") == "READY"
-            and current.get("domain_operations") == "AVAILABLE"
-            and isinstance(active, dict)
-            and not any(
-                active.get(key) != value for key, value in desired.items()
-            )
-        ):
-            return
     etag = status.headers.get("etag")
     if not etag:
         raise RuntimeError("database status is missing ETag")

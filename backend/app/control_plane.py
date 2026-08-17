@@ -266,6 +266,7 @@ class DomainDatabaseConnectionRevision(ControlBase):
     base_revision = Column(BigInteger)
     nonsecret_payload = Column(JSON, nullable=False)
     ciphertext_envelope = Column(LargeBinary, nullable=False)
+    secret_key_id = Column(String(128))
     validation_sha256 = Column(String(64))
     failure_code = Column(String(128))
     created_at = Column(DateTime(timezone=True), nullable=False)
@@ -458,6 +459,53 @@ def _replay_idempotent(record: ControlIdempotencyRecord) -> Response:
     )
 
 
+def _replay_after_key_rotation(
+    request: Request, operation: str, key: str, fingerprint: str
+) -> Response | None:
+    """Replay a completed rotation response before checking the retired key."""
+    cookie = request.cookies.get(SESSION_COOKIE)
+    if not cookie:
+        return None
+    with ControlSessionLocal() as db:
+        session_row = db.scalar(
+            select(OwnerSession).where(
+                OwnerSession.token_sha256 == hashlib.sha256(cookie.encode()).hexdigest()
+            )
+        )
+        state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+        now = _now()
+        if (
+            session_row is None
+            or session_row.revoked_at is not None
+            or (state is not None and session_row.auth_epoch != state.auth_epoch)
+            or (_aware(session_row.absolute_expires_at) or now) <= now
+            or (_aware(session_row.idle_expires_at) or now) <= now
+        ):
+            return None
+        csrf_error = _csrf(request, session_row)
+        if csrf_error is not None:
+            return csrf_error
+        principal = hashlib.sha256(
+            f"{cookie}:{session_row.session_id}:{session_row.auth_epoch}".encode()
+        ).hexdigest()
+        record = db.scalar(
+            select(ControlIdempotencyRecord).where(
+                ControlIdempotencyRecord.principal == principal,
+                ControlIdempotencyRecord.operation == operation,
+                ControlIdempotencyRecord.idempotency_key == key,
+            )
+        )
+        if record is None or record.status != "COMPLETED":
+            return None
+        if record.request_sha256 != fingerprint:
+            return _problem(
+                409,
+                "IDEMPOTENCY_CONFLICT",
+                "idempotency key was reused for another request",
+            )
+        return _replay_idempotent(record)
+
+
 def _with_idempotency(operation: str, success_status: int = 200):
     def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(function)
@@ -466,6 +514,17 @@ def _with_idempotency(operation: str, success_status: int = 200):
             key = kwargs.get("idempotency_key")
             if not isinstance(request, Request) or not isinstance(key, str):
                 return function(*args, **kwargs)
+            if (
+                getattr(request.app.state, "environment", None) == "test"
+                and getattr(request.state, "actor", None) is not None
+                and not request.cookies.get(SESSION_COOKIE)
+            ):
+                request.state.allow_test_bearer_control = True
+            replay = _replay_after_key_rotation(
+                request, operation, key, _idempotency_fingerprint(kwargs)
+            )
+            if replay is not None:
+                return replay
             authenticated, auth_error = _csrf_session(request)
             if auth_error is not None:
                 return auth_error
@@ -618,6 +677,9 @@ def _upgrade_control_columns() -> None:
         "configuration_catalog": {
             "default_for_first_materialization": "JSON",
             "deprecated_at": "DATETIME",
+        },
+        "domain_database_connection_revisions": {
+            "secret_key_id": "VARCHAR(128)",
         },
     }
     with CONTROL_ENGINE.begin() as connection:
@@ -1288,7 +1350,9 @@ def _database_candidate_view(
 def _database_secret(row: DomainDatabaseConnectionRevision) -> dict[str, str]:
     value = json.loads(
         _open(
-            row.ciphertext_envelope, aad=f"qf-domain-database:{row.revision}".encode()
+            row.ciphertext_envelope,
+            aad=f"qf-domain-database:{row.revision}".encode(),
+            key_id=row.secret_key_id,
         )
     )
     return value if isinstance(value, dict) else {}
@@ -1471,18 +1535,45 @@ def _publish_domain_database(candidate_engine: Any) -> Any:
     candidate_engine._qf_previous_canonical_available = bool(  # type: ignore[attr-defined]
         getattr(canonical_main.app.state, "domain_database_available", False)
     )
-    domain_main.SessionLocal.configure(bind=candidate_engine)
-    domain_main.engine = candidate_engine
-    domain_main.app.state.domain_database_available = True
-    domain_main.app.state.domain_database_revision = getattr(
-        candidate_engine, "_qf_domain_revision", None
+    previous_state = (
+        domain_main.engine,
+        getattr(domain_main.app.state, "domain_database_available", False),
+        getattr(domain_main.app.state, "domain_database_revision", None),
+        canonical_main.engine,
+        getattr(canonical_main.app.state, "domain_database_available", False),
+        getattr(canonical_main.app.state, "domain_database_revision", None),
     )
-    canonical_main.SessionLocal.configure(bind=candidate_engine)
-    canonical_main.engine = candidate_engine
-    canonical_main.app.state.domain_database_available = True
-    canonical_main.app.state.domain_database_revision = getattr(
-        candidate_engine, "_qf_domain_revision", None
-    )
+    try:
+        domain_main.SessionLocal.configure(bind=candidate_engine)
+        domain_main.engine = candidate_engine
+        domain_main.app.state.domain_database_available = True
+        domain_main.app.state.domain_database_revision = getattr(
+            candidate_engine, "_qf_domain_revision", None
+        )
+        canonical_main.SessionLocal.configure(bind=candidate_engine)
+        canonical_main.engine = candidate_engine
+        canonical_main.app.state.domain_database_available = True
+        canonical_main.app.state.domain_database_revision = getattr(
+            candidate_engine, "_qf_domain_revision", None
+        )
+    except Exception:
+        (
+            domain_engine,
+            domain_available,
+            domain_revision,
+            canonical_engine,
+            canonical_available,
+            canonical_revision,
+        ) = previous_state
+        domain_main.SessionLocal.configure(bind=domain_engine)
+        domain_main.engine = domain_engine
+        domain_main.app.state.domain_database_available = domain_available
+        domain_main.app.state.domain_database_revision = domain_revision
+        canonical_main.SessionLocal.configure(bind=canonical_engine)
+        canonical_main.engine = canonical_engine
+        canonical_main.app.state.domain_database_available = canonical_available
+        canonical_main.app.state.domain_database_revision = canonical_revision
+        raise
     return previous_engine
 
 
@@ -1499,21 +1590,7 @@ def _rebind_domain_database(
     try:
         with candidate_engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1").scalar_one()
-        post_commit = _IDEMPOTENCY_POST_COMMIT.get()
-        if post_commit is not None:
-            rollback = _IDEMPOTENCY_ROLLBACK.get()
-
-            def publish() -> None:
-                previous = _publish_domain_database(candidate_engine)
-                _dispose_engine(previous)
-
-            post_commit.append(publish)
-            if rollback is not None:
-                rollback.append(lambda: _dispose_engine(candidate_engine))
-            return None, candidate_engine
-        previous_engine = _publish_domain_database(candidate_engine)
-        _dispose_engine(previous_engine)
-        return previous_engine, candidate_engine
+        return _publish_domain_database(candidate_engine), candidate_engine
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         _dispose_engine(candidate_engine)
         raise
@@ -1584,7 +1661,8 @@ def restore_active_domain_database() -> None:
         canonical_main.app.state.domain_database_revision = None
         return
     try:
-        _rebind_domain_database(active)
+        previous_engine, _candidate_engine = _rebind_domain_database(active)
+        _dispose_engine(previous_engine)
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         domain_main.app.state.domain_database_available = False
         domain_main.app.state.domain_database_revision = None
@@ -1611,7 +1689,8 @@ def ensure_domain_database_current() -> None:
         and getattr(domain_main.app.state, "domain_database_available", False)
     ):
         return
-    _rebind_domain_database(active)
+    previous_engine, _candidate_engine = _rebind_domain_database(active)
+    _dispose_engine(previous_engine)
 
 
 def _sync_domain_compat_setup(workspace_id: str | None = None) -> None:
@@ -2114,6 +2193,7 @@ def build_router() -> APIRouter:
             db.query(OwnerSession).filter(
                 OwnerSession.access_key_id == old.key_id,
                 OwnerSession.revoked_at.is_(None),
+                OwnerSession.session_id != current.session_id,
             ).update({"revoked_at": now, "revoke_reason": "ROTATED"})
             _audit(
                 db,
@@ -2817,11 +2897,12 @@ def build_router() -> APIRouter:
             )
             db.add(row)
             db.flush()
-            envelope, _key_id = _seal(
+            envelope, key_id = _seal(
                 json.dumps(secret_payload, sort_keys=True),
                 aad=f"qf-domain-database:{row.revision}".encode(),
             )
             row.ciphertext_envelope = envelope
+            row.secret_key_id = key_id
             _audit(
                 db,
                 "DATABASE_CANDIDATE",
@@ -3036,7 +3117,7 @@ def build_router() -> APIRouter:
                 _restore_domain_database(previous_engine, candidate_engine)
             raise
         if previous_engine is not None:
-            previous_engine.dispose()
+            _dispose_engine(previous_engine)
         return payload
 
     @router.post(
@@ -3153,7 +3234,7 @@ def build_router() -> APIRouter:
                 restored = True
             raise
         if previous_engine is not None:
-            previous_engine.dispose()
+            _dispose_engine(previous_engine)
         return payload
 
     return router

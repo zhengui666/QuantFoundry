@@ -16,6 +16,22 @@ environment_value() {
   printf '%s' "${line#*=}"
 }
 
+environment_value_optional() {
+  local key="$1"
+  local count
+  local line
+  count="$(grep -Ec "^[[:space:]]*${key}=" "$environment_file" || true)"
+  if [[ "$count" == "0" ]]; then
+    return 0
+  fi
+  if [[ "$count" != "1" ]]; then
+    printf 'Expected at most one %s entry in %s.\n' "$key" "$environment_file" >&2
+    exit 1
+  fi
+  line="$(grep -E "^[[:space:]]*${key}=" "$environment_file")"
+  printf '%s' "${line#*=}"
+}
+
 if [[ ! -f "$environment_file" ]]; then
   cp .env.example "$environment_file"
   printf 'Created %s from .env.example.\n' "$environment_file" >&2
@@ -68,6 +84,37 @@ if [[ ! "$credential_key" =~ ^[A-Za-z0-9_-]{43}=?$ ]]; then
   printf '%s\n' 'QF_CREDENTIAL_ENCRYPTION_KEY must be URL-safe base64 for exactly 32 bytes.' >&2
   exit 1
 fi
+credential_keyring="$(environment_value_optional QF_CREDENTIAL_ENCRYPTION_KEYS)"
+if [[ -n "$credential_keyring" ]]; then
+  if ! QF_BOOTSTRAP_KEYRING="$credential_keyring" python3 - "$credential_key_id" <<'PY'
+import base64
+import binascii
+import json
+import os
+import re
+import sys
+
+active_id = sys.argv[1]
+try:
+    values = json.loads(os.environ["QF_BOOTSTRAP_KEYRING"])
+except json.JSONDecodeError as error:
+    raise SystemExit(f"QF_CREDENTIAL_ENCRYPTION_KEYS is invalid: {error}")
+if not isinstance(values, dict) or not values or active_id not in values:
+    raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS must contain the active key ID")
+for key_id, encoded in values.items():
+    if not isinstance(key_id, str) or not isinstance(encoded, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}=?", encoded):
+        raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS contains an invalid key")
+    try:
+        decoded = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+    except (UnicodeEncodeError, binascii.Error, ValueError) as error:
+        raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS contains an invalid base64 key") from error
+    if len(decoded) != 32:
+        raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS keys must decode to 32 bytes")
+PY
+  then
+    exit 1
+  fi
+fi
 
 if [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then
   local_provider_key="$(environment_value QF_LOCAL_PROVIDER_API_KEY)"
@@ -90,6 +137,12 @@ for compose_key in QF_ENV QF_ENVIRONMENT QF_GIT_COMMIT QF_BUILD_ID \
       exit 1
     fi
 done
+if [[ -n "$credential_keyring" ]]; then
+  if [[ "$credential_keyring" == *'$'* ]]; then
+    printf '%s\n' 'Compose interpolation is forbidden in QF_CREDENTIAL_ENCRYPTION_KEYS.' >&2
+    exit 1
+  fi
+fi
 if [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then
   for compose_key in QF_LOCAL_PROVIDER_API_KEY; do
     file_value="$(environment_value "$compose_key")"

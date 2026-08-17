@@ -298,6 +298,8 @@ def _queue_factor_analysis_experiment(
         {
             "experiment_id": experiment_id,
             **arguments,
+            "cost_model_version": cost.version,
+            "cost_model_sha256": cost.content_sha256,
             "forward_return_horizons": [1],
         },
         {

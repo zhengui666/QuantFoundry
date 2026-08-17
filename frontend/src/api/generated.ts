@@ -2208,6 +2208,10 @@ export interface components {
              */
             cost_model_id: string;
             parameters: components["schemas"]["Parameter"][];
+            /** @description Required for PARAMETER_SENSITIVITY; empty for other experiment types. */
+            search_space?: components["schemas"]["ExperimentSearchDimension"][];
+            /** @description Required for PARAMETER_SENSITIVITY; null for other experiment types. */
+            search_configuration?: components["schemas"]["ExperimentSearchConfiguration"] | null;
             engine_key: string;
             engine_version: string;
         };

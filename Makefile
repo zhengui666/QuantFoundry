@@ -1,4 +1,4 @@
-SHELL := /usr/bin/env bash
+SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 .PHONY: help bootstrap local-bootstrap owner-bootstrap up down logs ps migrate format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses verify-compose

@@ -75,8 +75,12 @@ def _header_value(value: str, field_name: str) -> str:
 def _idempotency_key(*parts: str) -> str:
     if not parts or any(not isinstance(part, str) for part in parts):
         raise ValueError("idempotency key parts are required")
-    canonical = json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
-    return f"qf-idem-v1-{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+    operation, account_id, object_id = parts
+    if operation == "submit":
+        return f"{account_id}:{object_id}"
+    if operation == "cancel":
+        return f"{account_id}:cancel:{object_id}"
+    raise ValueError("unsupported idempotency key operation")
 
 
 def _validate_order_response(

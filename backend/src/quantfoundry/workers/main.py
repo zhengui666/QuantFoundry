@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import threading
 import time
 from datetime import UTC, datetime
 
@@ -13,6 +14,7 @@ from sqlalchemy import func, select
 from quantfoundry.agents.runtime.runtime import (
     ToolExecutionFailure,
     advance_agent_run,
+    cancel_agent_run,
     fail_agent_run,
     persist_tool_failure,
 )
@@ -21,6 +23,7 @@ from quantfoundry.api.app import Event, EventStreamWatermark, JobRow, SessionLoc
 from quantfoundry.application.jobs.effects import apply_job_effect, apply_job_failure
 from quantfoundry.infrastructure.artifacts.store import probe_artifact_store
 from quantfoundry.infrastructure.jobs.queue import (
+    LEASE_SECONDS,
     JobLease,
     LostLease,
     claim_job,
@@ -141,6 +144,22 @@ def _mark_failed(lease: JobLease, error: Exception) -> None:
         session.close()
 
 
+def _lease_heartbeat_loop(
+    lease: JobLease, stop: threading.Event, failures: list[Exception]
+) -> None:
+    while not stop.wait(max(1.0, LEASE_SECONDS / 3)):
+        heartbeat_session = SessionLocal()
+        try:
+            heartbeat_job(heartbeat_session, lease)
+            heartbeat_session.commit()
+        except Exception as error:  # noqa: BLE001 - propagate at the fencing boundary
+            heartbeat_session.rollback()
+            failures.append(error)
+            return
+        finally:
+            heartbeat_session.close()
+
+
 def _run_once(
     agent_queue: bool,
     *,
@@ -156,6 +175,9 @@ def _run_once(
     if lease is None:
         return 0
     session = SessionLocal()
+    heartbeat_stop = threading.Event()
+    heartbeat_failures: list[Exception] = []
+    heartbeat_thread: threading.Thread | None = None
     try:
         job = session.get(JobRow, lease.job_id)
         if job is None:
@@ -169,33 +191,64 @@ def _run_once(
             }
         )
         if job.cancel_requested_at:
+            from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+            if agent_queue:
+                cancel_agent_run(session, job)
+            apply_job_cancellation(session, job)
             result_ref = None
-        elif agent_queue:
-            while True:
-                step = advance_agent_run(
-                    session,
-                    job,
-                )
-                if step.terminal:
-                    result_ref = step.result_ref
-                    break
-                # Fence the whole checkpoint/effect transaction.  If the lease
-                # expired during the model/tool call, this CAS fails and every
-                # domain effect in the session is rolled back.
-                heartbeat_job(session, lease)
-                session.commit()
-                if crash_after_checkpoint:
-                    raise SimulatedWorkerCrash("crash after durable Agent checkpoint")
-                session.expire_all()
-                job = session.get(JobRow, lease.job_id)
-                if job is None:
-                    raise RuntimeError("agent job disappeared after checkpoint")
-                job = lock_active_lease(session, lease)
-                if job.cancel_requested_at:
-                    result_ref = None
-                    break
         else:
-            result_ref = apply_job_effect(session, job)
+            # Release the claim-row lock before model/tool or core effect work;
+            # the independent heartbeat transaction then remains writable.
+            session.commit()
+            job = session.get(JobRow, lease.job_id)
+            if job is None:
+                raise RuntimeError("claimed job disappeared after lease handoff")
+            if job.cancel_requested_at:
+                from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+                if agent_queue:
+                    cancel_agent_run(session, job)
+                apply_job_cancellation(session, job)
+                result_ref = None
+            else:
+                heartbeat_thread = threading.Thread(
+                    target=_lease_heartbeat_loop,
+                    args=(lease, heartbeat_stop, heartbeat_failures),
+                    daemon=True,
+                )
+                heartbeat_thread.start()
+                if agent_queue:
+                    while True:
+                        step = advance_agent_run(session, job)
+                        if step.terminal:
+                            result_ref = step.result_ref
+                            break
+                        # Fence the checkpoint transaction before the next
+                        # external/model step.
+                        heartbeat_job(session, lease)
+                        session.commit()
+                        if crash_after_checkpoint:
+                            raise SimulatedWorkerCrash(
+                                "crash after durable Agent checkpoint"
+                            )
+                        session.expire_all()
+                        job = session.get(JobRow, lease.job_id)
+                        if job is None:
+                            raise RuntimeError("agent job disappeared after checkpoint")
+                        if job.cancel_requested_at:
+                            from quantfoundry.application.jobs.effects import (
+                                apply_job_cancellation,
+                            )
+
+                            cancel_agent_run(session, job)
+                            apply_job_cancellation(session, job)
+                            result_ref = None
+                            break
+                else:
+                    result_ref = apply_job_effect(session, job)
+                if heartbeat_failures:
+                    raise LostLease("lease heartbeat failed during long-running work")
         if crash_after_effects:
             raise SimulatedWorkerCrash("crash before atomic job/effect commit")
         complete_job(session, lease, result_ref)
@@ -212,6 +265,9 @@ def _run_once(
         _mark_failed(lease, error)
         return 1
     finally:
+        heartbeat_stop.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=max(1.0, LEASE_SECONDS / 2))
         session.close()
 
 

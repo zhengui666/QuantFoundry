@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from jsonschema import Draft202012Validator
 from pydantic import (
@@ -9465,6 +9465,16 @@ class ExperimentCreateRequest(BaseModel):
         ],
     )
     parameters: list[Parameter]
+    search_space: list[
+        ExperimentSearchSetDimension | ExperimentSearchRangeDimension
+    ] = cast(list[Any], None)
+    """
+    Required for PARAMETER_SENSITIVITY; empty for other experiment types.
+    """
+    search_configuration: ExperimentSearchConfiguration | None = None
+    """
+    Required for PARAMETER_SENSITIVITY; null for other experiment types.
+    """
     engine_key: str
     engine_version: str
 

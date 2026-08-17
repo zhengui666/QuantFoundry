@@ -43,6 +43,15 @@ checkout_head="$(git -C "$repo_root" rev-parse HEAD)"
   printf '{"result":"invalid","reason":"checkout HEAD does not equal tag target","tag":"%s"}\n' "$tag" >&2
   exit 1
 }
+trusted_branch="${QF_RELEASE_BRANCH:-origin/main}"
+git -C "$repo_root" rev-parse --verify "${trusted_branch}^{commit}" >/dev/null 2>&1 || {
+  printf '{"result":"invalid","reason":"trusted release branch is unavailable","branch":"%s"}\n' "$trusted_branch" >&2
+  exit 1
+}
+git -C "$repo_root" merge-base --is-ancestor "$tag_target" "$trusted_branch" || {
+  printf '{"result":"invalid","reason":"tag target is not on the trusted release branch","tag":"%s"}\n' "$tag" >&2
+  exit 1
+}
 
 worktree_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ -z "$worktree_status" ]] || {

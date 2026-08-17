@@ -96,7 +96,8 @@ cleanup_resources() {
 
 finish() {
   status=$?
-  trap - EXIT HUP INT TERM
+  trap - EXIT
+  trap '' HUP INT TERM
   stop_active_child_group TERM
   if ! cleanup_resources && [ "$status" -eq 0 ]; then
     status=1
@@ -107,7 +108,8 @@ finish() {
 interrupted() {
   status=$1
   forwarded_signal=$2
-  trap - EXIT HUP INT TERM
+  trap - EXIT
+  trap '' HUP INT TERM
   stop_active_child_group "$forwarded_signal"
   if ! cleanup_resources && [ "$status" -eq 0 ]; then
     status=1

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -732,6 +733,64 @@ def _strategy_signal_rows(
     return enriched, bindings
 
 
+def _parameter_sensitivity_selection_counts(
+    detail: dict[str, Any], inputs: dict[str, Any]
+) -> tuple[list[int], dict[str, Any], list[dict[str, Any]]]:
+    configuration = detail.get("search_configuration") or inputs.get(
+        "search_configuration"
+    )
+    if not isinstance(configuration, dict):
+        raise InvalidJobState("parameter sensitivity search configuration is missing")
+    method = configuration.get("method")
+    max_evaluations = configuration.get("max_evaluations")
+    if (
+        method not in {"GRID", "RANDOM"}
+        or not isinstance(max_evaluations, int)
+        or isinstance(max_evaluations, bool)
+        or max_evaluations < 1
+    ):
+        raise InvalidJobState("parameter sensitivity search configuration is invalid")
+    dimensions = detail.get("search_space") or []
+    if not isinstance(dimensions, list) or len(dimensions) != 1:
+        raise InvalidJobState("parameter sensitivity requires one selection_count dimension")
+    dimension = dimensions[0]
+    if (
+        not isinstance(dimension, dict)
+        or dimension.get("parameter_key") != "selection_count"
+    ):
+        raise InvalidJobState("parameter sensitivity only supports selection_count")
+    if dimension.get("kind") == "SET":
+        raw_values = dimension.get("values")
+        if not isinstance(raw_values, list):
+            raise InvalidJobState("parameter sensitivity values are invalid")
+        values = [int(value) for value in raw_values]
+    elif dimension.get("kind") == "RANGE":
+        try:
+            minimum = int(dimension["minimum"])
+            maximum = int(dimension["maximum"])
+            step = int(dimension["step"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise InvalidJobState("parameter sensitivity range is invalid") from error
+        if minimum >= maximum or step <= 0:
+            raise InvalidJobState("parameter sensitivity range is invalid")
+        values = list(range(minimum, maximum + 1, step))
+    else:
+        raise InvalidJobState("parameter sensitivity dimension kind is invalid")
+    if any(value < 1 for value in values):
+        raise InvalidJobState("parameter sensitivity selection_count must be positive")
+    values = sorted(set(values))
+    if method == "RANDOM":
+        seed = configuration.get("seed")
+        if not isinstance(seed, int) or isinstance(seed, bool):
+            raise InvalidJobState("random parameter sensitivity requires a seed")
+        values = random.Random(seed).sample(values, min(max_evaluations, len(values)))
+    else:
+        values = values[:max_evaluations]
+    if not values:
+        raise InvalidJobState("parameter sensitivity has no alternatives")
+    return values, configuration, dimensions
+
+
 def _complete_experiment(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
@@ -791,6 +850,21 @@ def _complete_experiment(
         raise InvalidJobState("experiment snapshot has no RESEARCH partition rows")
     experiment_type = detail["experiment_type"]
     cost = load_cost_model(detail["cost_model_id"])
+    if "cost_model_version" in inputs or "cost_model_sha256" in inputs:
+        cost_row = session.execute(
+            select(CostModelVersionRow).where(
+                CostModelVersionRow.workspace_id == job.workspace_id,
+                CostModelVersionRow.cost_model_id == detail["cost_model_id"],
+                CostModelVersionRow.version == inputs.get("cost_model_version"),
+                CostModelVersionRow.status == "ACTIVE",
+            )
+        ).scalar_one_or_none()
+        if (
+            cost_row is None
+            or cost_row.content_sha256 != inputs.get("cost_model_sha256")
+            or cost.version != cost_row.version
+        ):
+            raise InvalidJobState("experiment cost model binding changed")
     factor_binding = None
     factor_row = None
     if detail["factor_ref"]:
@@ -824,6 +898,10 @@ def _complete_experiment(
             "sha256": strategy_row.spec_sha256,
         }
     factor_evidence: dict[str, Any] = {}
+    sensitivity_results: list[dict[str, Any]] | None = None
+    sensitivity_configuration: dict[str, Any] | None = None
+    sensitivity_search_space: list[dict[str, Any]] | None = None
+    sensitivity_search_result: dict[str, Any] | None = None
     if experiment_type == "FACTOR_ANALYSIS":
         if factor_binding is None:
             raise InvalidJobState("factor analysis binding is missing")
@@ -845,7 +923,7 @@ def _complete_experiment(
             "definition_sha256": factor_detail["definition_sha256"],
             "formula": factor_detail["formula"],
         }
-    elif experiment_type in {"FAST_BACKTEST", "PARAMETER_SENSITIVITY"}:
+    elif experiment_type == "FAST_BACKTEST":
         if strategy_row is None:
             raise InvalidJobState("strategy experiment binding is missing")
         strategy_spec = json.loads(strategy_row.detail)
@@ -862,6 +940,66 @@ def _complete_experiment(
             cost,
             strategy_spec,
         )
+    elif experiment_type == "PARAMETER_SENSITIVITY":
+        if strategy_row is None:
+            raise InvalidJobState("strategy experiment binding is missing")
+        strategy_spec = json.loads(strategy_row.detail)
+        market_rows, strategy_factor_bindings = _strategy_signal_rows(
+            session,
+            strategy_detail=strategy_spec,
+            snapshot_id=detail["data_snapshot_id"],
+            workspace_id=job.workspace_id,
+            market_rows=market_rows,
+        )
+        selection_counts, sensitivity_configuration, sensitivity_search_space = (
+            _parameter_sensitivity_selection_counts(detail, inputs)
+        )
+        sensitivity_results = [
+            {
+                "parameters": [
+                    {"key": "selection_count", "value": str(selection_count)}
+                ],
+                "metrics": simulation_metrics(
+                    market_rows,
+                    selection_count,
+                    cost,
+                    {
+                        **strategy_spec,
+                        "rules": {
+                            **strategy_spec["rules"],
+                            "selection_count": selection_count,
+                        },
+                    },
+                ),
+            }
+            for selection_count in selection_counts
+        ]
+        objective_key = sensitivity_configuration["objective_metric_key"]
+        scored = [
+            result
+            for result in sensitivity_results
+            if isinstance(result["metrics"].get(objective_key), (int, float))
+        ]
+        if not scored:
+            raise InvalidJobState(
+                "parameter sensitivity objective metric is unavailable"
+            )
+        selected = (
+            max if sensitivity_configuration["objective_direction"] == "MAXIMIZE" else min
+        )(scored, key=lambda result: result["metrics"][objective_key])
+        sensitivity_search_result = {
+            "state": "COMPLETED",
+            "evaluated_count": len(sensitivity_results),
+            "selected_parameters": selected["parameters"],
+            "selected_metric": {
+                "key": objective_key,
+                "value": format(selected["metrics"][objective_key], ".17g"),
+                "unit": None,
+            },
+            "result_ref": None,
+            "failure_code": None,
+        }
+        metrics = {"evaluated_count": len(sensitivity_results)}
     else:
         metrics = {"observations": len(market_rows), "input_rows_valid": True}
     calculation_output = {
@@ -871,6 +1009,9 @@ def _complete_experiment(
         "metrics": metrics,
         **factor_evidence,
     }
+    if sensitivity_results is not None:
+        calculation_output["search_results"] = sensitivity_results
+        calculation_output["search_configuration"] = sensitivity_configuration
     output_sha256 = content_hash(calculation_output)
     if (
         inputs.get("reproduce_mode") == "EXACT"
@@ -884,6 +1025,10 @@ def _complete_experiment(
         "output_sha256": output_sha256,
     }
     artifact_id = _artifact(session, job, "experiment_result", evidence)
+    if sensitivity_search_result is not None:
+        sensitivity_search_result["result_ref"] = _job_result_ref(
+            "experiment", experiment_id, artifact_id
+        )
     snapshot = session.get(SnapshotRow, detail["data_snapshot_id"])
     if snapshot is None or snapshot.workspace_id != job.workspace_id:
         raise InvalidJobState("experiment snapshot is missing")
@@ -943,9 +1088,15 @@ def _complete_experiment(
                     job.workspace_id,
                 )
             ],
-            "search_space": detail.get("search_space", []),
-            "search_configuration": detail.get("search_configuration"),
-            "search_result": detail.get(
+            "search_space": sensitivity_search_space
+            if sensitivity_search_space is not None
+            else detail.get("search_space", []),
+            "search_configuration": sensitivity_configuration
+            if sensitivity_configuration is not None
+            else detail.get("search_configuration"),
+            "search_result": sensitivity_search_result
+            if sensitivity_search_result is not None
+            else detail.get(
                 "search_result",
                 {
                     "state": "NOT_APPLICABLE",
@@ -2027,9 +2178,7 @@ def _validate_dataset(
         "coverage_end": dates[-1],
         "schema_sha256": bundle.schema_sha256,
         "content_sha256": content_hash(bundle.rows),
-        "late_release_count": sum(
-            1 for row in bundle.rows if row["available_at"][:10] > row["date"]
-        ),
+        "late_release_count": profile["late_release_count"],
         "late_release_fraction": profile["late_release_fraction"],
         "failures": profile["failures"],
         "policy": profile["policy"],
@@ -2648,6 +2797,118 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
                 "status": "FAILED",
                 "reason_code": "JOB_FAILED",
             },
+            job_id=job.id,
+            correlation_id=job.correlation_id,
+        )
+
+
+def apply_job_cancellation(session: Session, job: JobRow) -> None:
+    """Close the durable domain record before the fenced Job becomes terminal."""
+    inputs = json.loads(job.input_payload)
+    if content_hash(inputs) != job.payload_sha256:
+        raise InvalidJobState("job input payload hash mismatch")
+    if job.job_type == "PAPER_DAILY_RUN":
+        from quantfoundry.scheduler.paper import PaperScheduler
+
+        PaperScheduler().fail_claimed(
+            session,
+            job,
+            reason_code="JOB_CANCELLED",
+            status="CANCELLED",
+        )
+        return
+    if job.job_type in {"VALIDATION", "HOLDOUT_RUN"}:
+        validation_id = inputs.get("validation_id")
+        if not isinstance(validation_id, str):
+            return
+        validation = session.execute(
+            select(ValidationRow)
+            .where(ValidationRow.id == validation_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if (
+            validation is None
+            or validation.workspace_id != job.workspace_id
+            or validation.status in {"COMPLETED", "FAILED", "CANCELLED"}
+        ):
+            return
+        detail = json.loads(validation.detail)
+        validation.status = "CANCELLED"
+        validation.holdout_state = "FAILED"
+        validation.revision += 1
+        detail.update(
+            {
+                "status": "CANCELLED",
+                "holdout_state": "FAILED",
+                "revision": validation.revision,
+                "finished_at": wire_now(),
+                "action_capabilities": [],
+            }
+        )
+        validation.detail = json.dumps(validated_payload("ValidationDetail", detail))
+        validation_runs = Base.metadata.tables["validation_runs"]
+        session.execute(
+            validation_runs.update()
+            .where(
+                validation_runs.c.workspace_id == job.workspace_id,
+                validation_runs.c.validation_id == validation.id,
+            )
+            .values(
+                status="CANCELLED",
+                holdout_state="FAILED",
+                revision=validation.revision,
+                finished_at=datetime.fromisoformat(
+                    detail["finished_at"].replace("Z", "+00:00")
+                ),
+            )
+        )
+        emit(
+            session,
+            "validation",
+            validation.id,
+            validation.revision,
+            "validation.updated",
+            payload={"state": "CANCELLED", "status": "CANCELLED", "reason_code": "JOB_CANCELLED"},
+            job_id=job.id,
+            correlation_id=job.correlation_id,
+        )
+        return
+    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE"}:
+        experiment_id = inputs.get("experiment_id")
+        if not isinstance(experiment_id, str):
+            return
+        experiment = session.execute(
+            select(ExperimentRow)
+            .where(ExperimentRow.id == experiment_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if (
+            experiment is None
+            or experiment.workspace_id != job.workspace_id
+            or experiment.immutable
+        ):
+            return
+        detail = json.loads(experiment.detail)
+        detail.update(
+            {
+                "status": "CANCELLED",
+                "validity_state": "INVALID",
+                "action_capabilities": [],
+                "finished_at": wire_now(),
+                "invalidated_at": wire_now(),
+                "invalid_reason_code": "JOB_CANCELLED",
+                "invalid_reason_detail": "Worker cancellation requested",
+            }
+        )
+        experiment.detail = json.dumps(validated_payload("ExperimentDetail", detail))
+        experiment.revision += 1
+        emit(
+            session,
+            "experiment",
+            experiment.id,
+            experiment.revision,
+            "experiment.updated",
+            payload={"state": "CANCELLED", "status": "CANCELLED", "reason_code": "JOB_CANCELLED"},
             job_id=job.id,
             correlation_id=job.correlation_id,
         )

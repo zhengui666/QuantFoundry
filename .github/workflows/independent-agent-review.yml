@@ -81,14 +81,19 @@ jobs:
               "AGENTS.md",
               "PROJECT_BACKGROUND.md",
               "backend/src/quantfoundry",
+              "backend/app/agent_runtime.py",
+              "backend/app/agent_runtime",
               "backend/workers",
               "docs/Agent技术方案",
               "docs/后端系统技术方案/contracts/tools",
               "docs/治理",
               ".github/workflows",
               "scripts/ci",
-              "scripts/release-evidence.sh",
+              "scripts/ci.sh",
+              "scripts/tool_contract_check.py",
               "scripts/release-check.sh",
+              "scripts/release-evidence.sh",
+              "scripts/release-known-issues-check.sh",
           ]
           scope = subprocess.check_output(["git", "ls-tree", "-r", "--full-tree", commit, "--", *reviewed_paths])
           report = {

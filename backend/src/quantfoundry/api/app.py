@@ -4399,6 +4399,21 @@ def create_experiment(
             payload["engine_key"], payload["engine_version"], expected_engine
         )
         require_cost_model(payload["cost_model_id"])
+        search_space = payload.get("search_space", [])
+        search_configuration = payload.get("search_configuration")
+        if payload["experiment_type"] == "PARAMETER_SENSITIVITY":
+            if not search_space or search_configuration is None:
+                raise problem(
+                    422,
+                    "INVALID_REQUEST",
+                    "parameter sensitivity requires search_space and search_configuration",
+                )
+        elif search_space or search_configuration is not None:
+            raise problem(
+                422,
+                "INVALID_REQUEST",
+                "search fields are only valid for PARAMETER_SENSITIVITY",
+            )
         if payload["experiment_type"] == "FACTOR_ANALYSIS":
             factor = s.execute(
                 select(FactorRow).where(
@@ -4444,8 +4459,8 @@ def create_experiment(
                 "parameters_sha256": hashlib.sha256(
                     json.dumps(payload["parameters"], sort_keys=True).encode()
                 ).hexdigest(),
-                "search_space": [],
-                "search_configuration": None,
+                "search_space": search_space,
+                "search_configuration": search_configuration,
                 "search_result": {
                     "state": "NOT_APPLICABLE",
                     "evaluated_count": 0,
@@ -6468,6 +6483,9 @@ def application_openapi() -> dict[str, Any]:
         if path.startswith("/api/v1")
     }
     generated["security"] = specification["security"]
+    generated["components"]["securitySchemes"] = deepcopy(
+        specification["components"]["securitySchemes"]
+    )
     generated["paths"]["/system/health"]["get"]["security"] = []
     path_parameter_models = {
         "dataset_id": "dataset",

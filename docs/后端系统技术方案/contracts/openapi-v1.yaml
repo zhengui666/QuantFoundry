@@ -2888,6 +2888,8 @@ components:
         strategy_version: {type: [integer, 'null'], minimum: 1}
         cost_model_id: *CostModelId
         parameters: {type: array, items: {$ref: '#/components/schemas/Parameter'}}
+        search_space: {type: array, items: {$ref: '#/components/schemas/ExperimentSearchDimension'}, description: Required for PARAMETER_SENSITIVITY; empty for other experiment types.}
+        search_configuration: {oneOf: [{$ref: '#/components/schemas/ExperimentSearchConfiguration'}, {type: 'null'}], description: Required for PARAMETER_SENSITIVITY; null for other experiment types.}
         engine_key: {type: string}
         engine_version: {type: string}
     ExperimentReproduceExecutionOverrides:

@@ -145,9 +145,7 @@ def upgrade() -> None:
     for row in rows:
         event_type = _canonical_event_type(row["event_type"])
         payload = (
-            row["payload"]
-            if row["event_type"] in EVENT_TYPES
-            else json.dumps(
+            json.dumps(
                 {"state": "RESYNC_REQUIRED", "status": None},
                 separators=(",", ":"),
             )

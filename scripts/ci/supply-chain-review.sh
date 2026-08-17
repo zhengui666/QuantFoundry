@@ -173,7 +173,6 @@ def bound_statement(value, subject_name, digest, repository, commit):
         )
         source_pair_ok = source_commit_ok and (
             source_repo == repository
-            or workflow_repo == repository
             or source_uri == f"git+https://github.com/{repository}@{commit}"
         )
         dependency_pair_ok = False
@@ -227,9 +226,13 @@ images = manifest.get("images")
 compose = manifest.get("compose_images")
 if not isinstance(images, list) or len(images) != 2 or not isinstance(compose, dict):
     raise SystemExit("release manifest image bindings are incomplete")
-for image in images:
+expected_images = [
+    f"ghcr.io/{expected_repository.lower()}/backend",
+    f"ghcr.io/{expected_repository.lower()}/frontend",
+]
+for image, expected_name in zip(images, expected_images, strict=True):
     name, digest = image.get("name"), image.get("digest")
-    if not isinstance(name, str) or not isinstance(digest, str) or not digest.startswith("sha256:"):
+    if name != expected_name or not isinstance(digest, str) or not digest.startswith("sha256:"):
         raise SystemExit("invalid image digest in release manifest")
     subprocess = __import__("subprocess")
     subject = f"{name}@{digest}"
@@ -264,9 +267,11 @@ for image in images:
         except (OSError, json.JSONDecodeError) as error:
             raise SystemExit(f"invalid {kind} evidence for {name}: {error}") from error
         bound_statement(evidence, subject, digest, expected_repository, expected_commit)
+        if kind == "signature" and evidence != verification:
+            raise SystemExit(f"archived signature evidence differs from live verification for {name}")
     sbom_name = 'backend' if image is images[0] else 'frontend'
     sbom = json.loads(asset_path[f"sbom/{sbom_name}.spdx.json"].read_text(encoding="utf-8"))
-    if not isinstance(sbom.get("spdxVersion"), str) or not isinstance(sbom.get("packages"), list):
+    if not isinstance(sbom.get("spdxVersion"), str) or not isinstance(sbom.get("packages"), list) or not sbom["packages"]:
         raise SystemExit(f"{sbom_name} SBOM is not a valid SPDX document")
     if sbom.get("x-quantfoundry-subject") != {"name": name, "digest": digest}:
         raise SystemExit(f"{sbom_name} SBOM is not bound to the image digest")

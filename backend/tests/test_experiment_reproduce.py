@@ -66,7 +66,7 @@ def reproducible_source() -> dict[str, str]:
     (root / f"{dataset_id}.csv").write_text(
         "event_time,available_at,symbol,close,benchmark_close,partition\n"
         + "\n".join(
-            f"{day}T21:00:00Z,{day}T21:01:00Z,{symbol},{close},{benchmark},RESEARCH"
+            f"{day}T21:01:00Z,{day}T21:01:00Z,{symbol},{close},{benchmark},RESEARCH"
             for day, symbol, close, benchmark in rows
         ),
         encoding="utf-8",
