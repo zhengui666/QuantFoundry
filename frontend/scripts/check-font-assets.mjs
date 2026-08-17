@@ -23,14 +23,18 @@ const unquote = (value) => value.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/,
 const faces = [...css.matchAll(/@font-face\s*{([^{}]*)}/g)].map(([, face]) => declarations(face));
 for (const [weight, asset] of expected) {
   const face = faces.find((value) => {
-    const src = value.src?.match(/url\(\s*(['"]?)(.*?)\1\s*\)/i)?.[2];
-    if (!src) return false;
-    const resolved = fileURLToPath(new URL(src, pathToFileURL(typographyPath)));
-    return (
-      unquote(value['font-family'] ?? '') === 'Noto Sans CJK SC' &&
-      value['font-weight'] === weight &&
-      resolved === join(frontendRoot, 'src/assets/fonts', asset)
-    );
+    if (
+      unquote(value['font-family'] ?? '') !== 'Noto Sans CJK SC' ||
+      value['font-weight'] !== weight
+    )
+      return false;
+    return [...(value.src ?? '').matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)].some(([, , source]) => {
+      const resolvedUrl = new URL(source, pathToFileURL(typographyPath));
+      return (
+        resolvedUrl.protocol === 'file:' &&
+        fileURLToPath(resolvedUrl) === join(frontendRoot, 'src/assets/fonts', asset)
+      );
+    });
   });
   if (!face) throw new Error(`Missing Noto Sans CJK SC ${weight} face for ${asset}`);
   const fontPath = join(frontendRoot, 'src/assets/fonts', asset);

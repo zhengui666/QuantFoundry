@@ -1413,13 +1413,6 @@ def _create_snapshot(
                 "logical_content_sha256": public_sha256,
                 "row_count": len(public_rows),
             },
-            {
-                "partition": "HOLDOUT",
-                "artifact_id": protected_id,
-                "object_sha256": protected_object_sha256,
-                "logical_content_sha256": holdout_sha256,
-                "row_count": len(holdout_rows),
-            },
         ],
         "created_by_job_id": job.id,
     }
@@ -2124,6 +2117,8 @@ def _sync_holdout_strategy(
     desired_state = strategy.state
     if status == "COMPLETED":
         desired_state = "VALIDATED" if result == "PASS" else "REJECTED"
+    elif status == "FAILED":
+        desired_state = "REJECTED"
     if strategy.state in {"VALIDATED", "VALIDATING"}:
         strategy.state = desired_state
     strategy.revision += 1

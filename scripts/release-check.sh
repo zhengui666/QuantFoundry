@@ -100,10 +100,8 @@ if [[ -n "$trusted_verifier_root" ]]; then
     exit 1
   }
 else
-  [[ "$verifier_head" == "$tag_target" && -z "$verifier_status" ]] || {
-    printf '%s\n' '{"result":"invalid","reason":"verifier code is not clean at the trusted tag commit"}' >&2
-    exit 1
-  }
+  printf '%s\n' '{"result":"invalid","reason":"a separately pinned trusted verifier is required"}' >&2
+  exit 1
 fi
 
 if [[ -n "$trusted_verifier_root" ]]; then
@@ -152,6 +150,7 @@ pre_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untrac
 }
 
 QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="$tag_target" \
+QF_RELEASE_TRUSTED_VERIFIER_ROOT="$verifier_root" QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_verifier_head" \
   "$verifier_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
 post_p0_head="$(git -C "$repo_root" rev-parse HEAD)"
 post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"

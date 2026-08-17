@@ -125,12 +125,13 @@ def decrypt_credential(
         if (
             isinstance(fields, list)
             and len(fields) == 5
-            and all(isinstance(value, str) for value in fields)
-            and all("\x1f" not in value for value in fields)
+            and all(isinstance(value, str) for value in fields[:4])
+            and (fields[4] is None or isinstance(fields[4], str))
+            and all("\x1f" not in value for value in fields[:4])
+            and (fields[4] is None or "\x1f" not in fields[4])
         ):
-            candidates.append(
-                "\x1f".join(fields).encode("utf-8")
-            )
+            legacy_fields = [*fields[:4], fields[4] or ""]
+            candidates.append("\x1f".join(legacy_fields).encode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         pass
     try:
@@ -150,10 +151,54 @@ def decrypt_credential(
 def credential_fingerprint(credential: str) -> str:
     """Keyed request identity; unlike raw SHA-256 it resists offline guessing."""
 
-    encoded = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEY", "").strip()
-    if not encoded:
-        raise CredentialConfigurationError(
-            "provider credential fingerprint key is not configured"
-        )
-    key = _decode_key("fingerprint", encoded)
-    return hmac.new(key, credential.encode("utf-8"), hashlib.sha256).hexdigest()
+    return next(iter(credential_fingerprint_candidates(credential).values()))
+
+
+def credential_fingerprint_candidates(credential: str) -> dict[str, str]:
+    """Return active and retained fingerprints for rotation-safe idempotency."""
+
+    keyring = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEYS", "").strip()
+    if keyring:
+        try:
+            values = json.loads(keyring)
+        except json.JSONDecodeError as error:
+            raise CredentialConfigurationError(
+                "provider credential fingerprint keyring is invalid"
+            ) from error
+        if not isinstance(values, dict) or not values:
+            raise CredentialConfigurationError(
+                "provider credential fingerprint keyring is invalid"
+            )
+        keys = {
+            str(key_id): _decode_key(str(key_id), encoded)
+            for key_id, encoded in values.items()
+            if isinstance(key_id, str) and isinstance(encoded, str)
+        }
+        if set(keys) != set(values):
+            raise CredentialConfigurationError(
+                "provider credential fingerprint keyring is invalid"
+            )
+        active_id = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEY_ID", "").strip()
+        if not active_id:
+            raise CredentialConfigurationError(
+                "active provider credential fingerprint key is not configured"
+            )
+        ordered_ids = [active_id, *sorted(key_id for key_id in keys if key_id != active_id)]
+        if active_id not in keys:
+            raise CredentialConfigurationError(
+                "active provider credential fingerprint key is absent from keyring"
+            )
+    else:
+        encoded = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEY", "").strip()
+        if not encoded:
+            raise CredentialConfigurationError(
+                "provider credential fingerprint key is not configured"
+            )
+        ordered_ids = ["legacy"]
+        keys = {"legacy": _decode_key("fingerprint", encoded)}
+    return {
+        key_id: hmac.new(
+            keys[key_id], credential.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        for key_id in ordered_ids
+    }

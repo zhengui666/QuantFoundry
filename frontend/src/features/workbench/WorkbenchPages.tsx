@@ -3037,6 +3037,8 @@ export function ApprovalListPage() {
     </>
   );
 }
+type ApprovalDecisionSnapshot = { etag: string; subjectSha256: string };
+
 export function ApprovalPage() {
   const { t } = useTranslation();
   const { approvalId } = useParams({ strict: false }) as { approvalId: string };
@@ -3053,16 +3055,19 @@ export function ApprovalPage() {
     enabled: validApprovalId,
   });
   const decide = useMutation({
-    mutationFn: async (kind: 'approve' | 'reject') => {
-      if (!query.data?.etag) throw new Error('Server ETag required');
-      const hash = query.data.body.subject.sha256;
-      return kind === 'approve'
-        ? api.approveApproval(approvalId, query.data.etag, { acknowledged_subject_sha256: hash })
-        : api.rejectApproval(approvalId, query.data.etag, {
-            acknowledged_subject_sha256: hash,
+    mutationFn: async ({
+      kind,
+      etag,
+      subjectSha256,
+    }: ApprovalDecisionSnapshot & { kind: 'approve' | 'reject' }) =>
+      kind === 'approve'
+        ? api.approveApproval(approvalId, etag, {
+            acknowledged_subject_sha256: subjectSha256,
+          })
+        : api.rejectApproval(approvalId, etag, {
+            acknowledged_subject_sha256: subjectSha256,
             reason,
-          });
-    },
+          }),
     onError: (error) => {
       setDecisionError(error);
       if (
@@ -3095,10 +3100,10 @@ export function ApprovalPage() {
   if (!data) return <State kind="empty" />;
   const approveCapability = data.action_capabilities.find((item) => item.action === 'approve');
   const rejectCapability = data.action_capabilities.find((item) => item.action === 'reject');
-  const makeDecision = (kind: 'approve' | 'reject') => {
+  const makeDecision = (kind: 'approve' | 'reject', snapshot: ApprovalDecisionSnapshot) => {
     if (decisionInFlight.current) return;
     decisionInFlight.current = true;
-    decide.mutate(kind);
+    decide.mutate({ kind, ...snapshot });
   };
   return (
     <>
@@ -3142,8 +3147,13 @@ export function ApprovalPage() {
                 setDecisionError(undefined);
                 const refreshed = await query.refetch();
                 if (refreshed.error) throw refreshed.error;
+                if (!refreshed.data?.etag) throw new Error('Server ETag required');
+                return {
+                  etag: refreshed.data.etag,
+                  subjectSha256: refreshed.data.body.subject.sha256,
+                };
               }}
-              onConfirm={() => makeDecision('approve')}
+              onConfirm={(snapshot) => makeDecision('approve', snapshot)}
             >
               <p>{t('approval.exactHash')}</p>
             </DecisionDialog>
@@ -3161,9 +3171,14 @@ export function ApprovalPage() {
                 setDecisionError(undefined);
                 const refreshed = await query.refetch();
                 if (refreshed.error) throw refreshed.error;
+                if (!refreshed.data?.etag) throw new Error('Server ETag required');
+                return {
+                  etag: refreshed.data.etag,
+                  subjectSha256: refreshed.data.body.subject.sha256,
+                };
               }}
               confirmDisabled={!reason.trim()}
-              onConfirm={() => makeDecision('reject')}
+              onConfirm={(snapshot) => makeDecision('reject', snapshot)}
             >
               <label>
                 {t('approval.rejectionReason')}
@@ -3199,14 +3214,15 @@ function DecisionDialog({
   detail: Schema<'ApprovalDetail'>;
   error: unknown;
   successSignal: number;
-  onBeforeOpen: () => Promise<void>;
-  onConfirm: () => void;
+  onBeforeOpen: () => Promise<ApprovalDecisionSnapshot>;
+  onConfirm: (snapshot: ApprovalDecisionSnapshot) => void;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [openError, setOpenError] = useState<unknown>();
+  const [snapshot, setSnapshot] = useState<ApprovalDecisionSnapshot>();
   useEffect(() => {
     if (successSignal > 0) setOpen(false);
   }, [successSignal]);
@@ -3231,13 +3247,16 @@ function DecisionDialog({
         open={open}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
+            if (refreshing || busy) return;
             setOpen(false);
+            setSnapshot(undefined);
             return;
           }
           setOpenError(undefined);
           setRefreshing(true);
           void onBeforeOpen()
-            .then(() => {
+            .then((nextSnapshot) => {
+              setSnapshot(nextSnapshot);
               setRefreshing(false);
               setOpen(true);
             })
@@ -3259,7 +3278,16 @@ function DecisionDialog({
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className="dialog-overlay" />
-          <Dialog.Content className="decision-dialog" aria-describedby={undefined}>
+          <Dialog.Content
+            className="decision-dialog"
+            aria-describedby={undefined}
+            onEscapeKeyDown={(event) => {
+              if (refreshing || busy) event.preventDefault();
+            }}
+            onPointerDownOutside={(event) => {
+              if (refreshing || busy) event.preventDefault();
+            }}
+          >
             <Dialog.Title>{title}</Dialog.Title>
             <dl className="definition">
               <dt>{t('approval.subjectId')}</dt>
@@ -3292,13 +3320,17 @@ function DecisionDialog({
             {error !== undefined && <Problem error={error} />}
             <button
               data-testid={`capability-confirm-${item.action}`}
-              onClick={onConfirm}
-              disabled={busy || confirmDisabled || !item.allowed}
+              onClick={() => {
+                if (snapshot) onConfirm(snapshot);
+              }}
+              disabled={busy || refreshing || confirmDisabled || !item.allowed || !snapshot}
             >
               {busy ? t('common.saving') : t('approval.confirmVersioned')}
             </button>
             <Dialog.Close asChild>
-              <button className="secondary">{t('common.cancel')}</button>
+              <button className="secondary" disabled={busy || refreshing}>
+                {t('common.cancel')}
+              </button>
             </Dialog.Close>
           </Dialog.Content>
         </Dialog.Portal>

@@ -207,6 +207,7 @@ def _create_immutability_guards() -> None:
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.frozen_at IS DISTINCT FROM OLD.frozen_at OR
                    NEW.detail IS DISTINCT FROM OLD.detail
                  ) THEN
                 RAISE EXCEPTION 'candidate strategy evidence must be append-only';
@@ -240,6 +241,7 @@ def _create_immutability_guards() -> None:
               END IF;
               IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NOT NEW.immutable
                  AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
                    NEW.research_id IS DISTINCT FROM OLD.research_id OR
                    NEW.detail IS DISTINCT FROM OLD.detail OR
                    NEW.revision IS DISTINCT FROM OLD.revision
@@ -409,7 +411,8 @@ def _create_immutability_guards() -> None:
         "CREATE TRIGGER qf_strategy_versions_candidate_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
         "NEW.id IS NOT OLD.id OR NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
-        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.frozen_at IS NOT OLD.frozen_at OR "
+        "NEW.detail IS NOT OLD.detail) "
         "BEGIN SELECT RAISE(ABORT, 'candidate strategy evidence must be append-only'); END"
     )
     op.execute(

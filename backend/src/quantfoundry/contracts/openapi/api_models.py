@@ -42,6 +42,35 @@ AgentConfigUpdate = generated.AgentConfigUpdate
 
 SetupCompleteRequest = generated.SetupCompleteRequest
 
+_COMPATIBILITY_ONLY_NAMES = frozenset(
+    {
+        "GeneralAccessKeyLoginRequest",
+        "GeneralAccessKeyMetadata",
+        "GeneralAccessKeyList",
+        "GeneralAccessKeyCreateRequest",
+        "GeneralAccessKeyRenameRequest",
+        "GeneralAccessKeyIssued",
+        "OwnerSessionView",
+        "SessionBootstrapResponse",
+        "ConfigurationCatalog",
+        "ConfigurationCatalogEntry",
+        "ConfigurationValueWrite",
+        "ConfigurationValueView",
+        "ConfigurationCandidateRequest",
+        "ConfigurationCandidate",
+        "ConfigurationConsumerState",
+        "ConfigurationActive",
+        "ConfigurationValidationResult",
+        "ConfigurationActivateRequest",
+        "ConfigurationRollbackRequest",
+        "DatabaseConnectionCandidate",
+        "DatabaseConnectionCandidateRequest",
+        "DatabaseConnectionStatus",
+        "DatabaseConnectionCheck",
+        "DatabaseConnectionValidationResult",
+    }
+)
+
 
 class LiveConnectorValidationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -125,6 +154,7 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     if name == "SetupCompleteRequest"
     else cast(type[BaseModel], getattr(generated, name))
     for name in generated.SCHEMA_NAMES
+    if name not in _COMPATIBILITY_ONLY_NAMES
 }
 SCHEMA_MODELS.update(
     {
@@ -136,13 +166,6 @@ for _model in SCHEMA_MODELS.values():
     _model.model_rebuild()
 # Compatibility bridge: UX-001 models are not part of the OpenAPI-generated module yet.
 from app import generated_api_models as _ux_models  # noqa: E402
-
-_ALLOWED_COMPATIBILITY_OVERRIDES = {
-    "ApiProblem",
-    "CanonicalErrorCode",
-    "FieldError",
-    "ProblemContext",
-}
 
 for _name in (
     "GeneralAccessKeyLoginRequest",
@@ -176,13 +199,8 @@ for _name in (
 ):
     _compat_model = cast(type[BaseModel], getattr(_ux_models, _name))
     _existing_model = SCHEMA_MODELS.get(_name)
-    if (
-        _existing_model is not None
-        and _existing_model is not _compat_model
-        and _name not in _ALLOWED_COMPATIBILITY_OVERRIDES
-    ):
-        raise RuntimeError(f"schema model collision for {_name}")
-    SCHEMA_MODELS[_name] = _compat_model
+    if _existing_model is None:
+        SCHEMA_MODELS[_name] = _compat_model
 
 
 def validate_schema(name: str, value: Any) -> Any:

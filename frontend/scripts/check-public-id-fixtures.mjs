@@ -139,7 +139,11 @@ const grammarNotation = (token, context, file, key = '') => {
     )
   )
     return true;
-  if (/\bpublic-id-prose\b/i.test(context) && context.includes(token)) return true;
+  if (
+    /\bpublic-id-prose\b/i.test(context) &&
+    !/\bpublic-id-prose\s*:?\s+[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9_-]*/i.test(context)
+  )
+    return true;
   const extension = extname(file).toLowerCase();
   const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(
     key,
@@ -183,12 +187,14 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
   for (const match of text.matchAll(assignmentPattern)) {
     const value = match.slice(1).find((candidate) => candidate !== undefined);
     if (!value || !value.includes('-') || /[${}]/.test(value)) continue;
+    const assignmentKey = match[0].match(/(?:^|[\s,{(])([A-Za-z_$][A-Za-z0-9_$.-]*)\s*[:=]/)?.[1];
+    if (!assignmentKey || !jsonIdKeys.test(assignmentKey)) continue;
     const rawPrefix = value.split('-', 1)[0];
     const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
     const suffix = value.slice(rawPrefix.length + 1);
     const recognized =
-      canonical &&
+      canonical !== undefined &&
       (rawPrefix === prefix ||
         (suffix.length >= 20 && /^[A-Za-z0-9_-]+$/.test(suffix) && /[0-9]/.test(suffix)));
     if (recognized && !canonical.some((matcher) => matcher.test(value))) report(value);

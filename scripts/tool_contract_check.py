@@ -14,7 +14,11 @@ from jsonschema import Draft202012Validator
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--schema-out", required=True, type=Path)
-    parser.add_argument("--validate-instance", action="store_true")
+    parser.add_argument(
+        "--validate-instance",
+        action="store_true",
+        help="retained for CLI compatibility; instance validation is always enabled",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -34,8 +38,7 @@ def main() -> None:
     registry_data = {key: document[key] for key in document["required"]}
 
     Draft202012Validator.check_schema(registry_schema)
-    if args.validate_instance:
-        Draft202012Validator(registry_schema).validate(registry_data)
+    Draft202012Validator(registry_schema).validate(registry_data)
 
     tools = registry_data["tools"]
     identities = {(tool["name"], tool["version"]) for tool in tools}
@@ -76,7 +79,7 @@ def main() -> None:
         json.dumps(registry_schema, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    mode = "schema and instance" if args.validate_instance else "schema"
+    mode = "schema and instance"
     print(
         f"OK: {len(tools)} unique tools; embedded schemas and registry {mode} validate"
     )

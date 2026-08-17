@@ -52,6 +52,7 @@ def upgrade() -> None:
         sa.Column("payload", sa.Text(), nullable=False),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sqlite_autoincrement=True,
     )
     op.create_index("ix_domain_events_expires_at", "domain_events", ["expires_at"])
     op.create_table(

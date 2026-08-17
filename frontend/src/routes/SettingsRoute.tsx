@@ -28,12 +28,13 @@ export function SettingsPage() {
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
   const [draftIdentity, setDraftIdentity] = useState<string>();
   const [draftBaselineFingerprint, setDraftBaselineFingerprint] = useState<string>();
+  const [draftBaseline, setDraftBaseline] = useState<{ etag: string; revision: number }>();
   const [configurationMessage, setConfigurationMessage] = useState<string>();
   const draftDirty =
     draftBaselineFingerprint !== undefined &&
     JSON.stringify(draftValues) !== draftBaselineFingerprint;
   useEffect(() => {
-    if (!active.data) return;
+    if (!active.data?.etag) return;
     const identity = `${active.data.etag}:${active.data.body.active_revision}`;
     if (draftIdentity === identity || draftDirty) return;
     const next: Record<string, string> = {};
@@ -43,12 +44,25 @@ export function SettingsPage() {
     setDraftValues(next);
     setDraftBaselineFingerprint(JSON.stringify(next));
     setDraftIdentity(identity);
+    setDraftBaseline({ etag: active.data.etag, revision: active.data.body.active_revision });
   }, [active.data, draftDirty, draftIdentity]);
+  const configurationBaselineChanged = Boolean(
+    draftDirty &&
+    draftBaseline &&
+    active.data &&
+    (draftBaseline.etag !== active.data.etag ||
+      draftBaseline.revision !== active.data.body.active_revision),
+  );
   const saveConfiguration = useMutation({
     mutationFn: async () => {
-      const etag = active.data?.etag;
       const activeBody = active.data?.body;
-      if (!etag || !activeBody) throw new Error('Active configuration ETag is unavailable.');
+      if (!activeBody || !draftBaseline)
+        throw new Error('Active configuration baseline is unavailable.');
+      if (
+        draftBaseline.etag !== active.data?.etag ||
+        draftBaseline.revision !== activeBody.active_revision
+      )
+        throw new Error(t('settings.conflict'));
       const values: Schema<'ConfigurationCandidateRequest'>['values'] =
         catalog.data?.body.entries.flatMap<
           Schema<'ConfigurationCandidateRequest'>['values'][number]
@@ -65,18 +79,20 @@ export function SettingsPage() {
           ];
         }) ?? [];
       const candidate = await api.putConfigurationCandidate(
-        { base_revision: activeBody.active_revision, values },
-        etag,
+        { base_revision: draftBaseline.revision, values },
+        draftBaseline.etag,
       );
       const validation = await api.validateConfigurationCandidate();
       if (validation.body.revision !== candidate.body.revision)
         throw new Error('Configuration candidate changed during validation; retry.');
       if (validation.body.status !== 'VALID') throw new Error(t('settings.validationFailed'));
-      return api.activateConfiguration(candidate.body.revision, etag);
+      return api.activateConfiguration(candidate.body.revision, draftBaseline.etag);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       setConfigurationMessage(t('settings.saved'));
       setDraftBaselineFingerprint(JSON.stringify(draftValues));
+      if (result.etag)
+        setDraftBaseline({ etag: result.etag, revision: result.body.active_revision });
       void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'active') });
     },
     onError: (error) =>
@@ -92,6 +108,7 @@ export function SettingsPage() {
   });
   const [dbDraftIdentity, setDbDraftIdentity] = useState<string>();
   const [dbSavedFingerprint, setDbSavedFingerprint] = useState<string>();
+  const [dbBaseline, setDbBaseline] = useState<{ etag: string; activeRevision: number }>();
   const [dbCandidateRevision, setDbCandidateRevision] = useState<number>();
   const [dbValidatedRevision, setDbValidatedRevision] = useState<number>();
   const serverCandidateRevision = database.data?.body.candidate?.revision;
@@ -122,6 +139,13 @@ export function SettingsPage() {
     });
   const dbFormDirty =
     dbSavedFingerprint !== undefined && dbFingerprint(dbForm) !== dbSavedFingerprint;
+  const dbBaselineChanged = Boolean(
+    dbFormDirty &&
+    dbBaseline &&
+    database.data &&
+    (dbBaseline.etag !== database.data.etag ||
+      dbBaseline.activeRevision !== database.data.body.active_revision),
+  );
   const dbFormSource = database.data?.body.candidate ?? database.data?.body.active;
   useEffect(() => {
     const current = dbFormSource;
@@ -139,19 +163,26 @@ export function SettingsPage() {
     setDbForm(nextForm);
     setDbSavedFingerprint(JSON.stringify(nextForm));
     setDbDraftIdentity(identity);
+    setDbBaseline({
+      etag: database.data?.etag ?? '',
+      activeRevision: database.data?.body.active_revision ?? 0,
+    });
   }, [database.data, dbDraftIdentity, dbFormDirty, dbFormSource]);
   const saveDatabase = useMutation({
     mutationFn: () => {
-      const etag = database.data?.etag;
-      if (!etag) throw new Error('Database connection ETag is unavailable.');
-      const baseRevision = database.data?.body.active_revision;
-      if (baseRevision == null) throw new Error('Active database revision is unavailable.');
+      if (!database.data || !dbBaseline?.etag)
+        throw new Error('Database connection baseline is unavailable.');
+      if (
+        dbBaseline.etag !== database.data.etag ||
+        dbBaseline.activeRevision !== database.data.body.active_revision
+      )
+        throw new Error(t('settings.conflict'));
       const port = Number(dbForm.port);
       if (!Number.isInteger(port) || port < 1 || port > 65535)
         throw new Error('Database port must be an integer between 1 and 65535.');
       return api.putDatabaseConnectionCandidate(
         {
-          base_revision: baseRevision,
+          base_revision: dbBaseline.activeRevision,
           connection: {
             host: dbForm.host.trim(),
             port,
@@ -161,7 +192,7 @@ export function SettingsPage() {
             ...(dbForm.password ? { password: dbForm.password } : {}),
           },
         },
-        etag,
+        dbBaseline.etag,
       );
     },
     onSuccess: ({ body }) => {
@@ -201,14 +232,11 @@ export function SettingsPage() {
     },
   });
   const [keyForm, setKeyForm] = useState(initialSecret);
-  const [issuedSecret, setIssuedSecret] = useState<string>();
+  const [issuedSecrets, setIssuedSecrets] = useState<string[]>([]);
   const issue = useMutation({
-    mutationFn: () => {
-      setIssuedSecret(undefined);
-      return api.createAccessKey({ label: keyForm.label.trim() });
-    },
+    mutationFn: () => api.createAccessKey({ label: keyForm.label.trim() }),
     onSuccess: ({ body }) => {
-      setIssuedSecret(body.secret);
+      setIssuedSecrets((current) => [...current, body.secret]);
       setKeyForm(initialSecret);
       void queryClient.invalidateQueries({
         queryKey: workspaceQueryKey('settings', 'access-keys'),
@@ -223,7 +251,6 @@ export function SettingsPage() {
       action: 'rotate' | 'revoke';
       key: Schema<'GeneralAccessKeyMetadata'>;
     }) => {
-      setIssuedSecret(undefined);
       const etag = `W/"key:${key.revision}"`;
       if (action === 'rotate') return api.rotateAccessKey(key.key_id, etag);
       return api.revokeAccessKey(key.key_id, etag);
@@ -235,13 +262,13 @@ export function SettingsPage() {
         result.body &&
         'secret' in result.body
       )
-        setIssuedSecret(result.body.secret);
+        setIssuedSecrets((current) => [...current, result.body.secret]);
       void queryClient.invalidateQueries({
         queryKey: workspaceQueryKey('settings', 'access-keys'),
       });
     },
-    onError: () => setIssuedSecret(undefined),
   });
+  const keyMutationPending = issue.isPending || keyAction.isPending;
   const databaseWorkflowPending =
     saveDatabase.isPending || validateDatabase.isPending || activateDatabase.isPending;
   if (catalog.isLoading || active.isLoading || keys.isLoading || database.isLoading)
@@ -356,7 +383,12 @@ export function SettingsPage() {
               </label>
             );
           })}
-          <button disabled={saveConfiguration.isPending || !active.data?.etag}>
+          {configurationBaselineChanged && <State kind="error">{t('settings.conflict')}</State>}
+          <button
+            disabled={
+              saveConfiguration.isPending || configurationBaselineChanged || !active.data?.etag
+            }
+          >
             {saveConfiguration.isPending ? t('common.saving') : t('settings.saveConfiguration')}
           </button>
           {configurationMessage && (
@@ -383,16 +415,16 @@ export function SettingsPage() {
               onChange={(event) => setKeyForm({ label: event.target.value })}
             />
           </label>
-          <button disabled={issue.isPending || !keyForm.label.trim()}>
+          <button disabled={keyMutationPending || !keyForm.label.trim()}>
             {t('settings.createKey')}
           </button>
         </form>
         {issue.error && <Problem error={issue.error} />}
-        {issuedSecret && (
-          <State kind="permission">
-            {t('settings.oneTimeSecret')} <code>{issuedSecret}</code>
+        {issuedSecrets.map((secret) => (
+          <State key={secret} kind="permission">
+            {t('settings.oneTimeSecret')} <code>{secret}</code>
           </State>
-        )}
+        ))}
         <div className="table-scroll">
           <table>
             <thead>
@@ -417,7 +449,7 @@ export function SettingsPage() {
                         <button
                           type="button"
                           className="secondary"
-                          disabled={keyAction.isPending}
+                          disabled={keyMutationPending}
                           onClick={() => keyAction.mutate({ action: 'rotate', key })}
                         >
                           {t('settings.rotate')}
@@ -425,7 +457,7 @@ export function SettingsPage() {
                         <button
                           type="button"
                           className="secondary"
-                          disabled={keyAction.isPending}
+                          disabled={keyMutationPending}
                           onClick={() => {
                             if (window.confirm(t('settings.revokeConfirm', { label: key.label })))
                               keyAction.mutate({ action: 'revoke', key });
@@ -470,7 +502,8 @@ export function SettingsPage() {
               />
             </label>
           ))}
-          <button disabled={databaseWorkflowPending || !database.data?.etag}>
+          {dbBaselineChanged && <State kind="error">{t('settings.conflict')}</State>}
+          <button disabled={databaseWorkflowPending || dbBaselineChanged || !database.data?.etag}>
             {t('settings.saveCandidate')}
           </button>
         </form>

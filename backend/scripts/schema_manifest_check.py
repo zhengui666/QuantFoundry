@@ -1102,6 +1102,9 @@ def _normalized_physical_snapshot(
     for table in normalized["tables"]:
         table.setdefault("schema", "public")
         table_name = str(table["name"])
+        primary_key = table.get("primary_key_constraint")
+        if primary_key is not None and primary_key.get("name") is None:
+            primary_key["name"] = f"{table_name}_pkey"[:63]
         for column in table.get("columns", []):
             column.setdefault("generation", None)
             column.setdefault("identity", None)

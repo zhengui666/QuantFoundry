@@ -23,7 +23,12 @@ function DomainBoundary({
   if (state === 'locked') return <State kind="permission">{t('domain.locked', { name })}</State>;
   if (state === 'disabled')
     return (
-      <fieldset className="domain-boundary" disabled aria-describedby={`${name}-disabled-reason`}>
+      <fieldset
+        className="domain-boundary"
+        disabled
+        inert
+        aria-describedby={`${name}-disabled-reason`}
+      >
         {children}
         <p id={`${name}-disabled-reason`} role="status">
           {t('domain.disabled')}

@@ -155,7 +155,12 @@ def _mark_failed(lease: JobLease, error: Exception) -> None:
             fail_agent_run(session, job, error)
         if job.cancel_requested_at is None:
             apply_job_failure(session, job)
-        fail_job(session, lease, "JOB_FAILED", str(error))
+        error_code = (
+            "PAPER_DAILY_RUN_UNKNOWN_RESULT"
+            if job.job_type == "PAPER_DAILY_RUN"
+            else "JOB_FAILED"
+        )
+        fail_job(session, lease, error_code, str(error))
         session.commit()
     except Exception:
         session.rollback()

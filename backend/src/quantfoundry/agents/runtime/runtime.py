@@ -1510,7 +1510,13 @@ def advance_agent_run(
     now = datetime.now(UTC)
     row.status = "RUNNING"
     row.started_at = row.started_at or now
+    expected_revision = row.revision
+    session.flush()
+    session.commit()
     action = _graph_action(configured_model(config, session), row, checkpoint)
+    session.refresh(row, with_for_update=True)
+    if row.revision != expected_revision:
+        raise AgentRuntimeError("AGENT_CONTEXT_STALE")
     action_type = action.get("type")
     row.model_call_count += 1
     row.step_count += 1
@@ -1706,6 +1712,9 @@ def advance_agent_run(
         else:
             tool_call = candidate
     if tool_call is not None:
+        expected_revision = row.revision
+        session.flush()
+        session.commit()
         try:
             output = execute_tool(
                 session,
@@ -1720,6 +1729,9 @@ def advance_agent_run(
                 },
             )
             REGISTRY.validate_output(definition, output)
+            session.refresh(row, with_for_update=True)
+            if row.revision != expected_revision:
+                raise AgentRuntimeError("AGENT_CONTEXT_STALE")
         except Exception as error:
             raise ToolExecutionFailure(
                 tool_call_id=tool_call.id,
@@ -1831,7 +1843,9 @@ def advance_agent_run(
     return AgentStep(False, None)
 
 
-def _revoke_pending_jobs(session: Session, row: AgentRunRow, now: datetime) -> None:
+def _revoke_pending_jobs(
+    session: Session, row: AgentRunRow, now: datetime, *, owner_job_id: str
+) -> None:
     checkpoint = _checkpoint(row)
     pending_ids = {
         checkpoint.get("pending_job_id"),
@@ -1847,6 +1861,15 @@ def _revoke_pending_jobs(session: Session, row: AgentRunRow, now: datetime) -> N
             )
         ).scalar_one_or_none()
         if pending is None or pending.status not in {"QUEUED", "RUNNING"}:
+            continue
+        try:
+            pending_inputs = json.loads(pending.input_payload)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if pending_id == checkpoint.get("pending_job_id"):
+            if pending_inputs.get("parent_job_id") != owner_job_id:
+                continue
+        elif pending_inputs.get("agent_run_id") != row.id:
             continue
         try:
             request_cancellation(session, pending.id, now=now)
@@ -1873,6 +1896,7 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
         return
     now = datetime.now(UTC)
     failure = type(error).__name__
+    reason_code = _agent_failure_reason(error)
     checkpoint = _checkpoint(row)
     checkpoint.update(
         {
@@ -1887,7 +1911,7 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     row.ended_at = now
     row.revision += 1
     row.pending_resume_token_hash = None
-    _revoke_pending_jobs(session, row, now)
+    _revoke_pending_jobs(session, row, now, owner_job_id=job.id)
     if (
         row.role == "RESEARCH_DIRECTOR"
         and row.parent_agent_run_id is None
@@ -1927,12 +1951,31 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
         payload={
             "state": "FAILED",
             "status": "FAILED",
-            "reason_code": "AGENT_OUTPUT_INVALID",
+            "reason_code": reason_code,
         },
         job_id=job.id,
         agent_run_id=row.id,
         correlation_id=job.correlation_id,
     )
+
+
+def _agent_failure_reason(error: Exception) -> str:
+    if isinstance(error, ToolExecutionFailure):
+        return "TOOL_EXECUTION_FAILED"
+    if isinstance(error, ToolPolicyDenied):
+        return "AGENT_TOOL_FORBIDDEN"
+    message = str(error)
+    if "AGENT_RESUME_CONFLICT" in message:
+        return "AGENT_RESUME_CONFLICT"
+    if "AGENT_CONTEXT_STALE" in message or "context changed" in message:
+        return "AGENT_CONTEXT_STALE"
+    if "budget" in message.lower():
+        return "AGENT_BUDGET_EXCEEDED"
+    if "Remote Codex" in message or "provider" in message.lower():
+        return "AGENT_MODEL_UNAVAILABLE"
+    if "tool arguments" in message or "tool input" in message.lower():
+        return "TOOL_INPUT_INVALID"
+    return "AGENT_OUTPUT_INVALID"
 
 
 def cancel_agent_run(session: Session, job: JobRow) -> None:
@@ -1963,7 +2006,7 @@ def cancel_agent_run(session: Session, job: JobRow) -> None:
     row.ended_at = now
     row.revision += 1
     row.pending_resume_token_hash = None
-    _revoke_pending_jobs(session, row, now)
+    _revoke_pending_jobs(session, row, now, owner_job_id=job.id)
     if row.role == "RESEARCH_DIRECTOR" and row.parent_agent_run_id is None:
         _research_status(session, row, "WAITING_USER")
     for tool_call in session.execute(
@@ -2001,8 +2044,14 @@ def persist_tool_failure(
     if error.workspace_id != job.workspace_id:
         raise AgentRuntimeError("tool failure crossed a workspace boundary")
     finished = datetime.now(UTC)
-    session.add(
-        ToolCallRow(
+    tool_call = session.execute(
+        select(ToolCallRow).where(
+            ToolCallRow.id == error.tool_call_id,
+            ToolCallRow.workspace_id == error.workspace_id,
+        )
+    ).scalar_one_or_none()
+    if tool_call is None:
+        tool_call = ToolCallRow(
             id=error.tool_call_id,
             workspace_id=error.workspace_id,
             agent_run_id=error.agent_run_id,
@@ -2016,15 +2065,21 @@ def persist_tool_failure(
             objective=error.objective,
             research_id=error.research_id,
             policy_version_ref=error.policy_version_ref,
-            warnings=json.dumps(
-                [{"code": "TOOL_EXECUTION_FAILED", "detail": error.cause_type}]
-            ),
+            warnings="[]",
             started_at=error.started_at,
-            finished_at=finished,
-            duration_ms=max(
-                0, int((finished - error.started_at).total_seconds() * 1000)
-            ),
         )
+        session.add(tool_call)
+    else:
+        if tool_call.agent_run_id != error.agent_run_id:
+            raise AgentRuntimeError("tool failure crossed an agent-run boundary")
+    tool_call.job_id = job.id
+    tool_call.status = "ERROR"
+    tool_call.warnings = json.dumps(
+        [{"code": "TOOL_EXECUTION_FAILED", "detail": error.cause_type}]
+    )
+    tool_call.finished_at = finished
+    tool_call.duration_ms = max(
+        0, int((finished - error.started_at).total_seconds() * 1000)
     )
     emit(
         session,

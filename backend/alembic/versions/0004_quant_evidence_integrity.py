@@ -25,6 +25,13 @@ def upgrade() -> None:
                 "holdout_exposures IN ACCESS EXCLUSIVE MODE"
             )
         )
+    elif bind.dialect.name == "sqlite":
+        if bind.in_transaction():
+            bind.execute(
+                sa.text("UPDATE validations SET revision = revision WHERE 0")
+            )
+        else:
+            bind.exec_driver_sql("BEGIN IMMEDIATE")
     invalid_legacy_row = bind.execute(
         sa.text(
             """
@@ -108,7 +115,7 @@ def upgrade() -> None:
                 WHERE a.validation_id = OLD.id
                   AND a.status = 'PENDING'
                   AND a.subject_spec_sha256 = sv.spec_sha256
-                FOR UPDATE;
+                ;
                 IF NOT FOUND THEN
                   RAISE EXCEPTION 'holdout approval evidence is missing';
                 END IF;
@@ -120,7 +127,7 @@ def upgrade() -> None:
                 WHERE a.validation_id = OLD.id
                   AND a.status = 'APPROVED'
                   AND a.subject_spec_sha256 = sv.spec_sha256
-                FOR UPDATE;
+                ;
                 IF NOT FOUND THEN
                   RAISE EXCEPTION 'approved holdout evidence is missing';
                 END IF;
@@ -135,7 +142,7 @@ def upgrade() -> None:
                   AND a.validation_id = OLD.id
                   AND a.status = 'APPROVED'
                   AND a.subject_spec_sha256 = sv.spec_sha256
-                FOR UPDATE;
+                ;
                 IF NOT FOUND THEN
                   RAISE EXCEPTION 'holdout exposure evidence is missing';
                 END IF;
@@ -174,6 +181,7 @@ def upgrade() -> None:
             """
             CREATE FUNCTION qf_reject_approval_evidence_change() RETURNS trigger AS $$
             BEGIN
+              PERFORM 1 FROM validations WHERE id = OLD.validation_id FOR UPDATE;
               IF TG_OP = 'DELETE' OR NEW.validation_id IS DISTINCT FROM OLD.validation_id
                  OR NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256
                  OR NEW.subject_type IS DISTINCT FROM OLD.subject_type
@@ -211,7 +219,15 @@ def upgrade() -> None:
             BEGIN
               IF OLD.status = 'PENDING' AND NEW.status <> 'PENDING' THEN
                 UPDATE validations
-                SET holdout_state = CASE WHEN NEW.status = 'APPROVED' THEN 'UNLOCKED' ELSE 'LOCKED' END,
+                SET holdout_state = CASE
+                      WHEN EXISTS (SELECT 1 FROM approval_requests a
+                                   WHERE a.validation_id = NEW.validation_id
+                                     AND a.status = 'APPROVED') THEN 'UNLOCKED'
+                      WHEN EXISTS (SELECT 1 FROM approval_requests a
+                                   WHERE a.validation_id = NEW.validation_id
+                                     AND a.status = 'PENDING') THEN 'APPROVAL_PENDING'
+                      ELSE 'LOCKED'
+                    END,
                     revision = revision + 1
                 WHERE id = NEW.validation_id AND holdout_state = 'APPROVAL_PENDING';
               END IF;
@@ -315,8 +331,10 @@ def upgrade() -> None:
     op.execute(
         "CREATE TRIGGER qf_sync_approval_validation AFTER UPDATE OF status ON approval_requests "
         "WHEN OLD.status = 'PENDING' AND NEW.status != 'PENDING' BEGIN "
-        "UPDATE validations SET holdout_state = CASE WHEN NEW.status = 'APPROVED' "
-        "THEN 'UNLOCKED' ELSE 'LOCKED' END, revision = revision + 1 "
+        "UPDATE validations SET holdout_state = CASE "
+        "WHEN EXISTS (SELECT 1 FROM approval_requests a WHERE a.validation_id = NEW.validation_id AND a.status = 'APPROVED') THEN 'UNLOCKED' "
+        "WHEN EXISTS (SELECT 1 FROM approval_requests a WHERE a.validation_id = NEW.validation_id AND a.status = 'PENDING') THEN 'APPROVAL_PENDING' "
+        "ELSE 'LOCKED' END, revision = revision + 1 "
         "WHERE id = NEW.validation_id AND holdout_state = 'APPROVAL_PENDING'; END"
     )
     op.execute(

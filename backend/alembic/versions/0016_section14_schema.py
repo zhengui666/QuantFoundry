@@ -1570,6 +1570,8 @@ def _install_guards() -> None:
                  AND NOT (
                    NEW.id IS NOT DISTINCT FROM OLD.id AND
                    NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
+                   NEW.experiment_id IS NOT DISTINCT FROM OLD.experiment_id AND
+                   NEW.workspace_id IS NOT DISTINCT FROM OLD.workspace_id AND
                    NEW.revision = OLD.revision + 1 AND
                    (NEW.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
                     'provenance' - 'metrics' - 'artifacts' - 'search_space' -
@@ -1643,6 +1645,23 @@ def _install_guards() -> None:
             "holdout_state, exposure_count, strategy_version_id ON validations FOR EACH ROW EXECUTE "
             "FUNCTION qf_validate_holdout_transition()"
         )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_holdout_contamination_monotonic() RETURNS trigger AS $$
+            BEGIN
+              IF OLD.contamination AND NOT NEW.contamination THEN
+                RAISE EXCEPTION 'holdout contamination cannot be cleared';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute("DROP TRIGGER IF EXISTS qf_holdout_contamination_monotonic ON holdout_exposures")
+        op.execute(
+            "CREATE TRIGGER qf_holdout_contamination_monotonic BEFORE UPDATE OF contamination "
+            "ON holdout_exposures FOR EACH ROW EXECUTE FUNCTION qf_holdout_contamination_monotonic()"
+        )
         return
     for table in (
         "audit_events",
@@ -1657,6 +1676,12 @@ def _install_guards() -> None:
                 f"{action} ON {table} BEGIN SELECT RAISE(ABORT, "
                 "'immutable evidence cannot be changed'); END"
             )
+    op.execute("DROP TRIGGER IF EXISTS qf_holdout_contamination_monotonic")
+    op.execute(
+        "CREATE TRIGGER qf_holdout_contamination_monotonic BEFORE UPDATE OF contamination "
+        "ON holdout_exposures WHEN OLD.contamination = 1 AND NEW.contamination = 0 "
+        "BEGIN SELECT RAISE(ABORT, 'holdout contamination cannot be cleared'); END"
+    )
     op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     op.execute(
         "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
@@ -1746,7 +1771,9 @@ def _install_guards() -> None:
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
         "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
-        "NEW.id IS OLD.id AND NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "NEW.id IS OLD.id AND NEW.research_id IS OLD.research_id AND "
+        "NEW.experiment_id IS OLD.experiment_id AND NEW.workspace_id IS OLD.workspace_id AND "
+        "NEW.revision = OLD.revision + 1 AND "
         "json_remove(NEW.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
         "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
         "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') IS "

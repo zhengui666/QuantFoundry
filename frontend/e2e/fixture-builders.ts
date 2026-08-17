@@ -69,7 +69,7 @@ export function researchProjection(started: boolean): ResearchProjection {
       metric_key: 'sharpe',
       artifact: {
         type: 'artifact',
-        id: 'ART-1N71JE4YY6S21C6P56JB8ZXKNS',
+        id: 'ART-1BEQJE4YY6S21C6P56JB8ZXKNS',
         version: null,
         revision: 1,
       },

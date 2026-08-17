@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+script_repo_root="$repo_root"
 registry="${1:-$repo_root/docs/治理/p0-blockers.yaml}"
 mode="${2:---require-closed}"
 
@@ -15,6 +16,31 @@ command -v uv >/dev/null || { printf '%s\n' 'uv is required to parse the canonic
 
 if [[ "$mode" == "--report" ]]; then
   mode="--offline-report"
+fi
+
+if [[ "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]]; then
+  trusted_verifier_root="${QF_RELEASE_TRUSTED_VERIFIER_ROOT:-}"
+  trusted_verifier_commit="${QF_RELEASE_TRUSTED_VERIFIER_COMMIT:-}"
+  [[ -n "$trusted_verifier_root" && "$trusted_verifier_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    printf '%s\n' 'strict P0 verification requires an explicit trusted verifier checkout and commit' >&2
+    exit 2
+  }
+  trusted_verifier_root="$(cd "$trusted_verifier_root" 2>/dev/null && pwd)" || {
+    printf '%s\n' 'trusted verifier checkout is unavailable' >&2
+    exit 2
+  }
+  [[ "$script_repo_root" == "$trusted_verifier_root" ]] || {
+    printf '%s\n' 'strict P0 verification must execute from the trusted verifier checkout' >&2
+    exit 2
+  }
+  [[ "$(git -C "$trusted_verifier_root" rev-parse HEAD 2>/dev/null)" == "$trusted_verifier_commit" ]] || {
+    printf '%s\n' 'trusted verifier checkout does not match its commit anchor' >&2
+    exit 2
+  }
+  [[ -z "$(git -C "$trusted_verifier_root" status --porcelain --untracked-files=all)" ]] || {
+    printf '%s\n' 'trusted verifier checkout is not clean' >&2
+    exit 2
+  }
 fi
 
 set +e

@@ -9,7 +9,7 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { z } from 'zod';
-import { api } from '../../api/client';
+import { ApiError, api } from '../../api/client';
 
 type RouteComponent = () => ReactNode;
 
@@ -23,7 +23,13 @@ export function createAppRouter({ Shell }: RouteComponents) {
       if (location.pathname === '/login') return;
       try {
         await api.session();
-      } catch {
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          error.problem.status !== 401 ||
+          error.problem.code !== 'UNAUTHENTICATED'
+        )
+          throw error;
         // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw redirect({ to: '/login', replace: true });
       }

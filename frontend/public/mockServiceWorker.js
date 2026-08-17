@@ -237,7 +237,9 @@ async function resolveMainClient(event) {
   const activeClients = allClients.filter((candidate) =>
     activeClientIds.has(candidate.id),
   )
-  return activeClients.find((candidate) => candidate.id === event.clientId)
+  return activeClients.find((candidate) =>
+    candidate.frameType === 'top-level' && candidate.visibilityState === 'visible',
+  ) ?? activeClients.find((candidate) => candidate.visibilityState === 'visible') ?? activeClients[0]
 }
 
 /**

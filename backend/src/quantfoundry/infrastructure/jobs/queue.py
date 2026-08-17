@@ -260,7 +260,6 @@ def lock_active_lease(
 ) -> JobRow:
     """Lock the fenced job before any domain effect is allowed to execute."""
 
-    timestamp = now or datetime.now(UTC)
     row = session.execute(
         select(JobRow)
         .where(
@@ -268,11 +267,14 @@ def lock_active_lease(
             JobRow.status == "RUNNING",
             JobRow.lease_owner == lease.worker_id,
             JobRow.fencing_token == lease.fencing_token,
-            JobRow.lease_expires_at > timestamp,
         )
         .with_for_update()
     ).scalar_one_or_none()
-    if row is None:
+    timestamp = now or datetime.now(UTC)
+    expires_at = row.lease_expires_at if row is not None else None
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if row is None or expires_at is None or expires_at <= timestamp:
         raise LostLease(f"lost or expired lease for {lease.job_id}")
     return row
 
@@ -284,27 +286,11 @@ def heartbeat_job(
     now: datetime | None = None,
     lease_seconds: int = LEASE_SECONDS,
 ) -> None:
+    row = lock_active_lease(session, lease, now=now)
     timestamp = now or datetime.now(UTC)
-    result = cast(
-        CursorResult[Any],
-        session.execute(
-            update(JobRow)
-            .where(
-                JobRow.id == lease.job_id,
-                JobRow.status == "RUNNING",
-                JobRow.lease_owner == lease.worker_id,
-                JobRow.fencing_token == lease.fencing_token,
-                JobRow.lease_expires_at > timestamp,
-            )
-            .values(
-                heartbeat_at=timestamp,
-                lease_expires_at=timestamp + timedelta(seconds=lease_seconds),
-            )
-            .execution_options(synchronize_session=False)
-        ),
-    )
-    if result.rowcount != 1:
-        raise LostLease(f"lost or expired lease for {lease.job_id}")
+    row.heartbeat_at = timestamp
+    row.lease_expires_at = timestamp + timedelta(seconds=lease_seconds)
+    session.flush()
     record_heartbeat(session, "worker", lease.worker_id, lease.queue_name, timestamp)
 
 
@@ -576,7 +562,7 @@ def fail_job(
         PaperScheduler().fail_claimed(
             session,
             row,
-            reason_code="PAPER_DAILY_RUN_UNKNOWN_RESULT",
+            reason_code=error_code,
             now=timestamp,
             lease_snapshot=lease_snapshot,
             status=next_status,

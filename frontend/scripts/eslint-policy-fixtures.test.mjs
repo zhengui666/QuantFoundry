@@ -127,8 +127,14 @@ describe('frontend ESLint policy fixtures', () => {
         overrideConfigFile: resolve(frontendRoot, 'eslint.config.js'),
       });
       const results = await eslint.lintFiles(fixturePaths);
-      for (const [index, result] of results.entries())
+      expect(results).toHaveLength(fixturePaths.length);
+      const resultByPath = new Map(results.map((result) => [resolve(result.filePath), result]));
+      expect(resultByPath.size).toBe(fixturePaths.length);
+      for (const [index, fixturePath] of fixturePaths.entries()) {
+        const result = resultByPath.get(resolve(fixturePath));
+        expect(result).toBeDefined();
         expect(result.messages.map((message) => message.ruleId)).toContain(cases[index].ruleId);
+      }
     } finally {
       await Promise.all(
         [...fixtureRoots.values()].map((directory) =>

@@ -939,7 +939,7 @@ def _portfolio_returns(
             if _parse_timestamp(row["available_at"], "available_at")
             <= _parse_timestamp(row["event_time"], "event_time")
         }
-        for symbol in today_market_rows:
+        for symbol in today_rows:
             price_history[symbol].append(adjusted_prices[today][symbol])
         ranked = sorted(
             (
@@ -1263,11 +1263,15 @@ def validation_checks(
     split_ok = split_ok and row_bounds_ok
     leakage_ok = all(row["partition"] == "VALIDATION" for row in rows)
     try:
+        if isinstance(metrics["observations"], bool):
+            raise TypeError("observations must be an integer")
         observations = int(metrics["observations"])
         maximum_drawdown = float(metrics["maximum_drawdown"])
         turnover = float(metrics["turnover"])
         commission = float(metrics["commission"])
         slippage = float(metrics["slippage"])
+        sharpe = float(metrics["sharpe"])
+        total_return = float(metrics["total_return"])
         returns = metrics["returns"]
         if not isinstance(returns, list):
             raise TypeError("returns must be a list")
@@ -1284,6 +1288,8 @@ def validation_checks(
                 turnover,
                 commission,
                 slippage,
+                sharpe,
+                total_return,
                 *parsed_returns,
             )
         )
@@ -1310,18 +1316,17 @@ def validation_checks(
             [
                 (
                     "policy_min_observations",
-                    int(metrics["observations"]) >= policy.validation_min_observations,
+                    observations >= policy.validation_min_observations,
                     "Validation observation count meets the versioned policy",
                 ),
                 (
                     "policy_min_sharpe",
-                    float(metrics["sharpe"]) >= policy.validation_min_sharpe,
+                    sharpe >= policy.validation_min_sharpe,
                     "Validation Sharpe meets the versioned policy",
                 ),
                 (
                     "policy_max_drawdown",
-                    float(metrics["maximum_drawdown"])
-                    >= policy.validation_max_drawdown_floor,
+                    maximum_drawdown >= policy.validation_max_drawdown_floor,
                     "Validation drawdown meets the versioned policy",
                 ),
             ]
@@ -1336,7 +1341,7 @@ def validation_checks(
             isinstance(cost_return, (int, float))
             and not isinstance(cost_return, bool)
             and math.isfinite(float(cost_return))
-            and float(cost_return) <= float(metrics["total_return"]) + 1e-12
+            and float(cost_return) <= total_return + 1e-12
         )
         parameter_ok = (
             isinstance(alternatives, list)

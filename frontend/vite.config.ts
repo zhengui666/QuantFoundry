@@ -33,6 +33,9 @@ export default defineConfig({
       name: 'e2e-auth-session',
       configureServer(server) {
         if (process.env.QF_E2E_MOCK_AUTH !== '1' || process.env.QF_E2E_MODE !== '1') return;
+        const host = server.config.server.host;
+        if (host !== undefined && host !== 'localhost' && host !== '127.0.0.1' && host !== '::1')
+          throw new Error('QF_E2E_MOCK_AUTH requires a loopback-only Vite host.');
         server.middlewares.use((request, response, next) => {
           const expectedToken = process.env.QF_E2E_MOCK_TOKEN;
           if (!expectedToken || request.headers['x-qf-e2e-mock-token'] !== expectedToken) {

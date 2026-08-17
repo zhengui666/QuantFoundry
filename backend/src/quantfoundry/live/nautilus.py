@@ -166,7 +166,6 @@ class NautilusTraderConnector:
             raise ConnectorProtocolError(
                 "client_order_id was reused with a different order payload"
             )
-        self._order_fingerprints[identity] = fingerprint
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
             _purge_expired_fingerprints(self._preview_fingerprints, time.monotonic())
             preview = self._preview_fingerprints.get(fingerprint)
@@ -176,6 +175,7 @@ class NautilusTraderConnector:
                 or preview[1] != capabilities.content_hash()
             ):
                 raise ConnectorProtocolError("validated margin preview is required")
+        self._order_fingerprints[identity] = fingerprint
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",

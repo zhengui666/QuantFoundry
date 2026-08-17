@@ -72,7 +72,7 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             if result.get("tool_name") not in producers:
                 continue
             if result.get("status") not in {"SUCCESS", "COMPLETED"}:
-                return None
+                continue
             result_ref = result.get("result_ref")
             if (
                 isinstance(result_ref, dict)
@@ -91,7 +91,7 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                     and isinstance(ref.get("id"), str)
                 ):
                     return ref["id"]
-            return None
+            continue
         return None
 
     def _deterministic_action(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -342,9 +342,21 @@ def create_server(
             raise ValueError(f"invalid provider failure status: {status}") from error
         if not 400 <= status <= 599:
             raise ValueError("provider failure statuses must be HTTP 4xx/5xx")
+    if actions is None:
+        validated_actions = []
+    else:
+        try:
+            validated_actions = json.loads(json.dumps(actions, separators=(",", ":")))
+        except (TypeError, ValueError, RecursionError) as error:
+            raise ValueError("actions must be JSON-serializable dictionaries") from error
+        if (
+            not isinstance(validated_actions, list)
+            or not all(isinstance(item, dict) for item in validated_actions)
+        ):
+            raise ValueError("actions must be a list of JSON objects")
     server = LocalProviderServer((host, port), LocalProviderHandler)
     server.deterministic_research_plan = actions is None
-    server.actions = list(actions) if actions is not None else []
+    server.actions = validated_actions
     server.action_index = 0
     server.api_key = effective_key
     server.model_name = model_name

@@ -77,19 +77,34 @@ def run_migrations_online():
             # restored schema is checked before the connection is closed and
             # application connections still force foreign_keys=ON.
             connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
-        context.configure(connection=connection, target_metadata=target_metadata)
-        with context.begin_transaction():
-            context.run_migrations()
-        if sqlite_migration:
-            violations = connection.exec_driver_sql("PRAGMA foreign_key_check").all()
-            if violations:
-                raise RuntimeError(
-                    f"SQLite migration produced foreign-key violations: {violations[:3]}"
-                )
             connection.commit()
-            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-            if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 1:
-                raise RuntimeError("SQLite migration failed to restore foreign keys")
+            connection.exec_driver_sql("BEGIN")
+        try:
+            context.configure(connection=connection, target_metadata=target_metadata)
+            with context.begin_transaction():
+                context.run_migrations()
+            if sqlite_migration:
+                violations = connection.exec_driver_sql(
+                    "PRAGMA foreign_key_check"
+                ).all()
+                if violations:
+                    raise RuntimeError(
+                        "SQLite migration produced foreign-key violations: "
+                        f"{violations[:3]}"
+                    )
+            if sqlite_migration and connection.in_transaction():
+                connection.commit()
+        except Exception:
+            if sqlite_migration and connection.in_transaction():
+                connection.rollback()
+            raise
+        finally:
+            if sqlite_migration:
+                if connection.in_transaction():
+                    connection.rollback()
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 1:
+                    raise RuntimeError("SQLite migration failed to restore foreign keys")
 
 
 try:

@@ -13,6 +13,7 @@ export async function startCanonicalSseProbe(
   url: URL,
   sessionCookie: string,
   trustedOrigin: string,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ) {
   const origin = new URL(trustedOrigin).origin;
   if (
@@ -25,11 +26,23 @@ export async function startCanonicalSseProbe(
   )
     throw new Error('Authenticated SSE probe URL is outside the trusted stream origin.');
   const controller = new AbortController();
-  const response = await fetch(url, {
-    headers: { Accept: 'text/event-stream', Cookie: sessionCookie },
-    redirect: 'error',
-    signal: controller.signal,
-  });
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
+  const abortExternal = () => controller.abort(options.signal?.reason);
+  if (options.signal) {
+    if (options.signal.aborted) abortExternal();
+    else options.signal.addEventListener('abort', abortExternal, { once: true });
+  }
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: 'text/event-stream', Cookie: sessionCookie },
+      redirect: 'error',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortExternal);
+  }
   const responseBody = response.body;
   const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
   if (response.status !== 200 || mediaType !== 'text/event-stream' || !responseBody) {

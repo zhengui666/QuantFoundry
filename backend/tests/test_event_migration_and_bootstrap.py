@@ -21,6 +21,7 @@ from alembic.operations import Operations
 from sqlalchemy import (
     JSON,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -806,7 +807,10 @@ def _sqlite_0017_tables() -> tuple[Any, Any, Any, Any, Any, Any, Any]:
         Column("scheduler_status", String(), nullable=False),
         Column("suppressed_since_utc", DateTime(timezone=True), nullable=True),
         Column("resume_watermark_utc", DateTime(timezone=True), nullable=True),
+        Column("last_eligible_trading_date", Date(), nullable=True),
         Column("revision", Integer(), nullable=False),
+        Column("created_at", DateTime(timezone=True), nullable=True),
+        Column("updated_at", DateTime(timezone=True), nullable=True),
     )
     audit_events = Table(
         "audit_events",
@@ -907,7 +911,10 @@ def _insert_0017_baseline(
             scheduler_status="ACTIVE",
             suppressed_since_utc=None,
             resume_watermark_utc=instant,
+            last_eligible_trading_date=None,
             revision=1,
+            created_at=instant,
+            updated_at=instant,
         )
     )
     evidence = {
@@ -1812,8 +1819,8 @@ def test_section14_failed_upgrade_restores_all_source_rows(tmp_path: Path) -> No
                     VALUES
                       (1, 'EVT-550e8400-e29b-41d4-a716-446655440003',
                    'rollback-workspace', 'actor',
-                   'system.health.updated', 'job',
-                   'JOB-550e8400-e29b-41d4-a716-446655440003', 3, '{}',
+                   'system.health.updated', 'event_stream',
+                   'EVT-550e8400-e29b-41d4-a716-446655440003', 3, '{}',
                    'REQ-rollback', 'not-a-date', 'also-not-a-date')
                 """
             )

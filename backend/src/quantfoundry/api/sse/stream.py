@@ -141,13 +141,11 @@ async def durable_event_stream(
                     if (
                         expired_through is not None
                         and expired_through > 0
-                        and cursor_value <= expired_through
+                        and cursor_value < expired_through
                     ):
-                        resume_sequence = (
-                            earliest.sequence
-                            if earliest is not None and earliest.sequence > cursor_value
-                            else int(watermark or 0) + 1
-                        )
+                        resume_sequence = int(expired_through) + 1
+                        if earliest is not None and earliest.sequence > resume_sequence:
+                            resume_sequence = earliest.sequence
                         return [], resume_sequence
                 events = list(
                     session.execute(
@@ -169,7 +167,7 @@ async def durable_event_stream(
                         current_state = session.get(watermark_model, workspace_id)
                     if (
                         current_state is not None
-                        and cursor_value <= current_state.expired_through_sequence
+                        and cursor_value < current_state.expired_through_sequence
                     ):
                         return [], int(current_state.expired_through_sequence) + 1
                 return events, None

@@ -41,6 +41,27 @@ def run_once() -> int:
     if not _domain_ready():
         return 0
     maintenance_error: Exception | None = None
+
+    def domain_stage(label: str, callback, default):
+        nonlocal maintenance_error
+        try:
+            session = SessionLocal()
+        except Exception as error:
+            logger.exception("scheduler %s session creation failed", label)
+            maintenance_error = maintenance_error or error
+            return default
+        try:
+            result = callback(session)
+            session.commit()
+            return result
+        except Exception as error:
+            session.rollback()
+            logger.exception("scheduler %s failed", label)
+            maintenance_error = maintenance_error or error
+            return default
+        finally:
+            session.close()
+
     artifact_store_ready = True
     try:
         probe_artifact_store()
@@ -48,29 +69,21 @@ def run_once() -> int:
         logger.exception("scheduler artifact maintenance failed")
         maintenance_error = error
         artifact_store_ready = False
-    try:
-        session = SessionLocal()
-    except Exception as error:
-        logger.exception("scheduler domain session creation failed")
-        maintenance_error = maintenance_error or error
-        session = None
-    if session is not None:
-        try:
-            record_heartbeat(session, "scheduler", scheduler_id(), None)
-            PaperScheduler().discover(
-                session, now=datetime.now(UTC), owner=scheduler_id()
-            )
-            retried, failed = reap_expired_jobs(session)
-            session.commit()
-        except Exception as error:
-            session.rollback()
-            logger.exception("scheduler domain maintenance failed")
-            maintenance_error = error
-            retried = failed = 0
-        finally:
-            session.close()
-    else:
-        retried = failed = 0
+    domain_stage(
+        "heartbeat",
+        lambda session: record_heartbeat(session, "scheduler", scheduler_id(), None),
+        None,
+    )
+    domain_stage(
+        "paper discovery",
+        lambda session: PaperScheduler().discover(
+            session, now=datetime.now(UTC), owner=scheduler_id()
+        ),
+        0,
+    )
+    retried, failed = domain_stage(
+        "job reaping", reap_expired_jobs, (0, 0)
+    )
     if artifact_store_ready:
         artifact_session = None
         try:

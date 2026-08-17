@@ -2404,7 +2404,7 @@ def test_event_retention_preserves_workspace_cursor_expiry() -> None:
         stream = durable_event_stream(
             SessionLocal,
             Event,
-            sequence,
+            sequence - 1,
             validate,
             current_time,
             workspace_id=workspace_id,

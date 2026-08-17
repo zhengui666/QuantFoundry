@@ -2,14 +2,12 @@
 
 from quantfoundry.live.connector import (
     AssetClass,
-    ConnectorClient,
     ConnectorError,
     ConnectorUnavailable,
     Instrument,
     OrderRequest,
 )
 from quantfoundry.live.nautilus import (
-    NautilusTraderConnector,
     NautilusTraderPort,
     NautilusTraderUnavailable,
 )
@@ -23,7 +21,6 @@ from quantfoundry.live.policy import (
 
 __all__ = [
     "AssetClass",
-    "ConnectorClient",
     "ConnectorError",
     "ConnectorUnavailable",
     "Instrument",
@@ -33,7 +30,6 @@ __all__ = [
     "apply_fill",
     "ensure_submission_allowed",
     "transition_order",
-    "NautilusTraderConnector",
     "NautilusTraderPort",
     "NautilusTraderUnavailable",
 ]

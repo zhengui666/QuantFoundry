@@ -42,6 +42,9 @@ _REQUIRED = {
         "suppressed_since_utc",
         "resume_watermark_utc",
         "revision",
+        "created_at",
+        "updated_at",
+        "last_eligible_trading_date",
     },
     "audit_events": {
         "id",
@@ -72,6 +75,11 @@ _REQUIRED = {
         "event_type",
         "object_type",
         "object_id",
+        "actor_id",
+        "object_version",
+        "object_revision",
+        "revision",
+        "schema_version",
         "payload",
         "occurred_at",
         "expires_at",
@@ -403,7 +411,14 @@ def _validate_evidence(
         else None
     )
     audit_occurred = _utc_timestamp(bind, audit["occurred_at"], "audit occurred_at")
-    legacy_status = str(evidence["from_state"] or deployment["status"])
+    expected_from_state = (
+        "STOPPED"
+        if deployment["status"] == "DISABLED" and evidence["from_state"] == "STOPPED"
+        else None
+        if deployment["status"] in {"ACTIVE", "PAUSED", "DISABLED"}
+        else str(deployment["status"])
+    )
+    legacy_status = str(expected_from_state or deployment["status"])
     audit_valid = (
         audit.get("actor_type") == "SYSTEM"
         and audit.get("actor_id") == "alembic:0017"
@@ -426,7 +441,7 @@ def _validate_evidence(
         and is_public_id("domain_event", evidence["state_transition_id"])
         and str(evidence["workspace_id"]) == str(deployment["workspace_id"])
         and evidence["paper_id"] == deployment["paper_id"]
-        and evidence["from_state"] in {None, *_STATUS_MAP}
+        and evidence["from_state"] == expected_from_state
         and evidence["to_state"] == baseline["scheduler_status"]
         and effective == initialization == evidence_watermark == baseline_watermark
         and (
@@ -976,10 +991,12 @@ def downgrade() -> None:
     """Remove only the baselines and evidence written by this revision."""
     bind = op.get_bind()
     deployments, states, audit_events, domain_events, heads, watermarks = _tables(bind)
+    _validate_baselines(bind)
     owned_audits = (
         bind.execute(
             select(audit_events)
             .where(
+                audit_events.c.actor_type == "SYSTEM",
                 audit_events.c.actor_id == "alembic:0017",
                 audit_events.c.action_type == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
             )

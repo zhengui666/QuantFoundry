@@ -1033,6 +1033,7 @@ def _audit(
     config_revision: int | None = None,
     db_revision: int | None = None,
 ) -> None:
+    summary = _redact_audit_summary(summary)
     with _DOMAIN_SWITCH_LOCK:
         session.execute(
             text(
@@ -1112,6 +1113,25 @@ def _audit(
                 created_at=now,
             )
         )
+
+
+_SENSITIVE_AUDIT_KEY = re.compile(
+    r"(?:secret|password|token|api[_-]?key|private[_-]?key|client[_-]?secret|credential)",
+    re.IGNORECASE,
+)
+
+
+def _redact_audit_summary(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "<redacted>" if _SENSITIVE_AUDIT_KEY.search(str(key)) else _redact_audit_summary(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_audit_summary(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_audit_summary(item) for item in value]
+    return value
 
 
 def _metadata(row: GeneralAccessKey) -> GeneralAccessKeyMetadata:
@@ -2693,8 +2713,28 @@ def build_router() -> APIRouter:
                     else row.typed_value
                 )
             for item, entry, value in validated_items:
-                if entry.sensitivity == "SECRET":
-                    secret = cast(str, value["secret"])
+                if entry.sensitivity in {"SECRET", "MASKED"}:
+                    protected_value = (
+                        value.get("secret")
+                        if entry.sensitivity == "SECRET"
+                        else value.get("value", value.get("secret"))
+                    )
+                    if protected_value is None:
+                        return _problem(
+                            422,
+                            "INVALID_REQUEST",
+                            "protected configuration value is required",
+                        )
+                    secret = (
+                        protected_value
+                        if isinstance(protected_value, str)
+                        else json.dumps(
+                            protected_value,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    )
                     encrypted, key_id = _seal(
                         secret,
                         aad=_configuration_aad(
@@ -2707,13 +2747,21 @@ def build_router() -> APIRouter:
                             key=item.key,
                             ciphertext=encrypted,
                             secret_key_id=key_id,
-                            value_sha256=credential_fingerprint(secret),
+                            value_sha256=(
+                                credential_fingerprint(secret)
+                                if entry.sensitivity == "SECRET"
+                                else _json_hash(protected_value)
+                            ),
                         )
                     )
                     snapshot[item.key] = {
                         "configured": True,
                         "secret": True,
-                        "value_sha256": credential_fingerprint(secret),
+                        "value_sha256": (
+                            credential_fingerprint(secret)
+                            if entry.sensitivity == "SECRET"
+                            else _json_hash(protected_value)
+                        ),
                     }
                 else:
                     typed = value.get("value")
@@ -3006,14 +3054,10 @@ def build_router() -> APIRouter:
                 getattr(actor, "workspace_id", None) if actor is not None else None
             )
 
-            def callback() -> None:
-                _sync_domain_compat_setup(workspace_id)
-
-            post_commit = _IDEMPOTENCY_POST_COMMIT.get()
-            if post_commit is None:
-                callback()
-            else:
-                post_commit.append(callback)
+            # Run the required compatibility materialization before the wrapper
+            # records the idempotent operation as completed. A failure leaves the
+            # operation retryable instead of caching a false success.
+            _sync_domain_compat_setup(workspace_id)
         return result
 
     @router.post("/configuration/rollback", operation_id="rollbackConfiguration")

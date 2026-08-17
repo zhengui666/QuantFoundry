@@ -938,6 +938,7 @@ paths:
               schema: {$ref: '#/components/schemas/JobAccepted'}
         '401': {$ref: '#/components/responses/Problem401'}
         '403': {$ref: '#/components/responses/Problem403'}
+        '404': {$ref: '#/components/responses/Problem404'}
         '409': {$ref: '#/components/responses/Problem409'}
         '412': {$ref: '#/components/responses/Problem412'}
         '422': {$ref: '#/components/responses/Problem422'}
@@ -1012,6 +1013,7 @@ paths:
         '404': {$ref: '#/components/responses/Problem404'}
         '409': {$ref: '#/components/responses/Problem409'}
         '422': {$ref: '#/components/responses/Problem422'}
+        '428': {$ref: '#/components/responses/Problem428'}
         '429': {$ref: '#/components/responses/Problem429'}
   /factors:
     parameters: [*CsrfHeader]
@@ -1757,12 +1759,14 @@ components:
           properties:
             key: {type: string, pattern: '^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$'}
             value: {anyOf: [{type: string}, {type: number}, {type: boolean}, {type: object, additionalProperties: true}, {type: array}, {type: 'null'}]}
+            secret: {not: {}}
         - type: object
           additionalProperties: false
           required: [key, secret]
           properties:
             key: {type: string, pattern: '^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$'}
             secret: {type: string, minLength: 1, maxLength: 16384, writeOnly: true}
+            value: {not: {}}
     ConfigurationValueView:
       type: object
       additionalProperties: false
@@ -2003,6 +2007,75 @@ components:
         id: *AnyPublicSemanticId
         version: {type: [integer, 'null'], minimum: 1}
         revision: {type: integer, minimum: 1}
+      oneOf:
+        - required: [type, id]
+          properties: {type: {const: research_policy}, id: *ResearchPolicyId}
+        - required: [type, id]
+          properties: {type: {const: risk_policy}, id: *RiskPolicyId}
+        - required: [type, id]
+          properties: {type: {const: cost_model}, id: *CostModelId}
+        - required: [type, id]
+          properties: {type: {const: credential}, id: *CredentialId}
+        - required: [type, id]
+          properties: {type: {const: capability}, id: *CapabilityId}
+        - required: [type, id]
+          properties: {type: {const: dataset}, id: *DatasetIdSchema}
+        - required: [type, id]
+          properties: {type: {const: snapshot}, id: *SnapshotIdSchema}
+        - required: [type, id]
+          properties: {type: {const: data_quality_run}, id: *DataQualityRunId}
+        - required: [type, id]
+          properties: {type: {const: data_quality_issue}, id: *DataQualityIssueId}
+        - required: [type, id]
+          properties: {type: {const: research}, id: *ResearchIdSchema}
+        - required: [type, id]
+          properties: {type: {const: evidence}, id: *EvidenceId}
+        - required: [type, id]
+          properties: {type: {const: conclusion}, id: *ConclusionId}
+        - required: [type, id]
+          properties: {type: {const: experiment}, id: *ExperimentIdSchema}
+        - required: [type, id]
+          properties: {type: {const: factor}, id: *FactorIdSchema}
+        - required: [type, id]
+          properties: {type: {const: strategy}, id: *StrategyIdSchema}
+        - required: [type, id]
+          properties: {type: {const: validation}, id: *ValidationIdSchema}
+        - required: [type, id]
+          properties: {type: {const: exposure}, id: *ExposureId}
+        - required: [type, id]
+          properties: {type: {const: red_team_run}, id: *RedTeamRunId}
+        - required: [type, id]
+          properties: {type: {const: portfolio}, id: *PortfolioId}
+        - required: [type, id]
+          properties: {type: {const: memo}, id: *MemoIdSchema}
+        - required: [type, id]
+          properties: {type: {const: approval}, id: *ApprovalIdSchema}
+        - required: [type, id]
+          properties: {type: {const: paper}, id: *PaperId}
+        - required: [type, id]
+          properties: {type: {const: paper_run}, id: *PaperRunId}
+        - required: [type, id]
+          properties: {type: {const: paper_order}, id: *PaperOrderId}
+        - required: [type, id]
+          properties: {type: {const: paper_fill}, id: *PaperFillId}
+        - required: [type, id]
+          properties: {type: {const: review}, id: *ReviewId}
+        - required: [type, id]
+          properties: {type: {const: agent_run}, id: *AgentRunIdSchema}
+        - required: [type, id]
+          properties: {type: {const: tool_call}, id: *ToolCallIdSchema}
+        - required: [type, id]
+          properties: {type: {const: job}, id: *JobIdSchema}
+        - required: [type, id]
+          properties: {type: {const: domain_event}, id: *DomainEventId}
+        - required: [type, id]
+          properties: {type: {const: audit_event}, id: *AuditEventId}
+        - required: [type, id]
+          properties: {type: {const: artifact}, id: *ArtifactId}
+        - required: [type, id]
+          properties: {type: {const: notification}, id: *NotificationId}
+        - required: [type, id]
+          properties: {type: {const: provenance}, id: *ProvenanceId}
       allOf:
         - if: {properties: {type: {const: research_policy}}, required: [type]}
           then: {properties: {id: *ResearchPolicyId}}

@@ -3,7 +3,7 @@ import { mswLoader } from 'msw-storybook-addon/csf3';
 import '../src/styles.css';
 
 const preview: Preview = {
-  loaders: [mswLoader()],
+  loaders: [mswLoader],
   parameters: {
     a11y: { test: 'error' },
     viewport: {

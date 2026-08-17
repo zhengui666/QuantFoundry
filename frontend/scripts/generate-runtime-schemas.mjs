@@ -183,12 +183,21 @@ const zodFor = (schema, schemaName) => {
   )
     throw new Error(`Unsupported schema format: ${String(baseSchema.format)}`);
   let expression;
-  if (baseSchema.const !== undefined) expression = `z.literal(${quote(baseSchema.const)})`;
-  else if (baseSchema.enum) expression = literalUnion(baseSchema.enum);
-
   const types = Array.isArray(baseSchema.type) ? baseSchema.type : [baseSchema.type];
-  const nullable = types.includes('null');
   const type = types.find((candidate) => candidate !== 'null');
+  const objectLike =
+    type === 'object' ||
+    baseSchema.properties ||
+    baseSchema.required ||
+    baseSchema.additionalProperties !== undefined;
+  const scalarLiteral = !objectLike && (baseSchema.const !== undefined || baseSchema.enum);
+  if (scalarLiteral)
+    expression =
+      baseSchema.const !== undefined
+        ? `z.literal(${quote(baseSchema.const)})`
+        : literalUnion(baseSchema.enum);
+
+  const nullable = types.includes('null');
   if (!expression && types.length > 1) {
     const branches = types.flatMap((candidate) => {
       if (candidate === 'null') {
@@ -228,29 +237,29 @@ const zodFor = (schema, schemaName) => {
     expression = addArrayConstraints(`z.array(${zodFor(baseSchema.items)})`, baseSchema);
   else if (
     !expression &&
-    (type === 'object' ||
-      baseSchema.properties ||
-      baseSchema.required ||
-      baseSchema.additionalProperties !== undefined)
-  ) {
+    objectLike &&
+    allOf.length === 1 &&
+    allOf[0]?.$ref &&
+    Object.keys(baseSchema.properties ?? {}).length === 0 &&
+    !baseSchema.required?.length
+  )
+    expression = `${refName(allOf[0].$ref)}Schema`;
+  else if (!expression && objectLike) {
     const required = new Set(baseSchema.required ?? []);
-    const propertyNames = new Set([...Object.keys(baseSchema.properties ?? {}), ...required]);
+    const compositionBranches = [...allOf, ...anyOf, ...oneOf];
+    const propertyNames = new Set([
+      ...Object.keys(baseSchema.properties ?? {}),
+      ...required,
+      ...compositionBranches.flatMap((branch) => Object.keys(branch?.properties ?? {})),
+    ]);
     const properties = [...propertyNames].map((name) => {
       const propertySchema =
-        schemaName === 'ObjectRef' && name === 'id' ? {} : baseSchema.properties?.[name];
+        schemaName === 'ObjectRef' && name === 'id' ? {} : (baseSchema.properties?.[name] ?? {});
       const value = zodFor(propertySchema) + (required.has(name) ? '' : '.optional()');
       return `${quote(name)}: ${value}`;
     });
-    const compositionBranches = [...allOf, ...anyOf, ...oneOf];
-    const composedObject =
-      baseSchema.additionalProperties === false &&
-      (properties.length === 0 ||
-        compositionBranches.some((branch) =>
-          Object.keys(branch?.properties ?? {}).some((name) => !propertyNames.has(name)),
-        ));
     expression = `z.object({${properties.join(',')}})`;
-    if (composedObject) expression += '.passthrough()';
-    else if (baseSchema.additionalProperties === false) expression += '.strict()';
+    if (baseSchema.additionalProperties === false) expression += '.strict()';
     else if (typeof baseSchema.additionalProperties === 'object')
       expression += `.catchall(${zodFor(baseSchema.additionalProperties)})`;
     else expression += '.passthrough()';
@@ -260,6 +269,11 @@ const zodFor = (schema, schemaName) => {
     if (baseSchema.minProperties !== undefined)
       expression += `.refine((value) => Object.keys(value).length >= ${baseSchema.minProperties}, { message: 'Object requires at least ${baseSchema.minProperties} properties' })`;
   } else if (!expression) expression = 'z.unknown()';
+
+  if (!scalarLiteral && baseSchema.const !== undefined)
+    expression += `.and(z.literal(${quote(baseSchema.const)}))`;
+  else if (!scalarLiteral && baseSchema.enum)
+    expression += `.and(${literalUnion(baseSchema.enum)})`;
 
   const addBranchIssues = (condition) =>
     `.superRefine((value, context) => { ${condition} for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path as (string | number)[], message: issue.message }); } } })`;
@@ -277,7 +291,7 @@ const zodFor = (schema, schemaName) => {
         ', ',
       )}].filter(Boolean).length; if (matches === 0) context.addIssue({ code: 'custom', message: 'Value must match at least one canonical variant' }); })`;
   }
-  if (oneOf.length) {
+  if (oneOf.length && schemaName !== 'ObjectRef') {
     const branches = oneOf.map((branch) => zodFor(branch));
     expression += `.superRefine((value, context) => { const matches = [${branches
       .map((branch) => `${branch}.safeParse(value).success`)

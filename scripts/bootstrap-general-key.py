@@ -48,7 +48,7 @@ def main() -> int:
         issued_key = issue_access_key(args.label.strip())
         try:
             print(issued_key, flush=True)
-        except (BrokenPipeError, OSError) as error:
+        except (BrokenPipeError, OSError, ValueError) as error:
             key_id = issued_key.split(".", 1)[0][4:]
             try:
                 with ControlSessionLocal.begin() as session:

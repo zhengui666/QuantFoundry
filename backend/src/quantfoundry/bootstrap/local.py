@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import secrets
+import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -103,10 +104,28 @@ def _workspace_seed_values(workspace_id: str) -> dict[str, dict[str, Any] | str]
 def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
     encoded = json.dumps(value, sort_keys=True, indent=2) + "\n"
-    if path.exists() and path.read_text(encoding="utf-8") != encoded:
-        raise RuntimeError(f"refusing to overwrite different local policy: {path}")
-    path.write_text(encoded, encoding="utf-8")
-    path.chmod(0o640)
+    if path.exists():
+        if path.read_text(encoding="utf-8") != encoded:
+            raise RuntimeError(f"refusing to overwrite different local policy: {path}")
+        return
+    _atomic_write(path, encoded)
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    temporary = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+    )
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        temporary_path.chmod(0o640)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def _write_local_dataset(root: Path, dataset_id: str) -> str:
@@ -140,8 +159,8 @@ def _write_local_dataset(root: Path, dataset_id: str) -> str:
     csv_value = "\n".join(rows) + "\n"
     if csv_path.exists() and csv_path.read_text(encoding="utf-8") != csv_value:
         raise RuntimeError(f"refusing to overwrite different local dataset: {csv_path}")
-    csv_path.write_text(csv_value, encoding="utf-8")
-    csv_path.chmod(0o640)
+    if not csv_path.exists():
+        _atomic_write(csv_path, csv_value)
     _write_json(
         root / f"{dataset_id}.metadata.json",
         {
@@ -167,6 +186,8 @@ def seed_local(
     ttl_hours: int = 30 * 24,
     workspace_name: str = "QuantFoundry Local",
 ) -> dict[str, Any]:
+    if not isinstance(session_token, str) or len(session_token) < 32:
+        raise ValueError("session_token must contain at least 32 characters")
     if ttl_hours <= 0:
         raise ValueError("ttl_hours must be positive")
     if not 1 <= len(workspace_name.strip()) <= 128:

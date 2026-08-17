@@ -533,7 +533,11 @@ class OrderRequest:
     schema_version: str = "LIVE_CONNECTOR_V1"
 
     def __post_init__(self) -> None:
-        if not self.client_order_id or len(self.client_order_id) > 160:
+        if (
+            not isinstance(self.client_order_id, str)
+            or not self.client_order_id
+            or len(self.client_order_id) > 160
+        ):
             raise ValueError("client_order_id is invalid")
         if self.schema_version != "LIVE_CONNECTOR_V1":
             raise ValueError("schema_version is invalid")
@@ -731,6 +735,7 @@ class ConnectorClient:
         timeout: float = 10.0,
         http_client: httpx.Client | None = None,
         clock: Callable[[], float] = time.time,
+        monotonic_clock: Callable[[], float] = time.monotonic,
         nonce_factory: Callable[[], str] = lambda: secrets.token_hex(16),
     ) -> None:
         parsed = urlsplit(endpoint)
@@ -762,6 +767,7 @@ class ConnectorClient:
         self._key_id = key_id
         self._credential = credential.encode("utf-8")
         self._clock = clock
+        self._monotonic_clock = monotonic_clock
         self._nonce_factory = nonce_factory
         self._preview_fingerprints: dict[str, tuple[float, str]] = {}
         self._order_fingerprints: dict[tuple[str, str], str] = {}
@@ -913,7 +919,7 @@ class ConnectorClient:
             payload=order.to_wire(),
         )
         validated = _validate_preview_response(result)
-        now = self._clock()
+        now = self._monotonic_clock()
         _purge_expired_fingerprints(self._preview_fingerprints, now)
         self._preview_fingerprints[_order_fingerprint(account_id, order)] = (
             now + 60,
@@ -939,16 +945,16 @@ class ConnectorClient:
             raise ConnectorProtocolError(
                 "client_order_id was reused with a different order payload"
             )
-        self._order_fingerprints[identity] = fingerprint
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
-            _purge_expired_fingerprints(self._preview_fingerprints, self._clock())
+            _purge_expired_fingerprints(self._preview_fingerprints, self._monotonic_clock())
             preview = self._preview_fingerprints.get(fingerprint)
             if (
                 preview is None
-                or preview[0] <= self._clock()
+                or preview[0] <= self._monotonic_clock()
                 or preview[1] != capabilities.content_hash()
             ):
                 raise ConnectorProtocolError("validated margin preview is required")
+        self._order_fingerprints[identity] = fingerprint
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",

@@ -96,12 +96,15 @@ class ActivationEvidence:
         deployment_switch: KillSwitch,
         capabilities: ConnectorCapabilities,
         submission_account_id: str,
+        expected_live_id: str,
         current_approval_state: ApprovalState | None = None,
         current_approval_revision: int | None = None,
         current_connector_revision: int | None = None,
         order: OrderRequest | None = None,
     ) -> None:
-        if confirmation != f"ENABLE LIVE {self.live_id}":
+        if expected_live_id != self.live_id:
+            raise LivePolicyError("activation evidence belongs to another deployment")
+        if confirmation != f"ENABLE LIVE {expected_live_id}":
             raise LivePolicyError("explicit live confirmation is required")
         if self.approval_state != "APPROVED" or self.approval_revision < 1:
             raise LivePolicyError("live approval is not active")
@@ -192,6 +195,11 @@ def apply_fill(
         raise LivePolicyError("fill quantities are invalid")
     if cumulative > quantity:
         raise LivePolicyError("cumulative fill exceeds order quantity")
+    if known_fill_ids and (
+        known_fill_quantities is None
+        or not known_fill_ids <= known_fill_quantities.keys()
+    ):
+        raise LivePolicyError("retained fill IDs lack quantity evidence")
     if fill_id in known_fill_ids:
         if known_fill_quantities is None or fill_id not in known_fill_quantities:
             raise LivePolicyError("duplicate fill has no retained quantity evidence")

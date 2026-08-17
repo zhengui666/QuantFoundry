@@ -247,7 +247,11 @@ run_pr_fast() {
 run_main_full() {
   require_ci_environment
   require_common_tooling
-  run_step p0-registry-snapshot bash -c 'scripts/p0-check.sh docs/治理/p0-blockers.yaml --report'
+  run_step p0-registry-snapshot env \
+    QF_RELEASE_REPO_ROOT="$repo_root" \
+    QF_RELEASE_TRUSTED_VERIFIER_ROOT="$orchestrator_root" \
+    QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_commit" \
+    "$orchestrator_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --offline-report
   run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step full-ci-platform make platform
   run_step full-ci-hygiene make hygiene

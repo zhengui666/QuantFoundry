@@ -37,6 +37,10 @@ def parse_args() -> argparse.Namespace:
             args.instance_id = f"{configured}:{args.queue}" if configured else None
         else:
             args.instance_id = os.getenv("QF_SCHEDULER_ID")
+    if args.instance_id is None:
+        parser.error(
+            "--instance-id or the matching QF_WORKER_ID/QF_SCHEDULER_ID is required"
+        )
     return args
 
 
@@ -55,8 +59,7 @@ def main() -> int:
         RuntimeHeartbeat.occurred_at >= threshold,
         RuntimeHeartbeat.occurred_at <= now,
     )
-    if args.instance_id is not None:
-        statement = statement.where(RuntimeHeartbeat.instance_id == args.instance_id)
+    statement = statement.where(RuntimeHeartbeat.instance_id == args.instance_id)
     if args.queue is not None:
         statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)
     session = SessionLocal()

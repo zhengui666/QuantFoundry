@@ -141,11 +141,26 @@ export function Capability({
     }
   };
   return (
-    <Dialog.Root open={confirmationOpen} onOpenChange={setConfirmationOpen}>
+    <Dialog.Root
+      open={confirmationOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && confirmationPending) return;
+        setConfirmationOpen(nextOpen);
+      }}
+    >
       <Dialog.Trigger asChild>{button}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="decision-dialog" aria-describedby={undefined}>
+        <Dialog.Content
+          className="decision-dialog"
+          aria-describedby={undefined}
+          onEscapeKeyDown={(event) => {
+            if (confirmationPending) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (confirmationPending) event.preventDefault();
+          }}
+        >
           <Dialog.Title>{t('capability.confirm', { action: actionLabel })}</Dialog.Title>
           <p>
             {item.danger_level} · {item.result_mode}
@@ -162,7 +177,7 @@ export function Capability({
             {t('capability.confirmAction')}
           </button>
           <Dialog.Close asChild>
-            <button type="button" className="secondary">
+            <button type="button" className="secondary" disabled={confirmationPending}>
               {t('common.cancel')}
             </button>
           </Dialog.Close>

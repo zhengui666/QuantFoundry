@@ -18,6 +18,8 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError("0011 provider connections supports PostgreSQL and SQLite only")
     if bind.dialect.name == "postgresql":
         bind.execute(sa.text("LOCK TABLE setup_bindings IN ACCESS EXCLUSIVE MODE"))
     elif bind.dialect.name == "sqlite":
@@ -149,14 +151,32 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column(
+            "research_policy_version_status",
+            sa.String(16),
+            nullable=False,
+            server_default="ACTIVE",
+        ),
+        sa.Column(
             "risk_policy_version_id",
             sa.String(),
             nullable=False,
         ),
         sa.Column(
+            "risk_policy_version_status",
+            sa.String(16),
+            nullable=False,
+            server_default="ACTIVE",
+        ),
+        sa.Column(
             "cost_model_version_id",
             sa.String(),
             nullable=False,
+        ),
+        sa.Column(
+            "cost_model_version_status",
+            sa.String(16),
+            nullable=False,
+            server_default="ACTIVE",
         ),
         sa.Column("revision", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -190,19 +210,47 @@ def upgrade() -> None:
             "data_connection_kind = 'DATA'", name="setup_bindings_data_kind"
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "research_policy_version_id"],
-            ["research_policy_versions.workspace_id", "research_policy_versions.id"],
+            [
+                "workspace_id",
+                "research_policy_version_id",
+                "research_policy_version_status",
+            ],
+            [
+                "research_policy_versions.workspace_id",
+                "research_policy_versions.id",
+                "research_policy_versions.status",
+            ],
             name="fk_setup_bindings_research_policy_versions",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "risk_policy_version_id"],
-            ["risk_policy_versions.workspace_id", "risk_policy_versions.id"],
+            ["workspace_id", "risk_policy_version_id", "risk_policy_version_status"],
+            [
+                "risk_policy_versions.workspace_id",
+                "risk_policy_versions.id",
+                "risk_policy_versions.status",
+            ],
             name="fk_setup_bindings_risk_policy_versions",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "cost_model_version_id"],
-            ["cost_model_versions.workspace_id", "cost_model_versions.id"],
+            ["workspace_id", "cost_model_version_id", "cost_model_version_status"],
+            [
+                "cost_model_versions.workspace_id",
+                "cost_model_versions.id",
+                "cost_model_versions.status",
+            ],
             name="fk_setup_bindings_cost_model_versions",
+        ),
+        sa.CheckConstraint(
+            "research_policy_version_status = 'ACTIVE'",
+            name="setup_bindings_research_policy_active",
+        ),
+        sa.CheckConstraint(
+            "risk_policy_version_status = 'ACTIVE'",
+            name="setup_bindings_risk_policy_active",
+        ),
+        sa.CheckConstraint(
+            "cost_model_version_status = 'ACTIVE'",
+            name="setup_bindings_cost_model_active",
         ),
     )
 

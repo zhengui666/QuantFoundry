@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -87,8 +87,6 @@ _NON_BASELINE_AUTO_CHECKS = frozenset(
         "ck_snapshot_partitions_row_count_valid",
         "ck_strategies_status_valid",
         "ck_strategy_versions_state_valid",
-        "ck_users_revision_valid",
-        "ck_users_role_valid",
         "ck_validations_exposure_count_valid",
         "ck_validations_holdout_state_valid",
         "ck_validations_id_valid",
@@ -406,6 +404,8 @@ def _default_value(column: dict[str, Any]) -> Any:
         return uuid7
     if raw == "now()":
         return lambda: datetime.now(UTC)
+    if raw == "now()+interval '7 days'":
+        return lambda: datetime.now(UTC) + timedelta(days=7)
     if raw == "'[]'":
         return list
     if raw == "'{}'":
@@ -588,7 +588,9 @@ def _check_sql(column: dict[str, Any]) -> str | None:
             "revision IS NULL OR object_revision IS NULL OR revision = object_revision"
         )
     if "CHECK false→true monotonic" in text:
-        return f"{name} IN (FALSE, TRUE)"
+        return None
+    if "CHECK normalized email" in text:
+        return f"{name} = lower(trim({name}))"
     if "CHECK parses canonical half-open date range" in text:
         return None
     if "CHECK" in text and any(

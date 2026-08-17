@@ -28,7 +28,7 @@ ps:
 	@docker compose --profile local ps
 
 migrate:
-	@docker compose run --rm migrate
+	@docker compose run --build --rm migrate
 
 format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-known-issues hygiene secrets licenses:
 	@./scripts/ci.sh $@

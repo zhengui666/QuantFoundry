@@ -1143,7 +1143,7 @@ test('P14 executes directly when the server approval capability requires no conf
         approval: approvedDetail,
         subject_ref: {
           type: 'validation',
-          id: detail.subject.id,
+          id: 'VAL-77JDJ6EWBNXK7F83TKMJZAR7XS',
           version: detail.subject.version,
           revision: detail.subject.revision,
         },

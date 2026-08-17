@@ -267,10 +267,18 @@ def upgrade() -> None:
     connection = op.get_bind()
     dialect = connection.dialect.name
     if dialect == "postgresql":
+        connection.execute(sa.text("LOCK TABLE domain_events IN ACCESS EXCLUSIVE MODE"))
         op.execute(
             "DROP TRIGGER IF EXISTS qf_domain_events_update_immutable ON domain_events"
         )
     else:
+        if dialect == "sqlite":
+            if connection.in_transaction():
+                connection.execute(
+                    sa.text("UPDATE domain_events SET sequence = sequence WHERE 0")
+                )
+            else:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
         op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     now = datetime.now(UTC)
     occurred_at_value = (
@@ -305,9 +313,9 @@ def upgrade() -> None:
         elif _valid_existing_object_id(object_type, row["object_id"]):
             object_id = row["object_id"]
         else:
-            object_id = _fallback_object_id(
-                object_type, row["workspace_id"], row["sequence"]
-            )
+            event_type = "system.resync_required"
+            object_type = EVENT_OBJECT_TYPES[event_type]
+            object_id = event_id
         payload = (
             json.dumps(
                 {"state": "RESYNC_REQUIRED", "status": None},
@@ -364,6 +372,14 @@ def upgrade() -> None:
         batch.create_check_constraint(
             "domain_events_event_type_check",
             f"event_type IN ({quoted})",
+        )
+        object_mapping = " OR ".join(
+            f"(event_type = '{event_type}' AND object_type = '{object_type}')"
+            for event_type, object_type in EVENT_OBJECT_TYPES.items()
+        )
+        batch.create_check_constraint(
+            "domain_events_event_object_type_check",
+            object_mapping,
         )
     if dialect == "postgresql":
         op.execute(

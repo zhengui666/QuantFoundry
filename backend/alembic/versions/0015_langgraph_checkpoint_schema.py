@@ -119,10 +119,17 @@ def _validate_existing_schema(bind: Any) -> None:
                 raise RuntimeError(
                     f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} has an incompatible type/nullability"
                 )
-            if requires_default and column.get("default") is None:
-                raise RuntimeError(
-                    f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} is missing its required default"
+            if requires_default:
+                actual_default = str(column.get("default") or "").replace(" ", "").lower()
+                expected_defaults = (
+                    {"''", "''::text", "''::character varying"}
+                    if column["name"] != "metadata"
+                    else {"'{}'::jsonb"}
                 )
+                if actual_default not in expected_defaults:
+                    raise RuntimeError(
+                        f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} has an incompatible default"
+                    )
     try:
         versions = {
             int(value)

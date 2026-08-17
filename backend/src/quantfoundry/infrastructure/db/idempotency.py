@@ -77,6 +77,31 @@ def _json_response(status: int, path: str, payload: dict[str, Any]) -> JSONRespo
     )
 
 
+def _request_hashes(request: dict[str, Any]) -> set[str]:
+    candidates = request.get("__qf_fingerprint_candidates__")
+    if not isinstance(candidates, list) or not candidates or not isinstance(
+        request.get("credential_fingerprint"), str
+    ):
+        return {
+            hashlib.sha256(
+                json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+        }
+    base = {key: value for key, value in request.items() if key != "__qf_fingerprint_candidates__"}
+    hashes: set[str] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        value = dict(base)
+        value["credential_fingerprint"] = candidate
+        hashes.add(
+            hashlib.sha256(
+                json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+        )
+    return hashes
+
+
 def _takeover_is_safe(record: Any) -> bool:
     """Prove that a stale PROCESSING record has no committed side effect evidence."""
 
@@ -134,9 +159,10 @@ def _execute(
         raise fail(428, "PRECONDITION_REQUIRED", "Idempotency-Key required")
     if not 20 <= len(key) <= 128:
         raise fail(422, "INVALID_REQUEST", "Idempotency-Key length must be 20..128")
-    request_hash = hashlib.sha256(
-        json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    request_hashes = _request_hashes(request)
+    if not request_hashes:
+        raise fail(422, "INVALID_REQUEST", "request fingerprint is invalid")
+    request_hash = next(iter(request_hashes))
     method = method.upper()
     lease_owner_id = uuid.uuid4().hex
     try:
@@ -150,7 +176,7 @@ def _execute(
                 raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
 
         def resolve_existing(existing: Any, current_time: datetime) -> Any:
-            if existing.request_hash != request_hash:
+            if existing.request_hash not in request_hashes:
                 session.rollback()
                 raise fail(409, "IDEMPOTENCY_CONFLICT", None)
             if existing.state == "SUCCEEDED":
@@ -236,10 +262,23 @@ def _execute(
                     return replay
 
         session.info["qf_idempotency_operation_active"] = True
+        root_transaction = session.get_transaction()
+        original_rollback = session.rollback
+        original_close = session.close
+
+        def reject_transaction_reset(*_: Any, **__: Any) -> None:
+            raise RuntimeError("idempotency operation must not reset its session")
+
+        session.rollback = reject_transaction_reset  # type: ignore[method-assign]
+        session.close = reject_transaction_reset  # type: ignore[method-assign]
         try:
             status, payload = operation()
         finally:
+            session.rollback = original_rollback  # type: ignore[method-assign]
+            session.close = original_close  # type: ignore[method-assign]
             session.info.pop("qf_idempotency_operation_active", None)
+        if session.get_transaction() is not root_transaction:
+            raise RuntimeError("idempotency operation replaced its root transaction")
         completed_at = _database_now(session)
         response = json.dumps(
             payload,

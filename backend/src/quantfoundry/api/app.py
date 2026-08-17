@@ -109,6 +109,7 @@ from quantfoundry.infrastructure.crypto.provider_credentials import (
     CredentialConfigurationError,
     credential_aad,
     credential_fingerprint,
+    credential_fingerprint_candidates,
     decrypt_credential,
     encrypt_credential,
     encryption_is_configured,
@@ -433,6 +434,12 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
     role = Column(String, nullable=False, default="OWNER")
     revision = Column(Integer, nullable=False, default=1)
+
+
+@event.listens_for(User, "before_insert")
+@event.listens_for(User, "before_update")
+def _normalize_user_email(_mapper: Any, _connection: Any, target: User) -> None:
+    target.email = target.email.strip().lower()
 
 
 class Workspace(Base):
@@ -3635,11 +3642,16 @@ def validate_live_connector(
     payload = data.model_dump(mode="json", exclude_unset=True)
     try:
         fingerprint = credential_fingerprint(data.credential)
+        fingerprint_candidates = list(
+            credential_fingerprint_candidates(data.credential).values()
+        )
     except CredentialConfigurationError:
         fingerprint = "credential-key-unavailable"
+        fingerprint_candidates = []
     redacted = {
         **{key: value for key, value in payload.items() if key != "credential"},
         "credential_fingerprint": fingerprint,
+        "__qf_fingerprint_candidates__": fingerprint_candidates,
     }
 
     def operation():
@@ -3886,11 +3898,16 @@ def validate_setup_provider_connection(
 
     try:
         fingerprint = credential_fingerprint(payload["credential"])
+        fingerprint_candidates = list(
+            credential_fingerprint_candidates(payload["credential"]).values()
+        )
     except CredentialConfigurationError:
         fingerprint = "credential-key-unavailable"
+        fingerprint_candidates = []
     redacted = {
         **{key: value for key, value in payload.items() if key != "credential"},
         "credential_fingerprint": fingerprint,
+        "__qf_fingerprint_candidates__": fingerprint_candidates,
     }
     return idem(
         s,

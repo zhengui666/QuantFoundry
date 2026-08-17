@@ -17,18 +17,24 @@ depends_on = None
 
 
 def upgrade() -> None:
-    null_count = (
-        op.get_bind()
-        .execute(
-            sa.text("SELECT COUNT(*) FROM data_sources WHERE workspace_id IS NULL")
-        )
-        .scalar_one()
-    )
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        bind.execute(sa.text("LOCK TABLE data_sources IN ACCESS EXCLUSIVE MODE"))
+    elif bind.dialect.name == "sqlite":
+        if bind.in_transaction():
+            bind.execute(
+                sa.text("UPDATE data_sources SET workspace_id = workspace_id WHERE 0")
+            )
+        else:
+            bind.exec_driver_sql("BEGIN IMMEDIATE")
+    null_count = bind.execute(
+        sa.text("SELECT COUNT(*) FROM data_sources WHERE workspace_id IS NULL")
+    ).scalar_one()
     if null_count:
         raise RuntimeError(
             "0009 refuses to invent data-source ownership for unscoped rows"
         )
-    dialect = op.get_bind().dialect.name
+    dialect = bind.dialect.name
     naming = {"pk": "pk_%(table_name)s"}
     with op.batch_alter_table(
         "data_sources", naming_convention=naming if dialect == "sqlite" else None

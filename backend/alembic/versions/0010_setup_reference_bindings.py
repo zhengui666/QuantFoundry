@@ -186,34 +186,18 @@ def upgrade() -> None:
             name="setup_bindings_ai_connection_kind",
         ),
         sa.ForeignKeyConstraint(
-            [
-                "workspace_id",
-                "research_policy_version_id",
-                "research_policy_version_status",
-            ],
-            [
-                "research_policy_versions.workspace_id",
-                "research_policy_versions.id",
-                "research_policy_versions.status",
-            ],
+            ["workspace_id", "research_policy_version_id"],
+            ["research_policy_versions.workspace_id", "research_policy_versions.id"],
             name="fk_setup_bindings_research_policy_versions",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "risk_policy_version_id", "risk_policy_version_status"],
-            [
-                "risk_policy_versions.workspace_id",
-                "risk_policy_versions.id",
-                "risk_policy_versions.status",
-            ],
+            ["workspace_id", "risk_policy_version_id"],
+            ["risk_policy_versions.workspace_id", "risk_policy_versions.id"],
             name="fk_setup_bindings_risk_policy_versions",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "cost_model_version_id", "cost_model_version_status"],
-            [
-                "cost_model_versions.workspace_id",
-                "cost_model_versions.id",
-                "cost_model_versions.status",
-            ],
+            ["workspace_id", "cost_model_version_id"],
+            ["cost_model_versions.workspace_id", "cost_model_versions.id"],
             name="fk_setup_bindings_cost_model_versions",
         ),
         sa.CheckConstraint(

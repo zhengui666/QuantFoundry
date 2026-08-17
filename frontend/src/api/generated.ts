@@ -3,6 +3,19 @@
  * Do not make direct changes to the file.
  */
 
+type CanonicalPublicId<Prefix extends string> = `${Prefix}-${string}`;
+type ConfigurationValue = string | number | boolean | Record<string, unknown> | unknown[] | null;
+type StrictConfigurationValueWrite =
+  | { key: string; value: ConfigurationValue; secret?: never }
+  | { key: string; secret: string; value?: never };
+type ObjectRefFor<Type extends string, Prefix extends string> = {
+  type: Type;
+  id: CanonicalPublicId<Prefix>;
+  version: number | null;
+  revision: number;
+};
+type StrictObjectRef = ObjectRefFor<"research_policy", "RP"> | ObjectRefFor<"risk_policy", "RISK"> | ObjectRefFor<"cost_model", "COST"> | ObjectRefFor<"credential", "CRED"> | ObjectRefFor<"capability", "CAP"> | ObjectRefFor<"dataset", "DSSET"> | ObjectRefFor<"snapshot", "DS"> | ObjectRefFor<"data_quality_run", "DQ"> | ObjectRefFor<"data_quality_issue", "DQI"> | ObjectRefFor<"research", "RSCH"> | ObjectRefFor<"evidence", "EVID"> | ObjectRefFor<"conclusion", "CONC"> | ObjectRefFor<"experiment", "EXP"> | ObjectRefFor<"factor", "FCTR"> | ObjectRefFor<"strategy", "STRAT"> | ObjectRefFor<"validation", "VAL"> | ObjectRefFor<"exposure", "EXPO"> | ObjectRefFor<"red_team_run", "RTRUN"> | ObjectRefFor<"portfolio", "PORT"> | ObjectRefFor<"memo", "MEMO"> | ObjectRefFor<"approval", "APPR"> | ObjectRefFor<"paper", "PAPER"> | ObjectRefFor<"paper_run", "PRUN"> | ObjectRefFor<"paper_order", "PORD"> | ObjectRefFor<"paper_fill", "PFILL"> | ObjectRefFor<"review", "REV"> | ObjectRefFor<"agent_run", "ARUN"> | ObjectRefFor<"tool_call", "TCALL"> | ObjectRefFor<"job", "JOB"> | ObjectRefFor<"domain_event", "EVT"> | ObjectRefFor<"audit_event", "AUD"> | ObjectRefFor<"artifact", "ART"> | ObjectRefFor<"notification", "NOTIF"> | ObjectRefFor<"provenance", "PROV">;
+
 export interface paths {
     "/system/health": {
         parameters: {
@@ -1232,17 +1245,7 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        ConfigurationValueWrite: {
-            key: string;
-        } & ({
-            key: string;
-            value: string | number | boolean | {
-                [key: string]: unknown;
-            } | unknown[] | null;
-        } | {
-            key: string;
-            secret: string;
-        });
+        ConfigurationValueWrite: StrictConfigurationValueWrite;
         ConfigurationValueView: {
             key: string;
             /** @enum {unknown} */
@@ -1464,14 +1467,7 @@ export interface components {
             danger_level: "NORMAL" | "STATE_CHANGE" | "IRREVERSIBLE" | "CAPITAL_GATE";
         };
         /** @description Public-resource reference only. Object id is an exact high-entropy globally unique public semantic ID; type selects the only legal prefix schema. Event/audit special locators (strategy_version, settings, provider_connection, agent_config, event_stream) are deliberately not added to these 34 public types. The server MUST resolve and authorize it inside the installation's fixed singleton namespace. */
-        ObjectRef: {
-            /** @enum {unknown} */
-            type: "research_policy" | "risk_policy" | "cost_model" | "credential" | "capability" | "dataset" | "snapshot" | "data_quality_run" | "data_quality_issue" | "research" | "evidence" | "conclusion" | "experiment" | "factor" | "strategy" | "validation" | "exposure" | "red_team_run" | "portfolio" | "memo" | "approval" | "paper" | "paper_run" | "paper_order" | "paper_fill" | "review" | "agent_run" | "tool_call" | "job" | "domain_event" | "audit_event" | "artifact" | "notification" | "provenance";
-            id: (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string) | (string);
-            version: number | null;
-            revision: number;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
-        /** @description id is globally unique but remains authorized to the fixed installation namespace; hash equality never grants object access. */
+        ObjectRef: StrictObjectRef;
         VersionedHashRef: {
             id: (string) | (string) | (string);
             version: number;
@@ -4348,6 +4344,7 @@ export interface operations {
             };
             401: components["responses"]["Problem401"];
             403: components["responses"]["Problem403"];
+            404: components["responses"]["Problem404"];
             409: components["responses"]["Problem409"];
             412: components["responses"]["Problem412"];
             422: components["responses"]["Problem422"];
@@ -4448,6 +4445,7 @@ export interface operations {
             404: components["responses"]["Problem404"];
             409: components["responses"]["Problem409"];
             422: components["responses"]["Problem422"];
+            428: components["responses"]["Problem428"];
             429: components["responses"]["Problem429"];
         };
     };

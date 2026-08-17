@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 import jsonschema
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import ValidationError as PydanticValidationError
@@ -191,7 +191,15 @@ class CanonicalRoute(APIRoute):
 
                 return invalid_request_response(request, error)
 
-            response = await original(request)
+            try:
+                response = await original(request)
+            except HTTPException as error:
+                exception_handler = request.app.exception_handlers.get(
+                    type(error), request.app.exception_handlers.get(HTTPException)
+                )
+                if exception_handler is None:
+                    raise
+                response = await exception_handler(request, error)
             raw_declared = operation.get("responses", {}).get(str(response.status_code))
             if raw_declared is None:
                 return _problem(
