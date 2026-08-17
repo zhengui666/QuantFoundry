@@ -31,7 +31,9 @@ const operationCount = Object.values(document.paths ?? {}).reduce(
 if (operationCount !== document.info?.['x-quantfoundry-operation-count'])
   throw new Error(`Canonical operation metadata does not match paths: ${operationCount}`);
 if (Object.keys(schemas).length !== document.info?.['x-quantfoundry-schema-count'])
-  throw new Error(`Canonical schema metadata does not match components: ${Object.keys(schemas).length}`);
+  throw new Error(
+    `Canonical schema metadata does not match components: ${Object.keys(schemas).length}`,
+  );
 if (schemas.CanonicalErrorCode?.enum?.length !== document.info?.['x-quantfoundry-error-count'])
   throw new Error(
     `Expected 75 canonical errors, found ${schemas.CanonicalErrorCode?.enum?.length}`,
@@ -232,12 +234,11 @@ const zodFor = (schema, schemaName) => {
 
   if (schemaName === 'ExperimentSearchRangeDimension')
     expression += `.superRefine((value, context) => {
-      const minimum = Number(value.minimum);
-      const maximum = Number(value.maximum);
-      const step = Number(value.step);
-      if (!(minimum < maximum)) context.addIssue({ code: 'custom', message: 'minimum must be less than maximum' });
-      if (!(step > 0)) context.addIssue({ code: 'custom', message: 'step must be positive' });
-      if (value.value_type === 'INTEGER' && ![minimum, maximum, step].every(Number.isInteger))
+      if (compareCanonicalDecimal(value.minimum, value.maximum) >= 0)
+        context.addIssue({ code: 'custom', message: 'minimum must be less than maximum' });
+      if (compareCanonicalDecimal(value.step, '0') <= 0)
+        context.addIssue({ code: 'custom', message: 'step must be positive' });
+      if (value.value_type === 'INTEGER' && ![value.minimum, value.maximum, value.step].every(isCanonicalInteger))
         context.addIssue({ code: 'custom', message: 'INTEGER ranges require integral bounds and step' });
     })`;
   if (schemaName === 'SetupStatus')
@@ -479,9 +480,14 @@ const publicIdExampleObject = publicIdEntries
   })
   .join(',');
 const anyPublicIdUnion = publicIdEntries.map(([name]) => `${pascalCase(name)}IdSchema`).join(',');
-const output = await format(
-  `// Generated from canonical openapi-v1.yaml. Do not edit.\nimport { z } from 'zod';\n${publicIdDeclarations}\nexport const PublicIdSchemas = {${publicIdSchemaObject}} as const;\nexport const PublicIdExamples = {${publicIdExampleObject}} as const;\nexport type PublicIdType = keyof typeof PublicIdSchemas;\nexport const AnyPublicSemanticIdSchema = z.union([${anyPublicIdUnion}]);\n${eventObjectDeclarations}\n${declarations}\n`,
-  { parser: 'typescript', printWidth: 100, singleQuote: true, trailingComma: 'all' },
+const output = (
+  await format(
+    `// Generated from canonical openapi-v1.yaml. Do not edit.\nimport { z } from 'zod';\n\nconst normalizeCanonicalDecimal = (value: string) => {\n  const [integer, fraction = ''] = value.split('.');\n  const negative = integer.startsWith('-');\n  const digits = (negative ? integer.slice(1) : integer).replace(/^0+(?=\\d)/, '');\n  const trimmedFraction = fraction.replace(/0+$/, '');\n  return {\n    negative: (negative && (digits !== '0' || trimmedFraction !== '')),\n    integer: digits,\n    fraction: trimmedFraction,\n  };\n};\nconst compareCanonicalDecimal = (left: string, right: string) => {\n  const a = normalizeCanonicalDecimal(left);\n  const b = normalizeCanonicalDecimal(right);\n  if (a.negative !== b.negative) return a.negative ? -1 : 1;\n  const sign = a.negative ? -1 : 1;\n  if (a.integer.length !== b.integer.length) return (a.integer.length - b.integer.length) * sign;\n  if (a.integer !== b.integer) return (a.integer < b.integer ? -1 : 1) * sign;\n  const width = Math.max(a.fraction.length, b.fraction.length);\n  const af = a.fraction.padEnd(width, '0');\n  const bf = b.fraction.padEnd(width, '0');\n  return (af === bf ? 0 : af < bf ? -1 : 1) * sign;\n};\nconst isCanonicalInteger = (value: string) => !normalizeCanonicalDecimal(value).fraction;\n${publicIdDeclarations}\nexport const PublicIdSchemas = {${publicIdSchemaObject}} as const;\nexport const PublicIdExamples = {${publicIdExampleObject}} as const;\nexport type PublicIdType = keyof typeof PublicIdSchemas;\nexport const AnyPublicSemanticIdSchema = z.union([${anyPublicIdUnion}]);\n${eventObjectDeclarations}\n${declarations}\n`,
+    { parser: 'typescript', printWidth: 100, singleQuote: true, trailingComma: 'all' },
+  )
+).replace(
+  "const [integer, fraction = ''] = value.split('.');",
+  "const [integer = '', fraction = ''] = value.split('.');",
 );
 
 if (process.argv.includes('--check')) {

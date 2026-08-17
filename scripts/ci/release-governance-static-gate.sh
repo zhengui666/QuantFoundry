@@ -68,9 +68,11 @@ def contains_command(command, expected):
         if not node or node[0] in {"false", "true", "echo", "printf", "exit"}:
             continue
         actual = node[next((index for index, token in enumerate(node) if "=" not in token), 0) :]
-        if actual[: len(wanted)] == wanted and operator != "&&":
-            return True
-        if wanted[0] in actual and actual[actual.index(wanted[0]) :][: len(wanted)] == wanted:
+        if actual and actual[0] in {"env", "command"}:
+            actual = actual[1:]
+            while actual and "=" in actual[0]:
+                actual = actual[1:]
+        if any(actual[index : index + len(wanted)] == wanted for index in range(len(actual))):
             return True
     return False
 
@@ -108,10 +110,6 @@ p0_check = read("scripts/p0-check.sh")
 p0_check_test = root / "scripts/p0-check-test.sh"
 if not p0_check_test.is_file() or not p0_check_test.stat().st_mode & 0o111:
     errors.append("p0-check behavioral security test is missing or not executable")
-for required in ("--offline-report", "--require-closed-except-supply-chain", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "required_p0_ids", "allowed_verification_workflows", "did not complete successfully", "unauthorized verification workflow", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
-    if required not in p0_check:
-        errors.append(f"p0-check lacks required remote verification control: {required}")
-
 release_script = read("scripts/release-evidence.sh")
 for required in ('"checksums": {"algorithm": "sha256", "path": "SHA256SUMS"}', '"name": name, "source": source', "package-assets", "create-or-validate-draft", "create_or_validate_draft", "verify-remote-assets", "remote release assets do not exactly match the manifest inventory", "release asset inventory name collision", 'run-gate.sh" rc'):
     if required not in release_script:

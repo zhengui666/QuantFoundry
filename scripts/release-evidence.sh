@@ -78,8 +78,32 @@ def get(path, media_type=accept, expected_digest=None):
         f"{registry}/v2/{repository}/{path}",
         headers={"Authorization": f"Bearer {token}", "Accept": media_type},
     )
-    with urllib.request.urlopen(request) as response:
-        payload = response.read()
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, request, response, code, msg, headers, new):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        with opener.open(request) as response:
+            payload = response.read()
+    except urllib.error.HTTPError as error:
+        if error.code not in {301, 302, 303, 307, 308}:
+            raise
+        location = error.headers.get("Location")
+        redirect_url = urllib.parse.urljoin(request.full_url, location or "")
+        parsed = urllib.parse.urlparse(redirect_url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
+            raise SystemExit("unsafe registry redirect") from error
+        redirect_request = urllib.request.Request(
+            redirect_url, headers={"Accept": media_type}
+        )
+        with opener.open(redirect_request) as response:
+            payload = response.read()
     if expected_digest and hashlib.sha256(payload).hexdigest() != expected_digest.removeprefix("sha256:"):
         raise SystemExit(f"registry digest mismatch for {path}")
     return payload
@@ -173,6 +197,9 @@ tag, commit, backend_image, backend_digest, frontend_image, frontend_digest, run
 repository = os.environ.get("GITHUB_REPOSITORY")
 if not repository:
     raise SystemExit("GITHUB_REPOSITORY is required for structured image evidence binding")
+commit_file = output / "commit.txt"
+if not commit_file.is_file() or commit_file.read_text(encoding="utf-8").strip() != commit:
+    raise SystemExit("release evidence commit.txt is not bound to the requested commit")
 
 
 def statements(value):

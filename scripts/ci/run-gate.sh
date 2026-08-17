@@ -79,6 +79,11 @@ run_step() {
   shift
   local command_text
   command_text="$(printf '%q ' "$@")"
+  for secret in "${QF_DATABASE_URL:-}" "${QF_ALEMBIC_URL:-}" "${QF_POSTGRES_PASSWORD:-}"; do
+    if [[ -n "$secret" ]]; then
+      command_text="${command_text//$secret/[REDACTED]}"
+    fi
+  done
   local status=0
   set +e
   (cd "$repo_root" && "$@") >"$report_dir/logs/$name.log" 2>&1

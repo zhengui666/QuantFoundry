@@ -9,6 +9,7 @@ import os
 import time
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from hmac import compare_digest
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -29,7 +30,9 @@ def ensure_fullstack_compat_setup() -> None:
         SetupBindingRow,
     )
     from quantfoundry.infrastructure.crypto.provider_credentials import (
+        CredentialConfigurationError,
         credential_aad,
+        decrypt_credential,
         encrypt_credential,
     )
     from quantfoundry.infrastructure.db.schema import canonical_workspace_id
@@ -52,6 +55,26 @@ def ensure_fullstack_compat_setup() -> None:
             )
             .order_by(ModelProviderConnectionRow.validated_at.desc())
         )
+        if ai is not None:
+            try:
+                stored_credential = decrypt_credential(
+                    ai.ciphertext,
+                    ai.nonce,
+                    ai.key_id,
+                    aad=credential_aad(
+                        connection_id=ai.id,
+                        workspace_id=workspace_id,
+                        actor_id=owner_id,
+                        provider_id=ai.provider_id,
+                        model_name=ai.model_name,
+                    ),
+                )
+            except CredentialConfigurationError:
+                stored_credential = None
+            if stored_credential is None or not compare_digest(
+                stored_credential, credential
+            ):
+                ai = None
         if ai is None:
             connection_id = str(uuid.uuid4())
             ciphertext, nonce, key_id = encrypt_credential(

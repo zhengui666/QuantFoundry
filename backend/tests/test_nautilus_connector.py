@@ -99,11 +99,11 @@ def test_nautilus_port_maps_canonical_submit_and_cancel() -> None:
     submit = port.calls[1]
     assert submit["method"] == "POST"
     assert submit["path"] == "/v1/accounts/acct-1/orders"
-    assert submit["idempotency_key"] == "acct-1:LORD-NT-1"
+    assert submit["idempotency_key"] == "submit:6:acct-1:9:LORD-NT-1"
     assert submit["payload"]["schema_version"] == "LIVE_CONNECTOR_V1"
     cancel = port.calls[2]
     assert cancel["path"].endswith("/orders/b-1/cancel")
-    assert cancel["idempotency_key"] == "acct-1:cancel:b-1"
+    assert cancel["idempotency_key"] == "cancel:6:acct-1:3:b-1"
 
 
 def test_nautilus_port_preserves_unknown_submit_outcome() -> None:

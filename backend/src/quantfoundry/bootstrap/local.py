@@ -154,6 +154,8 @@ def seed_local(
     session_token: str,
     ttl_hours: int = 30 * 24,
 ) -> dict[str, Any]:
+    if ttl_hours <= 0:
+        raise ValueError("ttl_hours must be positive")
     workspace_id = canonical_workspace_id(workspace_id)
     cost_root = Path(os.environ["QF_COST_MODEL_DIR"])
     policy_root = Path(os.environ["QF_POLICY_DIR"])
@@ -322,7 +324,8 @@ def seed_local(
                 for field, expected_value in expected.items()
             ):
                 raise RuntimeError("local policy row has conflicting immutable binding")
-        if session.get(DataSource, (dataset_id, workspace_id)) is None:
+        data_source = session.get(DataSource, (dataset_id, workspace_id))
+        if data_source is None:
             session.add(
                 DataSource(
                     id=dataset_id,
@@ -332,6 +335,12 @@ def seed_local(
                     revision=1,
                 )
             )
+        elif (
+            data_source.provider_id != "LOCAL_DETERMINISTIC_DATA"
+            or data_source.status != "ACTIVE"
+            or data_source.revision != 1
+        ):
+            raise RuntimeError("local data source has conflicting immutable binding")
         token_sha256 = hashlib.sha256(session_token.encode()).hexdigest()
         existing_token = session.get(SessionToken, token_sha256)
         if existing_token is None:
@@ -364,9 +373,12 @@ def seed_local(
             select(ResearchPolicyVersionRow).where(
                 ResearchPolicyVersionRow.workspace_id == workspace_id,
                 ResearchPolicyVersionRow.policy_family == "research",
+                ResearchPolicyVersionRow.policy_id == research_policy["policy_id"],
                 ResearchPolicyVersionRow.status == "ACTIVE",
             )
-        ).scalar_one()
+        ).scalar_one_or_none()
+        if active_policy is None:
+            raise RuntimeError("seeded research policy is not active")
         session.commit()
     except Exception:
         session.rollback()

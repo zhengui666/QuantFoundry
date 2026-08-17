@@ -27,7 +27,7 @@ fi
 
 set +e
 git -C "$repo_root" grep -q -I -E -i \
-  'github_pat_[a-z0-9_]{20,}|ghp_[a-z0-9]{30,}|xox[baprs]-[a-z0-9-]{20,}|-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----' \
+  'github_pat_[a-z0-9_]{20,}|gh[pousr]_[a-z0-9]{20,}|glpat-[a-z0-9_-]{20,}|xox[baprs]-[a-z0-9-]{20,}|npm_[a-z0-9]{20,}|(akia|asia)[a-z0-9]{16}|sk-[a-z0-9_-]{20,}|eyj[a-z0-9_-]{20,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}|-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----' \
   -- .
 secret_scan_status=$?
 set -e

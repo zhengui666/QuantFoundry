@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 
 from cryptography.exceptions import InvalidTag
@@ -24,8 +25,12 @@ class CredentialConfigurationError(RuntimeError):
 
 def _decode_key(key_id: str, encoded: str) -> bytes:
     try:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", encoded):
+            raise ValueError("invalid URL-safe base64 alphabet")
         padded = encoded + "=" * (-len(encoded) % 4)
-        key = base64.urlsafe_b64decode(padded.encode("ascii"))
+        key = base64.b64decode(
+            padded.encode("ascii"), altchars=b"-_", validate=True
+        )
     except (UnicodeEncodeError, binascii.Error, ValueError) as error:
         raise CredentialConfigurationError(
             f"provider credential key is invalid: {key_id}"
@@ -128,5 +133,10 @@ def decrypt_credential(
 def credential_fingerprint(credential: str) -> str:
     """Keyed request identity; unlike raw SHA-256 it resists offline guessing."""
 
-    _key_id, key = _master_key()
+    encoded = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEY", "").strip()
+    if not encoded:
+        raise CredentialConfigurationError(
+            "provider credential fingerprint key is not configured"
+        )
+    key = _decode_key("fingerprint", encoded)
     return hmac.new(key, credential.encode("utf-8"), hashlib.sha256).hexdigest()

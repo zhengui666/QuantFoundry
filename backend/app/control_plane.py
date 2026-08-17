@@ -48,8 +48,8 @@ from sqlalchemy import (
     text,
     update,
 )
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import URL
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 try:
@@ -463,6 +463,8 @@ def _replay_after_key_rotation(
     request: Request, operation: str, key: str, fingerprint: str
 ) -> Response | None:
     """Replay a completed rotation response before checking the retired key."""
+    if operation != "rotateGeneralAccessKey":
+        return None
     cookie = request.cookies.get(SESSION_COOKIE)
     if not cookie:
         return None
@@ -473,9 +475,17 @@ def _replay_after_key_rotation(
             )
         )
         state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+        access_key = (
+            db.get(GeneralAccessKey, session_row.access_key_id)
+            if session_row is not None
+            else None
+        )
         now = _now()
         if (
             session_row is None
+            or access_key is None
+            or access_key.status != "REVOKED"
+            or access_key.revoked_at is None
             or session_row.revoked_at is not None
             or (state is not None and session_row.auth_epoch != state.auth_epoch)
             or (_aware(session_row.absolute_expires_at) or now) <= now
@@ -1622,6 +1632,18 @@ def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> Non
         previous_engine, "_qf_domain_revision", None
     )
     _dispose_engine(candidate_engine)
+
+
+def _schedule_domain_switch_cleanup(previous_engine: Any, candidate_engine: Any) -> None:
+    post_commit = _IDEMPOTENCY_POST_COMMIT.get()
+    rollback = _IDEMPOTENCY_ROLLBACK.get()
+    if post_commit is None or rollback is None:
+        _dispose_engine(previous_engine)
+        return
+    post_commit.append(lambda: _dispose_engine(previous_engine))
+    rollback.append(
+        lambda: _restore_domain_database(previous_engine, candidate_engine)
+    )
 
 
 def restore_active_domain_database() -> None:
@@ -2996,10 +3018,6 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        previous_engine = None
-        candidate_engine = None
-        restored = False
-        switched = False
         try:
             with _control_transaction() as db:
                 active = db.scalar(
@@ -3040,7 +3058,7 @@ def build_router() -> APIRouter:
                     previous_engine, candidate_engine = _rebind_domain_database(
                         candidate
                     )
-                    switched = True
+                    _schedule_domain_switch_cleanup(previous_engine, candidate_engine)
                 except (
                     SQLAlchemyError,
                     OSError,
@@ -3054,52 +3072,40 @@ def build_router() -> APIRouter:
                     return _problem(
                         409, "DATABASE_SWITCH_FAILED", "database canary failed"
                     )
-                try:
-                    now = _now()
-                    if active is not None:
-                        active.state = "SUPERSEDED"
-                    candidate.state = "ACTIVE"
-                    candidate.activated_at = now
-                    state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
-                    if state is not None:
-                        state.active_database_connection_revision = candidate.revision
-                        state.last_known_good_database_connection_revision = (
-                            active.revision if active else candidate.revision
-                        )
-                        state.readiness_state = "READY"
-                        state.updated_at = now
-                    _audit(
-                        db,
-                        "DATABASE_ACTIVATED",
-                        current.access_key_id if current else None,
-                        {"revision": candidate.revision},
-                        session_id=current.session_id if current else None,
-                        db_revision=candidate.revision,
+                now = _now()
+                if active is not None:
+                    active.state = "SUPERSEDED"
+                candidate.state = "ACTIVE"
+                candidate.activated_at = now
+                state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+                if state is not None:
+                    state.active_database_connection_revision = candidate.revision
+                    state.last_known_good_database_connection_revision = (
+                        active.revision if active else candidate.revision
                     )
-                    payload = {
-                        "state": "READY",
-                        "active_revision": candidate.revision,
-                        "candidate_revision": None,
-                        "last_known_good_revision": active.revision
-                        if active
-                        else candidate.revision,
-                        "active": _database_candidate_view(candidate),
-                        "candidate": None,
-                        "domain_operations": "AVAILABLE",
-                        "checked_at": now,
-                    }
-                    response.headers["ETag"] = f'W/"database:{candidate.revision}"'
-                except (
-                    SQLAlchemyError,
-                    OSError,
-                    ValueError,
-                    KeyError,
-                    TypeError,
-                    RuntimeError,
-                ):
-                    _restore_domain_database(previous_engine, candidate_engine)
-                    restored = True
-                    raise
+                    state.readiness_state = "READY"
+                    state.updated_at = now
+                _audit(
+                    db,
+                    "DATABASE_ACTIVATED",
+                    current.access_key_id if current else None,
+                    {"revision": candidate.revision},
+                    session_id=current.session_id if current else None,
+                    db_revision=candidate.revision,
+                )
+                payload = {
+                    "state": "READY",
+                    "active_revision": candidate.revision,
+                    "candidate_revision": None,
+                    "last_known_good_revision": active.revision
+                    if active
+                    else candidate.revision,
+                    "active": _database_candidate_view(candidate),
+                    "candidate": None,
+                    "domain_operations": "AVAILABLE",
+                    "checked_at": now,
+                }
+                response.headers["ETag"] = f'W/"database:{candidate.revision}"'
         except (
             SQLAlchemyError,
             OSError,
@@ -3108,16 +3114,7 @@ def build_router() -> APIRouter:
             TypeError,
             RuntimeError,
         ):
-            if (
-                switched
-                and not restored
-                and previous_engine is not None
-                and candidate_engine is not None
-            ):
-                _restore_domain_database(previous_engine, candidate_engine)
             raise
-        if previous_engine is not None:
-            _dispose_engine(previous_engine)
         return payload
 
     @router.post(
@@ -3138,10 +3135,6 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        previous_engine = None
-        candidate_engine = None
-        switched = False
-        restored = False
         try:
             with _control_transaction() as db:
                 active = db.scalar(
@@ -3178,7 +3171,7 @@ def build_router() -> APIRouter:
                     )
                 try:
                     previous_engine, candidate_engine = _rebind_domain_database(lkg)
-                    switched = True
+                    _schedule_domain_switch_cleanup(previous_engine, candidate_engine)
                 except (
                     SQLAlchemyError,
                     OSError,
@@ -3224,17 +3217,7 @@ def build_router() -> APIRouter:
             TypeError,
             RuntimeError,
         ):
-            if (
-                switched
-                and not restored
-                and previous_engine is not None
-                and candidate_engine is not None
-            ):
-                _restore_domain_database(previous_engine, candidate_engine)
-                restored = True
             raise
-        if previous_engine is not None:
-            _dispose_engine(previous_engine)
         return payload
 
     return router

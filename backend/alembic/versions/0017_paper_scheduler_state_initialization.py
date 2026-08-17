@@ -957,7 +957,7 @@ def _run_upgrade(bind: Connection) -> None:
         if transaction.is_active:
             transaction.rollback()
         if bind.dialect.name == "sqlite" and bind.in_transaction():
-            bind.commit()
+            bind.rollback()
         _persist_quarantine(bind, error)
         raise
     except Exception:

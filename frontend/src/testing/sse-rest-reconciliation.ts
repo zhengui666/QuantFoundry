@@ -18,7 +18,6 @@ export class SseRestReconciliationWitness {
   }
 
   observeEvent(frame: DecodedSseFrame, planner: QueryPlanner = queryKeysForEvent) {
-    if (frame.event.object_id !== this.resourceId) return;
     const mapped = planner(frame.event).some(
       (key) => key[1] === this.resourceType && key[2] === this.resourceId,
     );

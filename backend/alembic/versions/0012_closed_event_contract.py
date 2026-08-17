@@ -217,7 +217,7 @@ def upgrade() -> None:
         )
         op.execute(
             "CREATE TRIGGER qf_domain_events_delete_immutable BEFORE DELETE ON "
-            "domain_events WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN "
+            "domain_events WHEN datetime(OLD.expires_at) > datetime('now') BEGIN "
             "SELECT RAISE(ABORT, 'unexpired event cannot be deleted'); END"
         )
 

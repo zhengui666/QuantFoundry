@@ -463,6 +463,7 @@ def fail_job(
             reason_code="PAPER_DAILY_RUN_UNKNOWN_RESULT",
             now=timestamp,
             lease_snapshot=lease_snapshot,
+            status=next_status,
         )
     emit(
         session,
@@ -510,11 +511,15 @@ def reap_expired_jobs(
             if safe_retry and row.job_type == "PAPER_DAILY_RUN"
             else None
         )
-        if (
-            not safe_retry
-            and not cancellation_requested
-            and row.job_type != "PAPER_DAILY_RUN"
-        ):
+        if cancellation_requested and row.job_type != "PAPER_DAILY_RUN":
+            from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+            if row.queue_name == "agent":
+                from quantfoundry.agents.runtime.runtime import cancel_agent_run
+
+                cancel_agent_run(session, row)
+            apply_job_cancellation(session, row)
+        elif not safe_retry and row.job_type != "PAPER_DAILY_RUN":
             from quantfoundry.agents.runtime.runtime import fail_agent_run
             from quantfoundry.application.jobs.effects import apply_job_failure
 

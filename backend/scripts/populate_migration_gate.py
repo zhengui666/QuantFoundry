@@ -46,11 +46,16 @@ def _uuid(value: Any = None) -> uuid.UUID:
 
 
 def _source_row(
-    connection: Any, table: Table, workspace_id: Any = None
+    connection: Any,
+    table: Table,
+    workspace_id: Any = None,
+    source_where: Any = None,
 ) -> dict[str, Any]:
     statement = select(table)
     if workspace_id is not None and "workspace_id" in table.c:
         statement = statement.where(table.c.workspace_id == workspace_id)
+    if source_where is not None:
+        statement = statement.where(source_where)
     row = connection.execute(statement.limit(1)).mappings().first()
     if row is None:
         raise RuntimeError(f"migration gate fixture has no source row for {table.name}")
@@ -384,6 +389,7 @@ def _ensure_workspace_dependency(
     metadata: MetaData,
     name: str,
     workspace_id: str,
+    source_where: Any = None,
 ) -> dict[str, Any]:
     table = metadata.tables[name]
     row = (
@@ -395,7 +401,7 @@ def _ensure_workspace_dependency(
     )
     if row is not None:
         return dict(row)
-    source = _source_row(connection, table)
+    source = _source_row(connection, table, source_where=source_where)
     values = _clone(connection, table, source, abs(hash((name, workspace_id))) % 100000)
     values["workspace_id"] = workspace_id
     _insert(connection, table, values)
@@ -440,7 +446,11 @@ def _ensure_app_settings(
     ).first():
         return
     ai = _ensure_workspace_dependency(
-        connection, metadata, "model_provider_connections", workspace_id
+        connection,
+        metadata,
+        "model_provider_connections",
+        workspace_id,
+        source_where=metadata.tables["model_provider_connections"].c.kind == "AI",
     )
     research = _ensure_workspace_dependency(
         connection, metadata, "research_policy_versions", workspace_id
@@ -489,7 +499,11 @@ def _ensure_setup_binding(
         return
     _ensure_settings_record(connection, metadata, workspace_id)
     ai = _ensure_workspace_dependency(
-        connection, metadata, "model_provider_connections", workspace_id
+        connection,
+        metadata,
+        "model_provider_connections",
+        workspace_id,
+        source_where=metadata.tables["model_provider_connections"].c.kind == "AI",
     )
     research = _ensure_workspace_dependency(
         connection, metadata, "research_policy_versions", workspace_id
@@ -786,11 +800,19 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
                     schema_version=1,
                 )
             )
-            connection.execute(
+            result = connection.execute(
                 watermarks.update()
                 .where(watermarks.c.workspace_id == pair[0])
                 .values(last_sequence=sequence)
             )
+            if result.rowcount == 0:
+                connection.execute(
+                    watermarks.insert().values(
+                        workspace_id=pair[0],
+                        last_sequence=sequence,
+                        expired_through_sequence=0,
+                    )
+                )
         # Negative tests may deliberately desynchronize the deployment status;
         # preserve the proven state/evidence and restore the authoritative
         # legacy status for the migration corpus.

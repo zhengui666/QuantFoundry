@@ -275,7 +275,10 @@ AgentRunId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["agent_run"])]
 ToolCallId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["tool_call"])]
 JobId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["job"])]
 Version = Annotated[int, ApiPath(ge=1)]
-LastEventId = Annotated[int | None, Header(alias="Last-Event-ID", ge=0)]
+LastEventId = Annotated[
+    int | None,
+    Header(alias="Last-Event-ID", ge=0, json_schema_extra={"format": "int64"}),
+]
 AgentRole = Literal[
     "RESEARCH_DIRECTOR",
     "FACTOR_SCIENTIST",

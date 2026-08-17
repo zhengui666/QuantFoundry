@@ -174,6 +174,9 @@ def _replace_strategy_guard() -> None:
                 END IF;
                 RETURN OLD;
               END IF;
+              IF NEW.workspace_id IS DISTINCT FROM OLD.workspace_id THEN
+                RAISE EXCEPTION 'strategy workspace ownership is immutable';
+              END IF;
               IF (OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
@@ -188,7 +191,8 @@ def _replace_strategy_guard() -> None:
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   NEW.detail IS DISTINCT FROM OLD.detail
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
               ) THEN
                 RAISE EXCEPTION 'candidate strategy evidence must be append-only';
               END IF;
@@ -237,7 +241,8 @@ def _replace_strategy_guard() -> None:
              COALESCE(NEW.workspace_id, '') IS NOT COALESCE(OLD.workspace_id, '')
           )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
              NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
-             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail
+             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail OR
+             COALESCE(NEW.workspace_id, '') IS NOT COALESCE(OLD.workspace_id, '')
           )) OR NOT (
              NEW.state = OLD.state OR
              (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR

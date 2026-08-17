@@ -90,6 +90,11 @@ def _create_sqlite_experiment_guards(*, include_source: bool = True) -> None:
         if include_source
         else ""
     )
+    source_binding_clause = (
+        "NEW.source_experiment_id IS OLD.source_experiment_id AND "
+        if include_source
+        else ""
+    )
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE "
         "ON experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
@@ -101,8 +106,9 @@ def _create_sqlite_experiment_guards(*, include_source: bool = True) -> None:
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
         "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
-        "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
-        "NEW.source_experiment_id IS OLD.source_experiment_id AND "
+        "NEW.research_id IS OLD.research_id AND "
+        + source_binding_clause
+        + "NEW.revision = OLD.revision + 1 AND "
         "json_extract(NEW.detail, '$.status') = 'COMPLETED') "
         "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )

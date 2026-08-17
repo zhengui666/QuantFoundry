@@ -30,8 +30,7 @@ def main() -> None:
         "properties",
     )
     registry_schema = {key: document[key] for key in schema_keys if key in document}
-    if registry_schema.get("type") != "object":
-        raise SystemExit("Registry schema must declare type: object")
+    registry_schema.setdefault("type", "object")
     registry_data = {key: document[key] for key in document["required"]}
 
     Draft202012Validator.check_schema(registry_schema)

@@ -82,7 +82,6 @@ jobs:
               "PROJECT_BACKGROUND.md",
               "backend/src/quantfoundry",
               "backend/app/agent_runtime.py",
-              "backend/app/agent_runtime",
               "backend/workers",
               "docs/Agent技术方案",
               "docs/后端系统技术方案/contracts/tools",
@@ -95,6 +94,9 @@ jobs:
               "scripts/release-evidence.sh",
               "scripts/release-known-issues-check.sh",
           ]
+          for path in reviewed_paths:
+              if subprocess.run(["git", "cat-file", "-e", f"{commit}:{path}"]).returncode != 0:
+                  raise SystemExit(f"reviewed path is missing at reviewed commit: {path}")
           scope = subprocess.check_output(["git", "ls-tree", "-r", "--full-tree", commit, "--", *reviewed_paths])
           report = {
               "schema_version": "1.0.0",

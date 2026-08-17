@@ -429,8 +429,9 @@ def _expected_constraint_name(
     columns: tuple[str, ...],
     name: str | None,
     label: str,
+    dialect: str,
 ) -> str | None:
-    if name is not None or label != "database":
+    if name is not None or dialect != "postgresql":
         return name
     return _postgres_generated_constraint_name(kind, table_name, columns)
 
@@ -788,6 +789,7 @@ def _check_metadata(
                     tuple(constraint["columns"]),
                     constraint["name"],
                     label,
+                    dialect,
                 ),
                 tuple(constraint["columns"]),
             )
@@ -801,6 +803,7 @@ def _check_metadata(
                     tuple(constraint["columns"]),
                     constraint["name"],
                     label,
+                    dialect,
                 ),
                 tuple(constraint["columns"]),
                 tuple(constraint["targets"]),

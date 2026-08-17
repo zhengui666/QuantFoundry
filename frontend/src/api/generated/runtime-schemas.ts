@@ -1,5 +1,30 @@
 // Generated from canonical openapi-v1.yaml. Do not edit.
 import { z } from 'zod';
+
+const normalizeCanonicalDecimal = (value: string) => {
+  const [integer = '', fraction = ''] = value.split('.');
+  const negative = integer.startsWith('-');
+  const digits = (negative ? integer.slice(1) : integer).replace(/^0+(?=\d)/, '');
+  const trimmedFraction = fraction.replace(/0+$/, '');
+  return {
+    negative: negative && (digits !== '0' || trimmedFraction !== ''),
+    integer: digits,
+    fraction: trimmedFraction,
+  };
+};
+const compareCanonicalDecimal = (left: string, right: string) => {
+  const a = normalizeCanonicalDecimal(left);
+  const b = normalizeCanonicalDecimal(right);
+  if (a.negative !== b.negative) return a.negative ? -1 : 1;
+  const sign = a.negative ? -1 : 1;
+  if (a.integer.length !== b.integer.length) return (a.integer.length - b.integer.length) * sign;
+  if (a.integer !== b.integer) return (a.integer < b.integer ? -1 : 1) * sign;
+  const width = Math.max(a.fraction.length, b.fraction.length);
+  const af = a.fraction.padEnd(width, '0');
+  const bf = b.fraction.padEnd(width, '0');
+  return (af === bf ? 0 : af < bf ? -1 : 1) * sign;
+};
+const isCanonicalInteger = (value: string) => !normalizeCanonicalDecimal(value).fraction;
 export const ResearchPolicyIdSchema = z
   .string()
   .min(29)
@@ -6824,13 +6849,14 @@ export const ExperimentSearchRangeDimensionSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    const minimum = Number(value.minimum);
-    const maximum = Number(value.maximum);
-    const step = Number(value.step);
-    if (!(minimum < maximum))
+    if (compareCanonicalDecimal(value.minimum, value.maximum) >= 0)
       context.addIssue({ code: 'custom', message: 'minimum must be less than maximum' });
-    if (!(step > 0)) context.addIssue({ code: 'custom', message: 'step must be positive' });
-    if (value.value_type === 'INTEGER' && ![minimum, maximum, step].every(Number.isInteger))
+    if (compareCanonicalDecimal(value.step, '0') <= 0)
+      context.addIssue({ code: 'custom', message: 'step must be positive' });
+    if (
+      value.value_type === 'INTEGER' &&
+      ![value.minimum, value.maximum, value.step].every(isCanonicalInteger)
+    )
       context.addIssue({
         code: 'custom',
         message: 'INTEGER ranges require integral bounds and step',

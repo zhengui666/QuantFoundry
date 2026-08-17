@@ -35,7 +35,6 @@ scope_paths = [
     "PROJECT_BACKGROUND.md",
     "backend/src/quantfoundry",
     "backend/app/agent_runtime.py",
-    "backend/app/agent_runtime",
     "backend/workers",
     "docs/Agent技术方案",
     "docs/后端系统技术方案/contracts/tools",
@@ -48,7 +47,7 @@ scope_paths = [
     "scripts/release-evidence.sh",
     "scripts/release-known-issues-check.sh",
 ]
-trusted_workflow_blob_sha = "4ecbf36ee23502a5b845f211e008335c0248b231"
+trusted_workflow_blob_sha = "9c42061823b49952e28d66434de97b98e61f7b06"
 
 def gh_json(endpoint):
     completed = subprocess.run(
@@ -69,6 +68,9 @@ def read_archive(archive_path, max_report_bytes):
             archive_digest.update(chunk)
     try:
         with zipfile.ZipFile(archive_path) as bundle:
+            members = bundle.infolist()
+            if len(members) > 32 or sum(item.file_size for item in members) > 100 * 1024 * 1024:
+                raise SystemExit("independent review artifact exceeds the uncompressed size limit")
             members = [
                 item
                 for item in bundle.infolist()
@@ -156,6 +158,8 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         raise SystemExit("independent review artifact report is not an approved independent review")
     if report.get("criteria") != criteria or report.get("reviewed_paths") != scope_paths:
         raise SystemExit("independent review artifact report scope or criteria are not canonical")
+    for path in scope_paths:
+        subprocess.run(["git", "cat-file", "-e", f"{commit}:{path}"], check=True)
     scope = subprocess.run(
         ["git", "ls-tree", "-r", "--full-tree", commit, "--", *scope_paths],
         check=True,

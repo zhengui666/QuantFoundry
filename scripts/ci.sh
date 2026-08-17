@@ -174,6 +174,7 @@ backend_pg18_full() {
       -u QF_LOCAL_DATA_CREDENTIAL \
       -u QF_CREDENTIAL_ENCRYPTION_KEY_ID \
       -u QF_CREDENTIAL_ENCRYPTION_KEY \
+      -u QF_CREDENTIAL_FINGERPRINT_KEY \
       -u QF_GIT_COMMIT \
       -u QF_BUILD_ID \
       sh scripts/pg18_ci.sh

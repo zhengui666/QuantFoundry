@@ -31,8 +31,10 @@ fi
 # Workers must start after the first domain binding is activated.  Full-stack
 # CI activates that binding after this script returns, so it explicitly
 # defers this final start until after its seed step.
-if [[ "${QF_BOOTSTRAP_DEFER_WORKERS:-0}" != 1 ]]; then
+if [[ "${QF_BOOTSTRAP_DEFER_WORKERS:-1}" != 1 ]]; then
   docker compose --profile local --env-file "$environment_file" \
     up --build --detach --wait \
     worker agent-worker scheduler
+else
+  printf '%s\n' 'Workers remain stopped until the domain binding is activated; set QF_BOOTSTRAP_DEFER_WORKERS=0 to start them.'
 fi

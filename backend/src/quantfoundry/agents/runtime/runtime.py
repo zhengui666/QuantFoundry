@@ -1652,7 +1652,6 @@ def advance_agent_run(
                     ).scalar_one()
             if waiting_call.status == "SUCCESS":
                 replay(waiting_call)
-                row.tool_call_count += 1
                 return None
         row.tool_call_count += 1
         return _suspend_for_child_job(

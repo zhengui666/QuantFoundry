@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_ROOT = ROOT / "docs/后端系统技术方案/contracts"
@@ -29,6 +30,15 @@ def main() -> int:
     bootstrap = load("bootstrap-control-v1.yaml")
     matrix = load("ux001-d1-test-matrix.yaml")
     registry = load("tools/v1-p0.yaml")
+    registry_errors = sorted(
+        Draft202012Validator(registry).iter_errors(registry),
+        key=lambda error: list(error.path),
+    )
+    require(
+        not registry_errors,
+        "semantic tool registry schema validation failed: "
+        + "; ".join(error.message for error in registry_errors[:3]),
+    )
 
     operations = sum(
         1

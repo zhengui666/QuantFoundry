@@ -225,7 +225,7 @@ def load_physical_metadata(
                         )
                     if not include_sqlite_partial_indexes:
                         # SQLite rejects PostgreSQL's NULLS FIRST/LAST index
-                        # syntax; ordering remains deterministic for smoke DBs.
+                        # syntax; retain the SQLite-compatible partial predicate.
                         nulls = None
                     if nulls == "FIRST":
                         expression = expression.nulls_first()
@@ -246,9 +246,7 @@ def load_physical_metadata(
                 postgresql_include=index.get("include"),
                 postgresql_where=text(index["where"]) if index["where"] else None,
                 sqlite_where=(
-                    text(index["where"])
-                    if index["where"] and include_sqlite_partial_indexes
-                    else None
+                    text(index["where"]) if index["where"] else None
                 ),
             )
     return metadata

@@ -46,4 +46,15 @@ describe('SSE→REST causal reconciliation witness mutation-test seam', () => {
     expect(() => witness.assertReconciled()).toThrow('No generated event-to-query mapping');
     expect(witness.snapshot()).toMatchObject({ baseline: 2, restReadsAfterBaseline: 0 });
   });
+
+  it('arms a related resource when the generated query mapping owns the target', () => {
+    const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
+    const relatedFrame = {
+      ...frame,
+      event: { ...event, object_id: 'EXP-1M49GS2TJYQ2JPYV54YDGY7R59' },
+    };
+    witness.observeEvent(relatedFrame, () => [['workspace', 'research', event.object_id]]);
+    witness.observeRest(path);
+    expect(() => witness.assertReconciled()).not.toThrow();
+  });
 });

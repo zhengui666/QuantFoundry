@@ -116,6 +116,7 @@ jobs:
       QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER: '1'
       QF_CREDENTIAL_ENCRYPTION_KEY_ID: ci-test-key-v1
       QF_CREDENTIAL_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      QF_CREDENTIAL_FINGERPRINT_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       PGHOST: 127.0.0.1
       PGPORT: '5432'
       PGUSER: quantfoundry
@@ -271,14 +272,14 @@ jobs:
               printf '%s\n' 'command completed successfully with no stdout/stderr' > "$log_file"
             fi
           done
-          gh attestation download "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" > evidence/attestations/backend.json
-          gh attestation download "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" > evidence/attestations/frontend.json
           gh attestation verify "oci://$IMAGE_PREFIX/backend@$BACKEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/signature-verification/backend.json
           gh attestation verify "oci://$IMAGE_PREFIX/frontend@$FRONTEND_DIGEST" --repo "$GITHUB_REPOSITORY" --format json > evidence/signature-verification/frontend.json
+          cp evidence/signature-verification/backend.json evidence/attestations/backend.json
+          cp evidence/signature-verification/frontend.json evidence/attestations/frontend.json
           scripts/release-evidence.sh collect-oci-sbom "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" evidence/sbom/backend.spdx.json
           scripts/release-evidence.sh collect-oci-sbom "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST" evidence/sbom/frontend.spdx.json
-          cp evidence/attestations/backend.json evidence/provenance/backend.json
-          cp evidence/attestations/frontend.json evidence/provenance/frontend.json
+          cp evidence/signature-verification/backend.json evidence/provenance/backend.json
+          cp evidence/signature-verification/frontend.json evidence/provenance/frontend.json
           scripts/release-evidence.sh compose-bind evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
           scripts/release-evidence.sh manifest "$TAG" "$COMMIT" evidence "$IMAGE_PREFIX/backend" "$BACKEND_DIGEST" "$IMAGE_PREFIX/frontend" "$FRONTEND_DIGEST"
           scripts/release-evidence.sh package-assets evidence

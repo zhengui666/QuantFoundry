@@ -292,7 +292,8 @@ def upgrade() -> None:
     op.execute(
         "CREATE TRIGGER qf_exposure_evidence_delete_immutable BEFORE DELETE ON holdout_exposures "
         "WHEN EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id AND "
-        "v.holdout_state = 'EXPOSED' AND v.strategy_version_id = OLD.strategy_version_id) BEGIN "
+        "v.holdout_state IN ('EXPOSED', 'FAILED') AND "
+        "v.strategy_version_id = OLD.strategy_version_id) BEGIN "
         "SELECT RAISE(ABORT, 'exposure evidence is referenced by exposed validation'); END"
     )
 

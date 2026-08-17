@@ -109,6 +109,10 @@ os.environ.setdefault(
     "QF_CREDENTIAL_ENCRYPTION_KEY",
     "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
 )
+os.environ.setdefault(
+    "QF_CREDENTIAL_FINGERPRINT_KEY",
+    "AgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICE=",
+)
 artifact_root = _test_runtime_directory("artifacts", "QF_ARTIFACT_DIR")
 dataset_root = _test_runtime_directory("datasets", "QF_DATASET_DIR")
 cost_model_root = _test_runtime_directory("cost-models", "QF_COST_MODEL_DIR")

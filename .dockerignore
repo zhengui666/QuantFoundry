@@ -34,6 +34,8 @@ logs
 evidence
 **/credentials/**
 **/secrets/**
+**/*.pem
+**/*.key
 docs/**
 !docs/后端系统技术方案/
 docs/后端系统技术方案/**

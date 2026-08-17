@@ -151,7 +151,9 @@ def _create_immutability_guards() -> None:
             """
             CREATE FUNCTION qf_reject_frozen_strategy_change() RETURNS trigger AS $$
             BEGIN
-              IF OLD.state = 'FROZEN' THEN
+              IF OLD.state = 'FROZEN' AND NOT (
+                   TG_OP = 'UPDATE' AND NEW.state = 'VALIDATING'
+              ) THEN
                 RAISE EXCEPTION 'frozen strategy version cannot be changed';
               END IF;
               IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN'
@@ -302,12 +304,17 @@ def _create_immutability_guards() -> None:
         "WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN "
         "SELECT RAISE(ABORT, 'unexpired event cannot be deleted'); END"
     )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE "
+        "ON strategy_versions WHEN OLD.state = 'FROZEN' BEGIN "
+        "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN OLD.state = 'FROZEN' AND NEW.state != 'VALIDATING' BEGIN "
+        "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
+    )
     for action in ("UPDATE", "DELETE"):
-        op.execute(
-            f"CREATE TRIGGER qf_strategy_versions_{action.lower()}_immutable BEFORE {action} "
-            "ON strategy_versions WHEN OLD.state = 'FROZEN' BEGIN "
-            "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
-        )
         op.execute(
             f"CREATE TRIGGER qf_experiments_{action.lower()}_immutable BEFORE {action} "
             "ON experiments WHEN OLD.immutable = 1 BEGIN "

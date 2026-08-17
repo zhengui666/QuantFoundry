@@ -76,6 +76,7 @@ fi
 
 credential_key_id="$(environment_value QF_CREDENTIAL_ENCRYPTION_KEY_ID)"
 credential_key="$(environment_value QF_CREDENTIAL_ENCRYPTION_KEY)"
+fingerprint_key="$(environment_value QF_CREDENTIAL_FINGERPRINT_KEY)"
 if [[ -z "$credential_key_id" || "$credential_key" == "replace-with-url-safe-base64-32-byte-key" ]]; then
   printf '%s\n' 'Refusing placeholder or empty credential encryption configuration.' >&2
   exit 1
@@ -84,9 +85,13 @@ if [[ ! "$credential_key" =~ ^[A-Za-z0-9_-]{43}=?$ ]]; then
   printf '%s\n' 'QF_CREDENTIAL_ENCRYPTION_KEY must be URL-safe base64 for exactly 32 bytes.' >&2
   exit 1
 fi
+if [[ ! "$fingerprint_key" =~ ^[A-Za-z0-9_-]{43}=?$ ]]; then
+  printf '%s\n' 'QF_CREDENTIAL_FINGERPRINT_KEY must be URL-safe base64 for exactly 32 bytes.' >&2
+  exit 1
+fi
 credential_keyring="$(environment_value_optional QF_CREDENTIAL_ENCRYPTION_KEYS)"
 if [[ -n "$credential_keyring" ]]; then
-  if ! QF_BOOTSTRAP_KEYRING="$credential_keyring" python3 - "$credential_key_id" <<'PY'
+if ! QF_BOOTSTRAP_KEYRING="$credential_keyring" python3 - "$credential_key_id" "$credential_key" <<'PY'
 import base64
 import binascii
 import json
@@ -95,12 +100,14 @@ import re
 import sys
 
 active_id = sys.argv[1]
+standalone = sys.argv[2]
 try:
     values = json.loads(os.environ["QF_BOOTSTRAP_KEYRING"])
 except json.JSONDecodeError as error:
     raise SystemExit(f"QF_CREDENTIAL_ENCRYPTION_KEYS is invalid: {error}")
 if not isinstance(values, dict) or not values or active_id not in values:
     raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS must contain the active key ID")
+active_bytes = None
 for key_id, encoded in values.items():
     if not isinstance(key_id, str) or not isinstance(encoded, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}=?", encoded):
         raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS contains an invalid key")
@@ -110,6 +117,11 @@ for key_id, encoded in values.items():
         raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS contains an invalid base64 key") from error
     if len(decoded) != 32:
         raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS keys must decode to 32 bytes")
+    if key_id == active_id:
+        active_bytes = decoded
+standalone_bytes = base64.urlsafe_b64decode(standalone + "=" * (-len(standalone) % 4))
+if active_bytes != standalone_bytes:
+    raise SystemExit("QF_CREDENTIAL_ENCRYPTION_KEYS active key differs from QF_CREDENTIAL_ENCRYPTION_KEY")
 PY
   then
     exit 1
@@ -126,7 +138,7 @@ fi
 
 for compose_key in QF_ENV QF_ENVIRONMENT QF_GIT_COMMIT QF_BUILD_ID \
   QF_POSTGRES_DB QF_POSTGRES_USER QF_POSTGRES_PASSWORD \
-  QF_CREDENTIAL_ENCRYPTION_KEY_ID QF_CREDENTIAL_ENCRYPTION_KEY; do
+  QF_CREDENTIAL_ENCRYPTION_KEY_ID QF_CREDENTIAL_ENCRYPTION_KEY QF_CREDENTIAL_FINGERPRINT_KEY; do
     file_value="$(environment_value "$compose_key")"
     if [[ "$file_value" == *'$'* ]]; then
       printf 'Compose interpolation is forbidden in security-sensitive %s.\n' "$compose_key" >&2
@@ -140,6 +152,10 @@ done
 if [[ -n "$credential_keyring" ]]; then
   if [[ "$credential_keyring" == *'$'* ]]; then
     printf '%s\n' 'Compose interpolation is forbidden in QF_CREDENTIAL_ENCRYPTION_KEYS.' >&2
+    exit 1
+  fi
+  if [[ "${QF_CREDENTIAL_ENCRYPTION_KEYS+x}" == x && "${QF_CREDENTIAL_ENCRYPTION_KEYS}" != "$credential_keyring" ]]; then
+    printf '%s\n' 'Exported QF_CREDENTIAL_ENCRYPTION_KEYS conflicts with .env.' >&2
     exit 1
   fi
 fi

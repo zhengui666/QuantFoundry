@@ -54,7 +54,7 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     "CANCEL_PENDING": frozenset({"CANCELLED", "FILLED", "PARTIALLY_FILLED", "UNKNOWN"}),
     "CANCELLED": frozenset({"PARTIALLY_FILLED", "FILLED"}),
     "REJECTED": frozenset(),
-    "EXPIRED": frozenset(),
+    "EXPIRED": frozenset({"FILLED"}),
     "UNKNOWN": frozenset({"PARTIALLY_FILLED", "FILLED", "RECONCILING"}),
     "RECONCILING": frozenset(
         {

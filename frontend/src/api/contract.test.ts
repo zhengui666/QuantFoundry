@@ -485,6 +485,16 @@ describe('canonical transport', () => {
       { ...validDimensions[0], values: ['20', '20'] },
       { ...validDimensions[0], minimum: '1' },
       { ...validDimensions[1], minimum: '0.5', maximum: '0.1' },
+      {
+        ...validDimensions[1],
+        minimum: '100000000000000000000.1',
+        maximum: '100000000000000000000.01',
+      },
+      {
+        ...validDimensions[1],
+        minimum: '0.00000000000000000002',
+        maximum: '0.00000000000000000002',
+      },
       { ...validDimensions[1], step: '0' },
       { ...validDimensions[2], step: '0.5' },
       { ...validDimensions[2], values: ['20'] },

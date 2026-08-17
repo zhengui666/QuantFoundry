@@ -188,8 +188,6 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
         result.pop("type", None)
     if isinstance(result.get("required"), list):
         result["required"] = sorted(result["required"])
-    if result.get("format") in {"int32", "int64"}:
-        result.pop("format")
     if (
         result.get("format") in {"uri", "uri-reference"}
         and result.get("minLength") == 1
@@ -221,7 +219,14 @@ def normalized_parameters(
                 if branch != {"type": "null"}
             ]
             if len(non_null) == 1:
-                schema = non_null[0]
+                schema = {
+                    **non_null[0],
+                    **{
+                        key: value
+                        for key, value in schema.items()
+                        if key not in {"union", "union_keyword"}
+                    },
+                }
         values.append(
             (
                 location,
@@ -268,6 +273,10 @@ def normalized_security(value: Any) -> Any:
     )
 
 
+def normalized_encoding(media: dict[str, Any]) -> str:
+    return json.dumps(media.get("encoding", {}), sort_keys=True, separators=(",", ":"))
+
+
 errors: list[str] = []
 methods = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 canonical_operations = {
@@ -310,6 +319,8 @@ for key, expected in canonical_operations.items():
             canonical, expected_media.get("schema")
         ) != normalized_schema(runtime, actual_media.get("schema")):
             errors.append(f"{label}: request body {media_type} schema")
+        if normalized_encoding(expected_media) != normalized_encoding(actual_media):
+            errors.append(f"{label}: request body {media_type} encoding")
     if set(expected["responses"]) != set(actual["responses"]):
         errors.append(f"{label}: response statuses")
     for status, raw_expected_response in expected["responses"].items():
@@ -335,6 +346,8 @@ for key, expected in canonical_operations.items():
                 canonical, expected_media.get("schema")
             ) != normalized_schema(runtime, actual_media.get("schema")):
                 errors.append(f"{label}: response {status} {media_type} schema")
+            if normalized_encoding(expected_media) != normalized_encoding(actual_media):
+                errors.append(f"{label}: response {status} {media_type} encoding")
     expected_security = expected.get("security", canonical.get("security"))
     actual_security = actual.get("security", runtime.get("security"))
     if normalized_security(expected_security) != normalized_security(actual_security):

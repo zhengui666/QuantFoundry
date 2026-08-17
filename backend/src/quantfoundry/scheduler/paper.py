@@ -1233,7 +1233,7 @@ class PaperScheduler:
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
             _, calendar_version = self._is_trading_day(schedule, row["trading_date"])
-        except InvalidExecutionAssumption:
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
             self._finish_run(
                 session,
                 deployment,
@@ -1302,7 +1302,7 @@ class PaperScheduler:
                 calendar_version = self._is_trading_day(schedule, run["trading_date"])[
                     1
                 ]
-            except InvalidExecutionAssumption:
+            except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
                 schedule = _invalid_schedule()
                 calendar_version = "UNAVAILABLE"
         self._transition_evidence(

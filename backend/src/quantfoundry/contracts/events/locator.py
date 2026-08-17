@@ -65,6 +65,10 @@ _AGENT_ROLES = (
     "RED_TEAM_RESEARCHER",
     "PERFORMANCE_ANALYST",
 )
+_INT32_MIN = -(2**31)
+_INT32_MAX = 2**31 - 1
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
 
 
 def _postgres_locator_function_sql() -> str:
@@ -337,9 +341,15 @@ def _exact_locator_scalar_types(values: dict[str, Any]) -> bool:
         return False
     if object_id is not None and not isinstance(object_id, str):
         return False
-    return all(
+    if not all(
         value is None or (isinstance(value, int) and not isinstance(value, bool))
         for value in (object_version, object_revision)
+    ):
+        return False
+    return (
+        object_version is None or _INT32_MIN <= object_version <= _INT32_MAX
+    ) and (
+        object_revision is None or _INT64_MIN <= object_revision <= _INT64_MAX
     )
 
 

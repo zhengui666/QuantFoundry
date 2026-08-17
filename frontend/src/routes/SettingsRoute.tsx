@@ -93,7 +93,9 @@ export function SettingsPage() {
     database.data?.body.candidate?.state === 'VALIDATED'
       ? database.data.body.candidate.revision
       : undefined;
-  const validatedRevision = dbValidatedRevision ?? persistedValidatedRevision;
+  const validatedRevision =
+    dbValidatedRevision ??
+    (dbCandidateRevision === undefined ? persistedValidatedRevision : undefined);
   useEffect(() => {
     const current = database.data?.body.active;
     if (!current) return;

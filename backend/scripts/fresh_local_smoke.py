@@ -315,7 +315,10 @@ def main() -> None:
     os.environ["QF_CODEX_MODEL"] = "qf-local-v1"
     os.environ["QF_CODEX_MODELS"] = "qf-local-v1"
     os.environ["QF_CREDENTIAL_ENCRYPTION_KEY_ID"] = "local-smoke-v1"
-    os.environ["QF_CREDENTIAL_ENCRYPTION_KEY"] = base64.b64encode(
+    os.environ["QF_CREDENTIAL_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(
+        secrets.token_bytes(32)
+    ).decode()
+    os.environ["QF_CREDENTIAL_FINGERPRINT_KEY"] = base64.urlsafe_b64encode(
         secrets.token_bytes(32)
     ).decode()
     for directory in ("artifacts", "data", "datasets", "cost-models", "policies"):

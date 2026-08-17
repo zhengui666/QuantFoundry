@@ -621,7 +621,16 @@ def _snapshot_market_rows(
     rows = manifest.get("rows")
     if not isinstance(rows, list) or not rows:
         raise InvalidJobState(f"snapshot partition has no market rows: {partition}")
-    return rows
+    snapshot_detail = json.loads(snapshot.detail)
+    manifest_id = snapshot_detail.get("manifest_artifact_id")
+    if not isinstance(manifest_id, str):
+        raise InvalidJobState("snapshot manifest identity is missing")
+    snapshot_manifest = _artifact_payload(session, manifest_id, workspace_id)
+    source_context = snapshot_manifest.get("source_context")
+    calendar = source_context.get("calendar") if isinstance(source_context, dict) else None
+    if calendar not in {"WEEKDAY", "24X7"}:
+        raise InvalidJobState("snapshot calendar evidence is missing")
+    return [{**row, "calendar": calendar} for row in rows]
 
 
 def _factor_evidence_for_snapshot(
@@ -1072,6 +1081,16 @@ def _complete_experiment(
         cost_model=_cost_ref(cost),
         parameters_sha256=detail["parameters_sha256"],
     )
+    provenance_ref_id = session.execute(
+        select(Base.metadata.tables["provenance_records"].c.id).where(
+            Base.metadata.tables["provenance_records"].c.workspace_id
+            == job.workspace_id,
+            Base.metadata.tables["provenance_records"].c.provenance_id
+            == provenance["provenance_id"],
+        )
+    ).scalar_one_or_none()
+    if provenance_ref_id is None:
+        raise InvalidJobState("experiment provenance is missing")
     finished = wire_now()
     detail.update(
         {
@@ -1120,6 +1139,13 @@ def _complete_experiment(
         }
     )
     row.detail = json.dumps(validated_payload("ExperimentDetail", detail))
+    row.status = "COMPLETED"
+    row.validity_state = "VALID"
+    row.adapter_key = adapter["name"]
+    row.adapter_version = adapter["version"]
+    row.provenance_ref_id = provenance_ref_id
+    row.started_at = datetime.fromisoformat(detail["started_at"].replace("Z", "+00:00"))
+    row.finished_at = datetime.fromisoformat(detail["finished_at"].replace("Z", "+00:00"))
     row.revision += 1
     row.job_ref_id = job.internal_id
     # Commit final evidence and its immutable marker in one UPDATE.
@@ -2785,6 +2811,11 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             }
         )
         experiment.detail = json.dumps(validated_payload("ExperimentDetail", detail))
+        finished_at = datetime.fromisoformat(detail["finished_at"].replace("Z", "+00:00"))
+        experiment.status = "FAILED"
+        experiment.validity_state = "INVALID"
+        experiment.finished_at = finished_at
+        experiment.invalidated_at = finished_at
         experiment.revision += 1
         emit(
             session,
@@ -2862,6 +2893,37 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
                 ),
             )
         )
+        if job.job_type == "VALIDATION":
+            strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
+            if (
+                strategy is not None
+                and strategy.workspace_id == job.workspace_id
+                and strategy.state == "VALIDATING"
+            ):
+                strategy.state = "FROZEN"
+                strategy.revision += 1
+                strategy_detail = json.loads(strategy.detail)
+                strategy_detail.update(
+                    {
+                        "lifecycle_state": "FROZEN",
+                        "revision": strategy.revision,
+                        "action_capabilities": strategy_action_capabilities("FROZEN"),
+                    }
+                )
+                strategy.detail = json.dumps(
+                    validated_payload("StrategyVersionDetail", strategy_detail)
+                )
+                emit(
+                    session,
+                    "strategy_version",
+                    strategy.strategy_id,
+                    strategy.revision,
+                    "strategy.updated",
+                    payload={"state": "FROZEN", "status": "FROZEN"},
+                    object_version=strategy.version,
+                    job_id=job.id,
+                    correlation_id=job.correlation_id,
+                )
         emit(
             session,
             "validation",
@@ -2901,6 +2963,11 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
             }
         )
         experiment.detail = json.dumps(validated_payload("ExperimentDetail", detail))
+        finished_at = datetime.fromisoformat(detail["finished_at"].replace("Z", "+00:00"))
+        experiment.status = "CANCELLED"
+        experiment.validity_state = "INVALID"
+        experiment.finished_at = finished_at
+        experiment.invalidated_at = finished_at
         experiment.revision += 1
         emit(
             session,

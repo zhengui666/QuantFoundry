@@ -788,6 +788,28 @@ def _portfolio_returns(
             raise EngineInputError("strategy score must be finite")
         return score
 
+    def raw_weights(symbols: list[str]) -> dict[str, float]:
+        if weighting == "SCORE":
+            raw = {symbol: abs(signal_score(today_rows[symbol])) for symbol in symbols}
+        elif weighting == "VOLATILITY":
+            raw = {}
+            for symbol in symbols:
+                history = price_history[symbol]
+                returns = [
+                    history[position] / history[position - 1] - 1
+                    for position in range(1, len(history))
+                ]
+                volatility = statistics.stdev(returns) if len(returns) > 1 else 1.0
+                raw[symbol] = 1.0 / max(volatility, 1e-12)
+        elif weighting == "EQUAL":
+            raw = dict.fromkeys(symbols, 1.0)
+        else:
+            raise EngineInputError("unsupported strategy weighting")
+        raw_total = sum(raw.values())
+        if not math.isfinite(raw_total) or raw_total <= 0:
+            raise EngineInputError("strategy weights must have a positive finite total")
+        return raw
+
     def rebalance_due(index: int) -> bool:
         if index == 0 or rebalance_frequency == "DAILY":
             return True
@@ -808,7 +830,12 @@ def _portfolio_returns(
     adjusted_prices = _adjusted_price_map(rows)
     for index in range(len(dates) - 1):
         today, tomorrow = dates[index], dates[index + 1]
-        next_rows = by_date[tomorrow]
+        next_rows = {
+            symbol: row
+            for symbol, row in by_date[tomorrow].items()
+            if _parse_timestamp(row["available_at"], "available_at")
+            <= _parse_timestamp(row["event_time"], "event_time")
+        }
         today_rows = {
             symbol: row
             for symbol, row in by_date[today].items()
@@ -847,48 +874,34 @@ def _portfolio_returns(
                 if symbol in today_rows
             }
         else:
-            if weighting == "SCORE":
-                raw = {
-                    symbol: abs(signal_score(today_rows[symbol])) for symbol in selected
-                }
-            elif weighting == "VOLATILITY":
-                raw = {}
-                for symbol in selected:
-                    history = price_history[symbol]
-                    returns = [
-                        history[position] / history[position - 1] - 1
-                        for position in range(1, len(history))
-                    ]
-                    volatility = statistics.stdev(returns) if len(returns) > 1 else 1.0
-                    raw[symbol] = 1.0 / max(volatility, 1e-12)
-            elif weighting == "EQUAL":
-                raw = dict.fromkeys(selected, 1.0)
-            else:
-                raise EngineInputError("unsupported strategy weighting")
-            raw_total = sum(raw.values())
-            if not math.isfinite(raw_total) or raw_total <= 0:
-                raise EngineInputError(
-                    "strategy weights must have a positive finite total"
-                )
-            target = {
-                symbol: min(position_limit, leverage_limit * value / raw_total)
-                for symbol, value in raw.items()
-            }
             if long_short:
                 shorted = ranked[-selection_count:]
                 long_gross = leverage_limit / 2
                 short_gross = leverage_limit / 2
+                long_raw = raw_weights(selected)
+                short_raw = raw_weights(shorted)
                 target = {
-                    symbol: min(position_limit, long_gross / len(selected))
-                    for symbol in selected
+                    symbol: min(
+                        position_limit, long_gross * value / sum(long_raw.values())
+                    )
+                    for symbol, value in long_raw.items()
                 }
                 target.update(
                     {
-                        symbol: -min(position_limit, short_gross / len(shorted))
-                        for symbol in shorted
+                        symbol: -min(
+                            position_limit, short_gross * value / sum(short_raw.values())
+                        )
+                        for symbol, value in short_raw.items()
                         if symbol not in target
                     }
                 )
+            else:
+                raw = raw_weights(selected)
+                raw_total = sum(raw.values())
+                target = {
+                    symbol: min(position_limit, leverage_limit * value / raw_total)
+                    for symbol, value in raw.items()
+                }
         universe = set(previous_weights) | set(target)
         turnover = sum(
             abs(target.get(symbol, 0.0) - previous_weights.get(symbol, 0.0))
@@ -920,12 +933,18 @@ def _portfolio_returns(
                 "simulation produced an insolvent or non-finite return"
             )
         net_returns.append(net)
-        benchmark_today = statistics.fmean(
+        if not next_rows:
+            raise EngineInputError("next-session benchmark data is unavailable")
+        benchmark_today_values = {
             float(value["benchmark_close"]) for value in today_rows.values()
-        )
-        benchmark_tomorrow = statistics.fmean(
+        }
+        benchmark_tomorrow_values = {
             float(value["benchmark_close"]) for value in next_rows.values()
-        )
+        }
+        if len(benchmark_today_values) != 1 or len(benchmark_tomorrow_values) != 1:
+            raise EngineInputError("benchmark must have one level per session")
+        benchmark_today = benchmark_today_values.pop()
+        benchmark_tomorrow = benchmark_tomorrow_values.pop()
         benchmark_returns.append(benchmark_tomorrow / benchmark_today - 1.0)
         turnovers.append(turnover)
         trade_count += sum(
@@ -991,6 +1010,7 @@ def simulation_metrics(
     selection_count: int,
     cost: CostModel,
     strategy_spec: dict[str, Any] | None = None,
+    calendar: str | None = None,
 ) -> dict[str, Any]:
     returns, benchmark, turnovers, trade_count, final_weights = _portfolio_returns(
         rows, selection_count, cost, strategy_spec
@@ -1009,10 +1029,22 @@ def simulation_metrics(
     downside_deviation = math.sqrt(
         statistics.fmean(value * value for value in downside)
     )
-    cagr = wealth ** (252 / periods) - 1.0
-    annualized_volatility = volatility_daily * math.sqrt(252)
-    sharpe = mean / volatility_daily * math.sqrt(252) if volatility_daily else 0.0
-    sortino = mean / downside_deviation * math.sqrt(252) if downside_deviation else 0.0
+    calendar = calendar or str(rows[0].get("calendar", "WEEKDAY"))
+    if calendar not in {"WEEKDAY", "24X7"}:
+        raise EngineInputError("unsupported simulation calendar")
+    periods_per_year = 365 if calendar == "24X7" else 252
+    cagr = wealth ** (periods_per_year / periods) - 1.0
+    annualized_volatility = volatility_daily * math.sqrt(periods_per_year)
+    sharpe = (
+        mean / volatility_daily * math.sqrt(periods_per_year)
+        if volatility_daily
+        else 0.0
+    )
+    sortino = (
+        mean / downside_deviation * math.sqrt(periods_per_year)
+        if downside_deviation
+        else 0.0
+    )
     calmar = cagr / abs(maximum_drawdown) if maximum_drawdown else 0.0
     benchmark_wealth = math.prod(1.0 + value for value in benchmark)
     total_turnover = sum(turnovers)
@@ -1048,12 +1080,38 @@ def validation_checks(
     robustness: dict[str, Any] | None = None,
     policy: ValidationPolicy | None = None,
 ) -> list[tuple[str, bool, str]]:
-    split_ok = (
-        periods["research_period"]["end"]
-        < periods["validation_period"]["start"]
-        <= periods["validation_period"]["end"]
-        < periods["holdout_period"]["start"]
+    research_period = periods.get("research_period")
+    validation_period = periods.get("validation_period")
+    holdout_period = periods.get("holdout_period")
+    period_values = [research_period, validation_period, holdout_period]
+    bounds_ok = all(
+        isinstance(period, dict)
+        and isinstance(period.get("start"), str)
+        and isinstance(period.get("end"), str)
+        and period["start"] <= period["end"]
+        for period in period_values
     )
+    split_ok = (
+        bounds_ok
+        and isinstance(research_period, dict)
+        and isinstance(validation_period, dict)
+        and isinstance(holdout_period, dict)
+        and research_period["end"]
+        < validation_period["start"]
+        <= validation_period["end"]
+        < holdout_period["start"]
+    )
+    row_bounds_ok = (
+        isinstance(validation_period, dict)
+        and isinstance(validation_period.get("start"), str)
+        and isinstance(validation_period.get("end"), str)
+        and all(
+            isinstance(row.get("date"), str)
+            and validation_period["start"] <= row["date"] <= validation_period["end"]
+            for row in rows
+        )
+    )
+    split_ok = split_ok and row_bounds_ok
     leakage_ok = all(row["partition"] == "VALIDATION" for row in rows)
     numerical_ok = (
         int(metrics["observations"]) >= 2

@@ -76,11 +76,12 @@ def _idempotency_key(*parts: str) -> str:
     if not parts or any(not isinstance(part, str) for part in parts):
         raise ValueError("idempotency key parts are required")
     operation, account_id, object_id = parts
-    if operation == "submit":
-        return f"{account_id}:{object_id}"
-    if operation == "cancel":
-        return f"{account_id}:cancel:{object_id}"
-    raise ValueError("unsupported idempotency key operation")
+    if operation not in {"submit", "cancel"}:
+        raise ValueError("unsupported idempotency key operation")
+    return (
+        f"{operation}:{len(account_id)}:{account_id}:"
+        f"{len(object_id)}:{object_id}"
+    )
 
 
 def _validate_order_response(

@@ -128,10 +128,13 @@ const intentionalRejection = (token, context) => {
 
 const grammarNotation = (token, context, file, key = '') => {
   const extension = extname(file).toLowerCase();
-  const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(key);
+  const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(
+    key,
+  );
   const proseSource = extension === '.md';
   const structuredProse =
-    (extension === '.yaml' || extension === '.yml' ||
+    (extension === '.yaml' ||
+      extension === '.yml' ||
       (extension === '.json' && /(?:manifest|schema)/i.test(file))) &&
     proseField;
   if (!proseSource && !structuredProse) return false;
@@ -221,7 +224,9 @@ const scanJson = (file, content, matchers) => {
   const failures = [];
   const visit = (node, path, key = '') => {
     if (typeof node === 'string') {
-      failures.push(...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers, key, file));
+      failures.push(
+        ...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers, key, file),
+      );
       return;
     }
     if (Array.isArray(node)) {

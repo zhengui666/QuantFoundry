@@ -31,7 +31,7 @@ release = json.loads(pathlib.Path(release_path).read_text(encoding="utf-8"))
 tag = json.loads(pathlib.Path(tag_path).read_text(encoding="utf-8"))
 if release.get("draft") is not False or release.get("prerelease") is not True:
     raise SystemExit("release must be a published prerelease")
-if release.get("tag_name") != expected_tag or release.get("target_commitish") != expected_commit:
+if release.get("tag_name") != expected_tag or not isinstance(release.get("target_commitish"), str):
     raise SystemExit("release tag or target commit is not bound to the reviewed commit")
 if tag.get("object", {}).get("type") != "commit" or tag.get("object", {}).get("sha") != expected_commit:
     raise SystemExit("tag ref is not a lightweight ref bound to the reviewed commit")
@@ -267,8 +267,8 @@ for image, expected_name in zip(images, expected_images, strict=True):
         except (OSError, json.JSONDecodeError) as error:
             raise SystemExit(f"invalid {kind} evidence for {name}: {error}") from error
         bound_statement(evidence, subject, digest, expected_repository, expected_commit)
-        if kind == "signature" and evidence != verification:
-            raise SystemExit(f"archived signature evidence differs from live verification for {name}")
+        if evidence != verification:
+            raise SystemExit(f"archived {kind} evidence differs from live cryptographic verification for {name}")
     sbom_name = 'backend' if image is images[0] else 'frontend'
     sbom = json.loads(asset_path[f"sbom/{sbom_name}.spdx.json"].read_text(encoding="utf-8"))
     if not isinstance(sbom.get("spdxVersion"), str) or not isinstance(sbom.get("packages"), list) or not sbom["packages"]:

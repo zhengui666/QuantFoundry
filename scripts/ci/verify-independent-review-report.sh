@@ -49,7 +49,6 @@ scope_paths = [
     "PROJECT_BACKGROUND.md",
     "backend/src/quantfoundry",
     "backend/app/agent_runtime.py",
-    "backend/app/agent_runtime",
     "backend/workers",
     "docs/Agent技术方案",
     "docs/后端系统技术方案/contracts/tools",
@@ -62,9 +61,12 @@ scope_paths = [
     "scripts/release-evidence.sh",
     "scripts/release-known-issues-check.sh",
 ]
-trusted_workflow_blob_sha = "4ecbf36ee23502a5b845f211e008335c0248b231"
+trusted_workflow_blob_sha = "9c42061823b49952e28d66434de97b98e61f7b06"
 
 def review_scope_sha256():
+    for path in scope_paths:
+        if subprocess.run(["git", "cat-file", "-e", f"{expected_commit}:{path}"]).returncode:
+            raise SystemExit(f"reviewed path is missing at reviewed commit: {path}")
     completed = subprocess.run(
         ["git", "ls-tree", "-r", "--full-tree", expected_commit, "--", *scope_paths],
         text=False,
@@ -156,13 +158,20 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-") as directory:
     if result.returncode:
         raise SystemExit(f"cannot download independent review artifact: {result.stderr.strip() or result.returncode}")
     archive = output.read_bytes()
+if len(archive) > 100 * 1024 * 1024:
+    raise SystemExit("independent review artifact exceeds the compressed size limit")
 if hashlib.sha256(archive).hexdigest() != artifact_sha256:
     raise SystemExit("independent review artifact SHA-256 does not match report")
 try:
     with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+        members = bundle.infolist()
+        if len(members) > 32 or sum(member.file_size for member in members) > 100 * 1024 * 1024:
+            raise SystemExit("independent review artifact exceeds the uncompressed size limit")
         matching_members = [member for member in bundle.infolist() if member.filename == artifact_report_path and not member.is_dir()]
         if len(matching_members) != 1:
             raise SystemExit("independent review artifact must contain exactly one declared review report")
+        if matching_members[0].file_size > 1024 * 1024:
+            raise SystemExit("independent review artifact report exceeds the size limit")
         embedded_bytes = bundle.read(matching_members[0])
 except (OSError, zipfile.BadZipFile) as error:
     raise SystemExit(f"independent review artifact is not a readable ZIP: {error}") from error

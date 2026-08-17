@@ -53,6 +53,17 @@ git -C "$repo_root" merge-base --is-ancestor "$tag_target" "$trusted_branch" || 
   exit 1
 }
 
+git -C "$verifier_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+  printf '%s\n' '{"result":"invalid","reason":"verifier root is not a Git worktree"}' >&2
+  exit 1
+}
+verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
+verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
+[[ "$verifier_head" == "$tag_target" && -z "$verifier_status" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"verifier code is not clean at the trusted tag commit"}' >&2
+  exit 1
+}
+
 worktree_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ -z "$worktree_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"release check requires a clean worktree"}' >&2
