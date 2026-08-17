@@ -66,12 +66,17 @@ class LiveConnectorValidationRequest(BaseModel):
         if (
             parsed.scheme != "https"
             or not parsed.netloc
+            or not parsed.hostname
             or parsed.username
             or parsed.password
         ):
             raise ValueError(
                 "endpoint must be an HTTPS URL without embedded credentials"
             )
+        try:
+            parsed.port
+        except ValueError as error:
+            raise ValueError("endpoint must contain a valid HTTPS port") from error
         return value.rstrip("/")
 
 
@@ -82,7 +87,7 @@ class LiveConnectorValidationResult(BaseModel):
     error_code: str | None
     connector_id: str | None
     protocol_version: str | None
-    capabilities_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    capabilities_hash: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
     account_ids: list[str]
     assets: list[
         Literal[
@@ -98,6 +103,7 @@ class LiveConnectorValidationResult(BaseModel):
                 self.error_code is not None
                 or not self.connector_id
                 or not self.protocol_version
+                or not self.capabilities_hash
             ):
                 raise ValueError(
                     "successful connector validation must contain capabilities"
@@ -121,10 +127,10 @@ SCHEMA_MODELS.update(
 )
 for _model in SCHEMA_MODELS.values():
     _model.model_rebuild()
-try:
-    from app import generated_api_models as _ux_models
+# Compatibility bridge: UX-001 models are not part of the OpenAPI-generated module yet.
+from app import generated_api_models as _ux_models
 
-    for _name in (
+for _name in (
         "GeneralAccessKeyLoginRequest",
         "GeneralAccessKeyMetadata",
         "GeneralAccessKeyList",
@@ -153,11 +159,8 @@ try:
         "CanonicalErrorCode",
         "FieldError",
         "ProblemContext",
-    ):
-        SCHEMA_MODELS[_name] = cast(type[BaseModel], getattr(_ux_models, _name))
-except ModuleNotFoundError as error:
-    if error.name != "app":
-        raise
+):
+    SCHEMA_MODELS[_name] = cast(type[BaseModel], getattr(_ux_models, _name))
 
 
 def validate_schema(name: str, value: Any) -> Any:

@@ -801,6 +801,12 @@ def _audit(
 ) -> None:
     with _DOMAIN_SWITCH_LOCK:
         session.execute(
+            text(
+                "UPDATE bootstrap_state SET updated_at = updated_at "
+                "WHERE singleton_key = 'BOOTSTRAP-DEFAULT'"
+            )
+        )
+        session.execute(
             select(BootstrapState)
             .where(BootstrapState.singleton_key == "BOOTSTRAP-DEFAULT")
             .with_for_update()
@@ -1709,20 +1715,35 @@ def build_router() -> APIRouter:
         now = _now()
         valid = key is not None and _key_active(key, now)
         try:
-            peppered, pepper_key_id = _peppered_secret(
-                secret, key.per_key_salt if key and key.per_key_salt else b"\0" * 16
-            )
             verifier = key.verifier_phc if key and key.verifier_phc else DUMMY_VERIFIER
-            verified = PH.verify(verifier, peppered)
-            valid = (
-                valid
-                and bool(key and hmac.compare_digest(pepper_key_id, key.pepper_key_id))
-                and verified
+            legacy = key is not None and (
+                not key.per_key_salt or not key.pepper_key_id
             )
-            if valid and key is not None and PH.check_needs_rehash(key.verifier_phc):
+            if legacy:
+                verified = PH.verify(verifier, secret)
+            else:
+                peppered, pepper_key_id = _peppered_secret(secret, key.per_key_salt)
+                verified = PH.verify(verifier, peppered)
+                verified = verified and hmac.compare_digest(
+                    pepper_key_id, key.pepper_key_id
+                )
+            valid = valid and verified
+            if valid and key is not None and legacy:
+                per_key_salt = secrets.token_bytes(16)
+                peppered, pepper_key_id = _peppered_secret(secret, per_key_salt)
+                key.per_key_salt = per_key_salt
+                key.pepper_key_id = pepper_key_id
                 key.verifier_phc = PH.hash(peppered)
                 key.hash_parameters_version = "argon2id-v1"
-        except (VerifyMismatchError, VerificationError, InvalidHash, RuntimeError):
+            if (
+                valid
+                and key is not None
+                and not legacy
+                and PH.check_needs_rehash(key.verifier_phc)
+            ):
+                key.verifier_phc = PH.hash(peppered)
+                key.hash_parameters_version = "argon2id-v1"
+        except (VerifyMismatchError, VerificationError, InvalidHash, RuntimeError, TypeError):
             valid = False
         if not valid:
             _record_login_failure(request, session)
@@ -2099,6 +2120,22 @@ def build_router() -> APIRouter:
                 for row in db.scalars(select(ConfigurationCatalogRow))
             }
             seen: set[str] = set()
+            validated_items: list[tuple[Any, ConfigurationCatalogRow, dict[str, Any]]] = []
+            for item in data.values:
+                if item.key in seen or item.key not in catalog:
+                    return _problem(
+                        422,
+                        "INVALID_REQUEST",
+                        "configuration key is unknown or duplicated",
+                    )
+                seen.add(item.key)
+                entry = catalog[item.key]
+                value = item.model_dump(mode="json", by_alias=True)
+                if entry.sensitivity == "SECRET" and not isinstance(value.get("secret"), str):
+                    return _problem(
+                        422, "INVALID_REQUEST", "secret replacement is required"
+                    )
+                validated_items.append((item, entry, value))
             revision = ConfigurationRevision(
                 base_revision=data.base_revision,
                 state="CANDIDATE",
@@ -2113,26 +2150,17 @@ def build_router() -> APIRouter:
             snapshot: dict[str, Any] = {}
             for row in _effective_value_rows(db, active.active_revision).values():
                 snapshot[row.key] = (
-                    {"configured": True, "secret": True}
+                    {
+                        "configured": True,
+                        "secret": True,
+                        "value_sha256": row.value_sha256,
+                    }
                     if row.ciphertext is not None
                     else row.typed_value
                 )
-            for item in data.values:
-                if item.key in seen or item.key not in catalog:
-                    return _problem(
-                        422,
-                        "INVALID_REQUEST",
-                        "configuration key is unknown or duplicated",
-                    )
-                seen.add(item.key)
-                entry = catalog[item.key]
-                value = item.model_dump(mode="json", by_alias=True)
+            for item, entry, value in validated_items:
                 if entry.sensitivity == "SECRET":
-                    secret = value.get("secret")
-                    if not isinstance(secret, str):
-                        return _problem(
-                            422, "INVALID_REQUEST", "secret replacement is required"
-                        )
+                    secret = cast(str, value["secret"])
                     encrypted, key_id = _seal(
                         secret,
                         aad=_configuration_aad(
@@ -2148,7 +2176,11 @@ def build_router() -> APIRouter:
                             value_sha256=hashlib.sha256(secret.encode()).hexdigest(),
                         )
                     )
-                    snapshot[item.key] = {"configured": True, "secret": True}
+                    snapshot[item.key] = {
+                        "configured": True,
+                        "secret": True,
+                        "value_sha256": hashlib.sha256(secret.encode()).hexdigest(),
+                    }
                 else:
                     typed = value.get("value")
                     db.add(

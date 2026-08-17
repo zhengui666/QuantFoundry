@@ -97,7 +97,7 @@ def test_only_explicitly_issued_bearer_tokens_are_accepted(authorization: str) -
 
 def test_authenticated_non_owner_is_denied_authority() -> None:
     response = TestClient(app).get(
-        "/api/v1/research", headers={"Authorization": "Bearer arbitrary"}
+        "/api/v1/research", headers={"Authorization": "Bearer viewer"}
     )
-    assert response.status_code == 401
-    assert response.json()["code"] == "UNAUTHENTICATED"
+    assert response.status_code == 403
+    assert response.json()["code"] == "PERMISSION_DENIED"

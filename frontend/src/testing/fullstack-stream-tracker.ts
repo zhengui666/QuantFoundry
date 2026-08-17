@@ -72,6 +72,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
       if (status === 401 || status === 403) rejectedRequests.add(request);
     },
     observeTermination(request: RequestIdentity) {
+      reconcile();
       if (request === authenticatedRequest) authenticatedTerminated = true;
       else if (rejectedRequests.has(request)) ignoredRejectedTerminations += 1;
     },

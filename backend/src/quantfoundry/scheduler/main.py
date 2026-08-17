@@ -45,7 +45,7 @@ def run_once() -> int:
     try:
         record_heartbeat(session, "scheduler", scheduler_id(), None)
         PaperScheduler().discover(session, now=datetime.now(UTC), owner=scheduler_id())
-        retried, failed = reap_expired_jobs(session, queue_name="core")
+        retried, failed = reap_expired_jobs(session)
         reap_orphan_artifacts(session, ArtifactRow)
         session.commit()
     except Exception:

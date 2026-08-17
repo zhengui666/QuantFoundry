@@ -138,9 +138,7 @@ jobs:
         shell: bash
         env:
           QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
-          QF_INDEPENDENT_REVIEW_REPORT: ${{ runner.temp }}/qf-independent-review/independent-review-locator.json
-          QF_INDEPENDENT_REVIEW_ATTESTATION: ${{ runner.temp }}/qf-independent-review/independent-review-attestation.json
-          QF_INDEPENDENT_REVIEW_OFFLINE: '1'
+          QF_INDEPENDENT_REVIEW_TRUSTED: '1'
         run: |
           set -euo pipefail
           scripts/ci/run-gate.sh agent-change "$QF_CI_REPORT_DIR"

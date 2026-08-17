@@ -179,11 +179,13 @@ run_agent_change() {
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
   run_step tool-registry-exact make tools
   run_step agent-contract-and-policy make backend-ci
-  local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
-  if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
-    run_step independent-review-locator scripts/ci/fetch-independent-review-report.sh "$commit" "$review_locator"
+  if [[ "${QF_INDEPENDENT_REVIEW_TRUSTED:-0}" != 1 ]]; then
+    local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
+    if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
+      run_step independent-review-locator scripts/ci/fetch-independent-review-report.sh "$commit" "$review_locator"
+    fi
+    run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$review_locator" "$commit"
   fi
-  run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$review_locator" "$commit"
 }
 
 verify_remote_release_tag() {

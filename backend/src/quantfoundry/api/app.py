@@ -4026,11 +4026,17 @@ def snapshot(
                 "DATA_QUALITY_BLOCKED",
                 "workspace-owned validated dataset is required",
             )
+        from quantfoundry.application.jobs.effects import dataset_validation_matches
+
         fingerprint = content_hash(
             {"dataset_id": dataset_id, "snapshot_request": payload}
         )
         try:
             bundle = load_dataset(dataset_id)
+            if not dataset_validation_matches(
+                s, dataset_id, actor.workspace_id, bundle
+            ):
+                raise EngineInputError("dataset validation evidence is stale or missing")
             public_rows, holdout_rows = snapshot_rows(
                 bundle,
                 payload["coverage_start"],

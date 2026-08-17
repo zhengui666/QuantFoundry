@@ -154,6 +154,7 @@ def seed_local(
     session_token: str,
     ttl_hours: int = 30 * 24,
 ) -> dict[str, Any]:
+    workspace_id = canonical_workspace_id(workspace_id)
     cost_root = Path(os.environ["QF_COST_MODEL_DIR"])
     policy_root = Path(os.environ["QF_POLICY_DIR"])
     dataset_root = Path(os.environ["QF_DATASET_DIR"])

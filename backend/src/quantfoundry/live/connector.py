@@ -57,7 +57,7 @@ SUPPORTED_OPERATIONS = frozenset(
 
 
 def _segment(value: str, field_name: str) -> str:
-    if not value:
+    if not value or value in {".", ".."}:
         raise ValueError(f"{field_name} is required")
     return quote(value, safe="")
 

@@ -10,7 +10,9 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 database_url = os.getenv("QF_ALEMBIC_URL") or os.getenv("QF_DATABASE_URL")
 if not database_url:
     raise RuntimeError("QF_ALEMBIC_URL or QF_DATABASE_URL is required")
-os.environ.setdefault("QF_DATABASE_URL", database_url)
+_previous_database_url = os.environ.get("QF_DATABASE_URL")
+if _previous_database_url is None:
+    os.environ["QF_DATABASE_URL"] = database_url
 _previous_alembic_running = os.environ.get("QF_ALEMBIC_RUNNING")
 os.environ["QF_ALEMBIC_RUNNING"] = "1"
 
@@ -21,6 +23,10 @@ try:
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     target_metadata = Base.metadata
 except Exception:
+    if _previous_database_url is None:
+        os.environ.pop("QF_DATABASE_URL", None)
+    else:
+        os.environ["QF_DATABASE_URL"] = _previous_database_url
     if _previous_alembic_running is None:
         os.environ.pop("QF_ALEMBIC_RUNNING", None)
     else:
@@ -81,6 +87,10 @@ try:
     else:
         run_migrations_online()
 finally:
+    if _previous_database_url is None:
+        os.environ.pop("QF_DATABASE_URL", None)
+    else:
+        os.environ["QF_DATABASE_URL"] = _previous_database_url
     if _previous_alembic_running is None:
         os.environ.pop("QF_ALEMBIC_RUNNING", None)
     else:

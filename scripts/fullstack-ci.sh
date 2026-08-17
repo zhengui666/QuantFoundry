@@ -33,9 +33,10 @@ actual_pnpm_version="$(pnpm --version)"
 }
 
 fullstack_tmp="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-fullstack.XXXXXX")"
+project_suffix="${fullstack_tmp##*.}"
+project_name="qf-fullstack-${project_suffix}"
 environment_file="$fullstack_tmp/local.env"
 seed_output="$fullstack_tmp/seed.json"
-project_name="qf-fullstack-$$"
 export COMPOSE_PROJECT_NAME="$project_name"
 keep_failed="${QF_FULLSTACK_KEEP_FAILED:-0}"
 

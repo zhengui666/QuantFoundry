@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-from importlib import import_module
 from typing import Any, cast
 
 from pydantic import ValidationError
 
-try:
-    _event_models = import_module("app.generated_api_models")
-except ModuleNotFoundError as error:  # pragma: no cover - packaged canonical fallback
-    if error.name != "app":
-        raise
-    _event_models = import_module("quantfoundry.contracts.openapi.generated_api_models")
-
-EventPayload = _event_models.EventPayload
-EventType = _event_models.EventType
-SseEnvelope = _event_models.SseEnvelope
+from app.generated_api_models import (
+    EventPayload,
+    EventType,
+    SseEnvelope,
+)
 
 
 def _event_type_values() -> tuple[str, ...]:

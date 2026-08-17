@@ -68,6 +68,12 @@ def _insert(connection: Any, table: Table, values: dict[str, Any]) -> None:
 
 def _rechain_audit_events(connection: Any, table: Table) -> None:
     """Recompute the disposable fixture's audit chain after row surgery."""
+    migration_hash = runpy.run_path(
+        str(
+            BACKEND_ROOT
+            / "alembic/versions/0017_paper_scheduler_state_initialization.py"
+        )
+    )["_hash"]
     workspaces = connection.execute(select(table.c.workspace_id).distinct()).scalars()
     for workspace_id in workspaces:
         previous: str | None = None
@@ -77,34 +83,10 @@ def _rechain_audit_events(connection: Any, table: Table) -> None:
             .order_by(table.c.sequence)
         ).mappings()
         for row in rows:
-            occurred_at = row["occurred_at"]
-            if occurred_at.tzinfo is None:
-                occurred_at = occurred_at.replace(tzinfo=UTC)
-            payload = {
-                "event_id": row["event_id"],
-                "object_version": row["object_version"],
-                "object_revision": row["object_revision"],
-                "correlation_id": row.get("correlation_id"),
-                "causation_id": row.get("causation_id"),
-                "job_id": row.get("job_id"),
-                "agent_run_id": row.get("agent_run_id"),
-                "tool_call_id": row.get("tool_call_id"),
-            }
-            event_hash = hashlib.sha256(
-                json.dumps(
-                    {
-                        "previous_sha256": previous,
-                        "actor_id": row["actor_id"],
-                        "action": row["action_type"],
-                        "object_type": row["object_type"],
-                        "object_id": row["object_id"],
-                        "payload": payload,
-                        "occurred_at": occurred_at.isoformat(),
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode()
-            ).hexdigest()
+            canonical = dict(row)
+            canonical["prev_event_hash"] = previous
+            canonical.pop("event_hash", None)
+            event_hash = migration_hash(canonical)
             connection.execute(
                 table.update()
                 .where(table.c.id == row["id"])
@@ -336,6 +318,49 @@ def _ensure_rows(connection: Any, metadata: MetaData, name: str, floor: int) -> 
         connection.execute(select(func.count()).select_from(table)).scalar_one()
     )
     if count >= floor:
+        return
+    if name in {"audit_chain_heads", "event_stream_watermarks"}:
+        workspaces = _workspaces(connection, metadata)
+        existing = set(connection.execute(select(table.c.workspace_id)).scalars())
+        for workspace_id in workspaces:
+            if count >= floor:
+                break
+            if workspace_id in existing:
+                continue
+            if name == "audit_chain_heads":
+                latest = connection.execute(
+                    select(
+                        metadata.tables["audit_events"].c.event_hash,
+                        metadata.tables["audit_events"].c.sequence,
+                    )
+                    .where(
+                        metadata.tables["audit_events"].c.workspace_id
+                        == workspace_id
+                    )
+                    .order_by(metadata.tables["audit_events"].c.sequence.desc())
+                    .limit(1)
+                ).first()
+                values = {
+                    "workspace_id": workspace_id,
+                    "event_sha256": None if latest is None else latest.event_hash,
+                    "revision": 0 if latest is None else latest.sequence,
+                }
+            else:
+                latest = connection.execute(
+                    select(func.max(metadata.tables["domain_events"].c.sequence)).where(
+                        metadata.tables["domain_events"].c.workspace_id == workspace_id
+                    )
+                ).scalar_one()
+                values = {
+                    "workspace_id": workspace_id,
+                    "last_sequence": int(latest or 0),
+                    "expired_through_sequence": 0,
+                }
+            _insert(connection, table, values)
+            existing.add(workspace_id)
+            count += 1
+        if count < floor:
+            raise RuntimeError(f"migration gate fixture lacks workspace for {name}")
         return
     source = _source_row(connection, table)
     for index in range(floor - count):

@@ -39,9 +39,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          workflow_files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          ((${#workflow_files[@]} > 0))
+          export QF_ACTIONLINT_COMMAND="actionlint $(printf '%q ' "${workflow_files[@]}")"
           scripts/ci/release-governance-static-gate.sh
           scripts/ci/p0-architecture-review.sh
-          actionlint .github/workflows/*.{yml,yaml}
+          actionlint "${workflow_files[@]}"
       - name: Verify published release supply-chain evidence
         if: ${{ inputs.release_tag != '' }}
         shell: bash
@@ -67,6 +71,7 @@ jobs:
           python3 - "$GITHUB_SHA" "$GITHUB_RUN_ID" "$RUNNER_TEMP/qf-p0-review-evidence/independent-review-report.json" <<'PY'
           import hashlib
           import json
+          import os
           import pathlib
           import subprocess
           import sys
@@ -102,7 +107,7 @@ jobs:
               "commands": [
                   {"command": "scripts/ci/release-governance-static-gate.sh", "result": "pass", "exit_code": 0},
                   {"command": "scripts/ci/p0-architecture-review.sh", "result": "pass", "exit_code": 0},
-                  {"command": "actionlint .github/workflows/*.{yml,yaml}", "result": "pass", "exit_code": 0},
+              {"command": os.environ["QF_ACTIONLINT_COMMAND"].strip(), "result": "pass", "exit_code": 0},
               ],
           }
           pathlib.Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -110,7 +115,7 @@ jobs:
           uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
             --command "scripts/ci/release-governance-static-gate.sh" \
             --command "scripts/ci/p0-architecture-review.sh" \
-            --command "actionlint .github/workflows/*.{yml,yaml}"
+            --command "$QF_ACTIONLINT_COMMAND"
           if [[ -n "$RELEASE_TAG" ]]; then
             release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
             uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \

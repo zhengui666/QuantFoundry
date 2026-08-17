@@ -588,7 +588,6 @@ def compute_factor_rows(
         by_symbol[row["symbol"]].append(row)
     calculated: list[dict[str, Any]] = []
     for history in by_symbol.values():
-        adjusted = _adjusted_price_map(history)
         for index in range(lookback, len(history)):
             current = history[index]
             knowledge_time = _parse_timestamp(current["event_time"], "event_time")
@@ -606,8 +605,9 @@ def compute_factor_rows(
             if len(available_history) < lookback:
                 continue
             prior = available_history[-lookback]
-            current_price = adjusted[current["date"]][current["symbol"]]
-            prior_price = adjusted[prior["date"]][prior["symbol"]]
+            visible_prices = _adjusted_price_map([*available_history, current])
+            current_price = visible_prices[current["date"]][current["symbol"]]
+            prior_price = visible_prices[prior["date"]][prior["symbol"]]
             score = current_price / prior_price - 1.0
             if operation == "mean_reversion":
                 score *= -1
@@ -758,8 +758,9 @@ def _portfolio_returns(
         )
     except (KeyError, TypeError, ValueError) as error:
         raise EngineInputError("strategy signal/leverage inputs are invalid") from error
+    uses_fallback_scores = any(row.get("strategy_score") is None for row in rows)
     if (
-        signal_scale == 0
+        (uses_fallback_scores and signal_scale == 0)
         or not math.isfinite(signal_scale)
         or not math.isfinite(leverage_limit)
         or not math.isfinite(position_limit)
@@ -814,8 +815,7 @@ def _portfolio_returns(
             (
                 symbol
                 for symbol in today_rows
-                if symbol in next_rows
-                and _parse_bool(
+                if _parse_bool(
                     today_rows[symbol].get("in_universe", True), "in_universe"
                 )
                 and (not universe_symbols or symbol in universe_symbols)
@@ -836,7 +836,7 @@ def _portfolio_returns(
             target = {
                 symbol: weight
                 for symbol, weight in previous_weights.items()
-                if symbol in today_rows and symbol in next_rows
+                if symbol in today_rows
             }
         else:
             if weighting == "SCORE":
@@ -887,8 +887,11 @@ def _portfolio_returns(
             for symbol in universe
         )
         asset_returns = {
-            symbol: adjusted_prices[tomorrow][symbol] / adjusted_prices[today][symbol]
-            - 1.0
+            symbol: (
+                adjusted_prices[tomorrow].get(symbol, adjusted_prices[today][symbol])
+                / adjusted_prices[today][symbol]
+                - 1.0
+            )
             for symbol in target
         }
         gross = sum(weight * asset_returns[symbol] for symbol, weight in target.items())

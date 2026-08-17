@@ -58,7 +58,22 @@ class CanonicalRoute(APIRoute):
             if operation is None:
                 return await original(request)
             try:
-                for raw_parameter in operation.get("parameters", []):
+                path_item = canonical_openapi().get("paths", {}).get(path, {})
+                def parameter_key(raw_parameter: dict[str, Any]) -> tuple[str, str]:
+                    parameter = _resolve_parameter(raw_parameter)
+                    return parameter["name"], parameter["in"]
+
+                parameters = {
+                    parameter_key(parameter): parameter
+                    for parameter in path_item.get("parameters", [])
+                }
+                parameters.update(
+                    {
+                        parameter_key(parameter): parameter
+                        for parameter in operation.get("parameters", [])
+                    }
+                )
+                for raw_parameter in parameters.values():
                     parameter = _resolve_parameter(raw_parameter)
                     location = parameter["in"]
                     name = parameter["name"]

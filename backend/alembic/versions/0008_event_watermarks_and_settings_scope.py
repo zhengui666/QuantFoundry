@@ -51,9 +51,25 @@ def _scope_domain_event_primary_key() -> None:
 
 def upgrade() -> None:
     # Materialize legacy system events before workspace_id becomes part of the key.
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable ON domain_events")
+    else:
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     op.execute(
         "UPDATE domain_events SET workspace_id = 'system' WHERE workspace_id IS NULL"
     )
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
+            "domain_events FOR EACH ROW EXECUTE FUNCTION qf_reject_change()"
+        )
+    else:
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
+            "domain_events BEGIN SELECT RAISE(ABORT, "
+            "'immutable evidence cannot be changed'); END"
+        )
     op.create_table(
         "event_stream_watermarks",
         sa.Column("workspace_id", sa.String(), primary_key=True),

@@ -275,6 +275,8 @@ class PaperScheduler:
         if not initialization and state is None:
             raise PaperSchedulerError("scheduler state is missing")
         from_state = None if state is None else state["scheduler_status"]
+        if state is not None and not initialization and from_state == to_state:
+            return
         suppressed = None if to_state == ACTIVE else timestamp
         values = {
             "scheduler_status": to_state,

@@ -40,7 +40,11 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
     if not isinstance(schema, dict):
         return schema
     if "$ref" in schema:
-        return normalized_schema(document, resolve(document, schema))
+        target = resolve(document, schema)
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        if siblings:
+            return normalized_schema(document, {"allOf": [target, siblings]})
+        return normalized_schema(document, target)
     result = deepcopy(schema)
     result.pop("title", None)
     result.pop("description", None)
@@ -66,9 +70,14 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
             "union": sorted(branches, key=lambda item: json.dumps(item, sort_keys=True))
         }
     union: list[Any] = []
+    union_keywords = []
     for keyword in ("oneOf", "anyOf"):
-        union.extend(result.pop(keyword, []))
+        branches = result.pop(keyword, None)
+        if branches is not None:
+            union_keywords.append(keyword)
+            union.extend(branches)
     if union:
+        result["union_keyword"] = tuple(union_keywords)
         result["union"] = sorted(
             [normalized_schema(document, branch) for branch in union],
             key=lambda item: json.dumps(item, sort_keys=True),
@@ -248,7 +257,13 @@ def normalized_parameters(
 def normalized_security(value: Any) -> Any:
     if value is None:
         return None
-    return [{key.lower(): scopes for key, scopes in item.items()} for item in value]
+    return sorted(
+        [
+            {key: sorted(scopes) for key, scopes in item.items()}
+            for item in value
+        ],
+        key=lambda item: json.dumps(item, sort_keys=True),
+    )
 
 
 errors: list[str] = []
@@ -297,7 +312,7 @@ for key, expected in canonical_operations.items():
         errors.append(f"{label}: response statuses")
     for status, raw_expected_response in expected["responses"].items():
         expected_response = resolve(canonical, raw_expected_response)
-        actual_response = actual["responses"].get(status, {})
+        actual_response = resolve(runtime, actual["responses"].get(status, {}))
         if set(expected_response.get("content", {})) != set(
             actual_response.get("content", {})
         ):

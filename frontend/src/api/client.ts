@@ -1337,6 +1337,13 @@ export function streamEvents(
   let consecutiveContractSkews = 0;
   let attempts = 0;
   let reconnectTimer: number | undefined;
+  const safeResync = async () => {
+    try {
+      await onResync();
+    } catch {
+      onState?.('degraded');
+    }
+  };
   const reconnect = () => {
     if (stopped || authorizationBlocked || contractBlocked) return;
     active?.abort();
@@ -1394,7 +1401,7 @@ export function streamEvents(
               event = decodeCanonicalSseFrame(rawFrame)?.event;
             } catch {
               consecutiveContractSkews += 1;
-              await onResync();
+              await safeResync();
               if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
@@ -1407,7 +1414,7 @@ export function streamEvents(
             }
             if (!event || !isSafeHoldoutNotification(event)) {
               consecutiveContractSkews += 1;
-              await onResync();
+              await safeResync();
               if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
@@ -1422,7 +1429,7 @@ export function streamEvents(
             if (event.sequence <= connectionLast) continue;
             const hasGap = connectionLast > 0 && event.sequence > connectionLast + 1;
             if (event.event_type === 'system.resync_required') {
-              await onResync();
+              await safeResync();
               if (!current()) return;
               connectionLast = event.sequence;
               last = connectionLast;
@@ -1430,7 +1437,7 @@ export function streamEvents(
               continue;
             }
             if (hasGap) {
-              await onResync();
+              await safeResync();
               if (!current()) return;
             }
             onEvent(event);
@@ -1447,7 +1454,7 @@ export function streamEvents(
         }
         if (!stopped && !controller.signal.aborted) {
           onState?.('degraded');
-          await onResync();
+          await safeResync();
           if (!current()) return;
         }
       }

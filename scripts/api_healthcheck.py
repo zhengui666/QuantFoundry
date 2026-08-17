@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import urllib.error
 import urllib.request
@@ -17,15 +16,7 @@ def main() -> int:
         ) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as error:
-        if os.getenv("QF_ENV", "production") not in {"local", "development"}:
-            return 1
-        try:
-            payload = json.loads(error.read().decode("utf-8"))
-        except OSError:
-            return 1
-        except ValueError:
-            return 1
-        return 0 if payload.get("code") == "DATABASE_DISCONNECTED" else 1
+        return 1
     except OSError:
         return 1
     except ValueError:

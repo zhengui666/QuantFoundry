@@ -37,6 +37,12 @@ write_fixture() {
     unsafe-name)
       printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"release-manifest.json"},{"name":"SHA256SUMS","source":"SHA256SUMS"},{"name":"nested/backend.json","source":"attestations/backend.json"}]}' > "$directory/release-manifest.json"
       ;;
+    reserved-mismatch)
+      printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"attestations/backend.json"},{"name":"SHA256SUMS","source":"SHA256SUMS"}]}' > "$directory/release-manifest.json"
+      ;;
+    reserved-swap)
+      printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"SHA256SUMS"},{"name":"SHA256SUMS","source":"release-manifest.json"}]}' > "$directory/release-manifest.json"
+      ;;
     *)
       printf 'Unknown fixture: %s\n' "$name" >&2
       exit 2
@@ -75,7 +81,7 @@ for name, digest in checksums.items():
 subprocess.run(["sha256sum", "--check", "--strict", str(root / "SHA256SUMS")], cwd=staging, check=True, stdout=subprocess.DEVNULL)
 PY
 
-for case_name in collision orphan missing symlink unsafe-source unsafe-name; do
+for case_name in collision orphan missing symlink unsafe-source unsafe-name reserved-mismatch reserved-swap; do
   write_fixture "$case_name"
   diagnostic="$fixture_root/$case_name.err"
   if "$repo_root/scripts/release-evidence.sh" package-assets "$fixture_root/$case_name" > /dev/null 2>"$diagnostic"; then
@@ -89,6 +95,7 @@ for case_name in collision orphan missing symlink unsafe-source unsafe-name; do
     symlink) expected='symlink release asset source' ;;
     unsafe-source) expected='source must be a safe relative path' ;;
     unsafe-name) expected='name must be a non-empty flat filename' ;;
+    reserved-mismatch|reserved-swap) expected='reserved release asset name must map to itself' ;;
   esac
   grep -Fq "$expected" "$diagnostic" || {
     cat "$diagnostic" >&2

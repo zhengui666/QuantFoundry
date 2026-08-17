@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="${QF_RELEASE_CHECK_ROOT:-$script_root}"
+verifier_root="${QF_RELEASE_CHECK_VERIFIER_ROOT:-$repo_root}"
 tag="${1:-}"
 
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]] || {
@@ -69,11 +71,16 @@ final_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)
   exit 1
 }
 
-QF_RELEASE_COMMIT="$tag_target" "$repo_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
+QF_RELEASE_COMMIT="$tag_target" "$verifier_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
 post_p0_head="$(git -C "$repo_root" rev-parse HEAD)"
 post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ "$post_p0_head" == "$tag_target" && -z "$post_p0_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"worktree or HEAD changed during P0 verification"}' >&2
+  exit 1
+}
+post_p0_tag_object="$(git -C "$repo_root" ls-remote --exit-code --refs origin "refs/tags/$tag" | awk 'NR == 1 {print $1}')" || exit 1
+[[ "$post_p0_tag_object" == "$local_tag_object" ]] || {
+  printf '{"result":"invalid","reason":"tag changed during P0 verification","tag":"%s"}\n' "$tag" >&2
   exit 1
 }
 printf '{"result":"pass","tag":"%s","commit":"%s","p0":"closed","tag_object":"%s"}\n' "$tag" "$tag_target" "$local_tag_object"

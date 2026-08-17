@@ -33,31 +33,30 @@ const typeChecked = tseslint.configs.recommendedTypeChecked.map((config) =>
       }
     : { ...config, files: typedSourceFiles, ignores: nonProductionFiles },
 );
+const nonProductionTyped = {
+  files: nonProductionSourceFiles,
+  languageOptions: {
+    parser: tseslint.parser,
+    globals: {
+      AbortController: 'readonly',
+      crypto: 'readonly',
+      document: 'readonly',
+      fetch: 'readonly',
+      localStorage: 'readonly',
+      process: 'readonly',
+      sessionStorage: 'readonly',
+      TextDecoderStream: 'readonly',
+      URL: 'readonly',
+      window: 'readonly',
+    },
+  },
+  rules: { ...tseslint.configs.recommended.rules, 'no-unused-vars': 'off' },
+};
 
 export default tseslint.config(
   js.configs.recommended,
   ...typeChecked,
-  {
-    files: nonProductionSourceFiles,
-    languageOptions: {
-      parser: tseslint.parser,
-      globals: {
-        AbortController: 'readonly',
-        crypto: 'readonly',
-        document: 'readonly',
-        fetch: 'readonly',
-        localStorage: 'readonly',
-        process: 'readonly',
-        sessionStorage: 'readonly',
-        TextDecoderStream: 'readonly',
-        URL: 'readonly',
-        window: 'readonly',
-      },
-    },
-    rules: {
-      'no-unused-vars': 'off',
-    },
-  },
+  nonProductionTyped,
   {
     files: typedSourceFiles,
     plugins: { 'react-hooks': reactHooks },
@@ -154,7 +153,18 @@ export default tseslint.config(
           ],
           patterns: [
             {
-              group: ['**/routes/**', '**/features/**', '**/domain/**', '**/ui', '**/ui/**'],
+              group: [
+                'react/**',
+                'react-dom/**',
+                '**/routes',
+                '**/routes/**',
+                '**/features',
+                '**/features/**',
+                '**/domain',
+                '**/domain/**',
+                '**/ui',
+                '**/ui/**',
+              ],
               message: 'The API layer cannot depend on UI or domain implementation modules.',
             },
           ],

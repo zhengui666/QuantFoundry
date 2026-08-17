@@ -200,5 +200,9 @@ def apply_fill(
         if terminal
         else "PARTIALLY_FILLED"
     )
-    next_status = transition_order(current, target)
+    next_status = (
+        current
+        if current == "CANCELLED" and cumulative < quantity
+        else transition_order(current, target)
+    )
     return next_status, known_fill_ids | {fill_id}, True

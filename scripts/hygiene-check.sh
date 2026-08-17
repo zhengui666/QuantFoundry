@@ -29,7 +29,7 @@ git -C "$repo_root" grep -q -I -E -i \
   -- . ':(exclude).env.example' ':(exclude)**/*.lock'
 secret_scan_status=$?
 set -e
-if [[ "$secret_scan_status" -eq 2 ]]; then
+if [[ "$secret_scan_status" -ne 0 && "$secret_scan_status" -ne 1 ]]; then
   printf '%s\n' 'Secret scan failed to execute.' >&2
   exit 1
 fi

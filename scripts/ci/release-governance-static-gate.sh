@@ -8,6 +8,7 @@ import ast
 import json
 import pathlib
 import re
+import shlex
 import sys
 
 import yaml
@@ -23,6 +24,27 @@ run_step_calls = {
     name: command.strip()
     for name, command in re.findall(r"(?m)^\s*run_step\s+([A-Za-z0-9_-]+)\s+(.+?)\s*$", run_gate)
 }
+
+def shell_tokens(command):
+    tokens = shlex.split(command, comments=True, posix=True)
+    expanded = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        expanded.append(token)
+        if token == "-c" and index + 1 < len(tokens):
+            expanded.extend(shell_tokens(tokens[index + 1]))
+            index += 1
+        index += 1
+    return expanded
+
+
+def contains_command(command, expected):
+    actual = shell_tokens(command)
+    wanted = shlex.split(expected, comments=True, posix=True)
+    return any(actual[index : index + len(wanted)] == wanted for index in range(len(actual) - len(wanted) + 1))
+
+
 required_run_steps = {
     "known-issues-review": "scripts/release-known-issues-check.sh",
     "fresh-compose-migration": "make fullstack",
@@ -32,12 +54,10 @@ required_run_steps = {
     "release-governance-static": "scripts/ci/release-governance-static-gate.sh",
 }
 for name, expected in required_run_steps.items():
-    if name not in run_step_calls or expected not in run_step_calls[name]:
+    if name not in run_step_calls or not contains_command(run_step_calls[name], expected):
         errors.append(f"run-gate rc path is missing executable run_step {name}: {expected}")
-if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
-    errors.append("agent-change gate does not require and validate an independent review report")
-if "fetch-independent-review-report.sh" not in run_gate:
-    errors.append("agent-change gate does not fetch an independent review artifact when no locator is supplied")
+if "QF_INDEPENDENT_REVIEW_TRUSTED" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
+    errors.append("agent-change gate does not require the trusted independent review job")
 
 ci_script = read("scripts/ci.sh")
 if 'run_backend mypy --explicit-package-bases src/quantfoundry app workers scheduler' not in ci_script:
@@ -147,8 +167,8 @@ if "paths-ignore:" in agent or "independent_review_evidence" in agent or "review
     errors.append("agent-change-gate contains an unsafe exclusion or self-generated review placeholder")
 if "docs/治理/independent-review-report.json" in agent:
     errors.append("agent-change-gate must not trust a repository-local review locator")
-if "actions/download-artifact" not in agent or "QF_INDEPENDENT_REVIEW_ATTESTATION" not in agent or "QF_INDEPENDENT_REVIEW_OFFLINE" not in agent:
-    errors.append("agent-change-gate must consume a trusted downloaded review locator with offline attestation")
+if "actions/download-artifact" not in agent or "QF_INDEPENDENT_REVIEW_TRUSTED" not in agent or "needs: trusted-independent-review" not in agent:
+    errors.append("agent-change-gate must depend on the trusted independent review job")
 agent_jobs = agent_document.get("jobs", {}) if isinstance(agent_document, dict) else {}
 agent_contract_job = agent_jobs.get("agent-contract") if isinstance(agent_jobs, dict) else None
 if isinstance(agent_contract_job, dict) and "GITHUB_TOKEN" in agent_contract_job.get("env", {}):

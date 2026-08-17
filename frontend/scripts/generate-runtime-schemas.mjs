@@ -28,11 +28,11 @@ const operationCount = Object.values(document.paths ?? {}).reduce(
     ).length,
   0,
 );
-if (operationCount !== 66)
-  throw new Error(`Expected 66 canonical operations, found ${operationCount}`);
-if (Object.keys(schemas).length !== 188)
-  throw new Error(`Expected 188 canonical schemas, found ${Object.keys(schemas).length}`);
-if (schemas.CanonicalErrorCode?.enum?.length !== 75)
+if (operationCount !== document.info?.['x-quantfoundry-operation-count'])
+  throw new Error(`Canonical operation metadata does not match paths: ${operationCount}`);
+if (Object.keys(schemas).length !== document.info?.['x-quantfoundry-schema-count'])
+  throw new Error(`Canonical schema metadata does not match components: ${Object.keys(schemas).length}`);
+if (schemas.CanonicalErrorCode?.enum?.length !== document.info?.['x-quantfoundry-error-count'])
   throw new Error(
     `Expected 75 canonical errors, found ${schemas.CanonicalErrorCode?.enum?.length}`,
   );
@@ -129,7 +129,7 @@ const zodFor = (schema, schemaName) => {
     const siblings = { ...schema };
     delete siblings.$ref;
     if (Object.keys(siblings).length === 0) return `${reference}Schema`;
-    return zodFor({ ...schemas[reference], ...siblings }, schemaName);
+    return zodFor({ allOf: [{ $ref: schema.$ref }, siblings] }, schemaName);
   }
   const {
     allOf = [],

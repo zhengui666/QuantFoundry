@@ -482,7 +482,7 @@ def test_section14_closed_locator_backfill_requires_unique_workspace_authority()
         "event_type": "strategy.updated",
         "object_type": "strategy_version",
         "object_id": strategy_id,
-        "revision": 4,
+        "revision": 7,
     }
     source_rows: dict[str, list[dict[str, Any]]] = {
         "domain_events": [event],
@@ -498,8 +498,8 @@ def test_section14_closed_locator_backfill_requires_unique_workspace_authority()
     }
     migration["_backfill_closed_storage"](source_rows)
     assert event["object_version"] == 2
-    assert event["object_revision"] == 4
-    assert event["revision"] == 4
+    assert event["object_revision"] == 7
+    assert event["revision"] == 7
 
     source_rows["strategy_versions"].append(
         {

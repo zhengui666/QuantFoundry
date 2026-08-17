@@ -41,7 +41,13 @@ names = []
 for asset in assets:
     name = asset.get("name") if isinstance(asset, dict) else None
     asset_id = asset.get("id") if isinstance(asset, dict) else None
-    if not isinstance(name, str) or not name or "/" in name or not isinstance(asset_id, int):
+    if (
+        not isinstance(name, str)
+        or not name
+        or "/" in name
+        or name in {"release.json", "tag.json"}
+        or not isinstance(asset_id, int)
+    ):
         raise SystemExit("release contains an invalid asset")
     names.append(name)
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -91,13 +97,83 @@ if listed != expected - {"SHA256SUMS"}:
 PY
 (cd "$work_dir" && sha256sum --check --strict SHA256SUMS)
 
-python3 - "$work_dir" "$tag" "$commit" <<'PY'
+python3 - "$work_dir" "$tag" "$commit" "$repository" <<'PY'
+import base64
 import json
 import pathlib
 import sys
 
-work_dir, expected_tag, expected_commit = sys.argv[1:]
+work_dir, expected_tag, expected_commit, expected_repository = sys.argv[1:]
 root = pathlib.Path(work_dir)
+
+def statements(value):
+    entries = value if isinstance(value, list) else [value]
+    found = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        verification = entry.get("verificationResult")
+        if isinstance(verification, dict) and isinstance(verification.get("statement"), dict):
+            found.append(verification["statement"])
+        if isinstance(entry.get("statement"), dict):
+            found.append(entry["statement"])
+        for envelope_key in ("dsseEnvelope", "envelope"):
+            envelope = entry.get(envelope_key)
+            payload = envelope.get("payload") if isinstance(envelope, dict) else None
+            if isinstance(payload, str):
+                try:
+                    decoded = json.loads(base64.b64decode(payload + "=" * (-len(payload) % 4)))
+                except (ValueError, json.JSONDecodeError):
+                    continue
+                if isinstance(decoded, dict):
+                    found.append(decoded)
+    return found
+
+
+def bound_statement(value, subject_name, digest, repository, commit):
+    expected_digest = digest.removeprefix("sha256:")
+    for statement in statements(value):
+        subjects = statement.get("subject")
+        subject_ok = isinstance(subjects, list) and any(
+            isinstance(item, dict)
+            and item.get("name") == subject_name
+            and isinstance(item.get("digest"), dict)
+            and item["digest"].get("sha256") == expected_digest
+            for item in subjects
+        )
+        predicate = statement.get("predicate")
+        build = predicate.get("buildDefinition") if isinstance(predicate, dict) else None
+        external = build.get("externalParameters") if isinstance(build, dict) else None
+        source = external.get("source") if isinstance(external, dict) else None
+        workflow = external.get("workflow") if isinstance(external, dict) else None
+        source_uri = source.get("uri") if isinstance(source, dict) else None
+        source_repo = source.get("repository") if isinstance(source, dict) else None
+        workflow_repo = workflow.get("repository") if isinstance(workflow, dict) else None
+        repository_ok = (
+            source_repo == repository
+            or workflow_repo == repository
+            or source_uri == f"git+https://github.com/{repository}@{commit}"
+        )
+        commit_ok = (
+            isinstance(source, dict)
+            and isinstance(source.get("digest"), dict)
+            and source["digest"].get("sha1") == commit
+        )
+        if isinstance(build, dict):
+            for dependency in build.get("resolvedDependencies", []):
+                if not isinstance(dependency, dict):
+                    continue
+                uri = dependency.get("uri")
+                dependency_digest = dependency.get("digest")
+                repository_ok = repository_ok or uri == f"git+https://github.com/{repository}@{commit}"
+                commit_ok = commit_ok or (
+                    isinstance(dependency_digest, dict) and dependency_digest.get("sha1") == commit
+                )
+        if subject_ok and repository_ok and commit_ok:
+            return
+    raise SystemExit(f"attestation is not structurally bound to {subject_name}, {repository}, and {commit}")
+
+
 manifest = json.loads((root / "release-manifest.json").read_text(encoding="utf-8"))
 if manifest.get("tag") != expected_tag or manifest.get("commit") != expected_commit:
     raise SystemExit("release manifest tag or commit is not bound")
@@ -158,9 +234,7 @@ for image in images:
         verification = json.loads(verified.stdout)
     except json.JSONDecodeError as error:
         raise SystemExit(f"GitHub attestation verification returned invalid JSON for {name}") from error
-    serialized = json.dumps(verification, sort_keys=True)
-    if digest not in serialized or expected_repository not in serialized or expected_commit not in serialized:
-        raise SystemExit(f"verified attestation for {name} is not bound to repository, digest, and commit")
+    bound_statement(verification, subject, digest, expected_repository, expected_commit)
     for kind, relative in (
         ("attestation", f"attestations/{'backend' if image is images[0] else 'frontend'}.json"),
         ("provenance", f"provenance/{'backend' if image is images[0] else 'frontend'}.json"),
@@ -170,9 +244,7 @@ for image in images:
             evidence = json.loads(asset_path[relative].read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise SystemExit(f"invalid {kind} evidence for {name}: {error}") from error
-        evidence_text = json.dumps(evidence, sort_keys=True)
-        if digest not in evidence_text or expected_repository not in evidence_text or expected_commit not in evidence_text:
-            raise SystemExit(f"{kind} evidence for {name} is not bound to repository, digest, and commit")
+        bound_statement(evidence, subject, digest, expected_repository, expected_commit)
     sbom_name = 'backend' if image is images[0] else 'frontend'
     sbom = json.loads(asset_path[f"sbom/{sbom_name}.spdx.json"].read_text(encoding="utf-8"))
     if not isinstance(sbom.get("spdxVersion"), str) or not isinstance(sbom.get("packages"), list):

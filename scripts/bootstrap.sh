@@ -78,6 +78,20 @@ if [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then
 fi
 
 if [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then
+  for compose_key in QF_ENV QF_ENVIRONMENT QF_GIT_COMMIT QF_BUILD_ID \
+    QF_POSTGRES_DB QF_POSTGRES_USER QF_POSTGRES_PASSWORD \
+    QF_CREDENTIAL_ENCRYPTION_KEY_ID QF_CREDENTIAL_ENCRYPTION_KEY \
+    QF_LOCAL_PROVIDER_API_KEY; do
+    file_value="$(environment_value "$compose_key")"
+    if [[ "$file_value" == *'$'* ]]; then
+      printf 'Compose interpolation is forbidden in security-sensitive %s.\n' "$compose_key" >&2
+      exit 1
+    fi
+    if [[ "${!compose_key+x}" == x && "${!compose_key}" != "$file_value" ]]; then
+      printf 'Exported %s conflicts with %s; Compose must use one environment source.\n' "$compose_key" "$environment_file" >&2
+      exit 1
+    fi
+  done
   docker compose --profile local --env-file "$environment_file" config --quiet
   printf '%s\n' 'Compose configuration is valid. Run make local-bootstrap.'
 else

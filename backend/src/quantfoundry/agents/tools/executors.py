@@ -286,7 +286,7 @@ def _queue_factor_analysis_experiment(
     parameters: list[dict[str, str]] = []
     accepted = _accepted_job(
         session,
-        "FACTOR_ANALYSIS",
+        "EXPERIMENT",
         {
             "experiment_id": experiment_id,
             **arguments,
@@ -387,11 +387,11 @@ def execute_tool(
         partition = session.execute(
             select(SnapshotPartitionRow).where(
                 SnapshotPartitionRow.snapshot_id == snapshot.id,
-                SnapshotPartitionRow.partition == "PUBLIC",
+                SnapshotPartitionRow.partition == "RESEARCH",
             )
         ).scalar_one_or_none()
         if partition is None:
-            raise ToolExecutionError("public snapshot partition is missing")
+            raise ToolExecutionError("research snapshot partition is missing")
         artifact = session.execute(
             select(Record).where(
                 Record.workspace_id == run.workspace_id,
@@ -425,6 +425,12 @@ def execute_tool(
             raise ToolExecutionError("validated dataset is unavailable")
         source_id = cast(str, source.id)
         bundle = load_dataset(source_id)
+        from quantfoundry.application.jobs.effects import dataset_validation_matches
+
+        if not dataset_validation_matches(
+            session, source_id, run.workspace_id, bundle
+        ):
+            raise ToolExecutionError("dataset validation evidence is stale or missing")
         dates = sorted({row["date"] for row in bundle.rows})
         as_of_time = max(row["available_at"] for row in bundle.rows)
         public, protected = snapshot_rows(bundle, dates[0], dates[-1], as_of_time)

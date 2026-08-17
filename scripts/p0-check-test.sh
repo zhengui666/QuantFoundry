@@ -215,8 +215,6 @@ run_fixture() {
 
 write_fixture positive
 run_fixture positive >/dev/null
-write_fixture release-asset-positive
-run_fixture release-asset-positive >/dev/null
 
 # Offline reporting validates only local registry schema and must not require
 # remote credentials or closure evidence, including when a blocker is unclosed.
@@ -233,7 +231,7 @@ if env PATH="$mock_dir:$PATH" QF_RELEASE_COMMIT="$commit_sha" \
   exit 1
 fi
 
-for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact status-bypass hash-mismatch report-identity run-collision missing-id duplicate-id release-flag empty-registry unknown-id; do
+for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact status-bypass hash-mismatch report-identity run-collision release-asset-positive missing-id duplicate-id release-flag empty-registry unknown-id; do
   write_fixture "$case_name"
   if run_fixture "$case_name" >/dev/null 2>&1; then
     printf 'Expected fixture to fail: %s\n' "$case_name" >&2

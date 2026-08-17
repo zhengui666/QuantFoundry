@@ -45,7 +45,10 @@ from quantfoundry.contracts.events.locator import (
     next_action_valid,
     register_sqlite_functions,
 )
-from quantfoundry.domain.value_objects.public_ids import is_public_id
+from quantfoundry.domain.value_objects.public_ids import (
+    PUBLIC_ID_PREFIXES,
+    is_public_id,
+)
 from quantfoundry.infrastructure.db.physical_schema import load_physical_metadata
 from quantfoundry.infrastructure.db.schema import (
     JSONTextCompat,
@@ -132,10 +135,9 @@ _PUBLIC_PREFIXES = {
     "NOTIF",
     "PROV",
 }
-_PUBLIC_UUID4 = re.compile(
-    r"^(?P<prefix>[A-Z]+)-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
-    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
+_PUBLIC_ID_KINDS_BY_PREFIX = {
+    prefix: kind for kind, prefix in PUBLIC_ID_PREFIXES.items()
+}
 
 
 class MigrationQuarantineError(RuntimeError):
@@ -207,10 +209,10 @@ def _workspace_uuid(value: Any) -> uuid.UUID:
 
 def _public_id(value: Any, default_prefix: str) -> str:
     raw = str(value or "")
-    match = _PUBLIC_UUID4.fullmatch(raw)
-    if match and match.group("prefix") in _PUBLIC_PREFIXES:
-        return raw
     candidate = raw.split("-", 1)[0]
+    kind = _PUBLIC_ID_KINDS_BY_PREFIX.get(candidate)
+    if kind is not None and candidate == default_prefix and is_public_id(kind, raw):
+        return raw
     prefix = candidate if candidate in _PUBLIC_PREFIXES else default_prefix
     return f"{prefix}-{_deterministic_uuid4(prefix, raw)}"
 
@@ -438,14 +440,28 @@ def _sqlite_source_schema(bind: Any) -> list[str]:
 
 
 def _restore_sqlite_source_schema(
-    bind: Any, statements: list[str], source_rows: dict[str, list[dict[str, Any]]]
+    bind: Any,
+    statements: list[str],
+    source_rows: dict[str, list[dict[str, Any]]],
+    *,
+    expected_foreign_key_violations: set[tuple[Any, ...]] | None = None,
 ) -> None:
     """Rebuild the captured source schema and restore its unmodified rows."""
     for statement in statements:
         bind.execute(text(statement))
+    bind.execute(text("PRAGMA defer_foreign_keys = ON"))
     metadata = MetaData()
     metadata.reflect(bind=bind)
     _restore_exact_source(bind, metadata, source_rows)
+    violations = list(bind.execute(text("PRAGMA foreign_key_check")))
+    actual_foreign_key_violations = {tuple(row) for row in violations}
+    expected_foreign_key_violations = expected_foreign_key_violations or set()
+    if actual_foreign_key_violations != expected_foreign_key_violations:
+        raise RuntimeError(
+            "0016 recovery foreign-key verification failed: "
+            f"expected={sorted(expected_foreign_key_violations)!r} "
+            f"actual={sorted(actual_foreign_key_violations)!r}"
+        )
 
 
 def _identity_seed(table_name: str, source: dict[str, Any], row_number: int) -> Any:
@@ -853,8 +869,13 @@ def _resolve_locator(
         if len(strategy_authority) != 1:
             return f"strategy version authority count is {len(strategy_authority)}"
         expected_version, expected_revision = strategy_authority[0]
+        if (
+            values["object_revision"] is not None
+            and values["object_revision"] != expected_revision
+        ):
+            return "strategy version locator revision disagrees with authority"
         values["object_version"] = expected_version
-        values["object_revision"] = values["object_revision"] or expected_revision
+        values["object_revision"] = expected_revision
     elif object_type in {"settings", "provider_connection", "agent_config"}:
         authority = _special_authority(
             source_rows, workspace_id, str(object_type), object_id
@@ -1576,6 +1597,14 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
     if target_is_current and not roundtrip_preexisting:
         _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)
     source_schema = _sqlite_source_schema(bind) if bind.dialect.name == "sqlite" else []
+    source_foreign_key_violations = (
+        {
+            tuple(row)
+            for row in bind.execute(text("PRAGMA foreign_key_check"))
+        }
+        if bind.dialect.name == "sqlite"
+        else set()
+    )
     _backup_tables(bind, _SOURCE_BACKUP_PREFIX, replace=True)
     source_rows = _read_backup_rows(bind, _SOURCE_BACKUP_PREFIX)
     if not target_is_current:
@@ -1665,7 +1694,12 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         # source schema from the untouched physical backup before re-raising.
         if bind.dialect.name == "sqlite":
             _drop_application_tables()
-            _restore_sqlite_source_schema(bind, source_schema, source_rows)
+            _restore_sqlite_source_schema(
+                bind,
+                source_schema,
+                source_rows,
+                expected_foreign_key_violations=source_foreign_key_violations,
+            )
             _drop_backup_set(bind, _SOURCE_BACKUP_PREFIX)
             if not target_is_current:
                 _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)

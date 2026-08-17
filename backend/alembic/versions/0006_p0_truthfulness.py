@@ -32,6 +32,36 @@ WORKSPACE_TABLES = (
     "tool_calls",
 )
 
+_SCOPED_PARENT_KEYS = (
+    "research_cases",
+    "experiments",
+    "strategies",
+    "strategy_versions",
+    "validations",
+    "approval_requests",
+    "jobs",
+    "agent_runs",
+)
+_SCOPED_REFERENCES = (
+    ("experiments", "research_id", "research_cases"),
+    ("factors", "research_id", "research_cases"),
+    ("strategies", "research_id", "research_cases"),
+    ("strategy_versions", "strategy_id", "strategies"),
+    ("validations", "strategy_version_id", "strategy_versions"),
+    ("approval_requests", "validation_id", "validations"),
+    ("holdout_exposures", "validation_id", "validations"),
+    ("holdout_exposures", "strategy_version_id", "strategy_versions"),
+    ("holdout_exposures", "approval_id", "approval_requests"),
+    ("holdout_exposures", "job_id", "jobs"),
+    ("agent_runs", "research_id", "research_cases"),
+    ("agent_runs", "root_agent_run_id", "agent_runs"),
+    ("agent_runs", "parent_agent_run_id", "agent_runs"),
+    ("tool_calls", "agent_run_id", "agent_runs"),
+    ("tool_calls", "experiment_id", "experiments"),
+    ("tool_calls", "job_id", "jobs"),
+    ("tool_calls", "research_id", "research_cases"),
+)
+
 
 def _assert_ownership_backfill_is_mappable() -> None:
     bind = op.get_bind()
@@ -195,30 +225,89 @@ def _replace_strategy_guard() -> None:
         BEGIN SELECT RAISE(ABORT, 'non-candidate strategy version cannot be deleted'); END
         """
     )
-    op.execute(
-        """
-        CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE
-        ON strategy_versions WHEN
-          ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
-             NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR
-             NEW.spec_sha256 != OLD.spec_sha256 OR
-             (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
-             COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR
-             (NEW.state = OLD.state AND NEW.detail != OLD.detail)
-          )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
-             NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
-             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail
-          )) OR NOT (
-             NEW.state = OLD.state OR
-             (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
-             (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
-             (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
-             (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
-             (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
-          )
-        BEGIN SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END
-        """
-    )
+
+
+def _scope_existing_foreign_keys() -> None:
+    """Make every pre-0016 ownership reference include its workspace key."""
+    bind = op.get_bind()
+    naming = {
+        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"
+    }
+    trigger_sql: list[tuple[str, str]] = []
+    if bind.dialect.name == "sqlite":
+        trigger_rows = bind.execute(
+            sa.text(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type = 'trigger' AND sql IS NOT NULL ORDER BY name"
+            )
+        )
+        trigger_sql = [(str(row[0]), str(row[1])) for row in trigger_rows]
+        for name, _ in trigger_sql:
+            op.execute(f'DROP TRIGGER "{name.replace(chr(34), chr(34) * 2)}"')
+    try:
+        for table in _SCOPED_PARENT_KEYS:
+            with op.batch_alter_table(table, naming_convention=naming) as batch_op:
+                batch_op.create_unique_constraint(
+                    f"uq_{table}_workspace_id_id", ["workspace_id", "id"]
+                )
+        inspector = sa.inspect(bind)
+        for child, column, parent in _SCOPED_REFERENCES:
+            existing = next(
+                (
+                    foreign_key
+                    for foreign_key in inspector.get_foreign_keys(child)
+                    if foreign_key.get("referred_table") == parent
+                    and foreign_key.get("constrained_columns") == [column]
+                    and foreign_key.get("referred_columns") == ["id"]
+                ),
+                None,
+            )
+            with op.batch_alter_table(child, naming_convention=naming) as batch_op:
+                if existing is not None:
+                    constraint_name = existing.get("name") or (
+                        f"fk_{child}_{column}_{parent}"
+                    )
+                    batch_op.drop_constraint(constraint_name, type_="foreignkey")
+                batch_op.create_foreign_key(
+                    f"fk_{child}_{column}_{parent}",
+                    parent,
+                    ["workspace_id", column],
+                    ["workspace_id", "id"],
+                )
+    finally:
+        for name, sql in trigger_sql:
+            if name in {
+                "qf_strategy_versions_update_immutable",
+                "qf_strategy_versions_delete_immutable",
+                "qf_strategy_versions_freeze_immutable",
+            }:
+                continue
+            op.execute(sql)
+    if bind.dialect.name == "sqlite":
+        op.execute(
+            """
+            CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE
+            ON strategy_versions WHEN
+              ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
+                 NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR
+                 NEW.spec_sha256 != OLD.spec_sha256 OR
+                 (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
+                 COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR
+                 (NEW.state = OLD.state AND NEW.detail != OLD.detail)
+              )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
+                 NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
+                 NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail
+              )) OR NOT (
+                 NEW.state = OLD.state OR
+                 (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
+                 (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
+                 (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
+                 (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+                 (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
+              )
+            BEGIN SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END
+            """
+        )
 
 
 def upgrade() -> None:
@@ -305,6 +394,7 @@ def upgrade() -> None:
             batch_op.alter_column("workspace_id", nullable=False)
     else:
         op.alter_column("research_cases", "workspace_id", nullable=False)
+    _scope_existing_foreign_keys()
     op.drop_index("uq_tool_calls_active_semantic", table_name="tool_calls")
     op.create_index(
         "uq_tool_calls_active_semantic",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -55,6 +55,7 @@ from quantfoundry.engines.core import (
     validation_checks,
 )
 from quantfoundry.infrastructure.artifacts.store import (
+    ArtifactStoreError,
     publish_staged,
     read_json,
     read_parquet,
@@ -542,11 +543,47 @@ def _artifact_payload(
     return read_json(row.storage_key, row.sha256)
 
 
+def dataset_validation_matches(
+    session: Session, dataset_id: str, workspace_id: str, bundle: Any
+) -> bool:
+    expected_content = content_hash(bundle.rows)
+    candidates = session.execute(
+        select(ArtifactRow)
+        .join(JobRow, JobRow.id == ArtifactRow.job_id)
+        .where(
+            ArtifactRow.workspace_id == workspace_id,
+            ArtifactRow.kind == "dataset_validation",
+            ArtifactRow.immutable.is_(True),
+            ArtifactRow.publication_state.in_(("STAGED", "PUBLISHED")),
+            JobRow.workspace_id == workspace_id,
+            JobRow.status == "COMPLETED",
+        )
+        .order_by(ArtifactRow.created_at.desc())
+    ).scalars()
+    for artifact in candidates:
+        if artifact.publication_state == "STAGED" and not staged_artifact_is_available(
+            session, artifact.storage_key, artifact.sha256
+        ):
+            continue
+        try:
+            evidence = read_json(artifact.storage_key, artifact.sha256)
+        except (ArtifactStoreError, OSError, ValueError):
+            continue
+        if (
+            evidence.get("dataset_id") == dataset_id
+            and evidence.get("state") == "PASS"
+            and evidence.get("content_sha256") == expected_content
+            and evidence.get("schema_sha256") == bundle.schema_sha256
+        ):
+            return True
+    return False
+
+
 def _snapshot_market_rows(
     session: Session,
     snapshot_id: str,
     workspace_id: str | None,
-    partition: str = "PUBLIC",
+    partition: str = "RESEARCH",
 ) -> list[dict[str, Any]]:
     snapshot = session.get(SnapshotRow, snapshot_id)
     if (
@@ -917,6 +954,7 @@ def _complete_experiment(
     )
     row.detail = json.dumps(validated_payload("ExperimentDetail", detail))
     row.revision += 1
+    row.job_ref_id = job.internal_id
     # Commit final evidence and its immutable marker in one UPDATE.
     row.immutable = True
     session.flush()
@@ -957,6 +995,15 @@ def _create_snapshot(
     if request_sha256 != inputs["request_sha256"]:
         raise InvalidJobState("snapshot admission hash mismatch")
     bundle = load_dataset(inputs["dataset_id"])
+    source = session.get(DataSource, (inputs["dataset_id"], job.workspace_id))
+    if (
+        source is None
+        or source.status != "VALID"
+        or not dataset_validation_matches(
+            session, inputs["dataset_id"], job.workspace_id, bundle
+        )
+    ):
+        raise InvalidJobState("dataset validation evidence is stale or missing")
     public_rows, holdout_rows = snapshot_rows(
         bundle,
         inputs["coverage_start"],
@@ -1011,7 +1058,7 @@ def _create_snapshot(
         "row_count": len(public_rows),
         "partitions": [
             {
-                "partition": "PUBLIC",
+                "partition": "RESEARCH",
                 "artifact_id": public_id,
                 "object_sha256": public_object_sha256,
                 "logical_content_sha256": public_sha256,
@@ -1091,7 +1138,7 @@ def _create_snapshot(
             SnapshotPartitionRow(
                 id=new_id("SPART"),
                 snapshot_id=snapshot_id,
-                partition="PUBLIC",
+                partition="RESEARCH",
                 artifact_id=public_id,
                 content_sha256=public_object_sha256,
                 row_count=len(public_rows),
@@ -1867,7 +1914,10 @@ def _expose_holdout(
         exposed_by_job_ref_id=job.internal_id,
         holdout_period=json.dumps(strategy_detail["holdout_period"]),
         result_sha256=content_hash(result),
-        period=json.dumps(strategy_detail["holdout_period"]),
+        period=(
+            f"[{strategy_detail['holdout_period']['start']},"
+            f"{(date.fromisoformat(strategy_detail['holdout_period']['end']) + timedelta(days=1)).isoformat()})"
+        ),
         result=json.dumps(result),
         exposed_at=datetime.fromisoformat(exposed_at.replace("Z", "+00:00")),
         contamination=False,
@@ -2036,7 +2086,14 @@ def _analyze_factor(
 def _run_backtest(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
-    strategy = session.get(StrategyVersionRow, inputs["strategy_version_id"])
+    strategy = session.execute(
+        select(StrategyVersionRow)
+        .where(
+            StrategyVersionRow.id == inputs["strategy_version_id"],
+            StrategyVersionRow.workspace_id == job.workspace_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
     if (
         strategy is None
         or strategy.workspace_id != job.workspace_id

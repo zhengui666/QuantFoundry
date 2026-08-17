@@ -114,8 +114,11 @@ attestation.write_text(json.dumps({
 }), encoding="utf-8")
 PY
 
-env QF_INDEPENDENT_REVIEW_OFFLINE=1 QF_INDEPENDENT_REVIEW_ATTESTATION="$fixture_dir/positive-attestation.json" \
-  "$repo_root/scripts/ci/verify-independent-review-report.sh" "$fixture_dir/positive.json" "$commit_sha"
+if env QF_INDEPENDENT_REVIEW_OFFLINE=1 QF_INDEPENDENT_REVIEW_ATTESTATION="$fixture_dir/positive-attestation.json" \
+  "$repo_root/scripts/ci/verify-independent-review-report.sh" "$fixture_dir/positive.json" "$commit_sha" >/dev/null 2>&1; then
+  printf '%s\n' 'Expected forgeable offline verification mode to be disabled.' >&2
+  exit 1
+fi
 
 run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip"
 if run_verifier "$fixture_dir/wrong-content-commit.json" "$fixture_dir/wrong-content-commit.zip" >/dev/null 2>&1; then

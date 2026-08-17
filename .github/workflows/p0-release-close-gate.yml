@@ -19,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -44,5 +45,11 @@ jobs:
           git fetch --tags --force origin
           tag_commit="$(git rev-parse "refs/tags/$QF_RELEASE_TAG^{commit}")"
           [[ -n "$tag_commit" ]]
-          git -c advice.detachedHead=false checkout --detach "$tag_commit"
-          QF_RELEASE_COMMIT="$tag_commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed
+          trusted_commit="$(git rev-parse "origin/${{ github.event.repository.default_branch }}")"
+          test "$(git rev-parse HEAD)" = "$trusted_commit"
+          release_root="$RUNNER_TEMP/qf-release-$tag_commit"
+          git worktree add --detach "$release_root" "$tag_commit"
+          trap 'git worktree remove --force "$release_root"' EXIT
+          QF_RELEASE_CHECK_ROOT="$release_root" \
+            QF_RELEASE_CHECK_VERIFIER_ROOT="$GITHUB_WORKSPACE" \
+            "$GITHUB_WORKSPACE/scripts/release-check.sh" "$QF_RELEASE_TAG"

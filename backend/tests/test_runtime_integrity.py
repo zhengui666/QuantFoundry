@@ -88,7 +88,10 @@ from quantfoundry.workers.main import (
     run_once,
 )
 
-AUTH = {"Authorization": "Bearer test"}
+AUTH = {
+    "Authorization": "Bearer test",
+    "X-CSRF-Token": "t" * 32,
+}
 
 
 def _key(label: str) -> dict[str, str]:
@@ -482,7 +485,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=f"DS-{suffix}",
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{uuid.uuid4()}",
             content_sha256=content_hash({"partition": suffix}),
             row_count=1,
@@ -668,7 +671,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
                 result_artifact_id=result_artifact_id,
                 provenance_id=provenance_id,
                 result_sha256=content_hash({"result": suffix}),
-                period=json.dumps({"start": "2020-10-01", "end": "2020-12-31"}),
+                period="[2020-10-01,2021-01-01)",
                 result="{}",
                 exposed_at=now,
                 contamination=False,
@@ -809,7 +812,7 @@ def test_sqlite_foreign_keys_are_enforced_for_every_connection() -> None:
         SnapshotPartitionRow(
             id=f"SPART-orphan-{uuid.uuid4().hex}",
             snapshot_id="DS-550e8400-e29b-41d4-a716-446655440020",
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id="ART-550e8400-e29b-41d4-a716-446655440020",
             content_sha256="0" * 64,
             row_count=0,
@@ -1354,7 +1357,7 @@ def test_agent_registry_policy_duplicate_guard_and_disable_checkpoint(
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=snapshot_id,
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{suffix}",
             content_sha256=content_hash({"artifact": suffix}),
             row_count=1,
@@ -1740,7 +1743,7 @@ def test_agent_crash_resumes_from_durable_safe_checkpoint(
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=snapshot_id,
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{suffix}",
             content_sha256=content_hash({"artifact": suffix}),
             row_count=1,
@@ -1865,7 +1868,7 @@ def test_agent_hard_budget_stops_before_another_model_or_tool_call(
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=snapshot_id,
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{suffix}",
             content_sha256=content_hash({"artifact": suffix}),
             row_count=1,

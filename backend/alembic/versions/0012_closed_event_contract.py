@@ -133,7 +133,7 @@ def upgrade() -> None:
     rows = (
         connection.execute(
             sa.text(
-                "SELECT workspace_id, sequence, event_id, event_type "
+                "SELECT workspace_id, sequence, event_id, event_type, payload "
                 "FROM domain_events"
             )
         )
@@ -143,7 +143,9 @@ def upgrade() -> None:
     for row in rows:
         event_type = _canonical_event_type(row["event_type"])
         payload = (
-            json.dumps(
+            row["payload"]
+            if row["event_type"] in EVENT_TYPES
+            else json.dumps(
                 {"state": "RESYNC_REQUIRED", "status": None},
                 separators=(",", ":"),
             )
@@ -205,6 +207,7 @@ def upgrade() -> None:
             "domain_events FOR EACH ROW EXECUTE FUNCTION qf_reject_change()"
         )
     else:
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_delete_immutable")
         op.execute(
             "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
             "domain_events BEGIN SELECT RAISE(ABORT, "

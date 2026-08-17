@@ -148,7 +148,8 @@ def _create_immutability_guards() -> None:
                  AND (
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
-                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.detail IS DISTINCT FROM OLD.detail
                  ) THEN
                 RAISE EXCEPTION 'strategy evidence cannot change while freezing';
               END IF;
@@ -185,6 +186,27 @@ def _create_immutability_guards() -> None:
                    NEW.revision IS DISTINCT FROM OLD.revision
                  ) THEN
                 RAISE EXCEPTION 'experiment evidence cannot change while completing';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
+                 AND (
+                   NEW.research_id IS DISTINCT FROM OLD.research_id OR
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   NEW.revision IS DISTINCT FROM OLD.revision OR
+                   NEW.job_id IS DISTINCT FROM OLD.job_id
+                 )
+                 AND NOT (
+                   NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
+                   NEW.revision = OLD.revision + 1 AND
+                   NEW.job_id IS NOT NULL AND
+                   (NEW.detail::jsonb ->> 'status') = 'COMPLETED' AND
+                   EXISTS (
+                     SELECT 1 FROM jobs j
+                     WHERE j.id = NEW.job_id
+                       AND j.workspace_id = NEW.workspace_id
+                       AND j.status = 'RUNNING'
+                   )
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion is not bound to a running job';
               END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
@@ -293,7 +315,7 @@ def _create_immutability_guards() -> None:
         "CREATE TRIGGER qf_strategy_versions_freeze_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND ("
         "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
-        "NEW.spec_sha256 IS NOT OLD.spec_sha256) "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) "
         "BEGIN SELECT RAISE(ABORT, 'strategy evidence cannot change while freezing'); END"
     )
     op.execute(
@@ -302,6 +324,17 @@ def _create_immutability_guards() -> None:
         "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
         "NEW.revision IS NOT OLD.revision) "
         "BEGIN SELECT RAISE(ABORT, 'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
+        "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND ("
+        "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
+        "NEW.revision IS NOT OLD.revision OR NEW.job_id IS NOT OLD.job_id) AND NOT ("
+        "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "NEW.job_id IS NOT NULL AND json_extract(NEW.detail, '$.status') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE j.id = NEW.job_id AND "
+        "j.workspace_id = NEW.workspace_id AND j.status = 'RUNNING')) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "

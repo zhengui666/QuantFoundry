@@ -31,9 +31,12 @@ export async function startCanonicalSseProbe(
     signal: controller.signal,
   });
   const responseBody = response.body;
-  if (response.status !== 200 || !responseBody) {
+  const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  if (response.status !== 200 || mediaType !== 'text/event-stream' || !responseBody) {
     controller.abort();
-    throw new Error(`Authenticated SSE probe expected HTTP 200, received ${response.status}.`);
+    throw new Error(
+      `Authenticated SSE probe expected HTTP 200 text/event-stream, received ${response.status} ${mediaType ?? 'missing content type'}.`,
+    );
   }
 
   const frames: DecodedSseFrame[] = [];

@@ -40,6 +40,7 @@ def _version_table(name: str, public_column: str) -> None:
         sa.UniqueConstraint(
             "workspace_id",
             public_column,
+            "version",
             name=f"uq_{name}_workspace_public",
         ),
         sa.UniqueConstraint(

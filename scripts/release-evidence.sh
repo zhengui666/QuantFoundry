@@ -140,14 +140,86 @@ manifest() {
     exit 1
   }
   python3 - "$repo_root" "$output_dir" "$tag" "$commit" "$backend_image" "$backend_digest" "$frontend_image" "$frontend_digest" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
+import base64
 import hashlib
 import json
+import os
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
 output = pathlib.Path(sys.argv[2])
 tag, commit, backend_image, backend_digest, frontend_image, frontend_digest, run_id, run_attempt = sys.argv[3:]
+repository = os.environ.get("GITHUB_REPOSITORY")
+if not repository:
+    raise SystemExit("GITHUB_REPOSITORY is required for structured image evidence binding")
+
+
+def statements(value):
+    entries = value if isinstance(value, list) else [value]
+    found = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        verification = entry.get("verificationResult")
+        if isinstance(verification, dict) and isinstance(verification.get("statement"), dict):
+            found.append(verification["statement"])
+        if isinstance(entry.get("statement"), dict):
+            found.append(entry["statement"])
+        for envelope_key in ("dsseEnvelope", "envelope"):
+            envelope = entry.get(envelope_key)
+            payload = envelope.get("payload") if isinstance(envelope, dict) else None
+            if isinstance(payload, str):
+                try:
+                    decoded = json.loads(base64.b64decode(payload + "=" * (-len(payload) % 4)))
+                except (ValueError, json.JSONDecodeError):
+                    continue
+                if isinstance(decoded, dict):
+                    found.append(decoded)
+    return found
+
+
+def require_binding(path, value, subject_name, digest):
+    expected_digest = digest.removeprefix("sha256:")
+    for statement in statements(value):
+        subjects = statement.get("subject")
+        subject_ok = isinstance(subjects, list) and any(
+            isinstance(item, dict)
+            and item.get("name") == subject_name
+            and isinstance(item.get("digest"), dict)
+            and item["digest"].get("sha256") == expected_digest
+            for item in subjects
+        )
+        predicate = statement.get("predicate")
+        build = predicate.get("buildDefinition") if isinstance(predicate, dict) else None
+        external = build.get("externalParameters") if isinstance(build, dict) else None
+        source = external.get("source") if isinstance(external, dict) else None
+        workflow = external.get("workflow") if isinstance(external, dict) else None
+        source_uri = source.get("uri") if isinstance(source, dict) else None
+        source_repo = source.get("repository") if isinstance(source, dict) else None
+        workflow_repo = workflow.get("repository") if isinstance(workflow, dict) else None
+        repository_ok = (
+            source_repo == repository
+            or workflow_repo == repository
+            or source_uri == f"git+https://github.com/{repository}@{commit}"
+        )
+        commit_ok = (
+            isinstance(source, dict)
+            and isinstance(source.get("digest"), dict)
+            and source["digest"].get("sha1") == commit
+        )
+        if isinstance(build, dict):
+            for dependency in build.get("resolvedDependencies", []):
+                if not isinstance(dependency, dict):
+                    continue
+                repository_ok = repository_ok or dependency.get("uri") == f"git+https://github.com/{repository}@{commit}"
+                dependency_digest = dependency.get("digest")
+                commit_ok = commit_ok or (
+                    isinstance(dependency_digest, dict) and dependency_digest.get("sha1") == commit
+                )
+        if subject_ok and repository_ok and commit_ok:
+            return
+    raise SystemExit(f"{path} is not structurally bound to image, repository, and commit")
 
 def record(path):
     path = pathlib.Path(path)
@@ -210,6 +282,18 @@ if any(path.is_symlink() for path in output.rglob("*")):
 for path in required:
     if not path.is_file() or path.is_symlink():
         raise SystemExit(f"required evidence input is missing or unsafe: {path}")
+
+for image_name, image_digest, image_label in (
+    (backend_image, backend_digest, "backend"),
+    (frontend_image, frontend_digest, "frontend"),
+):
+    for kind in ("attestations", "provenance", "signature-verification"):
+        path = output / kind / f"{image_label}.json"
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise SystemExit(f"invalid {kind} evidence for {image_label}: {error}") from error
+        require_binding(path, value, image_name, image_digest)
 
 def asset_name(source):
     if source in {"release-manifest.json", "SHA256SUMS"}:
@@ -295,6 +379,8 @@ for index, item in enumerate(inventory):
         raise SystemExit(f"release_assets[{index}].name must be a non-empty flat filename")
     if not isinstance(source, str) or not source or source.startswith("/") or any(part in {"", ".", ".."} for part in source.split("/")):
         raise SystemExit(f"release_assets[{index}].source must be a safe relative path")
+    if name in {"release-manifest.json", "SHA256SUMS"} and source != name:
+        raise SystemExit("reserved release asset name must map to itself")
     names.append(name)
     sources.append(source)
 

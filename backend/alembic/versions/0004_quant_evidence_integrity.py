@@ -6,6 +6,8 @@ Revises: 0003_runtime_integrity
 
 from __future__ import annotations
 
+import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0004_quant_evidence_integrity"
@@ -16,6 +18,37 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    invalid_legacy_row = bind.execute(
+        sa.text(
+            """
+            SELECT v.id
+            FROM validations v
+            WHERE v.holdout_state IS NULL
+               OR v.holdout_state NOT IN ('LOCKED', 'APPROVAL_PENDING', 'UNLOCKED', 'RUNNING', 'EXPOSED', 'FAILED')
+               OR v.exposure_count IS NULL
+               OR v.exposure_count <> CASE WHEN v.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END
+               OR (v.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (
+                    SELECT 1 FROM approval_requests a
+                    WHERE a.validation_id = v.id AND a.status = 'PENDING'
+               ))
+               OR (v.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (
+                    SELECT 1 FROM approval_requests a
+                    WHERE a.validation_id = v.id AND a.status = 'APPROVED'
+               ))
+               OR (v.holdout_state = 'EXPOSED' AND NOT EXISTS (
+                    SELECT 1 FROM holdout_exposures e
+                    WHERE e.validation_id = v.id
+                      AND e.strategy_version_id = v.strategy_version_id
+               ))
+            LIMIT 1
+            """
+        )
+    ).scalar_one_or_none()
+    if invalid_legacy_row is not None:
+        raise RuntimeError(
+            "0004 refuses to install evidence guards over invalid legacy validation "
+            f"{invalid_legacy_row}; manual backfill required"
+        )
     if bind.dialect.name == "postgresql":
         op.execute(
             """
@@ -44,31 +77,42 @@ def upgrade() -> None:
                 (OLD.holdout_state = 'APPROVAL_PENDING' AND NEW.holdout_state IN ('LOCKED', 'UNLOCKED')) OR
                 (OLD.holdout_state = 'UNLOCKED' AND NEW.holdout_state = 'RUNNING') OR
                 (OLD.holdout_state = 'RUNNING' AND NEW.holdout_state = 'EXPOSED') OR
-                NEW.holdout_state = 'FAILED'
+                (OLD.holdout_state IN ('LOCKED', 'APPROVAL_PENDING', 'UNLOCKED', 'RUNNING')
+                 AND NEW.holdout_state = 'FAILED')
               ) THEN
                 RAISE EXCEPTION 'invalid holdout state transition';
               END IF;
               IF NEW.exposure_count <> (CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) THEN
                 RAISE EXCEPTION 'holdout exposure count is inconsistent';
               END IF;
-              IF NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (
-                SELECT 1 FROM approval_requests a
+              IF NEW.holdout_state = 'APPROVAL_PENDING' THEN
+                PERFORM 1 FROM approval_requests a
                 WHERE a.validation_id = OLD.id AND a.status = 'PENDING'
-              ) THEN
-                RAISE EXCEPTION 'holdout approval evidence is missing';
+                FOR UPDATE;
+                IF NOT FOUND THEN
+                  RAISE EXCEPTION 'holdout approval evidence is missing';
+                END IF;
               END IF;
-              IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (
-                SELECT 1 FROM approval_requests a
+              IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING') THEN
+                PERFORM 1 FROM approval_requests a
                 WHERE a.validation_id = OLD.id AND a.status = 'APPROVED'
-              ) THEN
-                RAISE EXCEPTION 'approved holdout evidence is missing';
+                FOR UPDATE;
+                IF NOT FOUND THEN
+                  RAISE EXCEPTION 'approved holdout evidence is missing';
+                END IF;
               END IF;
-              IF NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (
-                SELECT 1 FROM holdout_exposures e
+              IF NEW.holdout_state = 'EXPOSED' THEN
+                PERFORM 1 FROM holdout_exposures e
                 WHERE e.validation_id = OLD.id
                   AND e.strategy_version_id = NEW.strategy_version_id
-              ) THEN
-                RAISE EXCEPTION 'holdout exposure evidence is missing';
+                FOR UPDATE;
+                IF NOT FOUND THEN
+                  RAISE EXCEPTION 'holdout exposure evidence is missing';
+                END IF;
+              END IF;
+              IF OLD.holdout_state <> 'LOCKED'
+                 AND NEW.strategy_version_id IS DISTINCT FROM OLD.strategy_version_id THEN
+                RAISE EXCEPTION 'holdout strategy binding is immutable after approval request';
               END IF;
               RETURN NEW;
             END;
@@ -156,13 +200,15 @@ def upgrade() -> None:
         "(OLD.holdout_state = 'APPROVAL_PENDING' AND NEW.holdout_state IN ('LOCKED', 'UNLOCKED')) OR "
         "(OLD.holdout_state = 'UNLOCKED' AND NEW.holdout_state = 'RUNNING') OR "
         "(OLD.holdout_state = 'RUNNING' AND NEW.holdout_state = 'EXPOSED') OR "
-        "NEW.holdout_state = 'FAILED') BEGIN SELECT RAISE(ABORT, "
+        "(OLD.holdout_state IN ('LOCKED', 'APPROVAL_PENDING', 'UNLOCKED', 'RUNNING') AND "
+        "NEW.holdout_state = 'FAILED')) BEGIN SELECT RAISE(ABORT, "
         "'invalid holdout state transition'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_binding BEFORE UPDATE OF "
         "holdout_state, exposure_count, strategy_version_id ON validations WHEN "
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
+        "(OLD.holdout_state != 'LOCKED' AND NEW.strategy_version_id IS NOT OLD.strategy_version_id) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
         "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'PENDING')) OR "
         "(NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (SELECT 1 FROM "

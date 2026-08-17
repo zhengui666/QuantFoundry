@@ -255,7 +255,12 @@ def activate_fullstack_database(
     if not raw_url:
         raise RuntimeError("QF_FULLSTACK_DATABASE_URL is required")
     parsed = urlsplit(raw_url)
-    if not parsed.hostname or not parsed.username or not parsed.path.strip("/"):
+    if (
+        parsed.scheme not in {"postgresql", "postgres"}
+        or not parsed.hostname
+        or not parsed.username
+        or not parsed.path.strip("/")
+    ):
         raise RuntimeError("QF_FULLSTACK_DATABASE_URL is invalid")
     status = client.get("/database/connection", headers=auth)
     if status.status_code != 200:
@@ -263,8 +268,20 @@ def activate_fullstack_database(
             f"GET /database/connection: {status.status_code} {status.text}"
         )
     current = status.json()
+    database_name = parsed.path.strip("/").split("/", 1)[0]
+    desired = {
+        "host": parsed.hostname,
+        "port": parsed.port or 5432,
+        "database": database_name,
+        "tls_mode": "DISABLED",
+        "pool_profile": "fullstack-ci",
+    }
+    active = current.get("active")
     if current.get("active_revision") is not None:
-        return
+        if isinstance(active, dict) and not any(
+            active.get(key) != value for key, value in desired.items()
+        ):
+            return
     etag = status.headers.get("etag")
     if not etag:
         raise RuntimeError("database status is missing ETag")
@@ -283,8 +300,8 @@ def activate_fullstack_database(
             "connection": {
                 "host": parsed.hostname,
                 "port": parsed.port or 5432,
-                "database": parsed.path.strip("/").split("/", 1)[0],
-                "tls_mode": "DISABLED",
+            "database": database_name,
+            "tls_mode": desired["tls_mode"],
                 "username": unquote(parsed.username),
                 "password": unquote(parsed.password or ""),
                 "pool_profile": "fullstack-ci",
@@ -323,6 +340,7 @@ def main() -> int:
     general_key = os.environ.get("QF_FULLSTACK_GENERAL_KEY")
     if not general_key:
         raise RuntimeError("QF_FULLSTACK_GENERAL_KEY is required")
+    run_id = uuid.uuid4().hex[:12]
     with httpx.Client(base_url=args.api_url, timeout=30) as client:
         login = request_json(
             client,
@@ -339,7 +357,7 @@ def main() -> int:
         if not isinstance(csrf, str) or len(csrf) < 32:
             raise RuntimeError("login response is missing CSRF token")
         auth = {"X-CSRF-Token": csrf}
-        activate_fullstack_database(client, auth, "fullstack-bootstrap")
+        activate_fullstack_database(client, auth, f"fullstack-db-{run_id}")
         from app.control_plane import restore_active_domain_database
 
         restore_active_domain_database()
@@ -358,7 +376,7 @@ def main() -> int:
         dataset_id = required_string(seeded, "dataset_id")
         cost_model_id = required_string(seeded, "cost_model_id")
         validation_policy_id = required_string(seeded, "validation_policy_id")
-        key_prefix = f"fullstack-{dataset_id}"
+        key_prefix = f"fullstack-{dataset_id}-{run_id}"
         active_response = client.get("/configuration/active", headers=auth)
         if active_response.status_code != 200:
             raise RuntimeError(

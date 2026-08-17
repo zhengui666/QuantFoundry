@@ -117,7 +117,7 @@ export const collectFormalPublicIdFiles = async (
 
 const tokenPattern = /\b([A-Za-z][A-Za-z0-9]*)-([A-Za-z0-9_-]+)/g;
 const emptyFixturePattern =
-  /\b(?:fixture|example|value|id|token|input)\b\s*[:=]\s*[`'"]([A-Za-z][A-Za-z0-9]*)-[`'"]/gi;
+  /(?:\b(?:fixture|example|value|id|token|input)\b|\b[A-Za-z_$][A-Za-z0-9_$]*(?:id|_id|Id|ID)\b)\s*[:=]\s*[`'"]([A-Za-z][A-Za-z0-9]*)-[`'"]/gi;
 const intentionalRejection = (token, context) => {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(
@@ -126,7 +126,14 @@ const intentionalRejection = (token, context) => {
   ).test(context);
 };
 
-const grammarNotation = (token, context) => {
+const grammarNotation = (token, context, file, key = '') => {
+  const extension = extname(file).toLowerCase();
+  const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(key);
+  const proseSource = extension === '.md' || extension === '.yaml' || extension === '.yml';
+  const manifestProse = extension === '.json' && /(?:manifest|schema)/i.test(file) && proseField;
+  if (!proseSource && !manifestProse) return false;
+  if (proseSource && !/\b(?:grammar|notation|locator|prefix|placeholder)\b/i.test(context))
+    return false;
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return (
     new RegExp('(?:`' + escaped + '`|' + escaped + '@(?:[A-Za-z]|version)\\b)', 'i').test(
@@ -137,7 +144,7 @@ const grammarNotation = (token, context) => {
 
 const jsonIdKeys = /^(?:id|value|token|key|[a-z0-9]+_(?:id|ref|token|key))$/i;
 
-const invalidTokens = (text, context, location, matchers, key = '') => {
+const invalidTokens = (text, context, location, matchers, key = '', file = location) => {
   const failures = [];
   const matches = [
     ...text.matchAll(tokenPattern),
@@ -161,7 +168,7 @@ const invalidTokens = (text, context, location, matchers, key = '') => {
       (canonical !== undefined && (rawPrefix === prefix || looksLikeLowercaseId)) ||
       (prefix === 'MEM' && rawPrefix === prefix);
     if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
-    if (match[2] !== '' && grammarNotation(token, context)) continue;
+    if (match[2] !== '' && grammarNotation(token, context, file, key)) continue;
     if (!intentionalRejection(token, context))
       failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
   }
@@ -203,7 +210,7 @@ const scanJson = (file, content, matchers) => {
   const failures = [];
   const visit = (node, path, key = '') => {
     if (typeof node === 'string') {
-      failures.push(...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers, key));
+      failures.push(...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers, key, file));
       return;
     }
     if (Array.isArray(node)) {
@@ -212,6 +219,7 @@ const scanJson = (file, content, matchers) => {
     }
     if (!node || typeof node !== 'object') return;
     for (const [key, entry] of Object.entries(node)) {
+      failures.push(...invalidTokens(key, key, `${file}:${path}.${key} (key)`, matchers, '', file));
       visit(entry, `${path}.${key}`, key);
     }
   };

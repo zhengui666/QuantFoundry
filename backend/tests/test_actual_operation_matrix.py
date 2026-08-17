@@ -54,7 +54,7 @@ from app.main import (
 from workers.main import run_agent_once, run_once
 
 SPEC = canonical_openapi()
-AUTH = {"Authorization": "Bearer matrix"}
+AUTH = {"Authorization": "Bearer matrix", "X-CSRF-Token": "m" * 32}
 
 
 @pytest.mark.parametrize("status", ["QUEUED", "RUNNING"])
@@ -233,11 +233,19 @@ def test_45_canonical_operation_ids_execute_real_handlers(
     )
     monkeypatch.setenv("QF_OPENAI_MODELS", "test-model")
 
+    original_client_request = client.request
+
+    def record_client_request(method: str, url: str, **kwargs):
+        response = original_client_request(method, url, **kwargs)
+        response_bodies.append(response.text)
+        return response
+
+    client.request = record_client_request  # type: ignore[method-assign]
+
     def request(operation: str, method: str, path: str, status: int, **kwargs):
         response = client.request(method, path, **kwargs)
         _check(operation, response, status)
         calls.append(operation)
-        response_bodies.append(response.text)
         return response
 
     def drain_core_job(job_id: str) -> JobRow:
@@ -1531,7 +1539,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
     public_record = session.execute(
         select(Record).where(
             Record.workspace_id == "matrix-workspace",
-            Record.record_key == bindings["PUBLIC"].artifact_id,
+            Record.record_key == bindings["RESEARCH"].artifact_id,
         )
     ).scalar_one_or_none()
     holdout_record = session.execute(

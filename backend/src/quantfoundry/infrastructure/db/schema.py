@@ -373,6 +373,8 @@ def _default_value(column: dict[str, Any]) -> Any:
         return list
     if raw == "'{}'":
         return dict
+    if raw == "zero hash":
+        return "0" * 64
     if raw.lower() in {"true", "false"}:
         return raw.lower() == "true"
     if re.fullmatch(r"-?\d+", raw):
@@ -392,6 +394,20 @@ def _default_value(column: dict[str, Any]) -> Any:
 def _constraint_name(table: str, suffix: str) -> str:
     value = re.sub(r"[^a-z0-9_]+", "_", suffix.lower()).strip("_")
     return f"ck_{table}_{value}"[:63]
+
+
+def _primary_key_token(constraints: str) -> bool:
+    return re.match(r"^PK(?:\s|,|$)", constraints) is not None
+
+
+def _lower_hex_sha256_check(name: str, nullable: bool) -> str:
+    residue = name
+    for character in "0123456789abcdef":
+        residue = f"replace({residue}, '{character}', '')"
+    body = (
+        f"length({name}) = 64 AND lower({name}) = {name} AND {residue} = ''"
+    )
+    return f"{name} IS NULL OR ({body})" if nullable else body
 
 
 def _public_id_check_sql(name: str, prefix: str) -> str:
@@ -449,6 +465,12 @@ def _typed_public_id_check_sql(
 def _check_sql(column: dict[str, Any]) -> str | None:
     name = column["name"]
     text = re.sub(r",\s*INDEX(?:\([^)]*\))?\s*$", "", column["constraints"]).strip()
+    check_position = text.find("CHECK")
+    if check_position > 0:
+        text = text[check_position:]
+    text = re.sub(r",\s*UNIQUE\([^)]*\)\s*$", "", text).strip()
+    if "CHECK lowercase hex SHA-256" in text:
+        return _lower_hex_sha256_check(name, bool(column.get("nullable")))
     enum = _CHECK_IN.search(text)
     if enum:
         values = ", ".join(f"'{item}'" for item in enum.group(1).split("|"))
@@ -467,7 +489,7 @@ def _check_sql(column: dict[str, Any]) -> str | None:
         return f"{name} >= 0"
     if "CHECK >=1" in text:
         return f"{name} >= 1"
-    exact = re.search(r"CHECK = ([A-Z][A-Z0-9_]*)", text)
+    exact = re.search(r"CHECK\s*=\s*([A-Za-z][A-Za-z0-9_]*)", text)
     if exact:
         return f"{name} = '{exact.group(1)}'"
     if "CHECK = false" in text:
@@ -477,6 +499,51 @@ def _check_sql(column: dict[str, Any]) -> str | None:
         prefix = exact_id.group(1) or "DSSET"
         if prefix in PUBLIC_ID_PREFIXES.values():
             return _public_id_check_sql(name, prefix)
+    single_value = re.fullmatch(r"CHECK\s+([A-Z][A-Z0-9_]*)", text)
+    if single_value:
+        return f"{name} = '{single_value.group(1)}'"
+    if "CHECK revision=1" in text:
+        return f"{name} = 1"
+    if "CHECK immutable=true" in text:
+        return f"{name} = TRUE"
+    if "CHECK completed terminal rows=true" in text:
+        return "status NOT IN ('COMPLETED', 'INVALID', 'CANCELLED') OR immutable = TRUE"
+    if "CHECK PUBLISHED iff non-null" in text:
+        return (
+            "(publication_state = 'PUBLISHED' AND published_at IS NOT NULL) OR "
+            "(publication_state <> 'PUBLISHED' AND published_at IS NULL)"
+        )
+    if "CHECK 0<=expired<=last_sequence" in text:
+        return "expired_through_sequence >= 0 AND expired_through_sequence <= last_sequence"
+    if "CHECK equals `object_revision`" in text:
+        return "revision IS NULL OR object_revision IS NULL OR revision = object_revision"
+    if "CHECK false→true monotonic" in text:
+        return f"{name} IN (FALSE, TRUE)"
+    if "CHECK parses canonical half-open date range" in text:
+        return (
+            f"length({name}) = 23 AND substr({name}, 1, 1) = '[' "
+            f"AND substr({name}, 12, 1) = ',' AND substr({name}, 23, 1) = ')'"
+        )
+    if "CHECK" in text and any(
+        marker in text
+        for marker in (
+            "closed ",
+            "schema before write",
+            "schema before enqueue",
+            "job-type input",
+            "canonical `EventType`",
+            "state invariant",
+            "EXPOSED iff",
+            "deployed component allowlist",
+            "normalized email",
+            "cross-column",
+            "exact public semantic ID",
+            "`ck_",
+        )
+    ):
+        return None
+    if "CHECK" in text:
+        raise ValueError(f"unsupported section-14 CHECK constraint: {text}")
     return None
 
 
@@ -690,10 +757,30 @@ def _append_contract_constraints(
         if constraint_name is not None and constraint_name not in existing_names:
             table.append_constraint(constraint)
             existing_names.add(constraint_name)
+    if table.name == "paper_scheduler_states":
+        invariant = (
+            "((scheduler_status = 'ACTIVE' AND suppressed_since_utc IS NULL) OR "
+            "(scheduler_status IN ('PAUSED', 'DISABLED') AND suppressed_since_utc IS NOT NULL)) "
+            "AND resume_watermark_utc IS NOT NULL"
+        )
+        name = "ck_paper_scheduler_states_state_invariant"
+        if name not in existing_names:
+            table.append_constraint(CheckConstraint(invariant, name=name))
+            existing_names.add(name)
+    if table.name == "validations":
+        invariant = (
+            "exposure_count >= 0 AND ((holdout_state = 'EXPOSED' AND "
+            "exposure_count = 1) OR (holdout_state <> 'EXPOSED' AND "
+            "exposure_count = 0))"
+        )
+        name = "ck_validations_exposure_state_invariant"
+        if name not in existing_names:
+            table.append_constraint(CheckConstraint(invariant, name=name))
+            existing_names.add(name)
     pk_columns: list[str] = []
     for column in spec["columns"]:
         constraints = column["constraints"]
-        if constraints == "PK" or constraints.startswith("PK "):
+        if _primary_key_token(constraints):
             pk_columns.append(column["name"])
         composite = re.search(r"PK\(([^)]+)\)", constraints)
         if composite:
@@ -758,7 +845,7 @@ def augment_section14_metadata(metadata: MetaData) -> None:
                 existing.info = {"section14": column}
                 continue
             constraints = column["constraints"]
-            is_primary = constraints == "PK" or constraints.startswith("PK ")
+            is_primary = _primary_key_token(constraints)
             table.append_column(
                 Column(
                     name,

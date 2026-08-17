@@ -37,11 +37,33 @@ def main() -> None:
         Draft202012Validator(registry_schema).validate(registry_data)
 
     tools = registry_data["tools"]
-    identities = [(tool["name"], tool["version"]) for tool in tools]
+    identities = {(tool["name"], tool["version"]) for tool in tools}
+    expected_identities = {
+        (name, "1.0")
+        for name in (
+            "get_market_data",
+            "validate_dataset",
+            "create_data_snapshot",
+            "define_factor",
+            "analyze_factor",
+            "calculate_factor",
+            "compare_factors",
+            "define_strategy",
+            "run_fast_backtest",
+            "compare_backtests",
+            "run_parameter_sensitivity",
+            "freeze_strategy",
+            "run_validation_suite",
+        )
+    }
     if len(tools) != 13:
         raise SystemExit(f"Expected 13 staged tools, found {len(tools)}")
-    if len(set(identities)) != len(identities):
+    if len(identities) != len(tools):
         raise SystemExit("Tool name@version identities must be unique")
+    if identities != expected_identities:
+        missing = sorted(expected_identities - identities)
+        extra = sorted(identities - expected_identities)
+        raise SystemExit(f"Tool identity set mismatch: missing={missing}, extra={extra}")
 
     for tool in tools:
         Draft202012Validator.check_schema(tool["input_schema"])

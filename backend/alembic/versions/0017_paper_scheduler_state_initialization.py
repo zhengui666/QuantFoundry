@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import MetaData, Table, create_engine, select, text
+from sqlalchemy import MetaData, Table, Text, Uuid, create_engine, select, text
 from sqlalchemy.engine import Connection
 
 from alembic import op
@@ -320,6 +320,30 @@ def _closed_object(value: Any, fields: set[str], field: str) -> Mapping[str, Any
     return value
 
 
+def _json_column_value(table: Table, column: str, value: Mapping[str, Any]) -> Any:
+    return (
+        json.dumps(value, sort_keys=True, separators=(",", ":"))
+        if isinstance(table.c[column].type, Text)
+        else value
+    )
+
+
+def _uuid_column_value(table: Table, column: str, value: uuid.UUID) -> Any:
+    return value if isinstance(table.c[column].type, Uuid) else str(value)
+
+
+def _mapping_value(value: Any) -> Mapping[str, Any] | None:
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return decoded if isinstance(decoded, Mapping) else None
+    return None
+
+
 def _validate_evidence(
     bind: Connection,
     audit_events: Table,
@@ -343,8 +367,8 @@ def _validate_evidence(
     )
     if len(audits) != 1:
         _block("missing or ambiguous scheduler initialization evidence", deployment)
-    summary = audits[0]["summary"]
-    if not isinstance(summary, Mapping) or set(summary) != {_EVIDENCE_KEY}:
+    summary = _mapping_value(audits[0]["summary"])
+    if summary is None or set(summary) != {_EVIDENCE_KEY}:
         _block("ambiguous scheduler initialization evidence", deployment)
     evidence = summary[_EVIDENCE_KEY]
     if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
@@ -437,14 +461,16 @@ def _validate_evidence(
     canonical_audit["occurred_at"] = initialization
     if audit.get("event_hash") != _hash(canonical_audit):
         _block("ambiguous scheduler initialization audit hash", deployment)
-    event_filters = [
-        domain_events.c.workspace_id == deployment["workspace_id"],
-        domain_events.c.event_id == evidence["state_transition_id"],
-        domain_events.c.event_type == "paper.updated",
-        domain_events.c.object_type == "paper",
-        domain_events.c.object_id == deployment["paper_id"],
-    ]
-    events = bind.execute(select(domain_events).where(*event_filters)).mappings().all()
+    events = (
+        bind.execute(
+            select(domain_events).where(
+                domain_events.c.workspace_id == deployment["workspace_id"],
+                domain_events.c.event_id == evidence["state_transition_id"],
+            )
+        )
+        .mappings()
+        .all()
+    )
     retention = (
         bind.execute(
             select(event_stream_watermarks).where(
@@ -455,7 +481,7 @@ def _validate_evidence(
         .one_or_none()
     )
     expired_canonical_event = (
-        len(events) == 0
+        not events
         and isinstance(evidence["domain_event_sequence"], int)
         and not isinstance(evidence["domain_event_sequence"], bool)
         and retention is not None
@@ -468,7 +494,13 @@ def _validate_evidence(
     if len(events) != 1:
         _block("ambiguous scheduler initialization paper.updated event", deployment)
     event = events[0]
-    payload = event["payload"]
+    if (
+        event["event_type"] != "paper.updated"
+        or event["object_type"] != "paper"
+        or event["object_id"] != deployment["paper_id"]
+    ):
+        _block("ambiguous scheduler initialization paper.updated event", deployment)
+    payload = _mapping_value(event["payload"])
     event_instant = _utc_timestamp(bind, event["occurred_at"], "event occurred_at")
     closed = (
         isinstance(payload, Mapping)
@@ -713,7 +745,7 @@ def _insert_baseline(
             )
         )
     state = {
-        "id": str(uuid.uuid4()),
+        "id": _uuid_column_value(states, "id", uuid.uuid4()),
         "workspace_id": workspace_id,
         "paper_id": deployment_id,
         "scheduler_status": target,
@@ -751,8 +783,9 @@ def _insert_baseline(
         },
     }
     summary = {_EVIDENCE_KEY: evidence}
+    audit_id = uuid.uuid4()
     audit = {
-        "id": str(uuid.uuid4()),
+        "id": _uuid_column_value(audit_events, "id", audit_id),
         "event_id": f"AUD-{uuid.uuid4()}",
         "actor_type": "SYSTEM",
         "actor_id": "alembic:0017",
@@ -764,7 +797,7 @@ def _insert_baseline(
         "object_version": None,
         "object_revision": revision,
         "result": "SUCCESS",
-        "summary": summary,
+        "summary": _json_column_value(audit_events, "summary", summary),
         "detail_artifact_id": None,
         "prev_event_hash": _previous_audit_hash(audit_events, bind, workspace_id),
         "occurred_at": instant,
@@ -788,7 +821,9 @@ def _insert_baseline(
         "object_version": None,
         "object_revision": revision,
         "revision": revision,
-        "payload": {"status": target},
+        "payload": _json_column_value(
+            domain_events, "payload", {"status": target}
+        ),
         "request_id": None,
         "correlation_id": None,
         "causation_id": None,

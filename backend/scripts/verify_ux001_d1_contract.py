@@ -128,14 +128,20 @@ def main() -> int:
         },
         "test matrix counts mismatch",
     )
-    operation_ids = {
-        operation["operationId"]
-        for path_item in openapi["paths"].values()
-        for method, operation in path_item.items()
-        if method in HTTP_METHODS
-        and isinstance(operation, dict)
-        and "operationId" in operation
-    }
+    operation_ids = []
+    for path, path_item in openapi["paths"].items():
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS:
+                continue
+            require(isinstance(operation, dict), f"{method.upper()} {path} is not an object")
+            operation_id = operation.get("operationId")
+            require(
+                isinstance(operation_id, str) and operation_id.strip(),
+                f"{method.upper()} {path} has no operationId",
+            )
+            operation_ids.append(operation_id)
+    require(len(operation_ids) == len(set(operation_ids)), "operation IDs are not unique")
+    operation_ids = set(operation_ids)
     matrix_operation_ids = {
         operation_id
         for family in matrix["families"]

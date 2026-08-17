@@ -74,17 +74,6 @@ def invalid_value(value):
     return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.fullmatch(value.strip()))
 
 
-def commit_is_ancestor(verification_commit, release_commit):
-    if verification_commit == release_commit:
-        return True
-    completed = subprocess.run(
-        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", verification_commit, release_commit],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return completed.returncode == 0
-
-
 def valid_timestamp(value):
     if invalid_value(value) or "T" not in value or not value.endswith("Z"):
         return False
@@ -224,7 +213,8 @@ class RemoteVerifier:
         if run.get("status") != "completed" or run.get("conclusion") != "success":
             raise RuntimeError(f"GitHub Actions run {run_id} did not complete successfully")
         workflow_path = run.get("path", "").split("@", 1)[0]
-        if workflow_path not in allowed_verification_workflows[role]:
+        workflow_reference = run.get("path", "")
+        if workflow_path not in allowed_verification_workflows[role] or not workflow_reference.endswith("@refs/heads/main"):
             raise RuntimeError(f"GitHub Actions run {run_id} used an unauthorized verification workflow")
 
     def resolve_tag_commit(self, tag):
@@ -249,6 +239,8 @@ class RemoteVerifier:
         transport, repository, first, second = parsed
         if repository != self.repository:
             raise RuntimeError("remote evidence URI repository does not match GITHUB_REPOSITORY")
+        if transport != "actions":
+            raise RuntimeError("P0 closure evidence must be a run-bound GitHub Actions artifact")
         self.require_run(run_id, commit, role)
         if transport == "actions":
             artifact_run_id, artifact_id = first, second
@@ -348,6 +340,7 @@ def validate_closed_evidence(blocker_id, item, remote):
     covered_criteria = set()
     roles = set()
     role_runs = {role: set() for role in allowed_roles}
+    role_criteria = {role: set() for role in allowed_roles}
     for index, record in enumerate(evidence):
         prefix = f"{blocker_id}: evidence[{index}]"
         record_error_count = len(errors)
@@ -364,8 +357,8 @@ def validate_closed_evidence(blocker_id, item, remote):
         commit_sha = record.get("commit_sha")
         if not isinstance(commit_sha, str) or not sha_pattern.fullmatch(commit_sha):
             errors.append(f"{prefix}.commit_sha must be a full lowercase 40-character SHA")
-        elif not commit_is_ancestor(commit_sha, expected_commit):
-            errors.append(f"{prefix}.commit_sha is not an ancestor of the current release commit")
+        elif commit_sha != expected_commit:
+            errors.append(f"{prefix}.commit_sha must equal the current release commit")
         build_id = record.get("build_id")
         build_match = github_build_pattern.fullmatch(build_id) if isinstance(build_id, str) else None
         if not build_match:
@@ -395,6 +388,8 @@ def validate_closed_evidence(blocker_id, item, remote):
                     errors.append(f"{prefix}.closure_criteria contains a non-canonical criterion")
                 else:
                     covered_criteria.add(criterion)
+                    if role in allowed_roles and role != item.get("owner_role"):
+                        role_criteria[role].add(criterion)
         validate_commands(prefix, record.get("commands"), errors)
         if remote and len(errors) == record_error_count:
             try:
@@ -408,6 +403,10 @@ def validate_closed_evidence(blocker_id, item, remote):
         errors.append(f"{blocker_id}: evidence does not cover every closure criterion")
     if roles != allowed_roles:
         errors.append(f"{blocker_id}: evidence requires separate Independent Test Agent and Independent Review Agent records")
+    for role in allowed_roles:
+        missing_for_role = set(criteria) - role_criteria[role]
+        if missing_for_role:
+            errors.append(f"{blocker_id}: {role} evidence does not cover every closure criterion")
     if role_runs["Independent Test Agent"] & role_runs["Independent Review Agent"]:
         errors.append(f"{blocker_id}: Independent Test and Review evidence must use distinct GitHub Actions runs")
     return errors
