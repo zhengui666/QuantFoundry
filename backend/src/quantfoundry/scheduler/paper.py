@@ -210,7 +210,7 @@ class PaperScheduler:
                 candidate, calendar_version = self._candidate(
                     session, deployment, state, schedule, timestamp
                 )
-            except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
+            except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
                 # Invalid configuration is fail-closed. No run/job/order is created.
                 continue
             if candidate is not None:
@@ -1137,7 +1137,7 @@ class PaperScheduler:
                 "max_strategy_weight": Decimal(policy["max_strategy_weight"]),
                 "max_turnover": Decimal(policy["max_turnover"]),
             }
-        except InvalidOperation, KeyError, TypeError, ValueError:
+        except (InvalidOperation, KeyError, TypeError, ValueError):
             return GateDecision(
                 "RISK",
                 "UNKNOWN",
@@ -1384,7 +1384,7 @@ class PaperScheduler:
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
             _, calendar_version = self._is_trading_day(schedule, run["trading_date"])
-        except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
             self._finish_run(
                 session,
                 deployment,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -160,12 +161,11 @@ def apply_fill(
     order_quantity: str,
     previous_cumulative_quantity: str | None = None,
     terminal: bool = False,
+    known_fill_quantities: Mapping[str, str] | None = None,
 ) -> tuple[OrderStatus, frozenset[str], bool]:
     """Return status, fill-id set and whether this fill changed state."""
     if not fill_id:
         raise LivePolicyError("broker fill id is required")
-    if fill_id in known_fill_ids:
-        return current, known_fill_ids, False
     from decimal import Decimal, InvalidOperation
 
     try:
@@ -182,6 +182,16 @@ def apply_fill(
         raise LivePolicyError("fill quantities are invalid")
     if cumulative > quantity:
         raise LivePolicyError("cumulative fill exceeds order quantity")
+    if fill_id in known_fill_ids:
+        if known_fill_quantities is None or fill_id not in known_fill_quantities:
+            raise LivePolicyError("duplicate fill has no retained quantity evidence")
+        try:
+            known_cumulative = Decimal(known_fill_quantities[fill_id])
+        except (InvalidOperation, TypeError) as error:
+            raise LivePolicyError("recorded fill quantity is invalid") from error
+        if known_cumulative != cumulative:
+            raise LivePolicyError("duplicate fill id has conflicting quantity")
+        return current, known_fill_ids, False
     if previous_cumulative_quantity is not None:
         try:
             previous = Decimal(previous_cumulative_quantity)
@@ -189,9 +199,9 @@ def apply_fill(
             raise LivePolicyError("previous cumulative quantity is invalid") from error
         if not previous.is_finite() or previous < 0 or cumulative <= previous:
             raise LivePolicyError("cumulative fill is not increasing")
-    if current == "PARTIALLY_FILLED" and previous_cumulative_quantity is None:
+    if known_fill_ids and previous_cumulative_quantity is None:
         raise LivePolicyError(
-            "previous cumulative quantity is required after a partial fill"
+            "previous cumulative quantity is required after a prior fill"
         )
     target: OrderStatus = (
         "FILLED"

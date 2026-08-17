@@ -321,12 +321,34 @@ def _advertise_min_properties(source: str, class_name: str) -> str:
 def _advertise_validation_schema(
     source: str, class_name: str, validation_schema: dict[str, Any]
 ) -> str:
-    start = source.index(f"class {class_name}(")
-    config_start = source.index("model_config = ConfigDict(", start)
-    config_end = source.index("    )", config_start)
-    config = source[config_start:config_end]
+    tree = ast.parse(source)
+    target = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == class_name
+    )
+    lines = source.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    start = offsets[target.lineno - 1]
+    end = offsets[cast(int, target.end_lineno) - 1] + cast(
+        int, target.end_col_offset
+    )
+    class_source = source[start:end]
+    config_marker = "    model_config = ConfigDict("
+    config_start = class_source.find(config_marker)
+    if config_start < 0:
+        insert_at = source.find("\n", start) + 1
+        config = f"    model_config = ConfigDict(\n        json_schema_extra={validation_schema!r},\n    )\n"
+        return source[:insert_at] + config + source[insert_at:]
+    config_end = class_source.find("    )", config_start)
+    if config_end < 0:
+        raise ValueError(f"{class_name} has an unterminated model_config")
+    absolute_end = start + config_end
+    config = class_source[config_start:config_end]
     config += f"        json_schema_extra={validation_schema!r},\n"
-    return source[:config_start] + config + source[config_end:]
+    return source[: start + config_start] + config + source[absolute_end:]
 
 
 def _inline_validation_refs(

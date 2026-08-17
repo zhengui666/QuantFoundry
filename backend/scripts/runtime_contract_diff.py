@@ -46,6 +46,8 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
             return normalized_schema(document, {"allOf": [target, siblings]})
         return normalized_schema(document, target)
     result = deepcopy(schema)
+    if not any(key in result for key in ("type", "properties", "items", "$ref", "allOf", "oneOf", "anyOf")):
+        return result
     result.pop("title", None)
     result.pop("description", None)
     result.pop("examples", None)

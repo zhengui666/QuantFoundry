@@ -53,7 +53,7 @@ frontend/e2e/storage-state.json
 # Local runtime state. Docker named volumes are deliberately not bind-mounted.
 .qf-runtime/
 artifacts/
-data/
+/data/
 !frontend/src/features/data/
 !frontend/src/features/data/DataCapabilitiesPage.tsx
 logs/

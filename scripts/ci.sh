@@ -116,6 +116,10 @@ require_postgres() {
     printf '%s\n' 'QF_SKIP_AUTO_CREATE=1 is required so Alembic exclusively owns CI schema creation.' >&2
     exit 1
   }
+  run_backend python "$repo_root/scripts/ci/verify-disposable-ci-database.py" "$QF_DATABASE_URL" || {
+    printf '%s\n' 'Refusing to mutate a PostgreSQL database that was not provisioned for this CI run.' >&2
+    exit 1
+  }
 }
 
 migration_check() {

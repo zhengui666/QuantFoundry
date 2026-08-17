@@ -37,7 +37,13 @@ def _scope_domain_event_primary_key() -> None:
                 )
             )
         ]
-        with op.batch_alter_table("domain_events", recreate="always") as batch:
+        naming_convention = {"pk": "pk_%(table_name)s"}
+        with op.batch_alter_table(
+            "domain_events", recreate="always", naming_convention=naming_convention
+        ) as batch:
+            batch.drop_constraint(
+                primary_key.get("name") or "pk_domain_events", type_="primary"
+            )
             batch.create_primary_key("pk_domain_events", ["workspace_id", "sequence"])
         for sql in triggers:
             op.execute(sql)

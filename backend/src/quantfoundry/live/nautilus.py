@@ -11,6 +11,7 @@ from quantfoundry.live.connector import (
     ConnectorProtocolError,
     ConnectorUnavailable,
     OrderRequest,
+    _idempotency_key,
     _segment,
     _validate_order_response,
 )
@@ -125,7 +126,7 @@ class NautilusTraderConnector:
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
             payload=order.to_wire(),
-            idempotency_key=f"{account_id}:{order.client_order_id}",
+            idempotency_key=_idempotency_key("submit", account_id, order.client_order_id),
         )
         return _validate_order_response(result, order.client_order_id)
 
@@ -148,7 +149,7 @@ class NautilusTraderConnector:
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
             f"{_segment(broker_order_id, 'broker_order_id')}/cancel",
             payload={},
-            idempotency_key=f"{account_id}:cancel:{broker_order_id}",
+            idempotency_key=_idempotency_key("cancel", account_id, broker_order_id),
         )
 
     def fills(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:

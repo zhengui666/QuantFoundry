@@ -75,6 +75,7 @@ def _drop_sqlite_experiment_guards() -> None:
     for action in ("update", "delete"):
         op.execute(f"DROP TRIGGER IF EXISTS qf_experiments_{action}_immutable")
     op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_immutable")
+    op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_binding")
 
 
 def _create_sqlite_experiment_guards(*, include_source: bool = True) -> None:
@@ -96,6 +97,16 @@ def _create_sqlite_experiment_guards(*, include_source: bool = True) -> None:
         "NEW.revision IS NOT OLD.revision"
         + source_clause
         + ") BEGIN SELECT RAISE(ABORT, 'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
+        "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
+        "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "NEW.source_experiment_id IS OLD.source_experiment_id AND "
+        "NEW.job_id IS NOT NULL AND json_extract(NEW.detail, '$.status') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE j.id = NEW.job_id AND "
+        "j.workspace_id = NEW.workspace_id AND j.status = 'RUNNING')) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )
 
 
@@ -122,6 +133,22 @@ def _create_postgres_experiment_guard(*, include_source: bool) -> None:
         + """
              ) THEN
             RAISE EXCEPTION 'experiment evidence cannot change while completing';
+          END IF;
+          IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
+             AND NOT (
+               NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
+               NEW.source_experiment_id IS NOT DISTINCT FROM OLD.source_experiment_id AND
+               NEW.revision = OLD.revision + 1 AND
+               NEW.job_id IS NOT NULL AND
+               (NEW.detail::jsonb ->> 'status') = 'COMPLETED' AND
+               EXISTS (
+                 SELECT 1 FROM jobs j
+                 WHERE j.id = NEW.job_id
+                   AND j.workspace_id = NEW.workspace_id
+                   AND j.status = 'RUNNING'
+               )
+             ) THEN
+            RAISE EXCEPTION 'experiment completion is not bound to a running job';
           END IF;
           IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
           RETURN NEW;

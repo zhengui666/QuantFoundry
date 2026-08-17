@@ -13,8 +13,22 @@ mkdir -m 0750 \
   "$runtime_root/pytest"
 
 start_managed_child() {
-  .venv/bin/python scripts/process_group_launcher.py "$@" &
+  launcher_ready="$runtime_root/launcher-ready"
+  rm -f "$launcher_ready"
+  QF_PROCESS_GROUP_READY="$launcher_ready" \
+    .venv/bin/python scripts/process_group_launcher.py "$@" &
   active_child_pid=$!
+  while [ ! -e "$launcher_ready" ]; do
+    if ! kill -0 "$active_child_pid" 2>/dev/null; then
+      set +e
+      wait "$active_child_pid"
+      child_status=$?
+      set -e
+      active_child_pid=""
+      return "$child_status"
+    fi
+    sleep 0.01
+  done
 }
 
 wait_managed_child() {
@@ -27,7 +41,12 @@ wait_managed_child() {
 }
 
 run_managed() {
-  start_managed_child "$@"
+  if start_managed_child "$@"; then
+    :
+  else
+    start_status=$?
+    return "$start_status"
+  fi
   wait_managed_child
 }
 
@@ -37,6 +56,7 @@ stop_active_child_group() {
     return 0
   fi
   child_pid=$active_child_pid
+  kill -s "$forwarded_signal" "$child_pid" 2>/dev/null || true
   kill -s "$forwarded_signal" -- "-$child_pid" 2>/dev/null || true
   stop_timeout=${QF_PG18_CI_CHILD_STOP_TIMEOUT_SECONDS:-10}
   .venv/bin/python -c \

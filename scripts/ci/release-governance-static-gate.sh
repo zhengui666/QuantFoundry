@@ -56,8 +56,8 @@ required_run_steps = {
 for name, expected in required_run_steps.items():
     if name not in run_step_calls or not contains_command(run_step_calls[name], expected):
         errors.append(f"run-gate rc path is missing executable run_step {name}: {expected}")
-if "QF_INDEPENDENT_REVIEW_TRUSTED" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
-    errors.append("agent-change gate does not require the trusted independent review job")
+if "QF_INDEPENDENT_REVIEW_REPORT" not in run_gate or "verify-independent-review-report.sh" not in run_gate:
+    errors.append("agent-change gate does not require the bound independent review report")
 
 ci_script = read("scripts/ci.sh")
 if 'run_backend mypy --explicit-package-bases src/quantfoundry app workers scheduler' not in ci_script:
@@ -72,6 +72,9 @@ if "release-check:\n\t@set -eu;" not in makefile or "QF_RELEASE_TAG is required 
     errors.append("Makefile release-check must fail closed when QF_RELEASE_TAG is missing")
 
 p0_check = read("scripts/p0-check.sh")
+p0_check_test = root / "scripts/p0-check-test.sh"
+if not p0_check_test.is_file() or not p0_check_test.stat().st_mode & 0o111:
+    errors.append("p0-check behavioral security test is missing or not executable")
 for required in ("--offline-report", "--require-closed-except-supply-chain", "GITHUB_TOKEN", "actions/artifacts", "releases/assets", "read_embedded_report", "zipfile", "role_content_types", "required_p0_ids", "allowed_verification_workflows", "did not complete successfully", "unauthorized verification workflow", "distinct GitHub Actions runs", "remote_verification", 'else "report"'):
     if required not in p0_check:
         errors.append(f"p0-check lacks required remote verification control: {required}")
@@ -167,8 +170,8 @@ if "paths-ignore:" in agent or "independent_review_evidence" in agent or "review
     errors.append("agent-change-gate contains an unsafe exclusion or self-generated review placeholder")
 if "docs/治理/independent-review-report.json" in agent:
     errors.append("agent-change-gate must not trust a repository-local review locator")
-if "actions/download-artifact" not in agent or "QF_INDEPENDENT_REVIEW_TRUSTED" not in agent or "needs: trusted-independent-review" not in agent:
-    errors.append("agent-change-gate must depend on the trusted independent review job")
+if "actions/download-artifact" not in agent or "QF_INDEPENDENT_REVIEW_REPORT" not in agent or "needs: trusted-independent-review" not in agent:
+    errors.append("agent-change-gate must depend on the bound independent review job")
 agent_jobs = agent_document.get("jobs", {}) if isinstance(agent_document, dict) else {}
 agent_contract_job = agent_jobs.get("agent-contract") if isinstance(agent_jobs, dict) else None
 if isinstance(agent_contract_job, dict) and "GITHUB_TOKEN" in agent_contract_job.get("env", {}):

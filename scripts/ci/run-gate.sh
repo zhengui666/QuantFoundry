@@ -128,6 +128,7 @@ require_ci_environment() {
     write_result ci-postgres 'QF_CI_DISPOSABLE_DATABASE/QF_DATABASE_URL/QF_ALEMBIC_URL/QF_SKIP_AUTO_CREATE are required' 2 'missing explicitly disposable real PostgreSQL CI configuration'
     exit 2
   fi
+  run_step ci-disposable-database scripts/ci/verify-disposable-ci-database.py "$QF_DATABASE_URL"
 }
 
 run_pr_fast() {
@@ -179,13 +180,11 @@ run_agent_change() {
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
   run_step tool-registry-exact make tools
   run_step agent-contract-and-policy make backend-ci
-  if [[ "${QF_INDEPENDENT_REVIEW_TRUSTED:-0}" != 1 ]]; then
-    local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
-    if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
-      run_step independent-review-locator scripts/ci/fetch-independent-review-report.sh "$commit" "$review_locator"
-    fi
-    run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$review_locator" "$commit"
+  local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
+  if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
+    run_step independent-review-locator scripts/ci/fetch-independent-review-report.sh "$commit" "$review_locator"
   fi
+  run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$review_locator" "$commit"
 }
 
 verify_remote_release_tag() {

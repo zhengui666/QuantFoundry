@@ -1493,7 +1493,9 @@ export function ExperimentPage() {
   const [overrideReason, setOverrideReason] = useState('');
   const [accepted, setAccepted] = useState<Schema<'ExperimentReproduceAccepted'>>();
   const reproduceInFlight = useRef(false);
-  const intent = useRef<{ payload: string; key: string } | undefined>(undefined);
+  const intent = useRef<{ experimentId: string; payload: string; key: string } | undefined>(
+    undefined,
+  );
   const query = useQuery({
     queryKey: validExperimentId
       ? workspaceQueryKey('experiment', experimentId)
@@ -1502,22 +1504,45 @@ export function ExperimentPage() {
     enabled: validExperimentId,
   });
   const reproduce = useMutation({
-    mutationFn: (body: ExperimentReproduceBody) => {
+    mutationFn: ({
+      experimentId: sourceExperimentId,
+      body,
+    }: {
+      experimentId: string;
+      body: ExperimentReproduceBody;
+    }) => {
       const payload = JSON.stringify(body);
-      if (!intent.current || intent.current.payload !== payload)
-        intent.current = { payload, key: idempotency() };
-      return api.reproduceExperiment(experimentId, body, intent.current.key);
+      if (
+        !intent.current ||
+        intent.current.experimentId !== sourceExperimentId ||
+        intent.current.payload !== payload
+      )
+        intent.current = { experimentId: sourceExperimentId, payload, key: idempotency() };
+      return api.reproduceExperiment(sourceExperimentId, body, intent.current.key);
     },
-    onSuccess: ({ body }) => {
+    onSuccess: ({ body }, variables) => {
+      if (variables.experimentId !== experimentId) return;
       setAccepted(body);
       setDialogOpen(false);
       intent.current = undefined;
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
+      if (variables?.experimentId !== experimentId) return;
       reproduceInFlight.current = false;
       void client.invalidateQueries({ queryKey: workspaceQueryKey('experiment', experimentId) });
     },
   });
+  useEffect(() => {
+    setAccepted(undefined);
+    setDialogOpen(false);
+    setMode('EXACT');
+    setEngineVersion('');
+    setAdapterVersion('');
+    setCodeVersion('');
+    setOverrideReason('');
+    reproduceInFlight.current = false;
+    intent.current = undefined;
+  }, [experimentId]);
   const job = useQuery({
     queryKey: workspaceQueryKey('job', accepted?.job_id),
     queryFn: ({ signal }) => api.job(accepted?.job_id ?? '', signal),
@@ -1561,7 +1586,7 @@ export function ExperimentPage() {
             reason: overrideReason.trim(),
           };
     reproduceInFlight.current = true;
-    reproduce.mutate(body);
+    reproduce.mutate({ experimentId, body });
   };
   const searchResult = (() => {
     switch (data.search_result.state) {

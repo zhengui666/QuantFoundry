@@ -213,8 +213,7 @@ def _public_id(value: Any, default_prefix: str) -> str:
     kind = _PUBLIC_ID_KINDS_BY_PREFIX.get(candidate)
     if kind is not None and candidate == default_prefix and is_public_id(kind, raw):
         return raw
-    prefix = candidate if candidate in _PUBLIC_PREFIXES else default_prefix
-    return f"{prefix}-{_deterministic_uuid4(prefix, raw)}"
+    return f"{default_prefix}-{_deterministic_uuid4(default_prefix, raw)}"
 
 
 _PUBLIC_COLUMN_PREFIXES = {
@@ -1425,6 +1424,49 @@ def _install_guards() -> None:
     bind = op.get_bind()
     _drop_sqlite_guard_triggers()
     if bind.dialect.name == "postgresql":
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_validate_strategy_transition() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'DELETE' THEN
+                IF OLD.state <> 'CANDIDATE' THEN
+                  RAISE EXCEPTION 'non-candidate strategy version cannot be deleted';
+                END IF;
+                RETURN OLD;
+              END IF;
+              IF (OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
+                   NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   (OLD.state <> 'CANDIDATE' AND NEW.frozen_at IS DISTINCT FROM OLD.frozen_at) OR
+                   NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+              ) THEN
+                RAISE EXCEPTION 'frozen strategy specification is immutable';
+              END IF;
+              IF OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
+                   NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.detail IS DISTINCT FROM OLD.detail
+              ) THEN
+                RAISE EXCEPTION 'candidate strategy evidence must be append-only';
+              END IF;
+              IF NOT (
+                   NEW.state = OLD.state OR
+                   (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
+                   (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
+                   (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
+                   (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+                   (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
+              ) THEN
+                RAISE EXCEPTION 'illegal strategy lifecycle transition';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
         for table in (
             "audit_events",
             "holdout_exposures",
@@ -1503,8 +1545,9 @@ def _install_guards() -> None:
         "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN "
         "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND ("
-        "NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR "
-        "NEW.spec_sha256 != OLD.spec_sha256 OR NEW.frozen_at != OLD.frozen_at OR "
+        "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
+        "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
+        "NEW.frozen_at IS NOT OLD.frozen_at OR "
         "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
         "(NEW.state = OLD.state AND NEW.detail != OLD.detail))) OR NOT ("
         "NEW.state = OLD.state OR "

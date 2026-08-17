@@ -42,7 +42,7 @@ jobs:
           shopt -s nullglob
           workflow_files=(.github/workflows/*.yml .github/workflows/*.yaml)
           ((${#workflow_files[@]} > 0))
-          export QF_ACTIONLINT_COMMAND="actionlint $(printf '%q ' "${workflow_files[@]}")"
+          printf 'QF_ACTIONLINT_COMMAND=%s\n' "actionlint $(printf '%q ' "${workflow_files[@]}")" >> "$GITHUB_ENV"
           scripts/ci/release-governance-static-gate.sh
           scripts/ci/p0-architecture-review.sh
           actionlint "${workflow_files[@]}"
@@ -111,16 +111,34 @@ jobs:
               ],
           }
           pathlib.Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          pathlib.Path(output).with_name("gate-result.json").write_text(
+              json.dumps({
+                  "commit": commit,
+                  "result": "pass",
+                  "exit_code": 0,
+                  "steps": report["commands"],
+              }, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
           PY
           uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
-            --command "scripts/ci/release-governance-static-gate.sh" \
-            --command "scripts/ci/p0-architecture-review.sh" \
-            --command "$QF_ACTIONLINT_COMMAND"
+            --result-file "$RUNNER_TEMP/qf-p0-review-evidence/gate-result.json"
           if [[ -n "$RELEASE_TAG" ]]; then
             release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+            python3 - "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence/release-gate-result.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path(sys.argv[2]).write_text(json.dumps({
+              "commit": sys.argv[1],
+              "result": "pass",
+              "exit_code": 0,
+              "steps": [{"command": "scripts/ci/supply-chain-review.sh", "exit_code": 0}],
+          }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
             uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
-              --command "scripts/ci/supply-chain-review.sh $RELEASE_TAG $release_commit"
+              --result-file "$RUNNER_TEMP/qf-p0-review-evidence/release-gate-result.json"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

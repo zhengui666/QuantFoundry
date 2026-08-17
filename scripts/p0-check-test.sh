@@ -96,10 +96,10 @@ printf '%s\n' \
   '  exit 0' \
   'fi' \
   'if [[ "$endpoint" =~ /releases/assets/204$ ]]; then if [[ -n "$output" ]]; then cp "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip" "$output"; else cat "$QF_MOCK_ARTIFACT_DIR/artifact-204.zip"; fi; exit 0; fi' \
-  'if [[ "$endpoint" =~ /actions/runs/[0-9]+$ ]]; then run_path="${QF_MOCK_RUN_PATH:-}"; if [[ -z "$run_path" ]]; then if [[ "$endpoint" == */actions/runs/100 ]]; then run_path=".github/workflows/independent-agent-test.yml@refs/heads/main"; else run_path=".github/workflows/independent-agent-review.yml@refs/heads/main"; fi; fi; printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\"}\\n" "${QF_MOCK_RUN_HEAD:-$QF_MOCK_COMMIT}" "${QF_MOCK_RUN_STATUS:-completed}" "${QF_MOCK_RUN_CONCLUSION:-success}" "$run_path"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/[0-9]+$ ]]; then run_path="${QF_MOCK_RUN_PATH:-}"; if [[ -z "$run_path" ]]; then if [[ "$endpoint" == */actions/runs/100 ]]; then run_path=".github/workflows/independent-agent-test.yml"; else run_path=".github/workflows/independent-agent-review.yml"; fi; fi; printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\",\\\"head_branch\\\":\\\"%s\\\"}\\n" "${QF_MOCK_RUN_HEAD:-$QF_MOCK_COMMIT}" "${QF_MOCK_RUN_STATUS:-completed}" "${QF_MOCK_RUN_CONCLUSION:-success}" "$run_path" "${QF_MOCK_RUN_BRANCH:-main}"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/([0-9]+)$ ]]; then' \
   '  case "${BASH_REMATCH[1]}" in 200) run=100 ;; 201|202) run=101 ;; 203) run=100 ;; *) exit 1 ;; esac' \
-  '  printf "{\\\"expired\\\":false,\\\"workflow_run\\\":{\\\"id\\\":%s}}\\n" "$run"' \
+  '  printf "{\\\"expired\\\":false,\\\"size_in_bytes\\\":1,\\\"workflow_run\\\":{\\\"id\\\":%s}}\\n" "$run"' \
   '  exit 0' \
   'fi' \
   'if [[ "$endpoint" == */git/ref/tags/v0.1.0-alpha ]]; then printf "{\\\"object\\\":{\\\"type\\\":\\\"commit\\\",\\\"sha\\\":\\\"%s\\\"}}\\n" "$QF_MOCK_COMMIT"; exit 0; fi' \
@@ -259,7 +259,7 @@ if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN
   printf '%s\n' 'Expected fixture to fail when a verification run is cancelled.' >&2
   exit 1
 fi
-if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN='fixture-token' QF_RELEASE_COMMIT="$commit_sha" QF_MOCK_RUN_PATH='.github/workflows/untrusted.yml@refs/heads/main' "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
+if env PATH="$mock_dir:$PATH" GITHUB_REPOSITORY='acme/quantfoundry' GITHUB_TOKEN='fixture-token' QF_RELEASE_COMMIT="$commit_sha" QF_MOCK_RUN_PATH='.github/workflows/untrusted.yml' "$repo_root/scripts/p0-check.sh" "$fixture_dir/positive.yaml" --require-closed >/dev/null 2>&1; then
   printf '%s\n' 'Expected fixture to fail for an unauthorized verification workflow.' >&2
   exit 1
 fi

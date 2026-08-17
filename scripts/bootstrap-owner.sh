@@ -7,6 +7,8 @@ environment_file="${QF_ENV_FILE:-.env}"
   exit 1
 }
 
+QF_ENV_FILE="$environment_file" ./scripts/bootstrap.sh >/dev/null
+
 key_label="${QF_BOOTSTRAP_KEY_LABEL:-primary}"
 [[ -n "$key_label" && ${#key_label} -le 80 ]] || {
   printf '%s\n' 'QF_BOOTSTRAP_KEY_LABEL must contain 1 to 80 characters.' >&2

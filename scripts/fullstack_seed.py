@@ -43,9 +43,14 @@ def ensure_fullstack_compat_setup() -> None:
         ai = db.scalar(
             select(ModelProviderConnectionRow).where(
                 ModelProviderConnectionRow.workspace_id == workspace_id,
+                ModelProviderConnectionRow.owner_actor_id == owner_id,
+                ModelProviderConnectionRow.provider_id == "REMOTE_CODEX",
                 ModelProviderConnectionRow.kind == "AI",
+                ModelProviderConnectionRow.model_name == model_name,
                 ModelProviderConnectionRow.validation_state == "SUCCESS",
+                ModelProviderConnectionRow.status == "ACTIVE",
             )
+            .order_by(ModelProviderConnectionRow.validated_at.desc())
         )
         if ai is None:
             connection_id = str(uuid.uuid4())
@@ -256,7 +261,7 @@ def activate_fullstack_database(
         raise RuntimeError("QF_FULLSTACK_DATABASE_URL is required")
     parsed = urlsplit(raw_url)
     if (
-        parsed.scheme not in {"postgresql", "postgres"}
+        parsed.scheme not in {"postgresql", "postgres", "postgresql+psycopg"}
         or not parsed.hostname
         or not parsed.username
         or not parsed.path.strip("/")
@@ -278,8 +283,13 @@ def activate_fullstack_database(
     }
     active = current.get("active")
     if current.get("active_revision") is not None:
-        if isinstance(active, dict) and not any(
-            active.get(key) != value for key, value in desired.items()
+        if (
+            current.get("state") == "READY"
+            and current.get("domain_operations") == "AVAILABLE"
+            and isinstance(active, dict)
+            and not any(
+                active.get(key) != value for key, value in desired.items()
+            )
         ):
             return
     etag = status.headers.get("etag")

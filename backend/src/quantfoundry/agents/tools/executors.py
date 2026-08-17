@@ -77,8 +77,12 @@ def _define_factor(
         {"research_id": arguments["research_id"], **arguments["definition"]}
     ).model_dump(mode="json", exclude_unset=True)
     research = session.get(ResearchRow, payload["research_id"])
-    if research is None or research.workspace_id != run.workspace_id:
-        raise ToolExecutionError("research is unavailable to this workspace")
+    if (
+        research is None
+        or research.workspace_id != run.workspace_id
+        or research.id != run.research_id
+    ):
+        raise ToolExecutionError("research is unavailable to this agent run")
     factor_id = new_id("FAC")
     created_at = datetime.now(UTC)
     created_at_wire = created_at.isoformat().replace("+00:00", "Z")
@@ -126,8 +130,12 @@ def _define_strategy(
         {"research_id": arguments["research_id"], **arguments["definition"]}
     ).model_dump(mode="json", exclude_unset=True)
     research = session.get(ResearchRow, payload["research_id"])
-    if research is None or research.workspace_id != run.workspace_id:
-        raise ToolExecutionError("research is unavailable to this workspace")
+    if (
+        research is None
+        or research.workspace_id != run.workspace_id
+        or research.id != run.research_id
+    ):
+        raise ToolExecutionError("research is unavailable to this agent run")
     factors = [session.get(FactorRow, item["factor_id"]) for item in payload["signals"]]
     if any(
         row is None
@@ -467,6 +475,7 @@ def execute_tool(
         return _queue_factor_analysis_experiment(session, run, arguments)
     if name == "compare_factors":
         snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
+        research = session.get(ResearchRow, run.research_id) if run.research_id else None
         factor_refs = arguments["factor_refs"]
         factors = [
             session.get(FactorRow, item.get("id"))
@@ -476,9 +485,13 @@ def execute_tool(
         if (
             snapshot is None
             or snapshot.workspace_id != run.workspace_id
+            or research is None
+            or research.workspace_id != run.workspace_id
             or len(factors) != len(factor_refs)
             or any(
-                factor is None or factor.workspace_id != run.workspace_id
+                factor is None
+                or factor.workspace_id != run.workspace_id
+                or factor.research_id != research.id
                 for factor in factors
             )
             or any(
@@ -499,10 +512,14 @@ def execute_tool(
             )
         ).scalar_one_or_none()
         snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
+        strategy = session.get(StrategyRow, version.strategy_id) if version else None
         if (
             version is None
+            or strategy is None
             or snapshot is None
             or version.workspace_id != run.workspace_id
+            or strategy.workspace_id != run.workspace_id
+            or strategy.research_id != run.research_id
             or snapshot.workspace_id != run.workspace_id
             or not snapshot.immutable
             or version.state != "CANDIDATE"
@@ -541,8 +558,13 @@ def execute_tool(
         experiments = [
             session.get(ExperimentRow, item) for item in arguments["experiment_ids"]
         ]
+        research = session.get(ResearchRow, run.research_id) if run.research_id else None
         if any(
-            row is None or row.workspace_id != run.workspace_id for row in experiments
+            row is None
+            or row.workspace_id != run.workspace_id
+            or research is None
+            or row.research_id != research.id
+            for row in experiments
         ):
             raise ToolExecutionError("experiment is unavailable")
         accepted = _accepted_job(session, "BACKTEST_COMPARE", arguments)
@@ -561,9 +583,13 @@ def execute_tool(
             )
             .with_for_update()
         ).scalar_one_or_none()
+        strategy = session.get(StrategyRow, version.strategy_id) if version else None
         if (
             version is None
+            or strategy is None
             or version.workspace_id != run.workspace_id
+            or strategy.workspace_id != run.workspace_id
+            or strategy.research_id != run.research_id
             or version.state != "FROZEN"
         ):
             raise ToolExecutionError("frozen strategy is unavailable")

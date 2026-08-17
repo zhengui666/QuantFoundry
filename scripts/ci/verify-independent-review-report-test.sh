@@ -81,7 +81,7 @@ printf '%s\n' \
   'for ((index = 1; index <= $#; index++)); do' \
   '  if [[ "${!index}" == --output ]]; then next=$((index + 1)); output="${!next}"; fi' \
   'done' \
-  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"workflow_id\":300}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml@refs/heads/main}"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"106fe374a92e902b4f0e119533680b51a640822d\"}\n"; exit 0; fi' \
@@ -95,7 +95,7 @@ run_verifier() {
   local archive="$2"
   local status="${3:-completed}"
   local conclusion="${4:-success}"
-  local workflow_path="${5:-.github/workflows/independent-agent-review.yml@refs/heads/main}"
+  local workflow_path="${5:-.github/workflows/independent-agent-review.yml}"
   env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" QF_REVIEW_MOCK_STATUS="$status" QF_REVIEW_MOCK_CONCLUSION="$conclusion" QF_REVIEW_MOCK_PATH="$workflow_path" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
 }
 

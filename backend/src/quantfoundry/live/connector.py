@@ -72,6 +72,13 @@ def _header_value(value: str, field_name: str) -> str:
     return value
 
 
+def _idempotency_key(*parts: str) -> str:
+    if not parts or any(not isinstance(part, str) for part in parts):
+        raise ValueError("idempotency key parts are required")
+    canonical = json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
+    return f"qf-idem-v1-{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+
+
 def _validate_order_response(
     result: dict[str, Any], client_order_id: str
 ) -> dict[str, Any]:
@@ -611,7 +618,7 @@ class ConnectorClient:
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
             payload=order.to_wire(),
-            idempotency_key=order.client_order_id,
+            idempotency_key=_idempotency_key("submit", account_id, order.client_order_id),
         )
         return _validate_order_response(result, order.client_order_id)
 
@@ -634,7 +641,7 @@ class ConnectorClient:
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
             f"{_segment(broker_order_id, 'broker_order_id')}/cancel",
             payload={},
-            idempotency_key=f"cancel:{broker_order_id}",
+            idempotency_key=_idempotency_key("cancel", account_id, broker_order_id),
         )
 
     def fills(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:

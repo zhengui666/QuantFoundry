@@ -676,11 +676,7 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
                 heads,
                 watermarks,
                 dict(deployment),
-                "DISABLED"
-                if deployment["status"] in {"DISABLED", "STOPPED"}
-                else "PAUSED"
-                if deployment["status"] == "PAUSED"
-                else "ACTIVE",
+                migration["_legacy_target"](dict(deployment)),
                 _now(),
             )
             continue

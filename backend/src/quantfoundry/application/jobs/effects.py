@@ -547,6 +547,21 @@ def dataset_validation_matches(
     session: Session, dataset_id: str, workspace_id: str, bundle: Any
 ) -> bool:
     expected_content = content_hash(bundle.rows)
+    active_policies = session.execute(
+        select(ResearchPolicyVersionRow).where(
+            ResearchPolicyVersionRow.workspace_id == workspace_id,
+            ResearchPolicyVersionRow.policy_family == "validation",
+            ResearchPolicyVersionRow.status == "ACTIVE",
+        )
+    ).scalars().all()
+    if len(active_policies) != 1:
+        return False
+    active_policy = active_policies[0]
+    expected_policy = {
+        "id": active_policy.policy_id,
+        "version": active_policy.version,
+        "sha256": active_policy.content_sha256,
+    }
     candidates = session.execute(
         select(ArtifactRow)
         .join(JobRow, JobRow.id == ArtifactRow.job_id)
@@ -574,6 +589,7 @@ def dataset_validation_matches(
             and evidence.get("state") == "PASS"
             and evidence.get("content_sha256") == expected_content
             and evidence.get("schema_sha256") == bundle.schema_sha256
+            and evidence.get("policy") == expected_policy
         ):
             return True
     return False
@@ -1025,6 +1041,10 @@ def _create_snapshot(
         )
     ).scalar_one_or_none()
     if existing is not None:
+        if existing.id != snapshot_id:
+            raise InvalidJobState(
+                "snapshot content already belongs to a different snapshot id"
+            )
         detail = json.loads(existing.detail)
         return _job_result_ref("snapshot", existing.id, detail["manifest_artifact_id"])
     public_id, public_object_sha256 = _parquet_artifact(
@@ -1988,7 +2008,13 @@ def _validate_dataset(
     if len(policy_rows) != 1:
         raise InvalidJobState("validation policy cannot be resolved unambiguously")
     policy = load_validation_policy(policy_rows[0].policy_id)
+    if (
+        policy.version != policy_rows[0].version
+        or content_hash(policy_rows[0].rules) != policy_rows[0].content_sha256
+    ):
+        raise InvalidJobState("validation policy binding changed")
     profile = data_quality_profile(bundle, policy)
+    profile["policy"]["sha256"] = policy_rows[0].content_sha256
     symbols = sorted({row["symbol"] for row in bundle.rows})
     dates = sorted({row["date"] for row in bundle.rows})
     evidence = {

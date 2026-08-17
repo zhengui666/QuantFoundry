@@ -70,17 +70,7 @@ def read_commands(options: argparse.Namespace) -> list[dict[str, Any]]:
                 raise SystemExit("P0 evidence requires single-line command records")
             commands.append({"command": command, "result": "pass", "exit_code": 0})
         return commands
-    if not options.command:
-        raise SystemExit("at least one verified command is required")
-    if any(
-        not isinstance(value, str) or not value.strip() or "\n" in value
-        for value in options.command
-    ):
-        raise SystemExit("command evidence requires non-empty single-line commands")
-    return [
-        {"command": value, "result": "pass", "exit_code": 0}
-        for value in options.command
-    ]
+    raise SystemExit("P0 evidence must be built from a structured gate result file")
 
 
 def main() -> None:

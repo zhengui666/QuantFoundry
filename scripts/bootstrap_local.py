@@ -9,6 +9,8 @@ import os
 import sys
 
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
+
 from bootstrap_owner import EMAIL_PATTERN, provision
 
 from app.bootstrap import seed_local
@@ -71,20 +73,20 @@ def main() -> int:
     provider_id = "REMOTE_CODEX" if remote_codex else "OPENAI_COMPATIBLE"
     model_name = os.getenv("QF_CODEX_MODEL", "qf-local-v1")
 
-    owner_id, workspace_id, session_token = provision(
-        args.email, args.workspace_name, args.ttl_hours
-    )
-    seeded = seed_local(
-        workspace_id=workspace_id,
-        owner_id=owner_id,
-        owner_email=args.email,
-        session_token=session_token,
-        ttl_hours=args.ttl_hours,
-    )
-    base_url = os.getenv("QF_BOOTSTRAP_API_URL", "http://api:8000/api/v1")
-    auth = {"Authorization": f"Bearer {session_token}"}
-    key_prefix = f"local-bootstrap-{workspace_id}"
     try:
+        owner_id, workspace_id, session_token = provision(
+            args.email, args.workspace_name, args.ttl_hours
+        )
+        seeded = seed_local(
+            workspace_id=workspace_id,
+            owner_id=owner_id,
+            owner_email=args.email,
+            session_token=session_token,
+            ttl_hours=args.ttl_hours,
+        )
+        base_url = os.getenv("QF_BOOTSTRAP_API_URL", "http://api:8000/api/v1")
+        auth = {"Authorization": f"Bearer {session_token}"}
+        key_prefix = f"local-bootstrap-{workspace_id}"
         with httpx.Client(base_url=base_url, timeout=15) as client:
             ai = request_json(
                 client,
@@ -139,7 +141,7 @@ def main() -> int:
             )
         if status.get("completed") is not True:
             raise RuntimeError("server Setup status is not completed")
-    except (httpx.HTTPError, KeyError, RuntimeError, ValueError) as error:
+    except (httpx.HTTPError, KeyError, OSError, RuntimeError, SQLAlchemyError, TypeError, ValueError) as error:
         print(f"Local Setup bootstrap failed: {error}", file=sys.stderr)
         return 1
 

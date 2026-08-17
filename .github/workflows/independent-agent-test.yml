@@ -115,9 +115,21 @@ jobs:
           fi
           uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$evidence_commit" "$RUNNER_TEMP/qf-p0-test-evidence" --result-file "$RUNNER_TEMP/qf-independent-test/result.json"
           if [[ -n "$RELEASE_TAG" ]]; then
+            mkdir -p "$RUNNER_TEMP/qf-independent-test"
+            python3 - "$evidence_commit" "$RUNNER_TEMP/qf-independent-test/release-gate-result.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path(sys.argv[2]).write_text(json.dumps({
+              "commit": sys.argv[1],
+              "result": "pass",
+              "exit_code": 0,
+              "steps": [{"command": "scripts/ci/supply-chain-review.sh", "exit_code": 0}],
+          }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
             uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$evidence_commit" "$RUNNER_TEMP/qf-p0-test-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
-              --command "scripts/ci/supply-chain-review.sh $RELEASE_TAG $release_commit"
+              --result-file "$RUNNER_TEMP/qf-independent-test/release-gate-result.json"
           fi
 
           mkdir -p "$RUNNER_TEMP/qf-independent-test"

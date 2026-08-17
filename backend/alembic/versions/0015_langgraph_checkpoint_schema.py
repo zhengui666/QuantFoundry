@@ -59,6 +59,7 @@ def upgrade() -> None:
         sa.Column("thread_id", sa.Text(), primary_key=True),
         sa.Column("checkpoint_ns", sa.Text(), primary_key=True, server_default=""),
         sa.Column("checkpoint_id", sa.Text(), primary_key=True),
+        sa.Column("task_path", sa.Text(), primary_key=True),
         sa.Column("task_id", sa.Text(), primary_key=True),
         sa.Column("idx", sa.Integer(), primary_key=True),
         sa.Column("channel", sa.Text(), nullable=False),

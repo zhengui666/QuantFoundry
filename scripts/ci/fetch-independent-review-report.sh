@@ -66,11 +66,10 @@ if not isinstance(run, dict) or not isinstance(run.get("id"), int):
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review run must be a completed successful workflow_dispatch run")
 workflow_reference = run.get("path", "")
-workflow_path, separator, executed_ref = workflow_reference.partition("@")
+workflow_path = workflow_reference
 if (
     workflow_path != ".github/workflows/independent-agent-review.yml"
-    or not separator
-    or not executed_ref
+    or run.get("head_branch") != "main"
 ):
     raise SystemExit("independent review run used an unauthorized workflow")
 workflow_id = run.get("workflow_id")
@@ -97,6 +96,8 @@ artifact = next(
 )
 if not isinstance(artifact, dict):
     raise SystemExit("successful independent review run has no usable review artifact")
+if not isinstance(artifact.get("size_in_bytes"), int) or artifact["size_in_bytes"] > 100 * 1024 * 1024:
+    raise SystemExit("independent review artifact exceeds the size limit")
 artifact_id = artifact["id"]
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as directory:
     archive_path = pathlib.Path(directory) / "review.zip"
@@ -112,12 +113,21 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         )
     if completed.returncode:
         raise SystemExit(f"cannot download independent review artifact: {completed.stderr.strip() or completed.returncode}")
-    archive = archive_path.read_bytes()
+    max_archive_bytes = 100 * 1024 * 1024
+    max_report_bytes = 1024 * 1024
+    if archive_path.stat().st_size > max_archive_bytes:
+        raise SystemExit("independent review artifact exceeds the size limit")
+    archive_digest = hashlib.sha256()
+    with archive_path.open("rb") as archive_file:
+        for chunk in iter(lambda: archive_file.read(1024 * 1024), b""):
+            archive_digest.update(chunk)
 try:
-    with zipfile.ZipFile(__import__("io").BytesIO(archive)) as bundle:
+    with zipfile.ZipFile(archive_path) as bundle:
         members = [item for item in bundle.infolist() if item.filename == "independent-review-report.json" and not item.is_dir()]
         if len(members) != 1:
             raise SystemExit("independent review artifact must contain exactly one canonical review report")
+        if members[0].file_size > max_report_bytes:
+            raise SystemExit("independent review artifact report exceeds the size limit")
         payload = bundle.read(members[0])
 except (OSError, zipfile.BadZipFile) as error:
     raise SystemExit(f"independent review artifact is not a readable ZIP: {error}") from error
@@ -161,7 +171,7 @@ locator = {
     "result": report["result"],
     "github_run_id": run_id,
     "artifact_uri": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}",
-    "artifact_sha256": hashlib.sha256(archive).hexdigest(),
+    "artifact_sha256": archive_digest.hexdigest(),
     "artifact_report": {"path": "independent-review-report.json", "sha256": hashlib.sha256(payload).hexdigest()},
 }
 destination = pathlib.Path(output_name)

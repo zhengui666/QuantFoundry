@@ -145,15 +145,24 @@ def upgrade() -> None:
             CREATE FUNCTION qf_reject_approval_evidence_change() RETURNS trigger AS $$
             BEGIN
               IF TG_OP = 'DELETE' OR NEW.validation_id IS DISTINCT FROM OLD.validation_id
-                 OR (NEW.status IS DISTINCT FROM OLD.status AND NOT EXISTS (
-                   SELECT 1 FROM validations v
-                   WHERE v.id = OLD.validation_id
-                     AND v.holdout_state = 'APPROVAL_PENDING'
-                     AND OLD.status = 'PENDING'
+                 OR NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256
+                 OR NEW.subject_type IS DISTINCT FROM OLD.subject_type
+                 OR NEW.subject_id IS DISTINCT FROM OLD.subject_id
+                 OR NEW.subject_version IS DISTINCT FROM OLD.subject_version
+                 OR NEW.subject_revision IS DISTINCT FROM OLD.subject_revision
+                 OR NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256
+                 OR NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+                 OR (NEW.status IS DISTINCT FROM OLD.status AND NOT (
+                   OLD.status = 'PENDING' AND NEW.status <> 'PENDING' AND EXISTS (
+                     SELECT 1 FROM validations v
+                     WHERE v.id = OLD.validation_id
+                       AND v.holdout_state = 'APPROVAL_PENDING'
+                   )
                  )) THEN
                 IF EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id
                   AND ((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING')
-                    OR (v.holdout_state IN ('UNLOCKED', 'RUNNING') AND OLD.status = 'APPROVED'))) THEN
+                    OR (v.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED', 'FAILED')
+                        AND OLD.status = 'APPROVED'))) THEN
                   RAISE EXCEPTION 'approval evidence is referenced by active validation';
                 END IF;
               END IF;
@@ -168,10 +177,29 @@ def upgrade() -> None:
         )
         op.execute(
             """
+            CREATE FUNCTION qf_sync_approval_validation() RETURNS trigger AS $$
+            BEGIN
+              IF OLD.status = 'PENDING' AND NEW.status <> 'PENDING' THEN
+                UPDATE validations
+                SET holdout_state = CASE WHEN NEW.status = 'APPROVED' THEN 'UNLOCKED' ELSE 'LOCKED' END,
+                    revision = revision + 1
+                WHERE id = NEW.validation_id AND holdout_state = 'APPROVAL_PENDING';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_sync_approval_validation AFTER UPDATE OF status ON "
+            "approval_requests FOR EACH ROW EXECUTE FUNCTION qf_sync_approval_validation()"
+        )
+        op.execute(
+            """
             CREATE FUNCTION qf_reject_exposure_evidence_change() RETURNS trigger AS $$
             BEGIN
               IF EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id
-                AND v.holdout_state = 'EXPOSED'
+                AND v.holdout_state IN ('EXPOSED', 'FAILED')
                 AND v.strategy_version_id = OLD.strategy_version_id) THEN
                 RAISE EXCEPTION 'exposure evidence is referenced by exposed validation';
               END IF;
@@ -224,27 +252,41 @@ def upgrade() -> None:
         "SELECT RAISE(ABORT, 'validation must start locked without exposure evidence'); END"
     )
     op.execute(
-        "CREATE TRIGGER qf_approval_evidence_immutable BEFORE UPDATE OF status, validation_id "
+        "CREATE TRIGGER qf_approval_evidence_immutable BEFORE UPDATE "
         "ON approval_requests WHEN EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id "
         "AND ((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING') OR "
-        "(v.holdout_state IN ('UNLOCKED', 'RUNNING') AND OLD.status = 'APPROVED'))) "
-        "AND (NEW.validation_id IS NOT OLD.validation_id OR "
-        "(NEW.status IS NOT OLD.status AND NOT EXISTS (SELECT 1 FROM validations v2 "
-        "WHERE v2.id = OLD.validation_id AND v2.holdout_state = 'APPROVAL_PENDING' "
-        "AND OLD.status = 'PENDING'))) BEGIN SELECT "
+        "(v.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED', 'FAILED') AND "
+        "OLD.status = 'APPROVED'))) AND ("
+        "NEW.validation_id IS NOT OLD.validation_id OR NEW.subject_sha256 IS NOT OLD.subject_sha256 OR "
+        "NEW.subject_type IS NOT OLD.subject_type OR NEW.subject_id IS NOT OLD.subject_id OR "
+        "NEW.subject_version IS NOT OLD.subject_version OR NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256 OR "
+        "(NEW.status IS NOT OLD.status AND NOT (OLD.status = 'PENDING' AND "
+        "NEW.status != 'PENDING' AND EXISTS (SELECT 1 FROM validations v2 WHERE "
+        "v2.id = OLD.validation_id AND v2.holdout_state = 'APPROVAL_PENDING')))) BEGIN SELECT "
         "RAISE(ABORT, 'approval evidence is referenced by active validation'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_approval_evidence_delete_immutable BEFORE DELETE ON approval_requests "
         "WHEN EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id AND "
         "((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING') OR "
-        "(v.holdout_state IN ('UNLOCKED', 'RUNNING') AND OLD.status = 'APPROVED'))) BEGIN SELECT "
+        "(v.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED', 'FAILED') AND "
+        "OLD.status = 'APPROVED'))) BEGIN SELECT "
         "RAISE(ABORT, 'approval evidence is referenced by active validation'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_sync_approval_validation AFTER UPDATE OF status ON approval_requests "
+        "WHEN OLD.status = 'PENDING' AND NEW.status != 'PENDING' BEGIN "
+        "UPDATE validations SET holdout_state = CASE WHEN NEW.status = 'APPROVED' "
+        "THEN 'UNLOCKED' ELSE 'LOCKED' END, revision = revision + 1 "
+        "WHERE id = NEW.validation_id AND holdout_state = 'APPROVAL_PENDING'; END"
     )
     op.execute(
         "CREATE TRIGGER qf_exposure_evidence_update_immutable BEFORE UPDATE ON holdout_exposures "
         "WHEN EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id AND "
-        "v.holdout_state = 'EXPOSED' AND v.strategy_version_id = OLD.strategy_version_id) BEGIN "
+        "v.holdout_state IN ('EXPOSED', 'FAILED') AND "
+        "v.strategy_version_id = OLD.strategy_version_id) BEGIN "
         "SELECT RAISE(ABORT, 'exposure evidence is referenced by exposed validation'); END"
     )
     op.execute(
@@ -264,6 +306,8 @@ def downgrade() -> None:
         op.execute("DROP FUNCTION qf_validate_holdout_insert()")
         op.execute("DROP TRIGGER qf_approval_evidence_immutable ON approval_requests")
         op.execute("DROP FUNCTION qf_reject_approval_evidence_change()")
+        op.execute("DROP TRIGGER qf_sync_approval_validation ON approval_requests")
+        op.execute("DROP FUNCTION qf_sync_approval_validation()")
         op.execute("DROP TRIGGER qf_exposure_evidence_immutable ON holdout_exposures")
         op.execute("DROP FUNCTION qf_reject_exposure_evidence_change()")
         op.execute("DROP TRIGGER qf_records_immutable ON records")
@@ -276,5 +320,6 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER qf_validations_holdout_insert")
     op.execute("DROP TRIGGER qf_approval_evidence_immutable")
     op.execute("DROP TRIGGER qf_approval_evidence_delete_immutable")
+    op.execute("DROP TRIGGER qf_sync_approval_validation")
     op.execute("DROP TRIGGER qf_exposure_evidence_update_immutable")
     op.execute("DROP TRIGGER qf_exposure_evidence_delete_immutable")

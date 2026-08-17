@@ -188,12 +188,6 @@ def _create_immutability_guards() -> None:
                 RAISE EXCEPTION 'experiment evidence cannot change while completing';
               END IF;
               IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
-                 AND (
-                   NEW.research_id IS DISTINCT FROM OLD.research_id OR
-                   NEW.detail IS DISTINCT FROM OLD.detail OR
-                   NEW.revision IS DISTINCT FROM OLD.revision OR
-                   NEW.job_id IS DISTINCT FROM OLD.job_id
-                 )
                  AND NOT (
                    NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
                    NEW.revision = OLD.revision + 1 AND
@@ -319,6 +313,13 @@ def _create_immutability_guards() -> None:
         "BEGIN SELECT RAISE(ABORT, 'strategy evidence cannot change while freezing'); END"
     )
     op.execute(
+        "CREATE TRIGGER qf_strategy_versions_candidate_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
+        "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) "
+        "BEGIN SELECT RAISE(ABORT, 'candidate strategy evidence must be append-only'); END"
+    )
+    op.execute(
         "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE "
         "ON experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
         "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
@@ -327,9 +328,7 @@ def _create_immutability_guards() -> None:
     )
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
-        "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND ("
-        "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
-        "NEW.revision IS NOT OLD.revision OR NEW.job_id IS NOT OLD.job_id) AND NOT ("
+        "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
         "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
         "NEW.job_id IS NOT NULL AND json_extract(NEW.detail, '$.status') = 'COMPLETED' AND "
         "EXISTS (SELECT 1 FROM jobs j WHERE j.id = NEW.job_id AND "

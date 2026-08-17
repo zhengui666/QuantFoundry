@@ -34,7 +34,7 @@ local_tag_object="$(git -C "$repo_root" show-ref --verify --hash "refs/tags/$tag
   printf '{"result":"invalid","reason":"required refs/tags/%s is missing"}\n' "$tag" >&2
   exit 2
 }
-tag_target="$(git -C "$repo_root" rev-parse "refs/tags/$tag^{commit}")" || {
+tag_target="$(git -C "$repo_root" rev-parse "${local_tag_object}^{commit}")" || {
   printf '{"result":"invalid","reason":"tag %s does not resolve to a commit"}\n' "$tag" >&2
   exit 2
 }

@@ -36,9 +36,9 @@ def parse_args() -> argparse.Namespace:
         if args.component == "worker":
             args.instance_id = os.getenv("QF_WORKER_ID") or socket.gethostname()
         else:
-            args.instance_id = os.getenv("QF_SCHEDULER_ID")
-            if not args.instance_id:
-                parser.error("--instance-id or QF_SCHEDULER_ID is required for scheduler")
+            args.instance_id = os.getenv("QF_SCHEDULER_ID") or (
+                f"{socket.gethostname()}:{os.getppid()}:scheduler"
+            )
     if args.component == "worker" and not args.instance_id.endswith(f":{args.queue}"):
         args.instance_id = f"{args.instance_id}:{args.queue}"
     return args

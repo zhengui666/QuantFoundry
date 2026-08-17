@@ -34,6 +34,7 @@ actual_pnpm_version="$(pnpm --version)"
 
 fullstack_tmp="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-fullstack.XXXXXX")"
 project_suffix="${fullstack_tmp##*.}"
+project_suffix="${project_suffix,,}"
 project_name="qf-fullstack-${project_suffix}"
 environment_file="$fullstack_tmp/local.env"
 seed_output="$fullstack_tmp/seed.json"
@@ -51,7 +52,7 @@ cleanup() {
       worker agent-worker scheduler api >&2 || true
     for service in worker agent-worker scheduler; do
       container_id="$(docker compose --project-name "$project_name" --profile local \
-        --env-file "$environment_file" ps -q "$service")"
+        --env-file "$environment_file" ps -q "$service" 2>/dev/null || true)"
       if [[ -n "$container_id" ]]; then
         docker inspect --format \
           "{{.Name}} health={{json .State.Health.Log}}" "$container_id" >&2 || true

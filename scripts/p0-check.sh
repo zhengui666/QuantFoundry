@@ -184,7 +184,7 @@ class RemoteVerifier:
     def gh_download(self, endpoint):
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 [
                     "gh",
                     "api",
@@ -194,11 +194,22 @@ class RemoteVerifier:
                     *(["--header", "Accept: application/octet-stream"] if "/releases/assets/" in endpoint else []),
                 ],
                 env=self.env,
-                stdout=destination.open("wb"),
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            if completed.returncode:
-                raise RuntimeError(f"gh api download failed for {endpoint}: {completed.stderr.decode(errors='replace').strip() or completed.returncode}")
+            size = 0
+            with destination.open("wb") as archive_file:
+                for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
+                    size += len(chunk)
+                    if size > MAX_EVIDENCE_BYTES:
+                        process.kill()
+                        process.wait()
+                        raise RuntimeError("downloaded evidence exceeds the size limit")
+                    archive_file.write(chunk)
+            stderr = process.stderr.read().decode(errors="replace").strip()
+            return_code = process.wait()
+            if return_code:
+                raise RuntimeError(f"gh api download failed for {endpoint}: {stderr or return_code}")
             if destination.stat().st_size > MAX_EVIDENCE_BYTES:
                 raise RuntimeError("downloaded evidence exceeds the size limit")
             try:
@@ -212,9 +223,8 @@ class RemoteVerifier:
             raise RuntimeError(f"GitHub Actions run {run_id} is not bound to commit {commit}")
         if run.get("status") != "completed" or run.get("conclusion") != "success":
             raise RuntimeError(f"GitHub Actions run {run_id} did not complete successfully")
-        workflow_path = run.get("path", "").split("@", 1)[0]
-        workflow_reference = run.get("path", "")
-        if workflow_path not in allowed_verification_workflows[role] or not workflow_reference.endswith("@refs/heads/main"):
+        workflow_path = run.get("path", "")
+        if workflow_path not in allowed_verification_workflows[role] or run.get("head_branch") != "main":
             raise RuntimeError(f"GitHub Actions run {run_id} used an unauthorized verification workflow")
 
     def resolve_tag_commit(self, tag):
@@ -247,7 +257,12 @@ class RemoteVerifier:
             if artifact_run_id != str(run_id):
                 raise RuntimeError("artifact URL run id does not match build_id")
             artifact = self.gh_json(f"/repos/{self.repository}/actions/artifacts/{artifact_id}")
-            if artifact.get("expired") or artifact.get("workflow_run", {}).get("id") != run_id:
+            if (
+                artifact.get("expired")
+                or artifact.get("workflow_run", {}).get("id") != run_id
+                or not isinstance(artifact.get("size_in_bytes"), int)
+                or artifact["size_in_bytes"] > MAX_EVIDENCE_BYTES
+            ):
                 raise RuntimeError(f"Actions artifact {artifact_id} is missing, expired, or not bound to run {run_id}")
             blob = self.gh_download(f"/repos/{self.repository}/actions/artifacts/{artifact_id}/zip")
         else:
@@ -256,7 +271,12 @@ class RemoteVerifier:
                 raise RuntimeError(f"release tag {tag} is not bound to commit {commit}")
             release = self.gh_json(f"/repos/{self.repository}/releases/tags/{quote(tag, safe='')}")
             asset = next((item for item in release.get("assets", []) if item.get("name") == asset_name), None)
-            if not asset or not isinstance(asset.get("id"), int):
+            if (
+                not asset
+                or not isinstance(asset.get("id"), int)
+                or not isinstance(asset.get("size"), int)
+                or asset["size"] > MAX_EVIDENCE_BYTES
+            ):
                 raise RuntimeError(f"release asset {asset_name} is not present on release {tag}")
             blob = self.gh_download(f"/repos/{self.repository}/releases/assets/{asset['id']}")
         self.require_sha256(blob, expected_sha256)

@@ -37,7 +37,7 @@ def _key(label: str) -> str:
 def _diagnostic_experiment_status(detail: str) -> str | None:
     try:
         value = json.loads(detail)
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         return "INVALID_DETAIL"
     return value.get("status") if isinstance(value, dict) else "INVALID_DETAIL"
 

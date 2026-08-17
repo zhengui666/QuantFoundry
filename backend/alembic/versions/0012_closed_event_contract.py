@@ -124,9 +124,11 @@ def upgrade() -> None:
     else:
         op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     now = datetime.now(UTC)
-    occurred_at_value = now.isoformat() if dialect == "sqlite" else now
+    occurred_at_value = (
+        now.strftime("%Y-%m-%d %H:%M:%S") if dialect == "sqlite" else now
+    )
     expires_at_value = (
-        (now + timedelta(days=7)).isoformat()
+        (now + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         if dialect == "sqlite"
         else now + timedelta(days=7)
     )
@@ -158,8 +160,10 @@ def upgrade() -> None:
                 UPDATE domain_events
                 SET event_id = :event_id,
                     event_type = :event_type,
-                    object_type = COALESCE(object_type, 'event_stream'),
-                    object_id = COALESCE(object_id, 'events'),
+                    object_type = CASE WHEN :event_type = 'system.resync_required'
+                        THEN 'event_stream' ELSE COALESCE(object_type, 'event_stream') END,
+                    object_id = CASE WHEN :event_type = 'system.resync_required'
+                        THEN :event_id ELSE COALESCE(object_id, 'events') END,
                     payload = :payload,
                     request_id = COALESCE(request_id, :request_id),
                     occurred_at = COALESCE(occurred_at, :occurred_at),

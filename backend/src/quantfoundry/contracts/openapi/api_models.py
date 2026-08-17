@@ -40,11 +40,7 @@ ApprovalRejectRequest = generated.ApprovalRejectRequest
 AgentConfigUpdate = generated.AgentConfigUpdate
 
 
-class SetupCompleteRequest(BaseModel):
-    """UX-001 completes setup by activating a validated control-plane revision."""
-
-    model_config = ConfigDict(extra="forbid")
-    configuration_revision: int = Field(..., ge=1)
+SetupCompleteRequest = generated.SetupCompleteRequest
 
 
 class LiveConnectorValidationRequest(BaseModel):
@@ -74,7 +70,7 @@ class LiveConnectorValidationRequest(BaseModel):
                 "endpoint must be an HTTPS URL without embedded credentials"
             )
         try:
-            parsed.port
+            _ = parsed.port
         except ValueError as error:
             raise ValueError("endpoint must contain a valid HTTPS port") from error
         return value.rstrip("/")
@@ -128,7 +124,7 @@ SCHEMA_MODELS.update(
 for _model in SCHEMA_MODELS.values():
     _model.model_rebuild()
 # Compatibility bridge: UX-001 models are not part of the OpenAPI-generated module yet.
-from app import generated_api_models as _ux_models
+from app import generated_api_models as _ux_models  # noqa: E402
 
 for _name in (
         "GeneralAccessKeyLoginRequest",

@@ -191,6 +191,9 @@ def _run_once(
                 if job is None:
                     raise RuntimeError("agent job disappeared after checkpoint")
                 job = lock_active_lease(session, lease)
+                if job.cancel_requested_at:
+                    result_ref = None
+                    break
         else:
             result_ref = apply_job_effect(session, job)
         if crash_after_effects:

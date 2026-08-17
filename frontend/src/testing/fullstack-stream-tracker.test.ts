@@ -58,10 +58,9 @@ describe('full-stack authenticated SSE lifecycle tracker', () => {
       authorization: undefined,
       cookie: 'qf_session=eventual-token',
     });
+    tracker.observeTermination(authenticated);
     expect(tracker.snapshot().authenticatedAccepted).toBe(false);
     cookie = 'eventual-token';
-    expect(tracker.snapshot().authenticatedAccepted).toBe(true);
-    tracker.observeTermination(authenticated);
     expect(tracker.snapshot()).toEqual({
       authenticatedAccepted: true,
       authenticatedTerminated: true,

@@ -1337,11 +1337,13 @@ export function streamEvents(
   let consecutiveContractSkews = 0;
   let attempts = 0;
   let reconnectTimer: number | undefined;
-  const safeResync = async () => {
+  const safeResync = async (): Promise<boolean> => {
     try {
       await onResync();
+      return true;
     } catch {
       onState?.('degraded');
+      return false;
     }
   };
   const reconnect = () => {
@@ -1388,7 +1390,7 @@ export function streamEvents(
         onState?.('connected');
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = '';
-        while (current()) {
+        streamLoop: while (current()) {
           const part = await reader.read();
           if (!current()) return;
           if (part.done) break;
@@ -1401,7 +1403,7 @@ export function streamEvents(
               event = decodeCanonicalSseFrame(rawFrame)?.event;
             } catch {
               consecutiveContractSkews += 1;
-              await safeResync();
+              if (!(await safeResync())) break streamLoop;
               if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
@@ -1414,7 +1416,7 @@ export function streamEvents(
             }
             if (!event || !isSafeHoldoutNotification(event)) {
               consecutiveContractSkews += 1;
-              await safeResync();
+              if (!(await safeResync())) break streamLoop;
               if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
@@ -1429,7 +1431,7 @@ export function streamEvents(
             if (event.sequence <= connectionLast) continue;
             const hasGap = connectionLast > 0 && event.sequence > connectionLast + 1;
             if (event.event_type === 'system.resync_required') {
-              await safeResync();
+              if (!(await safeResync())) break streamLoop;
               if (!current()) return;
               connectionLast = event.sequence;
               last = connectionLast;
@@ -1437,7 +1439,7 @@ export function streamEvents(
               continue;
             }
             if (hasGap) {
-              await safeResync();
+              if (!(await safeResync())) break streamLoop;
               if (!current()) return;
             }
             onEvent(event);

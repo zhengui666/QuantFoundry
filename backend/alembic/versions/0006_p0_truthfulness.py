@@ -178,6 +178,7 @@ def _replace_strategy_guard() -> None:
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
                    (OLD.state <> 'CANDIDATE' AND NEW.frozen_at IS DISTINCT FROM OLD.frozen_at) OR
                    NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
               ) THEN
@@ -286,6 +287,13 @@ def _scope_existing_foreign_keys() -> None:
     if bind.dialect.name == "sqlite":
         op.execute(
             """
+            CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE
+            ON strategy_versions WHEN OLD.state != 'CANDIDATE'
+            BEGIN SELECT RAISE(ABORT, 'non-candidate strategy version cannot be deleted'); END
+            """
+        )
+        op.execute(
+            """
             CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE
             ON strategy_versions WHEN
               ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
@@ -293,7 +301,7 @@ def _scope_existing_foreign_keys() -> None:
                  NEW.spec_sha256 != OLD.spec_sha256 OR
                  (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
                  COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR
-                 (NEW.state = OLD.state AND NEW.detail != OLD.detail)
+                 (NEW.state = OLD.state AND NEW.detail IS NOT OLD.detail)
               )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
                  NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
                  NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail

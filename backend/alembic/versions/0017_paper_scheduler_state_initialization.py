@@ -344,6 +344,16 @@ def _mapping_value(value: Any) -> Mapping[str, Any] | None:
     return None
 
 
+def _canonical_audit_hash_payload(
+    audit_events: Table, audit: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        column.name: audit.get(column.name)
+        for column in audit_events.columns
+        if column.name != "event_hash"
+    }
+
+
 def _validate_evidence(
     bind: Connection,
     audit_events: Table,
@@ -456,8 +466,7 @@ def _validate_evidence(
         "build_id": "alembic-0017",
     }:
         _block("ambiguous scheduler initialization build locator", deployment)
-    canonical_audit = dict(audit)
-    canonical_audit.pop("event_hash", None)
+    canonical_audit = _canonical_audit_hash_payload(audit_events, audit)
     canonical_audit["occurred_at"] = initialization
     if audit.get("event_hash") != _hash(canonical_audit):
         _block("ambiguous scheduler initialization audit hash", deployment)
@@ -807,7 +816,7 @@ def _insert_baseline(
         "before_hash": None,
         "after_hash": _hash(evidence),
     }
-    audit["event_hash"] = _hash(audit)
+    audit["event_hash"] = _hash(_canonical_audit_hash_payload(audit_events, audit))
     bind.execute(audit_events.insert().values(**audit))
 
     event = {

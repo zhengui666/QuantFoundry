@@ -184,7 +184,7 @@ def test_workspace_resolver_first_lookup_is_sql_scoped() -> None:
     lookup = next(
         statement for statement in statements if "from research_cases" in statement
     )
-    assert "workspace_id" in lookup
+    assert re.search(r"\bwhere\b.*\bworkspace_id\b\s*=", lookup, re.S)
 
 
 def test_internal_public_reference_lookups_are_sql_scoped() -> None:

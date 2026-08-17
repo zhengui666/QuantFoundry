@@ -115,9 +115,8 @@ if run.get("head_sha") != expected_commit:
     raise SystemExit("independent review report run is not bound to the current commit")
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review report run did not complete successfully as workflow_dispatch")
-workflow_reference = run.get("path", "")
-workflow_path, separator, executed_ref = workflow_reference.partition("@")
-if workflow_path != ".github/workflows/independent-agent-review.yml" or not separator or not executed_ref:
+workflow_path = run.get("path", "")
+if workflow_path != ".github/workflows/independent-agent-review.yml" or run.get("head_branch") != "main":
     raise SystemExit("independent review report run used an unauthorized workflow")
 workflow_id = run.get("workflow_id")
 if not isinstance(workflow_id, int) or workflow_id < 1:

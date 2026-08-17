@@ -20,6 +20,10 @@ def main() -> None:
     ):
         signal.signal(managed_signal, signal.SIG_DFL)
     os.setsid()
+    ready_path = os.environ.get("QF_PROCESS_GROUP_READY")
+    if ready_path:
+        with open(ready_path, "x", encoding="utf-8"):
+            pass
     os.execvp(sys.argv[1], sys.argv[1:])
 
 

@@ -19,7 +19,6 @@ from functools import wraps
 from pathlib import Path
 from threading import RLock
 from typing import Annotated, Any, cast
-from urllib.parse import quote
 
 import yaml
 from argon2 import PasswordHasher
@@ -50,6 +49,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 try:
@@ -134,10 +134,18 @@ class BootstrapState(ControlBase):
     installation_id = Column(String(128), nullable=False)
     schema_version = Column(String(64), nullable=False)
     readiness_state = Column(String(32), nullable=False)
-    active_configuration_revision = Column(BigInteger)
-    last_known_good_configuration_revision = Column(BigInteger)
-    active_database_connection_revision = Column(BigInteger)
-    last_known_good_database_connection_revision = Column(BigInteger)
+    active_configuration_revision = Column(
+        BigInteger, ForeignKey("configuration_revisions.revision")
+    )
+    last_known_good_configuration_revision = Column(
+        BigInteger, ForeignKey("configuration_revisions.revision")
+    )
+    active_database_connection_revision = Column(
+        BigInteger, ForeignKey("domain_database_connection_revisions.revision")
+    )
+    last_known_good_database_connection_revision = Column(
+        BigInteger, ForeignKey("domain_database_connection_revisions.revision")
+    )
     auth_epoch = Column(BigInteger, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
@@ -227,9 +235,15 @@ class ActiveConfiguration(ControlBase):
     singleton_key = Column(
         String(32), primary_key=True, default="CONFIGURATION-DEFAULT"
     )
-    active_revision = Column(BigInteger, nullable=False)
-    last_known_good_revision = Column(BigInteger, nullable=False)
-    candidate_revision = Column(BigInteger)
+    active_revision = Column(
+        BigInteger, ForeignKey("configuration_revisions.revision"), nullable=False
+    )
+    last_known_good_revision = Column(
+        BigInteger, ForeignKey("configuration_revisions.revision"), nullable=False
+    )
+    candidate_revision = Column(
+        BigInteger, ForeignKey("configuration_revisions.revision")
+    )
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
@@ -452,12 +466,16 @@ def _with_idempotency(operation: str, success_status: int = 200):
             key = kwargs.get("idempotency_key")
             if not isinstance(request, Request) or not isinstance(key, str):
                 return function(*args, **kwargs)
+            authenticated, auth_error = _csrf_session(request)
+            if auth_error is not None:
+                return auth_error
             cookie = request.cookies.get(SESSION_COOKIE)
-            principal = (
-                hashlib.sha256(cookie.encode()).hexdigest()
-                if cookie
-                else str(getattr(request.state, "actor", None) or "anonymous")
-            )
+            if authenticated is not None and cookie:
+                principal = hashlib.sha256(
+                    f"{cookie}:{authenticated.session_id}:{authenticated.auth_epoch}".encode()
+                ).hexdigest()
+            else:
+                principal = str(getattr(request.state, "actor", None) or "anonymous")
             fingerprint = _idempotency_fingerprint(kwargs)
 
             def run(db: Session) -> Any:
@@ -1280,10 +1298,14 @@ def _database_url(
     row: DomainDatabaseConnectionRevision, secret: dict[str, str]
 ) -> tuple[str, dict[str, Any], list[str]]:
     payload = row.nonsecret_payload
-    username = quote(str(payload["username"]), safe="")
-    password = quote(str(secret.get("password", "")), safe="")
-    auth = f"{username}:{password}" if password else username
-    url = f"postgresql+psycopg://{auth}@{payload['host']}:{payload['port']}/{quote(str(payload['database']), safe='')}"
+    url = URL.create(
+        "postgresql+psycopg",
+        username=str(payload["username"]),
+        password=str(secret.get("password", "")) or None,
+        host=str(payload["host"]),
+        port=int(payload["port"]),
+        database=str(payload["database"]),
+    )
     tls_mode = payload["tls_mode"]
     connect_args: dict[str, Any] = {
         "connect_timeout": 5,
@@ -1452,9 +1474,15 @@ def _publish_domain_database(candidate_engine: Any) -> Any:
     domain_main.SessionLocal.configure(bind=candidate_engine)
     domain_main.engine = candidate_engine
     domain_main.app.state.domain_database_available = True
+    domain_main.app.state.domain_database_revision = getattr(
+        candidate_engine, "_qf_domain_revision", None
+    )
     canonical_main.SessionLocal.configure(bind=candidate_engine)
     canonical_main.engine = candidate_engine
     canonical_main.app.state.domain_database_available = True
+    canonical_main.app.state.domain_database_revision = getattr(
+        candidate_engine, "_qf_domain_revision", None
+    )
     return previous_engine
 
 
@@ -1467,6 +1495,7 @@ def _rebind_domain_database(
     url, connect_args, temp_paths = _database_url(row, secret)
     candidate_engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
     candidate_engine._qf_tls_paths = temp_paths  # type: ignore[attr-defined]
+    candidate_engine._qf_domain_revision = row.revision  # type: ignore[attr-defined]
     try:
         with candidate_engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1").scalar_one()
@@ -1504,10 +1533,16 @@ def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> Non
     domain_main.app.state.domain_database_available = getattr(
         candidate_engine, "_qf_previous_available", False
     )
+    domain_main.app.state.domain_database_revision = getattr(
+        previous_engine, "_qf_domain_revision", None
+    )
     canonical_main.SessionLocal.configure(bind=previous_engine)
     canonical_main.engine = previous_engine
     canonical_main.app.state.domain_database_available = getattr(
         candidate_engine, "_qf_previous_canonical_available", False
+    )
+    canonical_main.app.state.domain_database_revision = getattr(
+        previous_engine, "_qf_domain_revision", None
     )
     _dispose_engine(candidate_engine)
 
@@ -1532,7 +1567,9 @@ def restore_active_domain_database() -> None:
             "postgresql+psycopg://qf-unavailable@127.0.0.1:1/"
         )
         domain_main.app.state.domain_database_available = available
+        domain_main.app.state.domain_database_revision = None
         canonical_main.app.state.domain_database_available = available
+        canonical_main.app.state.domain_database_revision = None
         return
     checks, failure = _probe_database(active)
     if failure is not None:
@@ -1542,16 +1579,39 @@ def restore_active_domain_database() -> None:
                 state.readiness_state = "DEGRADED"
                 state.updated_at = _now()
         domain_main.app.state.domain_database_available = False
+        domain_main.app.state.domain_database_revision = None
         canonical_main.app.state.domain_database_available = False
+        canonical_main.app.state.domain_database_revision = None
         return
     try:
         _rebind_domain_database(active)
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         domain_main.app.state.domain_database_available = False
+        domain_main.app.state.domain_database_revision = None
         canonical_main.app.state.domain_database_available = False
+        canonical_main.app.state.domain_database_revision = None
         return
     domain_main.app.state.domain_database_available = True
     canonical_main.app.state.domain_database_available = True
+
+
+def ensure_domain_database_current() -> None:
+    """Reload the process-local pool when another worker activates a revision."""
+    from app import main as domain_main
+
+    with ControlSessionLocal() as db:
+        active = db.scalar(
+            select(DomainDatabaseConnectionRevision)
+            .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
+            .order_by(desc(DomainDatabaseConnectionRevision.revision))
+        )
+    current = getattr(domain_main.app.state, "domain_database_revision", None)
+    if active is None or (
+        current == active.revision
+        and getattr(domain_main.app.state, "domain_database_available", False)
+    ):
+        return
+    _rebind_domain_database(active)
 
 
 def _sync_domain_compat_setup(workspace_id: str | None = None) -> None:

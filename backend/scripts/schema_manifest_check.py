@@ -1224,9 +1224,10 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
         database_table_count = database_catalog_table_count - len(
             database_internal_tables
         )
+        missing_expected_tables = set(physical_contract) - set(database_metadata.tables)
         parsed_expected_checks = (
             _postgres_parsed_expected_checks(database_url, physical_contract)
-            if dialect == "postgresql"
+            if dialect == "postgresql" and not missing_expected_tables
             else None
         )
         parsed_actual_checks = (
@@ -1234,7 +1235,7 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
         )
         parsed_expected_indexes = (
             _postgres_parsed_expected_indexes(database_url, physical_contract)
-            if dialect == "postgresql"
+            if dialect == "postgresql" and not missing_expected_tables
             else None
         )
         parsed_actual_indexes = (

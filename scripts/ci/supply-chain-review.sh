@@ -22,6 +22,8 @@ import os
 import pathlib
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
 
 release_path, tag_path, work_dir, expected_tag, expected_commit, expected_repository = sys.argv[1:]
@@ -62,8 +64,31 @@ for asset in assets:
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, request, response, code, msg, headers, new):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
     try:
-        with urllib.request.urlopen(request) as response:
+        with opener.open(request) as response:
+            output.write_bytes(response.read())
+    except urllib.error.HTTPError as error:
+        if error.code not in {301, 302, 303, 307, 308}:
+            raise
+        location = error.headers.get("Location")
+        redirect_url = urllib.parse.urljoin(request.full_url, location or "")
+        parsed = urllib.parse.urlparse(redirect_url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
+            raise SystemExit(f"unsafe release asset redirect for {name}") from error
+        redirect_request = urllib.request.Request(
+            redirect_url, headers={"Accept": "application/octet-stream"}
+        )
+        with opener.open(redirect_request) as response:
             output.write_bytes(response.read())
     except Exception as error:
         raise SystemExit(f"cannot download release asset {name}: {error}") from error
@@ -113,26 +138,18 @@ def statements(value):
         if not isinstance(entry, dict):
             continue
         verification = entry.get("verificationResult")
-        if isinstance(verification, dict) and isinstance(verification.get("statement"), dict):
+        if isinstance(verification, dict) and isinstance(
+            verification.get("statement"), dict
+        ):
             found.append(verification["statement"])
-        if isinstance(entry.get("statement"), dict):
-            found.append(entry["statement"])
-        for envelope_key in ("dsseEnvelope", "envelope"):
-            envelope = entry.get(envelope_key)
-            payload = envelope.get("payload") if isinstance(envelope, dict) else None
-            if isinstance(payload, str):
-                try:
-                    decoded = json.loads(base64.b64decode(payload + "=" * (-len(payload) % 4)))
-                except (ValueError, json.JSONDecodeError):
-                    continue
-                if isinstance(decoded, dict):
-                    found.append(decoded)
     return found
 
 
 def bound_statement(value, subject_name, digest, repository, commit):
     expected_digest = digest.removeprefix("sha256:")
     for statement in statements(value):
+        if statement.get("predicateType") != "https://slsa.dev/provenance/v1":
+            continue
         subjects = statement.get("subject")
         subject_ok = isinstance(subjects, list) and any(
             isinstance(item, dict)
@@ -149,27 +166,29 @@ def bound_statement(value, subject_name, digest, repository, commit):
         source_uri = source.get("uri") if isinstance(source, dict) else None
         source_repo = source.get("repository") if isinstance(source, dict) else None
         workflow_repo = workflow.get("repository") if isinstance(workflow, dict) else None
-        repository_ok = (
-            source_repo == repository
-            or workflow_repo == repository
-            or source_uri == f"git+https://github.com/{repository}@{commit}"
-        )
-        commit_ok = (
+        source_commit_ok = (
             isinstance(source, dict)
             and isinstance(source.get("digest"), dict)
             and source["digest"].get("sha1") == commit
         )
+        source_pair_ok = source_commit_ok and (
+            source_repo == repository
+            or workflow_repo == repository
+            or source_uri == f"git+https://github.com/{repository}@{commit}"
+        )
+        dependency_pair_ok = False
         if isinstance(build, dict):
             for dependency in build.get("resolvedDependencies", []):
                 if not isinstance(dependency, dict):
                     continue
                 uri = dependency.get("uri")
                 dependency_digest = dependency.get("digest")
-                repository_ok = repository_ok or uri == f"git+https://github.com/{repository}@{commit}"
-                commit_ok = commit_ok or (
-                    isinstance(dependency_digest, dict) and dependency_digest.get("sha1") == commit
+                dependency_pair_ok = dependency_pair_ok or (
+                    uri == f"git+https://github.com/{repository}@{commit}"
+                    and isinstance(dependency_digest, dict)
+                    and dependency_digest.get("sha1") == commit
                 )
-        if subject_ok and repository_ok and commit_ok:
+        if subject_ok and (source_pair_ok or dependency_pair_ok):
             return
     raise SystemExit(f"attestation is not structurally bound to {subject_name}, {repository}, and {commit}")
 
@@ -249,6 +268,8 @@ for image in images:
     sbom = json.loads(asset_path[f"sbom/{sbom_name}.spdx.json"].read_text(encoding="utf-8"))
     if not isinstance(sbom.get("spdxVersion"), str) or not isinstance(sbom.get("packages"), list):
         raise SystemExit(f"{sbom_name} SBOM is not a valid SPDX document")
+    if sbom.get("x-quantfoundry-subject") != {"name": name, "digest": digest}:
+        raise SystemExit(f"{sbom_name} SBOM is not bound to the image digest")
     if image is images[0] and compose.get("api") != f"{name}@{digest}":
         raise SystemExit("Compose backend binding does not match image digest")
     if image is images[1] and compose.get("frontend") != f"{name}@{digest}":

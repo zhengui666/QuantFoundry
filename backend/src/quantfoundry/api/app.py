@@ -1908,7 +1908,10 @@ augment_section14_metadata(Base.metadata)
 
 
 # Schema creation is explicitly test-only. Durable environments are Alembic-only.
-if os.getenv("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP") == "1":
+if (
+    os.getenv("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP") == "1"
+    and os.getenv("QF_ALEMBIC_RUNNING") != "1"
+):
     if ENVIRONMENT != "test" or not DB_URL.startswith("sqlite"):
         raise RuntimeError("test schema bootstrap is allowed only for SQLite tests")
     logger.warning(
@@ -1954,7 +1957,7 @@ def remote_codex_mode() -> bool:
     try:
         snapshot = remote_codex_projection()
         return snapshot[0].lower() in {"openai-compatible", "remote-codex"}
-    except ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError:
+    except (ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError):
         return False
 
 
@@ -1967,7 +1970,7 @@ def remote_codex_projection() -> tuple[str, str]:
         provider = str(snapshot.get("model_provider") or "remote-codex")
         if model != "unconfigured":
             return provider, model
-    except ImportError, OSError, RuntimeError, SQLAlchemyError:
+    except (ImportError, OSError, RuntimeError, SQLAlchemyError):
         pass
     return ("remote-codex", os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL))
 
@@ -2034,6 +2037,22 @@ def resolve_research_policy(
 
 
 def db():
+    if ENVIRONMENT != "test":
+        try:
+            from app.control_plane import ensure_domain_database_current
+
+            ensure_domain_database_current()
+        except (
+            ImportError,
+            OSError,
+            KeyError,
+            RuntimeError,
+            ValueError,
+            SQLAlchemyError,
+        ) as error:
+            raise problem(
+                503, "DATABASE_DISCONNECTED", "Domain database is unavailable"
+            ) from error
     if (
         not getattr(app.state, "domain_database_available", True)
         and ENVIRONMENT != "test"
@@ -2945,7 +2964,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3520,7 +3539,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except httpx.HTTPError, KeyError, TypeError, ValueError:
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
         return False
     return payload.get("model_name") in available_models
 
@@ -3560,7 +3579,7 @@ def validate_live_connector(
                 accounts = connector.accounts()
             finally:
                 connector.close()
-        except ConnectorError, ValueError:
+        except (ConnectorError, ValueError):
             return 200, {
                 "connection_id": data.connection_id,
                 "state": "FAILED",
@@ -6075,7 +6094,7 @@ def agent_config_payload(row):
                 or snapshot.get("effective_configuration_revision")
                 or 1
             )
-        except ImportError, OSError, RuntimeError, ValueError, TypeError:
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
             ai_connection_id = "CODEX-DEFAULT"
     return {
         "role_key": row.role,
@@ -6225,7 +6244,7 @@ def agent_run(
             from app.control_plane import active_runtime_snapshot
 
             snapshot = active_runtime_snapshot()
-        except ImportError, OSError, RuntimeError, ValueError, TypeError:
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
             snapshot = {}
         ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
         ai_connection_revision = int(
@@ -6306,7 +6325,7 @@ def tool_call(
             configuration_sha256 = str(
                 snapshot.get("effective_configuration_sha256") or configuration_sha256
             )
-        except ImportError, OSError, RuntimeError, ValueError, TypeError:
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
             pass
     return {
         "tool_call_id": r.id,

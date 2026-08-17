@@ -1564,6 +1564,21 @@ def test_45_canonical_operation_ids_execute_real_handlers(
             *(row.payload for row in session.query(Audit).all()),
             *(row.payload for row in session.query(Event).all()),
             *(row.checkpoint for row in session.query(AgentRunRow).all()),
+            *(
+                value
+                for row in session.query(ToolCallRow).all()
+                for value in (row.result_summary or "", row.warnings or "")
+            ),
+            *(
+                value
+                for row in session.query(JobRow).all()
+                for value in (
+                    row.payload or "",
+                    row.input_payload or "",
+                    row.error_detail or "",
+                )
+            ),
+            *(row.body for row in session.query(Record).all()),
             public_artifact,
         ]
     )

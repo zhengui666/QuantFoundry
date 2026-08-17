@@ -886,12 +886,15 @@ def _portfolio_returns(
             abs(target.get(symbol, 0.0) - previous_weights.get(symbol, 0.0))
             for symbol in universe
         )
-        asset_returns = {
-            symbol: (
-                adjusted_prices[tomorrow].get(symbol, adjusted_prices[today][symbol])
-                / adjusted_prices[today][symbol]
-                - 1.0
+        missing_prices = set(target) - set(adjusted_prices[tomorrow])
+        if missing_prices:
+            raise EngineInputError(
+                "next-session prices are unavailable for held symbols: "
+                f"{sorted(missing_prices)}"
             )
+        asset_returns = {
+            symbol: adjusted_prices[tomorrow][symbol] / adjusted_prices[today][symbol]
+            - 1.0
             for symbol in target
         }
         gross = sum(weight * asset_returns[symbol] for symbol, weight in target.items())

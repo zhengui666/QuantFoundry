@@ -146,6 +146,13 @@ const jsonIdKeys = /^(?:id|value|token|key|[a-z0-9]+_(?:id|ref|token|key))$/i;
 
 const invalidTokens = (text, context, location, matchers, key = '', file = location) => {
   const failures = [];
+  if (jsonIdKeys.test(key)) {
+    const fieldMatch = text.match(/^\s*([A-Za-z][A-Za-z0-9]*)-/);
+    const canonical = fieldMatch && matchers.get(fieldMatch[1].toUpperCase());
+    if (canonical && !canonical.some((matcher) => matcher.test(text))) {
+      failures.push(`${location}: unmarked invalid public-ID fixture ${text}`);
+    }
+  }
   const matches = [
     ...text.matchAll(tokenPattern),
     ...text.matchAll(emptyFixturePattern).map((match) => {

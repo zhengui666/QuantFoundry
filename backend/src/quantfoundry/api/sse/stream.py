@@ -185,7 +185,7 @@ async def durable_event_stream(
             for event in events:
                 try:
                     wire = _wire(event, envelope)
-                except json.JSONDecodeError, TypeError, ValueError:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     yield _resync_wire(
                         envelope,
                         event.sequence,

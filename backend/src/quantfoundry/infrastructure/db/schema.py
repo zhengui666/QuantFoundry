@@ -489,11 +489,13 @@ def _check_sql(column: dict[str, Any]) -> str | None:
         return f"{name} >= 0"
     if "CHECK >=1" in text:
         return f"{name} >= 1"
+    if "CHECK = false" in text:
+        return f"{name} = FALSE"
+    if "CHECK = true" in text:
+        return f"{name} = TRUE"
     exact = re.search(r"CHECK\s*=\s*([A-Za-z][A-Za-z0-9_]*)", text)
     if exact:
         return f"{name} = '{exact.group(1)}'"
-    if "CHECK = false" in text:
-        return f"{name} = FALSE"
     exact_id = re.search(r"CHECK exact (?:R2 DatasetId|([A-Z]+)) grammar", text)
     if exact_id:
         prefix = exact_id.group(1) or "DSSET"

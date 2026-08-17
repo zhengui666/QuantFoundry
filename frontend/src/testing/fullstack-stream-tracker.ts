@@ -11,6 +11,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
   let authenticatedTerminated = false;
   let ignoredRejectedTerminations = 0;
   const rejectedRequests = new WeakSet<RequestIdentity>();
+  const terminatedRequests = new WeakSet<RequestIdentity>();
   const successfulResponses = new Map<
     RequestIdentity,
     { authorization: string | undefined; cookie: string | undefined; status: number }
@@ -31,6 +32,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
         (cookieMatches || response.authorization === `Bearer ${expected}`)
       ) {
         authenticatedRequest = request;
+        authenticatedTerminated = terminatedRequests.has(request);
         return;
       }
     }
@@ -72,6 +74,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
       if (status === 401 || status === 403) rejectedRequests.add(request);
     },
     observeTermination(request: RequestIdentity) {
+      terminatedRequests.add(request);
       reconcile();
       if (request === authenticatedRequest) authenticatedTerminated = true;
       else if (rejectedRequests.has(request)) ignoredRejectedTerminations += 1;

@@ -148,8 +148,8 @@ def main() -> int:
         for operation_id in family.get("operations", [])
     }
     require(
-        matrix_operation_ids <= operation_ids,
-        "test matrix contains unknown operation IDs",
+        matrix_operation_ids == operation_ids,
+        "test matrix operation coverage does not exactly match OpenAPI",
     )
     print("OK: UX-001 D1 machine contract bundle is internally consistent")
     return 0

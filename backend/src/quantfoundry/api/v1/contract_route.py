@@ -33,6 +33,13 @@ def _resolve_header(header: dict[str, Any]) -> dict[str, Any]:
     return canonical_openapi()["components"]["headers"][name]
 
 
+def _resolve_response(response: dict[str, Any]) -> dict[str, Any]:
+    if "$ref" not in response:
+        return response
+    name = response["$ref"].rsplit("/", 1)[-1]
+    return canonical_openapi()["components"]["responses"][name]
+
+
 def _problem(request: Request, detail: str) -> JSONResponse:
     from quantfoundry.api.app import problem_payload
 
@@ -122,11 +129,12 @@ class CanonicalRoute(APIRoute):
                 return invalid_request_response(request, error)
 
             response = await original(request)
-            declared = operation.get("responses", {}).get(str(response.status_code))
-            if declared is None:
+            raw_declared = operation.get("responses", {}).get(str(response.status_code))
+            if raw_declared is None:
                 return _problem(
                     request, "handler returned an undocumented response status"
                 )
+            declared = _resolve_response(raw_declared)
             for header_name, raw_header in declared.get("headers", {}).items():
                 if header_name.lower() not in response.headers:
                     if not _resolve_header(raw_header).get("required", False):

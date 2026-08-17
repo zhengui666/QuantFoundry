@@ -123,6 +123,10 @@ for descriptor in attestations:
         document = envelope.get("predicate")
         if not isinstance(document, dict) or not isinstance(document.get("spdxVersion"), str):
             raise SystemExit("SBOM attestation did not contain an SPDX document")
+        document["x-quantfoundry-subject"] = {
+            "name": f"ghcr.io/{repository}",
+            "digest": subject_digest,
+        }
         pathlib.Path(output_name).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         raise SystemExit(0)
 
@@ -162,26 +166,18 @@ def statements(value):
         if not isinstance(entry, dict):
             continue
         verification = entry.get("verificationResult")
-        if isinstance(verification, dict) and isinstance(verification.get("statement"), dict):
+        if isinstance(verification, dict) and isinstance(
+            verification.get("statement"), dict
+        ):
             found.append(verification["statement"])
-        if isinstance(entry.get("statement"), dict):
-            found.append(entry["statement"])
-        for envelope_key in ("dsseEnvelope", "envelope"):
-            envelope = entry.get(envelope_key)
-            payload = envelope.get("payload") if isinstance(envelope, dict) else None
-            if isinstance(payload, str):
-                try:
-                    decoded = json.loads(base64.b64decode(payload + "=" * (-len(payload) % 4)))
-                except (ValueError, json.JSONDecodeError):
-                    continue
-                if isinstance(decoded, dict):
-                    found.append(decoded)
     return found
 
 
-def require_binding(path, value, subject_name, digest):
+def require_binding(path, value, subject_name, digest, expected_predicate):
     expected_digest = digest.removeprefix("sha256:")
     for statement in statements(value):
+        if statement.get("predicateType") != expected_predicate:
+            continue
         subjects = statement.get("subject")
         subject_ok = isinstance(subjects, list) and any(
             isinstance(item, dict)
@@ -198,26 +194,29 @@ def require_binding(path, value, subject_name, digest):
         source_uri = source.get("uri") if isinstance(source, dict) else None
         source_repo = source.get("repository") if isinstance(source, dict) else None
         workflow_repo = workflow.get("repository") if isinstance(workflow, dict) else None
-        repository_ok = (
-            source_repo == repository
-            or workflow_repo == repository
-            or source_uri == f"git+https://github.com/{repository}@{commit}"
-        )
-        commit_ok = (
+        source_commit_ok = (
             isinstance(source, dict)
             and isinstance(source.get("digest"), dict)
             and source["digest"].get("sha1") == commit
         )
+        source_pair_ok = source_commit_ok and (
+            source_repo == repository
+            or workflow_repo == repository
+            or source_uri == f"git+https://github.com/{repository}@{commit}"
+        )
+        dependency_pair_ok = False
         if isinstance(build, dict):
             for dependency in build.get("resolvedDependencies", []):
                 if not isinstance(dependency, dict):
                     continue
-                repository_ok = repository_ok or dependency.get("uri") == f"git+https://github.com/{repository}@{commit}"
+                dependency_uri = dependency.get("uri")
                 dependency_digest = dependency.get("digest")
-                commit_ok = commit_ok or (
-                    isinstance(dependency_digest, dict) and dependency_digest.get("sha1") == commit
+                dependency_pair_ok = dependency_pair_ok or (
+                    dependency_uri == f"git+https://github.com/{repository}@{commit}"
+                    and isinstance(dependency_digest, dict)
+                    and dependency_digest.get("sha1") == commit
                 )
-        if subject_ok and repository_ok and commit_ok:
+        if subject_ok and (source_pair_ok or dependency_pair_ok):
             return
     raise SystemExit(f"{path} is not structurally bound to image, repository, and commit")
 
@@ -287,13 +286,31 @@ for image_name, image_digest, image_label in (
     (backend_image, backend_digest, "backend"),
     (frontend_image, frontend_digest, "frontend"),
 ):
-    for kind in ("attestations", "provenance", "signature-verification"):
+    expected_predicates = {
+        "attestations": "https://slsa.dev/provenance/v1",
+        "provenance": "https://slsa.dev/provenance/v1",
+        "signature-verification": "https://slsa.dev/provenance/v1",
+    }
+    for kind in expected_predicates:
         path = output / kind / f"{image_label}.json"
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise SystemExit(f"invalid {kind} evidence for {image_label}: {error}") from error
-        require_binding(path, value, image_name, image_digest)
+        require_binding(
+            path,
+            value,
+            image_name,
+            image_digest,
+            expected_predicates[kind],
+        )
+    sbom_path = output / "sbom" / f"{image_label}.spdx.json"
+    sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
+    if sbom.get("x-quantfoundry-subject") != {
+        "name": image_name,
+        "digest": image_digest,
+    }:
+        raise SystemExit(f"{sbom_path} is not bound to the image digest")
 
 def asset_name(source):
     if source in {"release-manifest.json", "SHA256SUMS"}:

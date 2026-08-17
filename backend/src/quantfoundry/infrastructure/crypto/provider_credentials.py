@@ -10,6 +10,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import json
 import os
 import secrets
 
@@ -21,25 +22,58 @@ class CredentialConfigurationError(RuntimeError):
     pass
 
 
-def _master_key() -> tuple[str, bytes]:
-    key_id = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "").strip()
-    encoded = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY", "").strip()
-    if not key_id or not encoded:
-        raise CredentialConfigurationError(
-            "provider credential encryption key is not configured"
-        )
+def _decode_key(key_id: str, encoded: str) -> bytes:
     try:
         padded = encoded + "=" * (-len(encoded) % 4)
         key = base64.urlsafe_b64decode(padded.encode("ascii"))
     except (UnicodeEncodeError, binascii.Error, ValueError) as error:
         raise CredentialConfigurationError(
-            "provider credential encryption key is invalid"
+            f"provider credential key is invalid: {key_id}"
         ) from error
     if len(key) != 32:
         raise CredentialConfigurationError(
-            "provider credential encryption key must decode to 32 bytes"
+            f"provider credential key must decode to 32 bytes: {key_id}"
         )
-    return key_id, key
+    return key
+
+
+def _credential_keys() -> tuple[str, dict[str, bytes]]:
+    key_id = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "").strip()
+    encoded = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    keyring = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEYS", "").strip()
+    if not key_id:
+        raise CredentialConfigurationError(
+            "provider credential encryption key is not configured"
+        )
+    if keyring:
+        try:
+            values = json.loads(keyring)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise CredentialConfigurationError(
+                "provider credential keyring is invalid"
+            ) from error
+        if not isinstance(values, dict) or not values:
+            raise CredentialConfigurationError("provider credential keyring is invalid")
+        keys = {
+            str(item_id): _decode_key(str(item_id), item)
+            for item_id, item in values.items()
+            if isinstance(item_id, str) and isinstance(item, str)
+        }
+        if set(keys) != set(values) or key_id not in keys:
+            raise CredentialConfigurationError(
+                "active provider credential key is absent from keyring"
+            )
+        return key_id, keys
+    if not encoded:
+        raise CredentialConfigurationError(
+            "provider credential encryption key is not configured"
+        )
+    return key_id, {key_id: _decode_key(key_id, encoded)}
+
+
+def _master_key() -> tuple[str, bytes]:
+    key_id, keys = _credential_keys()
+    return key_id, keys[key_id]
 
 
 def encryption_is_configured() -> bool:
@@ -78,8 +112,9 @@ def encrypt_credential(credential: str, *, aad: bytes) -> tuple[bytes, bytes, st
 def decrypt_credential(
     ciphertext: bytes, nonce: bytes, key_id: str, *, aad: bytes
 ) -> str:
-    configured_key_id, key = _master_key()
-    if not hmac.compare_digest(key_id, configured_key_id):
+    _configured_key_id, keys = _credential_keys()
+    key = keys.get(key_id)
+    if key is None:
         raise CredentialConfigurationError("provider credential key id is unavailable")
     try:
         plaintext = AESGCM(key).decrypt(nonce, ciphertext, aad)

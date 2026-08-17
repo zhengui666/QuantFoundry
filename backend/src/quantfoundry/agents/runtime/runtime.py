@@ -390,7 +390,7 @@ def _active_control_plane_connection() -> dict[str, str] | None:
         from app.control_plane import active_remote_codex_connection
 
         value = active_remote_codex_connection()
-    except ImportError, OSError, RuntimeError, ValueError:
+    except (ImportError, OSError, RuntimeError, ValueError):
         return None
     if not isinstance(value, dict):
         return None
@@ -415,7 +415,7 @@ def _control_plane_remote_mode() -> bool:
             "openai-compatible",
             "remote-codex",
         }
-    except ImportError, OSError, RuntimeError, ValueError, TypeError:
+    except (ImportError, OSError, RuntimeError, ValueError, TypeError):
         return False
 
 

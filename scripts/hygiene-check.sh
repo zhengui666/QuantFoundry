@@ -10,10 +10,12 @@ if ! python3 - "$repo_root/backend/pyproject.toml" "$repo_root/frontend/package.
 import json
 import pathlib
 import sys
+import tomllib
 
 backend, frontend = map(pathlib.Path, sys.argv[1:])
-backend_text = backend.read_text(encoding="utf-8")
-if 'license = "AGPL-3.0-only"' not in backend_text.split("[project]", 1)[-1].split("[", 1)[0]:
+with backend.open("rb") as stream:
+    backend_data = tomllib.load(stream)
+if backend_data.get("project", {}).get("license") != "AGPL-3.0-only":
     raise SystemExit(1)
 if json.loads(frontend.read_text(encoding="utf-8")).get("license") != "AGPL-3.0-only":
     raise SystemExit(1)

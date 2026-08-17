@@ -163,7 +163,7 @@ const zodFor = (schema, schemaName) => {
     if (baseSchema.maxLength !== undefined) expression += `.max(${baseSchema.maxLength})`;
     if (baseSchema.pattern) expression += `.regex(new RegExp(${quote(baseSchema.pattern)}))`;
   } else if (!expression && (type === 'integer' || type === 'number')) {
-    expression = type === 'integer' ? 'z.number().int()' : 'z.number()';
+    expression = type === 'integer' ? 'z.number().int().safe()' : 'z.number()';
     if (baseSchema.minimum !== undefined) expression += `.min(${baseSchema.minimum})`;
     if (baseSchema.maximum !== undefined) expression += `.max(${baseSchema.maximum})`;
   } else if (!expression && type === 'boolean') expression = 'z.boolean()';
