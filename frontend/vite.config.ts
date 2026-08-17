@@ -2,6 +2,30 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: /node_modules[\\/]/,
+              minSize: 20 * 1024,
+              maxSize: 450 * 1024,
+              priority: 10,
+            },
+            {
+              name: 'app',
+              test: /[\\/]src[\\/]/,
+              minSize: 20 * 1024,
+              maxSize: 450 * 1024,
+              priority: 1,
+            },
+          ],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
