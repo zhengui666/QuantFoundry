@@ -23,7 +23,6 @@ if [[ -z "$report_dir" ]]; then
 fi
 mkdir -p "$report_dir"
 chmod 700 "$report_dir"
-report_dir="$(mktemp -d "$report_dir/quantfoundry-${gate}.XXXXXX")"
 mkdir -p "$report_dir/logs"
 chmod 700 "$report_dir/logs"
 report_dir="$(cd "$report_dir" && pwd)"

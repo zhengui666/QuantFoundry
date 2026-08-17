@@ -158,6 +158,7 @@ for job in ("preflight", "rc"):
 publish_job = rc_jobs.get("publish") if isinstance(rc_jobs, dict) else None
 if not isinstance(publish_job, dict):
     errors.append("rc-release publish job is missing")
+    publish_job = {}
 else:
     expected_publish_permissions = {
         "contents": "write",
@@ -193,7 +194,12 @@ if (
     or "publish_immutable_tag" not in rc
 ):
     errors.append("rc-release must stage image tags and promote them only after evidence verification")
-if "Create commit-bound draft release" in rc or "gh release create" in rc.split("  rc:", 1)[1].split("  publish:", 1)[0]:
+rc_job_runs = [
+    step.get("run", "")
+    for step in (rc_jobs.get("rc", {}).get("steps", []) if isinstance(rc_jobs.get("rc"), dict) else [])
+    if isinstance(step, dict) and isinstance(step.get("run", ""), str)
+]
+if "Create commit-bound draft release" in rc or any("gh release create" in run for run in rc_job_runs):
     errors.append("rc-release must not create a draft from the read-only rc job")
 draft_step = next(
     (index for index, step in enumerate(publish_job.get("steps", []))

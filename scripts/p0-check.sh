@@ -83,6 +83,15 @@ trusted_verification_workflow_blobs = {
     ".github/workflows/independent-agent-review.yml": "51bf6299bb3c1a290530efe7a99a6e043a43359d",
 }
 
+head_commit = subprocess.run(
+    ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+).stdout.strip()
+if not sha_pattern.fullmatch(expected_commit) or expected_commit != head_commit:
+    raise SystemExit("QF_RELEASE_COMMIT must be the full lowercase checked-out HEAD SHA")
+
 
 def invalid_value(value):
     return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.fullmatch(value.strip()))
