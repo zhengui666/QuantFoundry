@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import re
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy import create_engine, text
 
@@ -25,10 +25,16 @@ def main() -> int:
     expected = f"qf_ci_{run_id}_{run_attempt}"
     database_url = sys.argv[1]
     parsed = urlsplit(database_url)
+    routing_overrides = {
+        key.lower()
+        for key in parse_qs(parsed.query, keep_blank_values=True)
+        if key.lower() in {"host", "hostaddr", "port", "service", "dbname", "user"}
+    }
     if (
         parsed.hostname != "localhost"
         or parsed.port != 5432
         or parsed.username != "quantfoundry"
+        or routing_overrides
     ):
         raise SystemExit(
             "CI database must use the fixed localhost:5432 quantfoundry endpoint"
