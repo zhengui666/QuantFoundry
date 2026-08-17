@@ -39,7 +39,9 @@ def _sqlite_audit_hash(
         parsed = datetime.fromisoformat(created_at.replace(" ", "T"))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=UTC)
-        created_at = parsed.isoformat()
+        created_at = parsed.astimezone(UTC).isoformat(timespec="microseconds").replace(
+            "+00:00", "Z"
+        )
     except ValueError:
         pass
     payload = {
@@ -58,11 +60,20 @@ def _sqlite_audit_hash(
         "created_at": created_at,
     }
     return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(", ", ": "),
+            default=str,
+        ).encode()
     ).hexdigest()
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError("UX-001 control migration supports PostgreSQL and SQLite only")
     op.create_table(
         "general_access_keys",
         sa.Column("key_id", sa.String(40), primary_key=True),
@@ -105,6 +116,10 @@ def upgrade() -> None:
         sa.Column("auth_epoch", sa.BigInteger, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "singleton_key = 'BOOTSTRAP-DEFAULT'",
+            name="bootstrap_state_singleton_key_check",
+        ),
     )
     op.create_table(
         "configuration_catalog",
@@ -125,7 +140,11 @@ def upgrade() -> None:
     op.create_table(
         "configuration_revisions",
         sa.Column("revision", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("base_revision", sa.BigInteger),
+        sa.Column(
+            "base_revision",
+            sa.BigInteger,
+            sa.ForeignKey("configuration_revisions.revision"),
+        ),
         sa.Column("state", sa.String(16), nullable=False),
         sa.Column("catalog_version", sa.String(64), nullable=False),
         sa.Column("snapshot_sha256", sa.String(64), nullable=False),
@@ -199,12 +218,25 @@ def upgrade() -> None:
             sa.ForeignKey("configuration_revisions.revision"),
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "singleton_key = 'CONFIGURATION-DEFAULT'",
+            name="active_configuration_singleton_key_check",
+        ),
     )
     op.create_table(
         "configuration_consumer_states",
         sa.Column("consumer", sa.String(80), primary_key=True),
-        sa.Column("desired_revision", sa.BigInteger, nullable=False),
-        sa.Column("applied_revision", sa.BigInteger),
+        sa.Column(
+            "desired_revision",
+            sa.BigInteger,
+            sa.ForeignKey("configuration_revisions.revision"),
+            nullable=False,
+        ),
+        sa.Column(
+            "applied_revision",
+            sa.BigInteger,
+            sa.ForeignKey("configuration_revisions.revision"),
+        ),
         sa.Column("ack", sa.String(16), nullable=False),
         sa.Column("error_code", sa.String(128)),
         sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=False),
@@ -215,7 +247,11 @@ def upgrade() -> None:
         "domain_database_connection_revisions",
         sa.Column("revision", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("state", sa.String(16), nullable=False),
-        sa.Column("base_revision", sa.BigInteger),
+        sa.Column(
+            "base_revision",
+            sa.BigInteger,
+            sa.ForeignKey("domain_database_connection_revisions.revision"),
+        ),
         sa.Column("nonsecret_payload", sa.JSON, nullable=False),
         sa.Column("ciphertext_envelope", sa.LargeBinary, nullable=False),
         sa.Column("secret_key_id", sa.String(128)),
@@ -263,7 +299,6 @@ def upgrade() -> None:
             name="uq_control_idempotency_principal_operation_key",
         ),
     )
-    bind = op.get_bind()
     if bind.dialect.name == "sqlite":
         raw_connection = bind.connection.driver_connection
         raw_connection.create_function("qf_bootstrap_audit_hash", 13, _sqlite_audit_hash)
@@ -386,10 +421,14 @@ def upgrade() -> None:
             """
             CREATE FUNCTION qf_validate_bootstrap_audit_insert() RETURNS trigger AS $$
             DECLARE tail_hash TEXT;
+            DECLARE tail_sequence BIGINT;
             BEGIN
               PERFORM pg_advisory_xact_lock(hashtextextended('qf-bootstrap-audit', 0));
-              SELECT event_hash INTO tail_hash FROM bootstrap_audit_events
+              SELECT sequence, event_hash INTO tail_sequence, tail_hash FROM bootstrap_audit_events
               ORDER BY sequence DESC LIMIT 1 FOR UPDATE;
+              IF NEW.sequence IS NULL OR NEW.sequence <= COALESCE(tail_sequence, 0) THEN
+                RAISE EXCEPTION 'bootstrap audit sequence is not monotonic';
+              END IF;
               IF NEW.previous_event_hash IS DISTINCT FROM tail_hash THEN
                 RAISE EXCEPTION 'bootstrap audit hash chain is disconnected';
               END IF;
@@ -407,7 +446,7 @@ def upgrade() -> None:
                   'after_sha256', NEW.after_sha256,
                   'masked_summary', NEW.masked_summary,
                   'previous_event_hash', NEW.previous_event_hash,
-                  'created_at', NEW.created_at
+                  'created_at', to_char(NEW.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
                 )::text,
                 'UTF8'
               ), 'sha256'), 'hex');
@@ -465,7 +504,9 @@ def upgrade() -> None:
     )
     op.execute(
         "CREATE TRIGGER qf_bootstrap_audit_append_only BEFORE INSERT ON bootstrap_audit_events "
-        "WHEN NEW.previous_event_hash IS NOT (SELECT event_hash FROM bootstrap_audit_events "
+        "WHEN NEW.sequence IS NULL OR NEW.sequence <= 0 OR "
+        "NEW.sequence <> COALESCE((SELECT MAX(sequence) FROM bootstrap_audit_events), 0) + 1 OR "
+        "NEW.previous_event_hash IS NOT (SELECT event_hash FROM bootstrap_audit_events "
         "ORDER BY sequence DESC LIMIT 1) OR NEW.event_hash IS NOT qf_bootstrap_audit_hash("
         "NEW.sequence, NEW.event_id, NEW.event_type, NEW.actor_principal, NEW.access_key_id, "
         "NEW.session_id_sha256, NEW.configuration_revision, NEW.database_connection_revision, "

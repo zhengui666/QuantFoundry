@@ -32,12 +32,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--queue is invalid for scheduler health checks")
     if args.max_age_seconds < 1:
         parser.error("--max-age-seconds must be positive")
+    explicit_instance_id = args.instance_id is not None
     if args.instance_id is None:
         if args.component == "worker":
             args.instance_id = os.getenv("QF_WORKER_ID") or socket.gethostname()
         else:
             args.instance_id = os.getenv("QF_SCHEDULER_ID") or "scheduler"
-    if args.component == "worker" and not args.instance_id.endswith(f":{args.queue}"):
+    if args.component == "worker" and not explicit_instance_id:
         args.instance_id = f"{args.instance_id}:{args.queue}"
     return args
 

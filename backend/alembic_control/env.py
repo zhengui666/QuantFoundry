@@ -14,11 +14,17 @@ from app.control_plane import CONTROL_METADATA, _control_path  # noqa: E402
 
 config = context.config
 database_url = os.getenv("QF_CONTROL_DB_URL") or f"sqlite:///{_control_path()}"
+if database_url.startswith("sqlite"):
+    _control_path().parent.mkdir(mode=0o750, parents=True, exist_ok=True)
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 target_metadata = CONTROL_METADATA
 
 
 def run_migrations_offline() -> None:
+    if database_url.startswith("sqlite"):
+        raise RuntimeError(
+            "Offline SQL generation is not supported for control-plane SQLite migrations"
+        )
     context.configure(
         url=database_url, target_metadata=target_metadata, literal_binds=True
     )
@@ -27,6 +33,12 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    injected_connection = config.attributes.get("connection")
+    if injected_connection is not None:
+        context.configure(connection=injected_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",

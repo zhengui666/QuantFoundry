@@ -183,20 +183,35 @@ def seed_local(
     assert isinstance(risk_policy, dict)
     assert isinstance(cost_model, dict)
     assert isinstance(dataset_id, str)
-    _write_json(cost_root / f"{cost_model['cost_model_id']}.json", cost_model)
-    _write_json(
-        policy_root / f"{validation_policy['policy_id']}.json", validation_policy
-    )
-    _write_json(policy_root / f"{research_policy['policy_id']}.json", research_policy)
-    _write_json(policy_root / f"{risk_policy['policy_id']}.json", risk_policy)
-    dataset_id = _write_local_dataset(dataset_root, dataset_id)
+    file_paths = [
+        cost_root / f"{cost_model['cost_model_id']}.json",
+        policy_root / f"{validation_policy['policy_id']}.json",
+        policy_root / f"{research_policy['policy_id']}.json",
+        policy_root / f"{risk_policy['policy_id']}.json",
+        dataset_root / f"{dataset_id}.csv",
+        dataset_root / f"{dataset_id}.metadata.json",
+    ]
+    created_paths = [path for path in file_paths if not path.exists()]
     timestamp = datetime.now(UTC)
     session = SessionLocal()
     try:
+        _write_json(cost_root / f"{cost_model['cost_model_id']}.json", cost_model)
+        _write_json(
+            policy_root / f"{validation_policy['policy_id']}.json", validation_policy
+        )
+        _write_json(
+            policy_root / f"{research_policy['policy_id']}.json", research_policy
+        )
+        _write_json(policy_root / f"{risk_policy['policy_id']}.json", risk_policy)
+        dataset_id = _write_local_dataset(dataset_root, dataset_id)
         existing_user = session.get(User, owner_id)
         if existing_user is None:
             session.add(User(id=owner_id, email=owner_email, role="OWNER", revision=1))
-        elif existing_user.email != owner_email or existing_user.role != "OWNER":
+        elif (
+            existing_user.email != owner_email
+            or existing_user.role != "OWNER"
+            or existing_user.revision != 1
+        ):
             raise RuntimeError(
                 "local owner is already bound to different identity data"
             )
@@ -211,7 +226,11 @@ def seed_local(
                     revision=1,
                 )
             )
-        elif existing_workspace.owner_id != owner_id:
+        elif (
+            existing_workspace.owner_id != owner_id
+            or existing_workspace.name != "QuantFoundry Local"
+            or existing_workspace.revision != 1
+        ):
             raise RuntimeError("local workspace is already bound to another owner")
         session.flush()
         rows: tuple[tuple[Any, str, str, dict[str, Any], dict[str, Any]], ...] = (
@@ -409,6 +428,11 @@ def seed_local(
         session.commit()
     except Exception:
         session.rollback()
+        for path in reversed(created_paths):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
         raise
     finally:
         session.close()

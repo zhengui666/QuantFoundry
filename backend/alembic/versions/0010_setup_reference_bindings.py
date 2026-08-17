@@ -37,6 +37,11 @@ def _version_table(name: str, public_column: str) -> None:
             "status IN ('DRAFT', 'ACTIVE', 'RETIRED')",
             name=f"{name}_status_valid",
         ),
+        sa.CheckConstraint(
+            "(status = 'DRAFT' AND activated_at IS NULL) OR "
+            "(status IN ('ACTIVE', 'RETIRED') AND activated_at IS NOT NULL)",
+            name=f"{name}_activation_timestamp_valid",
+        ),
         sa.UniqueConstraint(
             "workspace_id",
             public_column,
@@ -53,6 +58,11 @@ def _version_table(name: str, public_column: str) -> None:
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError(
+            "0010 setup reference bindings supports PostgreSQL and SQLite only"
+        )
     _version_table("research_policy_versions", "policy_id")
     op.add_column(
         "research_policy_versions",
@@ -60,6 +70,19 @@ def upgrade() -> None:
     )
     _version_table("risk_policy_versions", "policy_id")
     _version_table("cost_model_versions", "cost_model_id")
+    for table, public_column in (
+        ("research_policy_versions", "policy_id"),
+        ("risk_policy_versions", "policy_id"),
+        ("cost_model_versions", "cost_model_id"),
+    ):
+        op.create_index(
+            f"uq_{table}_workspace_public_active",
+            table,
+            ["workspace_id", public_column],
+            unique=True,
+            postgresql_where=sa.text("status = 'ACTIVE'"),
+            sqlite_where=sa.text("status = 'ACTIVE'"),
+        )
     op.create_index(
         "uq_records_workspace_id_id",
         "records",

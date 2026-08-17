@@ -67,8 +67,7 @@ export const formalPublicIdSources = [
   { path: 'frontend', kind: 'directory' },
 ];
 const collect = async (path) => {
-  const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
-  if (!entries) return [path];
+  const entries = await readdir(path, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
     if (ignoredDirectories.has(entry.name)) continue;

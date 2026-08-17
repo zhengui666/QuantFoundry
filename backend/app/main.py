@@ -10,8 +10,11 @@ from app import generated_api_models as _control_models
 from quantfoundry.api import app as _canonical
 from quantfoundry.contracts.openapi import api_models as _canonical_models
 
+sys.modules[__name__] = _canonical
+_control_plane.init_control_db()
+_control_plane.restore_active_domain_database()
+
 _canonical.app.state.environment = _canonical.ENVIRONMENT
-_canonical.app.state.domain_database_available = False
 for _name in (
     "GeneralAccessKeyLoginRequest",
     "GeneralAccessKeyMetadata",
@@ -41,10 +44,39 @@ for _name in (
     "FieldError",
     "ProblemContext",
 ):
-    _canonical_models.SCHEMA_MODELS[_name] = getattr(_control_models, _name)
+    _control_model = getattr(_control_models, _name)
+    _existing_model = _canonical_models.SCHEMA_MODELS.get(_name)
+    if _existing_model is not None and _existing_model is not _control_model:
+        if _name not in {
+            "SetupCompleteRequest",
+            "ApiProblem",
+            "CanonicalErrorCode",
+            "FieldError",
+            "ProblemContext",
+        }:
+            raise RuntimeError(f"unexpected control schema collision: {_name}")
+    _canonical_models.SCHEMA_MODELS[_name] = _control_model
 _control_router = _control_plane.build_router()
 # Register the control routes directly so the canonical contract pass sees
 # their operation metadata (FastAPI's included-router wrapper hides them).
+_control_route_keys = {
+    (
+        getattr(route, "path", None),
+        tuple(sorted(getattr(route, "methods", None) or ())),
+        getattr(route, "operation_id", None),
+    )
+    for route in _control_router.routes
+}
+_canonical.app.router.routes[:] = [
+    route
+    for route in _canonical.app.router.routes
+    if (
+        getattr(route, "path", None),
+        tuple(sorted(getattr(route, "methods", None) or ())),
+        getattr(route, "operation_id", None),
+    )
+    not in _control_route_keys
+]
 _canonical.app.router.routes.extend(_control_router.routes)
 # UX-001 owns setup completion through shared configuration activation.
 _canonical.app.router.routes[:] = [
@@ -57,7 +89,4 @@ _canonical.app.router.routes[:] = [
     )
 ]
 _canonical._configure_contract_routes()
-sys.modules[__name__] = _canonical
-
-_control_plane.init_control_db()
-_control_plane.restore_active_domain_database()
+_canonical.app.openapi_schema = None

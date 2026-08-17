@@ -87,6 +87,7 @@ printf '%s\n' \
   'done' \
   'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300,\"actor\":{\"login\":\"review-bot\"},\"triggering_actor\":{\"login\":\"review-bot\"}}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
+  'if [[ "$endpoint" == /repos/acme/quantfoundry/commits/* ]]; then printf "{\"author\":{\"login\":\"%s\"},\"committer\":{\"login\":\"%s\"}}\n" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"9c42061823b49952e28d66434de97b98e61f7b06\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
@@ -100,7 +101,8 @@ run_verifier() {
   local status="${3:-completed}"
   local conclusion="${4:-success}"
   local workflow_path="${5:-.github/workflows/independent-agent-review.yml}"
-  env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" QF_REVIEW_MOCK_STATUS="$status" QF_REVIEW_MOCK_CONCLUSION="$conclusion" QF_REVIEW_MOCK_PATH="$workflow_path" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
+  local commit_author="${6:-change-author}"
+  env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" QF_REVIEW_MOCK_STATUS="$status" QF_REVIEW_MOCK_CONCLUSION="$conclusion" QF_REVIEW_MOCK_PATH="$workflow_path" QF_REVIEW_MOCK_COMMIT_AUTHOR="$commit_author" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
 }
 
 python3 - "$fixture_dir/positive.json" "$fixture_dir/positive-attestation.json" "$commit_sha" <<'PY'
@@ -143,6 +145,10 @@ if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" complet
 fi
 if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" completed success '.github/workflows/untrusted.yml@refs/heads/main' >/dev/null 2>&1; then
   printf '%s\n' 'Expected unauthorized independent review workflow to fail.' >&2
+  exit 1
+fi
+if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" completed success . review-bot >/dev/null 2>&1; then
+  printf '%s\n' 'Expected a reviewer matching the commit author to fail.' >&2
   exit 1
 fi
 

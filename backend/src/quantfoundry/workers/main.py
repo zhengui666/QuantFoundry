@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text, update
 
 from quantfoundry.agents.runtime.runtime import (
     ToolExecutionFailure,
@@ -59,13 +59,31 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
     session = SessionLocal()
     try:
         threshold = now or datetime.now(UTC)
-        expired = session.execute(
-            select(Event.workspace_id, func.max(Event.sequence))
-            .where(Event.expires_at < threshold)
-            .group_by(Event.workspace_id)
+        workspaces = session.execute(
+            select(Event.workspace_id).where(Event.expires_at < threshold).distinct()
         ).all()
-        for workspace_id, maximum_sequence in expired:
+        count = 0
+        for (workspace_id,) in workspaces:
             key = workspace_id or "system"
+            if session.get_bind().dialect.name == "postgresql":
+                session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:workspace_id))"),
+                    {"workspace_id": key},
+                )
+            else:
+                session.execute(
+                    update(EventStreamWatermark)
+                    .where(EventStreamWatermark.workspace_id == key)
+                    .values(last_sequence=EventStreamWatermark.last_sequence)
+                )
+            maximum_sequence = session.scalar(
+                select(func.max(Event.sequence)).where(
+                    Event.workspace_id == key,
+                    Event.expires_at < threshold,
+                )
+            )
+            if maximum_sequence is None:
+                continue
             state = session.execute(
                 select(EventStreamWatermark)
                 .where(EventStreamWatermark.workspace_id == key)
@@ -84,11 +102,14 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
                 state.expired_through_sequence = max(
                     state.expired_through_sequence, maximum_sequence
                 )
-        count = (
-            session.query(Event)
-            .filter(Event.expires_at < threshold)
-            .delete(synchronize_session=False)
-        )
+            count += (
+                session.query(Event)
+                .filter(
+                    Event.workspace_id == key,
+                    Event.expires_at < threshold,
+                )
+                .delete(synchronize_session=False)
+            )
         session.commit()
         return count
     except Exception:
@@ -100,7 +121,7 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
 
 def worker_id(queue_name: str) -> str:
     configured = os.getenv("QF_WORKER_ID")
-    base = configured or socket.gethostname()
+    base = configured or f"{socket.gethostname()}:{os.getpid()}"
     return f"{base}:{queue_name}"
 
 
@@ -120,20 +141,19 @@ def _claim(queue_name: str, identity: str) -> JobLease | None:
 def _mark_failed(lease: JobLease, error: Exception) -> None:
     session = SessionLocal()
     try:
-        job = session.get(JobRow, lease.job_id)
-        if job is not None:
-            session.info.update(
-                {
-                    "actor_id": job.created_by_id,
-                    "workspace_id": job.workspace_id,
-                    "request_id": job.request_id or job.correlation_id,
-                }
-            )
-        if job is not None and lease.queue_name == "agent":
+        job = lock_active_lease(session, lease)
+        session.info.update(
+            {
+                "actor_id": job.created_by_id,
+                "workspace_id": job.workspace_id,
+                "request_id": job.request_id or job.correlation_id,
+            }
+        )
+        if job.cancel_requested_at is None and lease.queue_name == "agent":
             if isinstance(error, ToolExecutionFailure):
                 persist_tool_failure(session, job, error)
             fail_agent_run(session, job, error)
-        if job is not None:
+        if job.cancel_requested_at is None:
             apply_job_failure(session, job)
         fail_job(session, lease, "JOB_FAILED", str(error))
         session.commit()

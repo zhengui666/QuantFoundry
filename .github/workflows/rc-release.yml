@@ -191,9 +191,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.preflight.outputs.tag }}
           COMMIT: ${{ needs.preflight.outputs.commit }}
-          IMAGE_PREFIX: ${{ steps.image.outputs.prefix }}
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
-          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
         run: |
           set -euo pipefail
           scripts/release-evidence.sh create-or-validate-draft "$TAG" "$COMMIT"
@@ -241,19 +238,9 @@ jobs:
           subject-name: ${{ steps.image.outputs.prefix }}/frontend
           subject-digest: ${{ steps.frontend.outputs.digest }}
           push-to-registry: true
-      - id: rc-artifact
-        name: Resolve latest RC evidence artifact for this workflow run
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          artifact_name="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" --jq '.artifacts | map(select(.expired == false and (.name | startswith("rc-report-" + env.GITHUB_RUN_ID + "-")))) | sort_by(.created_at) | last.name')"
-          test -n "$artifact_name" && test "$artifact_name" != "null"
-          printf 'name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: ${{ steps.rc-artifact.outputs.name }}
+          name: rc-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence
       - name: Collect immutable supply-chain and release evidence
         shell: bash
@@ -292,10 +279,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.preflight.outputs.tag }}
           COMMIT: ${{ needs.preflight.outputs.commit }}
+          IMAGE_PREFIX: ${{ steps.image.outputs.prefix }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
         run: |
           set -euo pipefail
           test -s evidence/release-assets/release-manifest.json
           test -s evidence/release-assets/SHA256SUMS
+          check_immutable_tag() {
+            local image="$1" tag="$2" digest="$3" inspection existing
+            if inspection="$(docker buildx imagetools inspect "$image:$tag" 2>&1)"; then
+              existing="$(printf '%s\n' "$inspection" | awk '/^Digest:/ {print $2; exit}')"
+              [[ "$existing" == "$digest" ]] || {
+                printf 'refusing to replace existing %s:%s (%s != %s)\n' "$image" "$tag" "$existing" "$digest" >&2
+                exit 1
+              }
+              return 0
+            fi
+            grep -Eqi 'manifest unknown|not found|404' <<<"$inspection" || {
+              printf 'cannot determine whether %s:%s exists: %s\n' "$image" "$tag" "$inspection" >&2
+              exit 1
+            }
+          }
+          check_immutable_tag "$IMAGE_PREFIX/backend" "$TAG" "$BACKEND_DIGEST"
+          check_immutable_tag "$IMAGE_PREFIX/backend" "$COMMIT" "$BACKEND_DIGEST"
+          check_immutable_tag "$IMAGE_PREFIX/frontend" "$TAG" "$FRONTEND_DIGEST"
+          check_immutable_tag "$IMAGE_PREFIX/frontend" "$COMMIT" "$FRONTEND_DIGEST"
           find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG" --clobber
           scripts/release-evidence.sh verify-remote-assets "$TAG" "$COMMIT" evidence
           publish_immutable_tag() {

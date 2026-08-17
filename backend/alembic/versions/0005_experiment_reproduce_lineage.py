@@ -109,7 +109,12 @@ def _create_sqlite_experiment_guards(*, include_source: bool = True) -> None:
         "NEW.research_id IS OLD.research_id AND "
         + source_binding_clause
         + "NEW.revision = OLD.revision + 1 AND "
-        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED') "
+        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE "
+        "j.id = json_extract(NEW.detail, '$.job_id') AND "
+        "j.job_type = 'EXPERIMENT' AND "
+        "j.status IN ('RUNNING', 'COMPLETED') AND "
+        "json_extract(j.input_payload, '$.experiment_id') = NEW.id) ) "
         "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )
 
@@ -150,7 +155,14 @@ def _create_postgres_experiment_guard(*, include_source: bool) -> None:
         + source_binding_clause
         + """
                NEW.revision = OLD.revision + 1 AND
-               COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED'
+               COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED' AND
+               EXISTS (
+                 SELECT 1 FROM jobs j
+                 WHERE j.id = NEW.detail::jsonb ->> 'job_id'
+                   AND j.job_type = 'EXPERIMENT'
+                   AND j.status IN ('RUNNING', 'COMPLETED')
+                   AND j.input_payload::jsonb ->> 'experiment_id' = NEW.id
+               )
              ) THEN
             RAISE EXCEPTION 'experiment completion is not bound to a running job';
           END IF;

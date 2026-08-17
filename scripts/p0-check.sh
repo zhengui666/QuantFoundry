@@ -18,7 +18,7 @@ if [[ "$mode" == "--report" ]]; then
 fi
 
 set +e
-QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
+QF_RELEASE_REPO_ROOT="${QF_RELEASE_REPO_ROOT:-$repo_root}" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
   uv --directory "$repo_root/backend" run --frozen python - "$registry" "$mode" <<'PY'
 import datetime as dt
 import hashlib

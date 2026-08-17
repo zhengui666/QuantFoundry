@@ -23,7 +23,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, interrupt
+from langgraph.types import interrupt
 from psycopg.rows import dict_row
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -57,6 +57,10 @@ from quantfoundry.infrastructure.crypto.provider_credentials import (
     CredentialConfigurationError,
     credential_aad,
     decrypt_credential,
+)
+from quantfoundry.infrastructure.jobs.queue import (
+    JobNotCancellable,
+    request_cancellation,
 )
 
 DEFAULT_MAX_STEPS = 25
@@ -589,61 +593,13 @@ def _graph_action(
     return action
 
 
-def _graph_interrupt_for_job(
-    row: AgentRunRow,
-    checkpoint: dict[str, Any],
-    *,
-    tool_call_id: str,
-    awaited_job_id: str,
-) -> None:
-    thread_id = row.checkpoint_thread_id or f"agent:{row.id}"
-    row.checkpoint_thread_id = thread_id
-    with _checkpoint_saver() as saver:
-        graph = _compiled_graph(DeterministicModel(), saver)
-        config = {"configurable": {"thread_id": thread_id}}
-        saved = graph.get_state(config)
-        values = saved.values if saved is not None else {}
-        expected_wait = {
-            "reason": "INTERNAL_JOB_WAIT",
-            "tool_call_id": tool_call_id,
-            "awaited_job_id": awaited_job_id,
-        }
-        if isinstance(values, dict) and values.get("wait") == expected_wait:
-            return
-        graph.invoke(
-            {
-                "phase": "WAITING_JOB",
-                "checkpoint": checkpoint,
-                "wait": expected_wait,
-            },
-            config,
-        )
-
-
 def _graph_resume(row: AgentRunRow, result: dict[str, Any]) -> dict[str, Any]:
-    if not row.checkpoint_thread_id:
-        raise AgentRuntimeError("Agent checkpoint thread is missing")
-    with _checkpoint_saver() as saver:
-        graph = _compiled_graph(DeterministicModel(), saver)
-        config = {"configurable": {"thread_id": row.checkpoint_thread_id}}
-        saved = graph.get_state(config)
-        values = saved.values if saved is not None else {}
-        cached = values.get("resume_result") if isinstance(values, dict) else None
-        cached_job_id = (
-            values.get("resume_job_id") if isinstance(values, dict) else None
-        )
-        if isinstance(cached, dict) and cached_job_id == result.get("job_id"):
-            if cached != result:
-                raise AgentRuntimeError("Agent checkpoint result mismatch")
-            return cached
-        resumed = graph.invoke(
-            Command(resume=result),
-            config,
-        )
-    value = resumed.get("resume_result")
-    if not isinstance(value, dict):
-        raise AgentRuntimeError("Agent graph resume result is missing")
-    return value
+    checkpoint = _checkpoint(row)
+    if row.status in {"COMPLETED", "CANCELLED", "FAILED"} or checkpoint.get(
+        "pending_job_id"
+    ) != result.get("job_id"):
+        raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
+    return result
 
 
 class ToolRegistry:
@@ -1284,12 +1240,6 @@ def _suspend_for_child_job(
     row.checkpoint = json.dumps(checkpoint)
     row.status = "RUNNING"
     row.revision += 1
-    _graph_interrupt_for_job(
-        row,
-        checkpoint,
-        tool_call_id=tool_call.id,
-        awaited_job_id=child_job_id,
-    )
     emit(
         session,
         "agent_run",
@@ -1319,6 +1269,8 @@ def _consume_resume(
     row: AgentRunRow,
     checkpoint: dict[str, Any],
 ) -> AgentStep | None:
+    if row.status in {"COMPLETED", "CANCELLED", "FAILED"}:
+        raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
     inputs = json.loads(resume_job.input_payload)
     token_hash = inputs.get("resume_token_hash")
     fencing_token = inputs.get("resume_fencing_token")
@@ -1616,8 +1568,17 @@ def advance_agent_run(
     )
 
     def replay(existing: ToolCallRow) -> None:
+        summary = json.loads(existing.result_summary or "{}")
         checkpoint["semantic_call_hashes"].append(semantic_hash)
-        checkpoint["result_refs"].append(json.loads(existing.result_summary or "{}"))
+        checkpoint["result_refs"].append(summary)
+        if {"job_id", "status", "result_ref"} <= set(summary):
+            checkpoint["tool_results"].append(
+                {"tool_name": existing.tool_name, **summary}
+            )
+        else:
+            checkpoint["tool_results"].append(
+                {"tool_name": existing.tool_name, "result_summary": summary}
+            )
 
     def wait_for(existing: ToolCallRow) -> AgentStep | None:
         if not existing.job_id:
@@ -1870,6 +1831,29 @@ def advance_agent_run(
     return AgentStep(False, None)
 
 
+def _revoke_pending_jobs(session: Session, row: AgentRunRow, now: datetime) -> None:
+    checkpoint = _checkpoint(row)
+    pending_ids = {
+        checkpoint.get("pending_job_id"),
+        checkpoint.get("pending_resume_job_id"),
+    }
+    for pending_id in pending_ids:
+        if not isinstance(pending_id, str):
+            continue
+        pending = session.execute(
+            select(JobRow).where(
+                JobRow.id == pending_id,
+                JobRow.workspace_id == row.workspace_id,
+            )
+        ).scalar_one_or_none()
+        if pending is None or pending.status not in {"QUEUED", "RUNNING"}:
+            continue
+        try:
+            request_cancellation(session, pending.id, now=now)
+        except JobNotCancellable:
+            continue
+
+
 def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     inputs = json.loads(job.input_payload)
     run_id = inputs.get("agent_run_id")
@@ -1902,6 +1886,8 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     row.decision_summary = failure
     row.ended_at = now
     row.revision += 1
+    row.pending_resume_token_hash = None
+    _revoke_pending_jobs(session, row, now)
     if (
         row.role == "RESEARCH_DIRECTOR"
         and row.parent_agent_run_id is None
@@ -1976,6 +1962,8 @@ def cancel_agent_run(session: Session, job: JobRow) -> None:
     row.decision_summary = "JOB_CANCELLED"
     row.ended_at = now
     row.revision += 1
+    row.pending_resume_token_hash = None
+    _revoke_pending_jobs(session, row, now)
     if row.role == "RESEARCH_DIRECTOR" and row.parent_agent_run_id is None:
         _research_status(session, row, "WAITING_USER")
     for tool_call in session.execute(

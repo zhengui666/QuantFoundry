@@ -3,7 +3,11 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
-http_port="${QF_FULLSTACK_HTTP_PORT:-18080}"
+if [[ -n "${QF_FULLSTACK_HTTP_PORT:-}" ]]; then
+  http_port="$QF_FULLSTACK_HTTP_PORT"
+else
+  http_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+fi
 case "$http_port" in
   '' | *[!0-9]*) printf '%s\n' 'QF_FULLSTACK_HTTP_PORT must be numeric.' >&2; exit 1 ;;
 esac

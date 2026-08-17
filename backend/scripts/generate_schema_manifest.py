@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -92,18 +93,36 @@ def extract_manifest(document: Path) -> dict[str, Any]:
             continue
         section, table_name = match.groups()
         index += 1
-        while index < len(lines) and not lines[index].startswith("| 字段 |"):
+        while index < len(lines) and not lines[index].strip().startswith("| 字段 |"):
             if lines[index].startswith("### 14."):
                 raise ValueError(f"{table_name}: missing field table")
             index += 1
         if index >= len(lines):
             raise ValueError(f"{table_name}: missing field table")
-        index += 2  # header and delimiter
+        header = _cells(lines[index])
+        if header != [
+            "字段",
+            "PostgreSQL 类型",
+            "Null",
+            "默认/生成",
+            "约束/索引",
+            "语义",
+        ]:
+            raise ValueError(f"{table_name}: malformed field-table header")
+        if index + 1 >= len(lines) or not re.fullmatch(
+            r"\|\s*:?-+:?\s*(?:\|\s*:?-+:?\s*){5}\|", lines[index + 1]
+        ):
+            raise ValueError(f"{table_name}: malformed field-table delimiter")
+        index += 2
         columns: list[dict[str, Any]] = []
         while index < len(lines):
             cells = _cells(lines[index])
-            if len(cells) != 6:
+            if not lines[index].strip().startswith("|"):
                 break
+            if len(cells) != 6:
+                raise ValueError(
+                    f"{table_name}: malformed field row at line {index + 1}"
+                )
             name, pg_type, nullable, default, constraints, semantics = map(
                 _plain, cells
             )
@@ -141,17 +160,27 @@ def extract_manifest(document: Path) -> dict[str, Any]:
     )
     if duplicate_names:
         raise ValueError(f"duplicate tables: {duplicate_names}")
-    section_source = "\n".join(
-        lines[
-            next(
-                i
-                for i, line in enumerate(lines)
-                if line == "# 14. PostgreSQL Schema — 字段级定义"
-            ) : next(
-                i for i, line in enumerate(lines) if line == "# 15. 核心索引与约束"
-            )
-        ]
+    sections = [table["section"] for table in tables]
+    if len(set(sections)) != len(sections):
+        raise ValueError("duplicate section identifiers")
+    duplicate_columns = sorted(
+        f"{table['name']}.{name}"
+        for table in tables
+        for name in {column["name"] for column in table["columns"]}
+        if sum(column["name"] == name for column in table["columns"]) > 1
     )
+    if duplicate_columns:
+        raise ValueError(f"duplicate columns: {duplicate_columns}")
+    try:
+        section_start = lines.index("# 14. PostgreSQL Schema — 字段级定义")
+        section_end = lines.index("# 15. 核心索引与约束")
+    except ValueError as error:
+        raise ValueError(
+            "section 14/15 headings are required for schema hashing"
+        ) from error
+    if section_start >= section_end:
+        raise ValueError("section 14 heading must precede section 15 heading")
+    section_source = "\n".join(lines[section_start:section_end])
     column_count = sum(len(table["columns"]) for table in tables)
     if column_count != EXPECTED_COLUMN_COUNT:
         raise ValueError(
@@ -164,7 +193,9 @@ def extract_manifest(document: Path) -> dict[str, Any]:
         )
     return {
         "manifest_version": 1,
-        "source_path": str(document.relative_to(PROJECT_ROOT)),
+        "source_path": str(document.relative_to(PROJECT_ROOT))
+        if document.is_relative_to(PROJECT_ROOT)
+        else str(document),
         "source_section_sha256": hashlib.sha256(
             section_source.encode("utf-8")
         ).hexdigest(),
@@ -201,7 +232,15 @@ def main() -> int:
             raise SystemExit("section 14 manifest is stale; regenerate explicitly")
         return 0
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(rendered, encoding="utf-8")
+    temporary = args.output.with_name(f".{args.output.name}.tmp-{os.getpid()}")
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(rendered)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(args.output)
+    finally:
+        temporary.unlink(missing_ok=True)
     print(
         f"wrote {manifest['table_count']} tables/{manifest['column_count']} columns "
         f"to {args.output}"

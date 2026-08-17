@@ -15,10 +15,15 @@ from quantfoundry.live.connector import (
     OrderRequest,
     _idempotency_key,
     _order_fingerprint,
+    _purge_expired_fingerprints,
     _segment,
-    _validate_preview_response,
+    _validate_balances_response,
+    _validate_fills_response,
+    _validate_market_clock_response,
     _validate_order_response,
     _validate_orders_response,
+    _validate_positions_response,
+    _validate_preview_response,
 )
 
 NautilusMethod = Literal["GET", "POST"]
@@ -53,6 +58,7 @@ class NautilusTraderConnector:
             raise ValueError("NautilusTrader port must expose request()")
         self._port = port
         self._preview_fingerprints: dict[str, float] = {}
+        self._order_fingerprints: dict[tuple[str, str], str] = {}
         self._capabilities: ConnectorCapabilities | None = None
         self._capabilities_fetched_at: float | None = None
 
@@ -111,19 +117,17 @@ class NautilusTraderConnector:
         return value
 
     def balances(self, account_id: str) -> dict[str, Any]:
-        return self._request(
-            "GET", f"/v1/accounts/{_segment(account_id, 'account_id')}/balances"
+        return _validate_balances_response(
+            self._request(
+                "GET", f"/v1/accounts/{_segment(account_id, 'account_id')}/balances"
+            )
         )
 
     def positions(self, account_id: str) -> list[dict[str, Any]]:
-        value = self._request(
+        result = self._request(
             "GET", f"/v1/accounts/{_segment(account_id, 'account_id')}/positions"
-        ).get("positions")
-        if not isinstance(value, list) or not all(
-            isinstance(item, dict) for item in value
-        ):
-            raise ConnectorProtocolError("positions response is invalid")
-        return value
+        )
+        return _validate_positions_response(result)
 
     def preview_order(self, account_id: str, order: OrderRequest) -> dict[str, Any]:
         result = self._request(
@@ -132,9 +136,9 @@ class NautilusTraderConnector:
             payload=order.to_wire(),
         )
         validated = _validate_preview_response(result)
-        self._preview_fingerprints[_order_fingerprint(account_id, order)] = (
-            time.monotonic() + 60
-        )
+        now = time.monotonic()
+        _purge_expired_fingerprints(self._preview_fingerprints, now)
+        self._preview_fingerprints[_order_fingerprint(account_id, order)] = now + 60
         return validated
 
     def submit_order(
@@ -152,7 +156,15 @@ class NautilusTraderConnector:
             raise ConnectorProtocolError("account is not in connector capabilities")
         capabilities.validate_order(order)
         fingerprint = _order_fingerprint(account_id, order)
+        identity = (account_id, order.client_order_id)
+        previous_fingerprint = self._order_fingerprints.get(identity)
+        if previous_fingerprint is not None and previous_fingerprint != fingerprint:
+            raise ConnectorProtocolError(
+                "client_order_id was reused with a different order payload"
+            )
+        self._order_fingerprints[identity] = fingerprint
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
+            _purge_expired_fingerprints(self._preview_fingerprints, time.monotonic())
             expires_at = self._preview_fingerprints.pop(fingerprint, None)
             if expires_at is None or expires_at <= time.monotonic():
                 raise ConnectorProtocolError("validated margin preview is required")
@@ -212,9 +224,9 @@ class NautilusTraderConnector:
         path = f"/v1/accounts/{_segment(account_id, 'account_id')}/fills"
         if cursor:
             path += f"?cursor={_segment(cursor, 'cursor')}"
-        return self._request("GET", path)
+        return _validate_fills_response(self._request("GET", path))
 
     def market_clock(self, venue: str) -> dict[str, Any]:
-        return self._request(
-            "GET", f"/v1/market/clock?venue={_segment(venue, 'venue')}"
+        return _validate_market_clock_response(
+            self._request("GET", f"/v1/market/clock?venue={_segment(venue, 'venue')}")
         )

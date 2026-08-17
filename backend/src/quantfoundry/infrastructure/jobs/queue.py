@@ -70,6 +70,65 @@ def _update_wire_payload(row: JobRow, now: datetime) -> None:
     row.payload = json.dumps(detail)
 
 
+def _terminalize_success_dependents(
+    session: Session, prerequisite: JobRow, now: datetime
+) -> None:
+    dependents = session.execute(
+        select(JobRow)
+        .join(JobDependencyRow, JobDependencyRow.job_id == JobRow.id)
+        .where(
+            JobDependencyRow.depends_on_job_id == prerequisite.id,
+            JobDependencyRow.workspace_id == prerequisite.workspace_id,
+            JobDependencyRow.dependency_type == "SUCCESS",
+            JobRow.status == "QUEUED",
+        )
+        .with_for_update()
+    ).scalars()
+    for dependent in dependents:
+        if prerequisite.status == "CANCELLED":
+            from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+            if dependent.queue_name == "agent":
+                from quantfoundry.agents.runtime.runtime import cancel_agent_run
+
+                cancel_agent_run(session, dependent)
+            apply_job_cancellation(session, dependent)
+            status = "CANCELLED"
+            error_code = "JOB_DEPENDENCY_CANCELLED"
+        else:
+            from quantfoundry.application.jobs.effects import apply_job_failure
+
+            if dependent.queue_name == "agent":
+                from quantfoundry.agents.runtime.runtime import fail_agent_run
+
+                fail_agent_run(session, dependent, RuntimeError("dependency failed"))
+            apply_job_failure(session, dependent)
+            status = "FAILED"
+            error_code = "JOB_DEPENDENCY_FAILED"
+        dependent.status = status
+        dependent.error_code = error_code
+        dependent.error_detail = (
+            f"success dependency {prerequisite.id} reached {prerequisite.status}"
+        )
+        dependent.finished_at = now
+        dependent.revision += 1
+        _update_wire_payload(dependent, now)
+        emit(
+            session,
+            "job",
+            dependent.id,
+            dependent.revision,
+            "job.updated",
+            payload={"state": status, "status": status, "error_code": error_code},
+            job_id=dependent.id,
+            correlation_id=dependent.correlation_id,
+            request_id=dependent.request_id,
+            actor_id=dependent.created_by_id,
+            workspace_id=dependent.workspace_id,
+        )
+        _terminalize_success_dependents(session, dependent, now)
+
+
 def record_heartbeat(
     session: Session,
     component: str,
@@ -266,20 +325,46 @@ def update_progress(
         raise ValueError("total_units must be non-negative")
     if completed_units is not None and completed_units < 0:
         raise ValueError("completed_units must be non-negative")
+    effective_total = row.total_units if total_units is None else total_units
+    effective_completed = (
+        row.completed_units if completed_units is None else completed_units
+    )
     if (
-        completed_units is not None
-        and total_units is not None
-        and completed_units > total_units
+        effective_total is not None
+        and effective_completed is not None
+        and effective_completed > effective_total
     ):
         raise ValueError("completed_units cannot exceed total_units")
-    row.progress_mode = "UNITS" if total_units is not None else "NONE"
-    row.completed_units = completed_units
-    row.total_units = total_units
-    row.progress_unit = unit
-    row.current_step_key = step_key
-    row.current_step_label = step_label
+    row.progress_mode = "UNITS" if effective_total is not None else "NONE"
+    row.completed_units = effective_completed
+    row.total_units = effective_total
+    row.progress_unit = row.progress_unit if unit is None else unit
+    row.current_step_key = row.current_step_key if step_key is None else step_key
+    row.current_step_label = (
+        row.current_step_label if step_label is None else step_label
+    )
     row.revision += 1
     _update_wire_payload(row, timestamp)
+    emit(
+        session,
+        "job",
+        row.id,
+        row.revision,
+        "job.updated",
+        payload={
+            "state": row.status,
+            "status": row.status,
+            "progress_mode": row.progress_mode,
+            "completed_units": row.completed_units,
+            "total_units": row.total_units,
+            "current_step_key": row.current_step_key,
+        },
+        job_id=row.id,
+        correlation_id=row.correlation_id,
+        request_id=row.request_id,
+        actor_id=row.created_by_id,
+        workspace_id=row.workspace_id,
+    )
 
 
 def request_cancellation(
@@ -329,14 +414,24 @@ def complete_job(
     row = lock_active_lease(session, lease, now=timestamp)
     if result_ref is not None and not job_result_ref_valid(result_ref):
         raise ValueError("job result_ref violates the closed canonical schema")
-    next_status = "CANCELLED" if row.cancel_requested_at else "COMPLETED"
+    cancelled = row.cancel_requested_at is not None
+    if cancelled:
+        from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+        if row.queue_name == "agent":
+            from quantfoundry.agents.runtime.runtime import cancel_agent_run
+
+            cancel_agent_run(session, row)
+        apply_job_cancellation(session, row)
+    next_status = "CANCELLED" if cancelled else "COMPLETED"
+    effective_result_ref = None if cancelled else result_ref
     next_revision = row.revision + 1
     detail = json.loads(row.payload)
     detail.update(
         {
             "status": next_status,
             "error_code": None,
-            "result_ref": result_ref,
+            "result_ref": effective_result_ref,
             "revision": next_revision,
             "started_at": _iso(row.started_at),
             "finished_at": _iso(timestamp),
@@ -357,7 +452,9 @@ def complete_job(
             )
             .values(
                 status=next_status,
-                result_ref=json.dumps(result_ref) if result_ref else None,
+                result_ref=(
+                    json.dumps(effective_result_ref) if effective_result_ref else None
+                ),
                 error_code=None,
                 error_detail=None,
                 finished_at=timestamp,
@@ -375,6 +472,8 @@ def complete_job(
     session.expire(row)
     row = session.get(JobRow, lease.job_id)
     assert row is not None
+    if row.status == "CANCELLED":
+        _terminalize_success_dependents(session, row, timestamp)
     emit(
         session,
         "job",
@@ -401,13 +500,22 @@ def fail_job(
 ) -> JobRow:
     timestamp = now or datetime.now(UTC)
     row = lock_active_lease(session, lease, now=timestamp)
+    cancelled = row.cancel_requested_at is not None
+    if cancelled:
+        from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+        if row.queue_name == "agent":
+            from quantfoundry.agents.runtime.runtime import cancel_agent_run
+
+            cancel_agent_run(session, row)
+        apply_job_cancellation(session, row)
     next_revision = row.revision + 1
-    next_status = "CANCELLED" if row.cancel_requested_at else "FAILED"
+    next_status = "CANCELLED" if cancelled else "FAILED"
     detail = json.loads(row.payload)
     detail.update(
         {
             "status": next_status,
-            "error_code": error_code,
+            "error_code": None if cancelled else error_code,
             "revision": next_revision,
             "started_at": _iso(row.started_at),
             "finished_at": _iso(timestamp),
@@ -437,8 +545,8 @@ def fail_job(
             )
             .values(
                 status=next_status,
-                error_code=error_code,
-                error_detail=error_detail,
+                error_code=None if cancelled else error_code,
+                error_detail=None if cancelled else error_detail,
                 finished_at=timestamp,
                 lease_owner=None,
                 lease_expires_at=None,
@@ -454,6 +562,8 @@ def fail_job(
     session.expire(row)
     row = session.get(JobRow, lease.job_id)
     assert row is not None
+    if row.status in {"FAILED", "CANCELLED"}:
+        _terminalize_success_dependents(session, row, timestamp)
     if row.job_type == "PAPER_DAILY_RUN":
         from quantfoundry.scheduler.paper import PaperScheduler
 
@@ -489,7 +599,7 @@ def reap_expired_jobs(
 ) -> tuple[int, int]:
     timestamp = now or datetime.now(UTC)
     statement = select(JobRow).where(
-        JobRow.status == "RUNNING", JobRow.lease_expires_at < timestamp
+        JobRow.status == "RUNNING", JobRow.lease_expires_at <= timestamp
     )
     if queue_name is not None:
         statement = statement.where(JobRow.queue_name == queue_name)

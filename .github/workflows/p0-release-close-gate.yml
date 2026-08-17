@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -42,13 +42,14 @@ jobs:
           QF_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          [[ "$QF_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]]
           git fetch --tags --force origin
           tag_commit="$(git rev-parse "refs/tags/$QF_RELEASE_TAG^{commit}")"
           [[ -n "$tag_commit" ]]
-          test "$(git rev-parse HEAD)" = "$tag_commit"
           release_root="$RUNNER_TEMP/qf-release-$tag_commit"
           git worktree add --detach "$release_root" "$tag_commit"
           trap 'git worktree remove --force "$release_root"' EXIT
           QF_RELEASE_CHECK_ROOT="$release_root" \
-            QF_RELEASE_CHECK_VERIFIER_ROOT="$release_root" \
+            QF_RELEASE_CHECK_VERIFIER_ROOT="$GITHUB_WORKSPACE" \
+            QF_RELEASE_CHECK_TRUSTED_VERIFIER_ROOT="$GITHUB_WORKSPACE" \
             "$GITHUB_WORKSPACE/scripts/release-check.sh" "$QF_RELEASE_TAG"

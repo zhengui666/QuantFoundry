@@ -455,7 +455,10 @@ def execute_tool(
         ):
             raise ToolExecutionError("validated dataset is unavailable")
         source_id = cast(str, source.id)
-        bundle = load_dataset(source_id)
+        try:
+            bundle = load_dataset(source_id)
+        except EngineInputError as error:
+            raise ToolExecutionError("dataset is invalid or unavailable") from error
         from quantfoundry.application.jobs.effects import dataset_validation_matches
 
         if not dataset_validation_matches(session, source_id, run.workspace_id, bundle):
@@ -565,6 +568,21 @@ def execute_tool(
             or cost.cost_model_id != version_detail["cost_model_id"]
         ):
             raise ToolExecutionError("strategy cost model binding is unavailable")
+        try:
+            loaded_cost = load_cost_model(cost.cost_model_id)
+        except EngineInputError as error:
+            raise ToolExecutionError("strategy cost model is invalid") from error
+        loaded_cost_payload = {
+            "cost_model_id": loaded_cost.cost_model_id,
+            "version": loaded_cost.version,
+            "commission_bps": loaded_cost.commission_bps,
+            "slippage_bps": loaded_cost.slippage_bps,
+        }
+        if (
+            loaded_cost.version != cost.version
+            or content_hash(loaded_cost_payload) != cost.content_sha256
+        ):
+            raise ToolExecutionError("strategy cost model version is inconsistent")
         inputs = {
             **arguments,
             "strategy_version_id": version.id,
@@ -773,6 +791,16 @@ def execute_tool(
                     }
                 ),
             )
+        )
+        emit(
+            session,
+            "validation",
+            validation_id,
+            1,
+            "validation.created",
+            payload={"state": "QUEUED", "status": "QUEUED"},
+            job_id=accepted["job_id"],
+            agent_run_id=cast(str, run.id),
         )
         return {"job_id": accepted["job_id"]}
     raise ToolExecutionError(f"unsupported canonical tool: {name}")

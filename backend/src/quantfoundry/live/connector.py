@@ -9,12 +9,14 @@ import json
 import secrets
 import socket
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from urllib.parse import quote, urlsplit
 
+import httpcore
 import httpx
 
 AssetClass = Literal[
@@ -74,9 +76,7 @@ def _header_value(value: str, field_name: str) -> str:
     return value
 
 
-def _reject_private_connector_endpoint(
-    endpoint: str, *, resolve_hostname: bool = True
-) -> None:
+def _connector_endpoint_addresses(endpoint: str) -> tuple[str, ...]:
     parsed = urlsplit(endpoint)
     hostname = parsed.hostname
     if hostname is None:
@@ -84,8 +84,6 @@ def _reject_private_connector_endpoint(
     try:
         addresses = {ipaddress.ip_address(hostname)}
     except ValueError:
-        if not resolve_hostname:
-            return
         try:
             addresses = {
                 ipaddress.ip_address(info[4][0])
@@ -93,10 +91,74 @@ def _reject_private_connector_endpoint(
                     hostname, parsed.port or 443, type=socket.SOCK_STREAM
                 )
             }
-        except socket.gaierror:
-            addresses = set()
+        except (OSError, socket.gaierror) as error:
+            raise ValueError(
+                "connector endpoint hostname could not be resolved"
+            ) from error
+    if not addresses:
+        raise ValueError("connector endpoint hostname has no addresses")
     if any(not address.is_global for address in addresses):
         raise ValueError("connector endpoint must resolve only to global addresses")
+    return tuple(str(address) for address in sorted(addresses, key=str))
+
+
+class _PinnedBackend(httpcore.SyncBackend):
+    def __init__(self, addresses: tuple[str, ...]) -> None:
+        self.addresses = addresses
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.NetworkStream:
+        last_error: Exception | None = None
+        for address in self.addresses:
+            try:
+                return super().connect_tcp(
+                    address,
+                    port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as error:
+                last_error = error
+        assert last_error is not None
+        raise last_error
+
+
+def _pinned_http_client(
+    endpoint: str, timeout: float, addresses: tuple[str, ...]
+) -> tuple[httpx.Client, _PinnedBackend]:
+    transport = httpx.HTTPTransport(verify=True, trust_env=False)
+    pool = transport._pool
+    backend = _PinnedBackend(addresses)
+    transport._pool = httpcore.ConnectionPool(
+        ssl_context=pool._ssl_context,
+        max_connections=pool._max_connections,
+        max_keepalive_connections=pool._max_keepalive_connections,
+        keepalive_expiry=pool._keepalive_expiry,
+        http1=pool._http1,
+        http2=pool._http2,
+        retries=pool._retries,
+        local_address=pool._local_address,
+        uds=pool._uds,
+        network_backend=backend,
+        socket_options=pool._socket_options,
+    )
+    return (
+        httpx.Client(
+            base_url=endpoint.rstrip("/"),
+            timeout=timeout,
+            follow_redirects=False,
+            trust_env=False,
+            transport=transport,
+        ),
+        backend,
+    )
 
 
 def _idempotency_key(*parts: str) -> str:
@@ -157,7 +219,7 @@ def _validate_order_response(
         or not isinstance(result.get("updated_at"), str)
         or not result["updated_at"]
         or not isinstance(result.get("fills"), list)
-        or not all(isinstance(fill, dict) for fill in result["fills"])
+        or not all(_validate_fill_entry(fill) for fill in result["fills"])
     ):
         raise ConnectorProtocolError("order response is invalid")
     return result
@@ -210,6 +272,110 @@ def _decimal(value: str | Decimal, *, field_name: str, positive: bool = False) -
     return format(parsed, "f")
 
 
+def _valid_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
+def _valid_response_decimal(value: Any) -> bool:
+    return isinstance(value, str) and bool(value) and _decimal_is_valid(value)
+
+
+def _decimal_is_valid(value: str) -> bool:
+    try:
+        parsed = Decimal(value)
+    except (InvalidOperation, ValueError):
+        return False
+    return parsed.is_finite()
+
+
+def _validate_fill_entry(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    fill_id = value.get("broker_fill_id") or value.get("fill_id")
+    return (
+        isinstance(fill_id, str)
+        and bool(fill_id)
+        and isinstance(value.get("broker_order_id"), str)
+        and bool(value["broker_order_id"])
+        and isinstance(value.get("execution_id"), str)
+        and bool(value["execution_id"])
+        and _valid_response_decimal(value.get("quantity"))
+        and _valid_response_decimal(value.get("price"))
+        and _valid_timestamp(value.get("executed_at"))
+    )
+
+
+def _validate_balances_response(result: dict[str, Any]) -> dict[str, Any]:
+    balances = result.get("balances")
+    if not isinstance(balances, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("currency"), str)
+        and bool(item["currency"])
+        and _valid_response_decimal(item.get("available"))
+        and _valid_response_decimal(item.get("total"))
+        for item in balances
+    ):
+        raise ConnectorProtocolError("balances response is invalid")
+    return result
+
+
+def _validate_positions_response(result: dict[str, Any]) -> list[dict[str, Any]]:
+    positions = result.get("positions")
+    if not isinstance(positions, list):
+        raise ConnectorProtocolError("positions response is invalid")
+    for item in positions:
+        identity = item.get("symbol") if isinstance(item, dict) else None
+        price = (
+            item.get("average_price", item.get("price"))
+            if isinstance(item, dict)
+            else None
+        )
+        if not (
+            isinstance(item, dict)
+            and isinstance(identity, str)
+            and bool(identity)
+            and isinstance(item.get("currency"), str)
+            and bool(item["currency"])
+            and _valid_response_decimal(item.get("quantity"))
+            and _valid_response_decimal(price)
+        ):
+            raise ConnectorProtocolError("positions response is invalid")
+    return positions
+
+
+def _validate_fills_response(result: dict[str, Any]) -> dict[str, Any]:
+    fills = result.get("fills")
+    if not isinstance(fills, list) or not all(
+        _validate_fill_entry(item) for item in fills
+    ):
+        raise ConnectorProtocolError("fills response is invalid")
+    return result
+
+
+def _validate_market_clock_response(result: dict[str, Any]) -> dict[str, Any]:
+    if not (
+        isinstance(result.get("venue"), str)
+        and bool(result["venue"])
+        and isinstance(result.get("state"), str)
+        and bool(result["state"])
+        and _valid_timestamp(result.get("timestamp"))
+    ):
+        raise ConnectorProtocolError("market clock response is invalid")
+    return result
+
+
+def _purge_expired_fingerprints(store: dict[str, float], now: float) -> None:
+    for key, expires_at in list(store.items()):
+        if expires_at <= now:
+            del store[key]
+
+
 def _decimal_places(value: str | Decimal) -> int:
     exponent = Decimal(str(value)).as_tuple().exponent
     if not isinstance(exponent, int):
@@ -236,8 +402,22 @@ class Instrument:
     def __post_init__(self) -> None:
         if self.asset_class not in ASSET_CLASSES:
             raise ValueError("unsupported asset_class")
-        if not self.venue or not self.symbol:
+        if not all(
+            isinstance(value, str) and bool(value)
+            for value in (self.venue, self.symbol)
+        ):
             raise ValueError("venue and symbol are required")
+        for name in (
+            "currency",
+            "base_currency",
+            "quote_currency",
+            "underlying",
+            "expiry",
+            "margin_currency",
+        ):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value):
+                raise ValueError(f"{name} is invalid")
         if self.asset_class == "OPTION" and not all(
             (
                 self.underlying,
@@ -270,7 +450,7 @@ class Instrument:
             (self.multiplier, self.margin_currency)
         ):
             raise ValueError("perpetual multiplier and margin_currency are required")
-        if self.asset_class == "CRYPTO_PERPETUAL":
+        if self.multiplier is not None:
             _decimal(self.multiplier or "", field_name="multiplier", positive=True)
 
     def to_wire(self) -> dict[str, Any]:
@@ -534,26 +714,32 @@ class ConnectorClient:
         ):
             raise ValueError("connector key_id and credential are required")
         _header_value(key_id, "key_id")
+        addresses = _connector_endpoint_addresses(endpoint)
         self._owns_client = http_client is None
-        _reject_private_connector_endpoint(
-            endpoint, resolve_hostname=self._owns_client
-        )
+        if http_client is not None and not isinstance(
+            getattr(http_client, "_transport", None), httpx.MockTransport
+        ):
+            raise ValueError("custom connector clients must use a verified transport")
         self._base_url = endpoint.rstrip("/")
         self._key_id = key_id
         self._credential = credential.encode("utf-8")
         self._clock = clock
         self._nonce_factory = nonce_factory
         self._preview_fingerprints: dict[str, float] = {}
+        self._order_fingerprints: dict[tuple[str, str], str] = {}
         self._capabilities: ConnectorCapabilities | None = None
         self._capabilities_fetched_at: float | None = None
         if timeout <= 0:
             raise ValueError("connector timeout must be positive")
         self._timeout = timeout
-        self._client = http_client or httpx.Client(
-            base_url=self._base_url,
-            timeout=timeout,
-            follow_redirects=False,
-        )
+        self._pinned_backend: _PinnedBackend | None = None
+        if http_client is None:
+            self._client, self._pinned_backend = _pinned_http_client(
+                self._base_url, timeout, addresses
+            )
+        else:
+            self._client = http_client
+            self._pinned_backend = None
 
     def close(self) -> None:
         if self._owns_client:
@@ -575,9 +761,9 @@ class ConnectorClient:
     ) -> dict[str, Any]:
         if not path.startswith("/") or "#" in path:
             raise ValueError("connector path is invalid")
-        _reject_private_connector_endpoint(
-            self._base_url, resolve_hostname=self._owns_client
-        )
+        addresses = _connector_endpoint_addresses(self._base_url)
+        if self._pinned_backend is not None:
+            self._pinned_backend.addresses = addresses
         body = (
             b""
             if payload is None
@@ -669,19 +855,17 @@ class ConnectorClient:
         return value
 
     def balances(self, account_id: str) -> dict[str, Any]:
-        return self._request(
-            "GET", f"/v1/accounts/{_segment(account_id, 'account_id')}/balances"
+        return _validate_balances_response(
+            self._request(
+                "GET", f"/v1/accounts/{_segment(account_id, 'account_id')}/balances"
+            )
         )
 
     def positions(self, account_id: str) -> list[dict[str, Any]]:
-        value = self._request(
+        result = self._request(
             "GET", f"/v1/accounts/{_segment(account_id, 'account_id')}/positions"
-        ).get("positions")
-        if not isinstance(value, list) or not all(
-            isinstance(item, dict) for item in value
-        ):
-            raise ConnectorProtocolError("positions response is invalid")
-        return value
+        )
+        return _validate_positions_response(result)
 
     def preview_order(self, account_id: str, order: OrderRequest) -> dict[str, Any]:
         result = self._request(
@@ -690,9 +874,9 @@ class ConnectorClient:
             payload=order.to_wire(),
         )
         validated = _validate_preview_response(result)
-        self._preview_fingerprints[_order_fingerprint(account_id, order)] = (
-            self._clock() + 60
-        )
+        now = self._clock()
+        _purge_expired_fingerprints(self._preview_fingerprints, now)
+        self._preview_fingerprints[_order_fingerprint(account_id, order)] = now + 60
         return validated
 
     def submit_order(
@@ -707,7 +891,15 @@ class ConnectorClient:
             raise ConnectorProtocolError("account is not in connector capabilities")
         capabilities.validate_order(order)
         fingerprint = _order_fingerprint(account_id, order)
+        identity = (account_id, order.client_order_id)
+        previous_fingerprint = self._order_fingerprints.get(identity)
+        if previous_fingerprint is not None and previous_fingerprint != fingerprint:
+            raise ConnectorProtocolError(
+                "client_order_id was reused with a different order payload"
+            )
+        self._order_fingerprints[identity] = fingerprint
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
+            _purge_expired_fingerprints(self._preview_fingerprints, self._clock())
             expires_at = self._preview_fingerprints.pop(fingerprint, None)
             if expires_at is None or expires_at <= self._clock():
                 raise ConnectorProtocolError("validated margin preview is required")
@@ -768,14 +960,9 @@ class ConnectorClient:
         if cursor:
             path += f"?cursor={_segment(cursor, 'cursor')}"
         result = self._request("GET", path)
-        fills = result.get("fills")
-        if not isinstance(fills, list) or not all(
-            isinstance(item, dict) for item in fills
-        ):
-            raise ConnectorProtocolError("fills response is invalid")
-        return result
+        return _validate_fills_response(result)
 
     def market_clock(self, venue: str) -> dict[str, Any]:
-        return self._request(
-            "GET", f"/v1/market/clock?venue={_segment(venue, 'venue')}"
+        return _validate_market_clock_response(
+            self._request("GET", f"/v1/market/clock?venue={_segment(venue, 'venue')}")
         )

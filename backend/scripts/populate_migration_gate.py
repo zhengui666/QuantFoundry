@@ -31,6 +31,8 @@ TARGET_TABLES = (
     "session_tokens",
     "setup_bindings",
 )
+_FIXTURE_NOW = datetime(2026, 1, 1, tzinfo=UTC)
+_UUID_COUNTER = 0
 
 
 def _table(metadata: MetaData, name: str, bind: Any) -> Table:
@@ -38,11 +40,17 @@ def _table(metadata: MetaData, name: str, bind: Any) -> Table:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC).replace(microsecond=0)
+    return _FIXTURE_NOW
 
 
 def _uuid(value: Any = None) -> uuid.UUID:
-    return value if isinstance(value, uuid.UUID) else uuid.uuid4()
+    global _UUID_COUNTER
+    if isinstance(value, uuid.UUID):
+        return value
+    _UUID_COUNTER += 1
+    return uuid.uuid5(
+        uuid.UUID("7d4dd1d8-75c0-4a9a-8b53-c05ef8f2c5a4"), str(_UUID_COUNTER)
+    )
 
 
 def _source_row(
@@ -62,9 +70,9 @@ def _source_row(
     return dict(row)
 
 
-def _workspaces(connection: Any, metadata: MetaData) -> list[str]:
+def _workspaces(connection: Any, metadata: MetaData) -> list[Any]:
     table = metadata.tables["workspaces"]
-    return [str(value) for value in connection.execute(select(table.c.id)).scalars()]
+    return list(connection.execute(select(table.c.id)).scalars())
 
 
 def _insert(connection: Any, table: Table, values: dict[str, Any]) -> None:
@@ -133,48 +141,48 @@ def _clone(
         ).hexdigest()
     if table.name == "agent_runs":
         if values.get("agent_run_id") is not None:
-            values["agent_run_id"] = f"ARUN-{uuid.uuid4()}"
+            values["agent_run_id"] = f"ARUN-{_uuid()}"
         if values.get("checkpoint_thread_id") is not None:
             values["checkpoint_thread_id"] = f"THREAD-MIGRATION-GATE-{index}"
         values["next_action"] = null()
     elif table.name == "audit_events":
-        values["event_id"] = f"AUD-{uuid.uuid4()}"
+        values["event_id"] = f"AUD-{_uuid()}"
         values["event_hash"] = hashlib.sha256(
             f"qf-migration-gate-audit-{index}".encode()
         ).hexdigest()
     elif table.name == "domain_events":
-        values["event_id"] = f"EVT-{uuid.uuid4()}"
+        values["event_id"] = f"EVT-{_uuid()}"
     elif table.name == "experiments":
-        values["experiment_id"] = f"EXP-{uuid.uuid4()}"
+        values["experiment_id"] = f"EXP-{_uuid()}"
     elif table.name == "approval_requests":
-        values["approval_id"] = f"APR-{uuid.uuid4()}"
+        values["approval_id"] = f"APR-{_uuid()}"
     elif table.name == "factors":
-        values["factor_id"] = f"FAC-{uuid.uuid4()}"
+        values["factor_id"] = f"FAC-{_uuid()}"
     elif table.name == "jobs":
-        values["job_id"] = f"JOB-{uuid.uuid4()}"
+        values["job_id"] = f"JOB-{_uuid()}"
         if values.get("resume_token_hash") is not None:
             values["resume_token_hash"] = hashlib.sha256(
                 f"qf-migration-gate-resume-{index}".encode()
             ).hexdigest()
     elif table.name == "provenance_records":
-        values["provenance_id"] = f"PROV-{uuid.uuid4()}"
+        values["provenance_id"] = f"PROV-{_uuid()}"
     elif table.name == "research_cases":
-        values["research_id"] = f"RSCH-{uuid.uuid4()}"
+        values["research_id"] = f"RSCH-{_uuid()}"
     elif table.name == "tool_calls":
-        values["tool_call_id"] = f"TCALL-{uuid.uuid4()}"
+        values["tool_call_id"] = f"TCALL-{_uuid()}"
         values["input_sha256"] = hashlib.sha256(
             f"qf-migration-gate-tool-input-{index}".encode()
         ).hexdigest()
     elif table.name == "validation_runs":
-        values["validation_id"] = f"VAL-{uuid.uuid4()}"
+        values["validation_id"] = f"VAL-{_uuid()}"
     if "record_key" in values:
         values["kind"] = "artifact"
-        values["record_key"] = f"ART-{uuid.uuid4()}"
+        values["record_key"] = f"ART-{_uuid()}"
     if "legacy_id" in values:
         values["legacy_id"] = f"QF-GATE-{table.name}-{index}"
     if "policy_id" in values:
         if not isinstance(values["policy_id"], uuid.UUID):
-            values["policy_id"] = f"RP-{uuid.uuid4()}"
+            values["policy_id"] = f"RP-{_uuid()}"
     if "normalized_route" in values:
         values["normalized_route"] = f"/__qf_migration_gate__/{table.name}/{index}"
     if "key" in values:
@@ -213,8 +221,8 @@ def _clone_gate_row(
         ).scalar_one_or_none()
         values["prev_event_hash"] = previous
     if table.name == "snapshot_partitions":
-        values["id"] = f"SPART-{uuid.uuid4()}"
-        values["artifact_id"] = f"ART-{uuid.uuid4()}"
+        values["id"] = f"SPART-{_uuid()}"
+        values["artifact_id"] = f"ART-{_uuid()}"
         values["partition"] = f"GATE-{index}"
     if table.name == "holdout_exposures":
         workspace_id = values["workspace_id"]
@@ -273,7 +281,7 @@ def _clone_gate_row(
             )
         values.update(
             {
-                "exposure_id": f"HOLD-{uuid.uuid4()}",
+                "exposure_id": f"HOLD-{_uuid()}",
                 "approval_id": approval["id"],
                 "approval_public_id": approval["approval_id"],
                 "job_id": job["job_id"],
@@ -389,7 +397,7 @@ def _ensure_workspace_dependency(
     connection: Any,
     metadata: MetaData,
     name: str,
-    workspace_id: str,
+    workspace_id: Any,
     source_where: Any = None,
 ) -> dict[str, Any]:
     table = metadata.tables[name]
@@ -403,7 +411,10 @@ def _ensure_workspace_dependency(
     if row is not None:
         return dict(row)
     source = _source_row(connection, table, source_where=source_where)
-    values = _clone(connection, table, source, abs(hash((name, workspace_id))) % 100000)
+    stable_index = int.from_bytes(
+        hashlib.sha256(f"{name}:{workspace_id}".encode()).digest()[:8], "big"
+    )
+    values = _clone(connection, table, source, stable_index)
     values["workspace_id"] = workspace_id
     _insert(connection, table, values)
     return values
@@ -426,7 +437,7 @@ def _ensure_settings_record(
         connection,
         table,
         {
-            "id": uuid.uuid4(),
+            "id": _uuid(),
             "workspace_id": workspace_id,
             "record_key": "SETTINGS-DEFAULT",
             "kind": "settings",
@@ -439,7 +450,7 @@ def _ensure_settings_record(
 
 
 def _ensure_app_settings(
-    connection: Any, metadata: MetaData, workspace_id: str
+    connection: Any, metadata: MetaData, workspace_id: Any
 ) -> None:
     table = metadata.tables["app_settings"]
     if connection.execute(
@@ -467,7 +478,7 @@ def _ensure_app_settings(
         connection,
         table,
         {
-            "id": uuid.uuid4(),
+            "id": _uuid(),
             "workspace_id": workspace_id,
             "public_id": "SETTINGS-DEFAULT",
             "revision": 1,
@@ -491,7 +502,7 @@ def _ensure_app_settings(
 
 
 def _ensure_setup_binding(
-    connection: Any, metadata: MetaData, workspace_id: str
+    connection: Any, metadata: MetaData, workspace_id: Any
 ) -> None:
     table = metadata.tables["setup_bindings"]
     if connection.execute(

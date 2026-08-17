@@ -18,6 +18,13 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        bind.execute(
+            sa.text(
+                "LOCK TABLE validations, approval_requests, strategy_versions, "
+                "holdout_exposures IN ACCESS EXCLUSIVE MODE"
+            )
+        )
     invalid_legacy_row = bind.execute(
         sa.text(
             """
@@ -29,11 +36,15 @@ def upgrade() -> None:
                OR v.exposure_count <> CASE WHEN v.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END
                OR (v.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (
                     SELECT 1 FROM approval_requests a
+                    JOIN strategy_versions sv ON sv.id = v.strategy_version_id
                     WHERE a.validation_id = v.id AND a.status = 'PENDING'
+                      AND a.subject_spec_sha256 = sv.spec_sha256
                ))
-               OR (v.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (
+               OR (v.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED') AND NOT EXISTS (
                     SELECT 1 FROM approval_requests a
+                    JOIN strategy_versions sv ON sv.id = v.strategy_version_id
                     WHERE a.validation_id = v.id AND a.status = 'APPROVED'
+                      AND a.subject_spec_sha256 = sv.spec_sha256
                ))
                OR (v.holdout_state = 'EXPOSED' AND NOT EXISTS (
                     SELECT 1 FROM holdout_exposures e
@@ -88,7 +99,7 @@ def upgrade() -> None:
               IF NEW.holdout_state = 'APPROVAL_PENDING' THEN
                 PERFORM 1
                 FROM approval_requests a
-                JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
+                JOIN strategy_versions sv ON sv.id = NEW.strategy_version_id
                 WHERE a.validation_id = OLD.id
                   AND a.status = 'PENDING'
                   AND a.subject_spec_sha256 = sv.spec_sha256
@@ -97,10 +108,10 @@ def upgrade() -> None:
                   RAISE EXCEPTION 'holdout approval evidence is missing';
                 END IF;
               END IF;
-              IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING') THEN
+              IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED') THEN
                 PERFORM 1
                 FROM approval_requests a
-                JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
+                JOIN strategy_versions sv ON sv.id = NEW.strategy_version_id
                 WHERE a.validation_id = OLD.id
                   AND a.status = 'APPROVED'
                   AND a.subject_spec_sha256 = sv.spec_sha256
@@ -246,11 +257,11 @@ def upgrade() -> None:
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
         "(OLD.holdout_state != 'LOCKED' AND NEW.strategy_version_id IS NOT OLD.strategy_version_id) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id "
+        "approval_requests a JOIN strategy_versions sv ON sv.id = NEW.strategy_version_id "
         "WHERE a.validation_id = OLD.id AND a.status = 'PENDING' AND "
         "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
-        "(NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id "
+        "(NEW.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED') AND NOT EXISTS (SELECT 1 FROM "
+        "approval_requests a JOIN strategy_versions sv ON sv.id = NEW.strategy_version_id "
         "WHERE a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
         "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (SELECT 1 FROM "

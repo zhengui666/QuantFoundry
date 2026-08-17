@@ -34,10 +34,13 @@ if (Object.keys(schemas).length !== document.info?.['x-quantfoundry-schema-count
   throw new Error(
     `Canonical schema metadata does not match components: ${Object.keys(schemas).length}`,
   );
-if (schemas.CanonicalErrorCode?.enum?.length !== document.info?.['x-quantfoundry-error-count'])
+const canonicalErrorCount = schemas.CanonicalErrorCode?.enum?.length;
+if (canonicalErrorCount !== 75)
   throw new Error(
-    `Expected 75 canonical errors, found ${schemas.CanonicalErrorCode?.enum?.length}`,
+    `Expected 75 canonical errors, found ${canonicalErrorCount}`,
   );
+if (canonicalErrorCount !== document.info?.['x-quantfoundry-error-count'])
+  throw new Error('Canonical error metadata does not match CanonicalErrorCode');
 for (const name of ['EventPayload', 'EventWaitingOn', 'SseEnvelope'])
   if (schemas[name]?.additionalProperties !== false)
     throw new Error(`${name} must remain a closed schema`);
@@ -120,7 +123,7 @@ const addArrayConstraints = (expression, schema) => {
   if (schema.maxItems !== undefined) result += `.max(${schema.maxItems})`;
   if (schema.uniqueItems)
     result +=
-      ".refine((items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length, { message: 'Array items must be unique' })";
+      ".refine((items) => new Set(items.map(canonicalJson)).size === items.length, { message: 'Array items must be unique' })";
   return result;
 };
 
@@ -150,7 +153,20 @@ const zodFor = (schema, schemaName) => {
   const types = Array.isArray(baseSchema.type) ? baseSchema.type : [baseSchema.type];
   const nullable = types.includes('null');
   const type = types.find((candidate) => candidate !== 'null');
-  if (!expression && type === undefined && nullable) expression = 'z.null()';
+  if (!expression && types.length > 1) {
+    const branches = types.flatMap((candidate) => {
+      if (candidate === 'null') {
+        if (baseSchema.const !== undefined && baseSchema.const !== null) return [];
+        if (Array.isArray(baseSchema.enum) && !baseSchema.enum.includes(null)) return [];
+        return ['z.null()'];
+      }
+      return [zodFor({ ...baseSchema, type: candidate }, schemaName)];
+    });
+    if (!branches.length) throw new Error('Schema type union has no valid branches');
+    expression = branches.length === 1 ? branches[0] : `z.union([${branches.join(', ')}])`;
+  } else if (!expression && (type === 'null' || (type === undefined && nullable))) {
+    expression = 'z.null()';
+  }
 
   if (!expression && type === 'string') {
     expression =
@@ -171,7 +187,13 @@ const zodFor = (schema, schemaName) => {
   } else if (!expression && type === 'boolean') expression = 'z.boolean()';
   else if (!expression && type === 'array')
     expression = addArrayConstraints(`z.array(${zodFor(baseSchema.items)})`, baseSchema);
-  else if (!expression && (type === 'object' || baseSchema.properties || baseSchema.required)) {
+  else if (
+    !expression &&
+    (type === 'object' ||
+      baseSchema.properties ||
+      baseSchema.required ||
+      baseSchema.additionalProperties !== undefined)
+  ) {
     const required = new Set(baseSchema.required ?? []);
     const propertyNames = new Set([...Object.keys(baseSchema.properties ?? {}), ...required]);
     const properties = [...propertyNames].map((name) => {
@@ -190,7 +212,23 @@ const zodFor = (schema, schemaName) => {
     else expression += '.passthrough()';
     if (baseSchema.minProperties !== undefined)
       expression += `.refine((value) => Object.keys(value).length >= ${baseSchema.minProperties}, { message: 'Object requires at least ${baseSchema.minProperties} properties' })`;
-  } else if (!expression) expression = 'z.unknown()';
+  } else if (!expression) {
+    const unconstrainedKeywords = new Set([
+      'description',
+      'deprecated',
+      'discriminator',
+      'examples',
+      'readOnly',
+      'title',
+      'writeOnly',
+    ]);
+    const unsupported = Object.keys(baseSchema).filter(
+      (keyword) => !unconstrainedKeywords.has(keyword),
+    );
+    if (unsupported.length)
+      throw new Error(`Unsupported constrained schema keywords: ${unsupported.join(', ')}`);
+    expression = 'z.unknown()';
+  }
 
   const addBranchIssues = (condition) =>
     `.superRefine((value, context) => { ${condition} for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path as (string | number)[], message: issue.message }); } } })`;
@@ -309,7 +347,7 @@ const zodFor = (schema, schemaName) => {
       if (!EventObjectLocatorSchemas[value.object_type as keyof typeof EventObjectLocatorSchemas].safeParse(value).success)
         context.addIssue({ code: 'custom', path: ['object_id'], message: 'Event object locator is invalid' });
     })`;
-  return nullable ? `${expression}.nullable()` : expression;
+  return types.length === 1 && nullable ? `${expression}.nullable()` : expression;
 };
 
 const canonicalUuidV4 = '550e8400-e29b-41d4-a716-446655440000';
@@ -463,20 +501,29 @@ const publicIdDeclarations = publicIdEntries
 const publicIdSchemaObject = publicIdEntries
   .map(([name]) => `${quote(name)}: ${pascalCase(name)}IdSchema`)
   .join(',');
-const publicIdExampleObject = publicIdEntries
+  const publicIdExampleObject = publicIdEntries
   .map(([name, schema]) => {
     if (schema.examples?.length !== 2)
       throw new Error(`${name} must publish exactly one ULID and one UUIDv4 example`);
     const branches = schema.oneOf ?? [];
-    const matches = schema.examples.map((example) =>
-      branches.map((branch) => new RegExp(branch.pattern).test(example)),
-    );
+    const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    const classified = schema.examples.map((example) => {
+      const matches = branches
+        .map((branch) => new RegExp(branch.pattern).test(example))
+        .map((matched, index) => (matched ? index : -1))
+        .filter((index) => index >= 0);
+      if (matches.length !== 1) throw new Error(`${name} example does not map to one branch`);
+      return { example, branch: matches[0], kind: uuidPattern.test(example) ? 'uuid' : 'ulid' };
+    });
     if (
-      matches.some((entry) => entry.filter(Boolean).length !== 1) ||
-      matches[0]?.[0] === matches[1]?.[0]
+      classified.filter((entry) => entry.kind === 'ulid').length !== 1 ||
+      classified.filter((entry) => entry.kind === 'uuid').length !== 1 ||
+      classified[0].branch === classified[1].branch
     )
       throw new Error(`${name} examples do not map one-to-one to canonical ID branches`);
-    return `${quote(name)}: { ulid: ${quote(schema.examples[0])}, uuid: ${quote(schema.examples[1])} }`;
+    const ulid = classified.find((entry) => entry.kind === 'ulid').example;
+    const uuid = classified.find((entry) => entry.kind === 'uuid').example;
+    return `${quote(name)}: { ulid: ${quote(ulid)}, uuid: ${quote(uuid)} }`;
   })
   .join(',');
 const anyPublicIdUnion = publicIdEntries.map(([name]) => `${pascalCase(name)}IdSchema`).join(',');
@@ -486,6 +533,10 @@ const output = (
     { parser: 'typescript', printWidth: 100, singleQuote: true, trailingComma: 'all' },
   )
 ).replace(
+  "import { z } from 'zod';\n\n",
+  "import { z } from 'zod';\n\nconst canonicalJson = (value: unknown): string => {\n  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';\n  if (value && typeof value === 'object') {\n    const object = value as Record<string, unknown>;\n    return '{' + Object.keys(object).sort().map((key) => JSON.stringify(key) + ':' + canonicalJson(object[key])).join(',') + '}';\n  }\n  return JSON.stringify(value);\n};\n\n",
+)
+.replace(
   "const [integer, fraction = ''] = value.split('.');",
   "const [integer = '', fraction = ''] = value.split('.');",
 );

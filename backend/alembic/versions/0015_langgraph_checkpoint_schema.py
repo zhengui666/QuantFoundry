@@ -54,30 +54,75 @@ _TABLES = {
     ),
 }
 
+_COLUMN_CONTRACTS = {
+    "checkpoint_migrations": {"v": ("INTEGER", False, False)},
+    "checkpoints": {
+        "thread_id": ("TEXT", False, False),
+        "checkpoint_ns": ("TEXT", False, True),
+        "checkpoint_id": ("TEXT", False, False),
+        "parent_checkpoint_id": ("TEXT", True, False),
+        "type": ("TEXT", True, False),
+        "checkpoint": ("JSONB", False, False),
+        "metadata": ("JSONB", False, True),
+    },
+    "checkpoint_blobs": {
+        "thread_id": ("TEXT", False, False),
+        "checkpoint_ns": ("TEXT", False, True),
+        "channel": ("TEXT", False, False),
+        "version": ("TEXT", False, False),
+        "type": ("TEXT", False, False),
+        "blob": ("BYTEA", True, False),
+    },
+    "checkpoint_writes": {
+        "thread_id": ("TEXT", False, False),
+        "checkpoint_ns": ("TEXT", False, True),
+        "checkpoint_id": ("TEXT", False, False),
+        "task_id": ("TEXT", False, False),
+        "idx": ("INTEGER", False, False),
+        "channel": ("TEXT", False, False),
+        "type": ("TEXT", True, False),
+        "blob": ("BYTEA", False, False),
+        "task_path": ("TEXT", False, True),
+    },
+}
+
 
 def _validate_existing_schema(bind: Any) -> None:
     inspector = sa.inspect(bind)
-    present = {
-        name: inspector.has_table(name, schema=SCHEMA) for name in _TABLES
-    }
+    present = {name: inspector.has_table(name, schema=SCHEMA) for name in _TABLES}
     if not all(present.values()):
         raise RuntimeError(
             "0015 found a partial LangGraph checkpoint schema; refusing adoption"
         )
     for name, (required_columns, primary_key) in _TABLES.items():
-        columns = {item["name"] for item in inspector.get_columns(name, schema=SCHEMA)}
+        inspected_columns = inspector.get_columns(name, schema=SCHEMA)
+        columns = {item["name"] for item in inspected_columns}
         if not required_columns <= columns:
             raise RuntimeError(
                 f"0015 checkpoint table {SCHEMA}.{name} is missing required columns"
             )
-        actual_key = set(
+        actual_key = (
             inspector.get_pk_constraint(name, schema=SCHEMA).get("constrained_columns")
-            or ()
+            or []
         )
-        if actual_key != primary_key:
+        if actual_key != list(primary_key):
             raise RuntimeError(
                 f"0015 checkpoint table {SCHEMA}.{name} has an incompatible primary key"
             )
+        for column in inspected_columns:
+            expected = _COLUMN_CONTRACTS[name].get(column["name"])
+            if expected is None:
+                continue
+            expected_type, nullable, requires_default = expected
+            actual_type = str(column["type"]).upper()
+            if expected_type not in actual_type or column["nullable"] is not nullable:
+                raise RuntimeError(
+                    f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} has an incompatible type/nullability"
+                )
+            if requires_default and column.get("default") is None:
+                raise RuntimeError(
+                    f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} is missing its required default"
+                )
     try:
         versions = {
             int(value)
@@ -89,7 +134,7 @@ def _validate_existing_schema(bind: Any) -> None:
         raise RuntimeError(
             "0015 existing LangGraph checkpoint migration versions are invalid"
         ) from error
-    if not set(range(10)) <= versions:
+    if versions != set(range(10)):
         raise RuntimeError(
             "0015 existing LangGraph checkpoint schema has incompatible migration versions"
         )
@@ -97,8 +142,13 @@ def _validate_existing_schema(bind: Any) -> None:
 
 def upgrade() -> None:
     bind = op.get_bind()
-    if bind.dialect.name != "postgresql":
+    if bind.dialect.name == "sqlite":
+        # SQLite agents use the dedicated SqliteSaver file and call setup()
+        # against that file at runtime; this PostgreSQL-only revision has no
+        # domain checkpoint objects to create on the domain SQLite database.
         return
+    if bind.dialect.name != "postgresql":
+        raise RuntimeError("0015 LangGraph checkpoint schema requires PostgreSQL")
     op.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
     inspector = sa.inspect(bind)
     existing = any(inspector.has_table(name, schema=SCHEMA) for name in _TABLES)

@@ -25,6 +25,7 @@ async function reconcileActiveClients(sender) {
     allClients.push(sender)
   }
   const liveClientIds = new Set(allClients.map((client) => client.id))
+  if (generation !== lifecycleGeneration) return allClients
 
   for (const clientId of activeClientIds) {
     if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)

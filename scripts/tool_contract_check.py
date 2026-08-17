@@ -64,7 +64,9 @@ def main() -> None:
     if identities != expected_identities:
         missing = sorted(expected_identities - identities)
         extra = sorted(identities - expected_identities)
-        raise SystemExit(f"Tool identity set mismatch: missing={missing}, extra={extra}")
+        raise SystemExit(
+            f"Tool identity set mismatch: missing={missing}, extra={extra}"
+        )
 
     for tool in tools:
         Draft202012Validator.check_schema(tool["input_schema"])

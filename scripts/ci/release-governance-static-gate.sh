@@ -64,6 +64,13 @@ def shell_command_nodes(command):
 
 def contains_command(command, expected):
     wanted = shlex.split(expected, comments=True, posix=True)
+
+    def matches(actual, expected_token):
+        return actual == expected_token or (
+            expected_token.startswith("scripts/")
+            and actual.endswith("/" + expected_token)
+        )
+
     for operator, node in shell_command_nodes(command):
         if not node or node[0] in {"false", "true", "echo", "printf", "exit"}:
             continue
@@ -72,7 +79,12 @@ def contains_command(command, expected):
             actual = actual[1:]
             while actual and "=" in actual[0]:
                 actual = actual[1:]
-        if any(actual[index : index + len(wanted)] == wanted for index in range(len(actual))):
+        if any(
+            all(matches(actual_token, expected_token) for actual_token, expected_token in zip(
+                actual[index : index + len(wanted)], wanted
+            ))
+            for index in range(len(actual) - len(wanted) + 1)
+        ):
             return True
     return False
 

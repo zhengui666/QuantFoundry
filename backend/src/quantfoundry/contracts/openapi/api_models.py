@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ipaddress
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
@@ -78,11 +77,13 @@ class LiveConnectorValidationRequest(BaseModel):
         except ValueError as error:
             raise ValueError("endpoint must contain a valid HTTPS port") from error
         try:
-            address = ipaddress.ip_address(parsed.hostname)
-        except ValueError:
-            address = None
-        if address is not None and not address.is_global:
-            raise ValueError("endpoint must use a globally routable address")
+            from quantfoundry.live.connector import _connector_endpoint_addresses
+
+            _connector_endpoint_addresses(value)
+        except ValueError as error:
+            raise ValueError(
+                "endpoint must resolve only to globally routable addresses"
+            ) from error
         return value.rstrip("/")
 
 
@@ -136,6 +137,13 @@ for _model in SCHEMA_MODELS.values():
 # Compatibility bridge: UX-001 models are not part of the OpenAPI-generated module yet.
 from app import generated_api_models as _ux_models  # noqa: E402
 
+_ALLOWED_COMPATIBILITY_OVERRIDES = {
+    "ApiProblem",
+    "CanonicalErrorCode",
+    "FieldError",
+    "ProblemContext",
+}
+
 for _name in (
     "GeneralAccessKeyLoginRequest",
     "GeneralAccessKeyMetadata",
@@ -166,7 +174,15 @@ for _name in (
     "FieldError",
     "ProblemContext",
 ):
-    SCHEMA_MODELS[_name] = cast(type[BaseModel], getattr(_ux_models, _name))
+    _compat_model = cast(type[BaseModel], getattr(_ux_models, _name))
+    _existing_model = SCHEMA_MODELS.get(_name)
+    if (
+        _existing_model is not None
+        and _existing_model is not _compat_model
+        and _name not in _ALLOWED_COMPATIBILITY_OVERRIDES
+    ):
+        raise RuntimeError(f"schema model collision for {_name}")
+    SCHEMA_MODELS[_name] = _compat_model
 
 
 def validate_schema(name: str, value: Any) -> Any:

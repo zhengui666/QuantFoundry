@@ -32,6 +32,7 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
             "ACKNOWLEDGED",
             "PARTIALLY_FILLED",
             "FILLED",
+            "EXPIRED",
             "UNKNOWN",
             "RECONCILING",
             "REJECTED",
@@ -169,7 +170,7 @@ def apply_fill(
     cumulative_quantity: str,
     order_quantity: str,
     previous_cumulative_quantity: str | None = None,
-    terminal: bool = False,
+    terminal_status: OrderStatus | None = None,
     known_fill_quantities: Mapping[str, str] | None = None,
 ) -> tuple[OrderStatus, frozenset[str], bool]:
     """Return status, fill-id set and whether this fill changed state."""
@@ -212,12 +213,14 @@ def apply_fill(
         raise LivePolicyError(
             "previous cumulative quantity is required after a prior fill"
         )
+    if terminal_status is not None and terminal_status not in {
+        "CANCELLED",
+        "EXPIRED",
+        "FILLED",
+    }:
+        raise LivePolicyError("terminal status is invalid")
     target: OrderStatus = (
-        "FILLED"
-        if cumulative == quantity
-        else "EXPIRED"
-        if terminal
-        else "PARTIALLY_FILLED"
+        "FILLED" if cumulative == quantity else terminal_status or "PARTIALLY_FILLED"
     )
     next_status = (
         current

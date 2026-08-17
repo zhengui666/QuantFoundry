@@ -213,6 +213,11 @@ def _persist_section14_snapshot(
     dataset_coverage_start = min(dataset_dates)
     dataset_coverage_end = max(dataset_dates)
     provider_id = source.provider_id
+    expected_bundle_provider = {
+        "LOCAL_DETERMINISTIC_DATA": "LOCAL_DETERMINISTIC",
+    }.get(provider_id, provider_id)
+    if bundle.provider_id != expected_bundle_provider:
+        raise InvalidJobState("dataset provider identity conflicts with source")
     provider_row = (
         session.execute(
             select(providers).where(
@@ -253,11 +258,12 @@ def _persist_section14_snapshot(
             except json.JSONDecodeError:
                 provider_config = None
         if (
-            isinstance(provider_config, dict)
-            and "adapter_version" in provider_config
-            and (
-                provider_row["adapter_key"] != bundle.adapter_key
-                or provider_config != {"adapter_version": bundle.adapter_version}
+            not isinstance(provider_config, dict)
+            or provider_row["adapter_key"]
+            not in {bundle.adapter_key, provider_id.lower(), source.provider_id.lower()}
+            or (
+                provider_config.get("adapter_version") is not None
+                and provider_config["adapter_version"] != bundle.adapter_version
             )
         ):
             raise InvalidJobState("provider identity conflicts with snapshot request")
@@ -746,6 +752,50 @@ def _factor_evidence_for_snapshot(
         artifact_id = result_ref.get("artifact_id")
         if not isinstance(artifact_id, str):
             continue
+        artifact_row = session.execute(
+            select(ArtifactRow).where(
+                ArtifactRow.artifact_id == artifact_id,
+                ArtifactRow.workspace_id == workspace_id,
+            )
+        ).scalar_one_or_none()
+        experiment_evidence = False
+        if candidate.job_type == "EXPERIMENT":
+            experiment = session.execute(
+                select(ExperimentRow).where(
+                    ExperimentRow.id == result_ref.get("object_id"),
+                    ExperimentRow.workspace_id == workspace_id,
+                    ExperimentRow.immutable.is_(True),
+                    ExperimentRow.status == "COMPLETED",
+                )
+            ).scalar_one_or_none()
+            experiment_detail = (
+                json.loads(experiment.detail) if experiment is not None else {}
+            )
+            experiment_evidence = (
+                result_ref.get("object_type") == "experiment"
+                and experiment is not None
+                and experiment_detail.get("factor_ref")
+                == {"id": factor_id, "version": factor_version}
+                and experiment_detail.get("data_snapshot_id") == snapshot_id
+            )
+        if (
+            artifact_row is None
+            or artifact_row.job_id != candidate.id
+            or artifact_row.kind
+            not in (
+                {"factor_analysis"}
+                if not experiment_evidence
+                else {"experiment_result"}
+            )
+            or (
+                not experiment_evidence
+                and (
+                    result_ref.get("object_type") != "factor"
+                    or result_ref.get("object_id") != factor_id
+                )
+            )
+        ):
+            continue
         evidence = _artifact_payload(session, artifact_id, workspace_id)
         if (
             evidence.get("factor_id") == factor_id
@@ -924,6 +974,8 @@ def _complete_experiment(
             "parameters_sha256",
             "factor_ref",
             "strategy_ref",
+            "engine",
+            "adapter",
         )
         if any(detail.get(key) != source_detail.get(key) for key in immutable_inputs):
             raise InvalidJobState("reproduction changed an immutable research input")
@@ -1009,7 +1061,9 @@ def _complete_experiment(
             factor_detail["formula"]["expression"],
             factor_parameters,
         )
-        metrics = factor_metrics(calculated_rows, [1], market_rows=canonical_market_rows)
+        metrics = factor_metrics(
+            calculated_rows, [1], market_rows=canonical_market_rows
+        )
         factor_evidence = {
             "factor_id": factor_row.id,
             "factor_version": 1,
@@ -2828,7 +2882,7 @@ def _run_parameter_sensitivity(
     canonical_market_rows = _snapshot_market_rows(
         session, snapshot.id, job.workspace_id
     )
-    signal_rows, _factor_bindings = _strategy_signal_rows(
+    signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=detail,
         snapshot_id=snapshot.id,
@@ -2861,6 +2915,7 @@ def _run_parameter_sensitivity(
         cost_row is None
         or cost_row.content_sha256 != inputs["cost_model_sha256"]
         or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != inputs["cost_model_sha256"]
     ):
         raise InvalidJobState("parameter sensitivity cost model binding changed")
     results = [
@@ -2889,9 +2944,31 @@ def _run_parameter_sensitivity(
         "strategy_id": strategy.strategy_id,
         "strategy_version": strategy.version,
         "snapshot_id": snapshot.id,
+        "factor_bindings": factor_bindings,
         "results": results,
     }
-    artifact_id = _artifact(session, job, "parameter_sensitivity", output)
+    provenance = _provenance(
+        session,
+        input_value=inputs,
+        output_sha256=content_hash(output),
+        engine_name=inputs.get("engine_key", "qf-simulation-v1"),
+        engine_version=inputs.get("engine_version", "1.0.0"),
+        data_snapshot_ids=[snapshot.id],
+        strategy={
+            "id": strategy.strategy_id,
+            "version": strategy.version,
+            "sha256": strategy.spec_sha256,
+        },
+        factors=_provenance_factor_refs(factor_bindings),
+        cost_model=_cost_ref(cost),
+        parameters_sha256=content_hash(inputs.get("parameters", [])),
+    )
+    artifact_id = _artifact(
+        session,
+        job,
+        "parameter_sensitivity",
+        {**output, "provenance_id": provenance["provenance_id"]},
+    )
     return _job_result_ref(
         "strategy_version",
         strategy.strategy_id,

@@ -332,9 +332,7 @@ def _advertise_validation_schema(
     for line in lines:
         offsets.append(offsets[-1] + len(line))
     start = offsets[target.lineno - 1]
-    end = offsets[cast(int, target.end_lineno) - 1] + cast(
-        int, target.end_col_offset
-    )
+    end = offsets[cast(int, target.end_lineno) - 1] + cast(int, target.end_col_offset)
     class_source = source[start:end]
     config_marker = "    model_config = ConfigDict("
     config_start = class_source.find(config_marker)
@@ -444,7 +442,24 @@ def _merge_structural_all_of(value: Any, schemas: dict[str, dict[str, Any]]) -> 
         and isinstance(branches[0], dict)
         and not any(key in branches[0] for key in ("if", "then", "else"))
     ):
-        current = deepcopy(branches[0])
+        branch = deepcopy(branches[0])
+        if set(branch) == {"$ref"}:
+            branch = deepcopy(schemas[branch["$ref"].rsplit("/", 1)[-1]])
+        current.pop("allOf")
+        for key, branch_value in branch.items():
+            if key == "properties" and isinstance(branch_value, dict):
+                current[key] = {
+                    **cast(dict[str, Any], current.get(key, {})),
+                    **branch_value,
+                }
+            elif key == "required" and isinstance(branch_value, list):
+                current[key] = list(
+                    dict.fromkeys(
+                        [*cast(list[Any], current.get(key, [])), *branch_value]
+                    )
+                )
+            elif key not in current:
+                current[key] = branch_value
     elif isinstance(branches, list) and all(
         isinstance(branch, dict)
         and not any(key in branch for key in ("if", "then", "else", "oneOf", "anyOf"))

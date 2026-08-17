@@ -41,15 +41,22 @@ def main() -> int:
         print(f"control_db={target} schema=UX001_D1_R1")
         return 0
 
-    from app.control_plane import CONTROL_SCHEMA_VERSION, _control_path, init_control_db
+    from app.control_plane import (
+        CONTROL_ENGINE,
+        CONTROL_SCHEMA_VERSION,
+        _control_path,
+        init_control_db,
+    )
 
     root = Path(__file__).resolve().parents[1]
     config = Config(str(root / "alembic_control.ini"))
     config.set_main_option(
         "script_location", str(root / "alembic_control").replace("%", "%%")
     )
-    command.upgrade(config, "head")
-    init_control_db()
+    with CONTROL_ENGINE.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+        init_control_db(connection)
     target = (
         make_url(configured_url).render_as_string(hide_password=True)
         if configured_url

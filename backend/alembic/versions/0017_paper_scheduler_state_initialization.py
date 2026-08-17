@@ -426,7 +426,7 @@ def _validate_evidence(
         and is_public_id("domain_event", evidence["state_transition_id"])
         and str(evidence["workspace_id"]) == str(deployment["workspace_id"])
         and evidence["paper_id"] == deployment["paper_id"]
-        and evidence["from_state"] in {None, "STOPPED"}
+        and evidence["from_state"] in {None, *_STATUS_MAP}
         and evidence["to_state"] == baseline["scheduler_status"]
         and effective == initialization == evidence_watermark == baseline_watermark
         and (
@@ -923,14 +923,17 @@ def _initialize_missing_baselines(bind: Connection) -> None:
         )
         if deployment_mapping["status"] == "STOPPED":
             deployment_mapping["_legacy_status"] = "STOPPED"
+            deployment_mapping["revision"] = int(deployment_mapping["revision"]) + 1
             bind.execute(
                 deployments.update()
                 .where(deployments.c.id == deployment_mapping["id"])
                 .where(deployments.c.workspace_id == deployment_mapping["workspace_id"])
-                .values(status="DISABLED")
+                .values(
+                    status="DISABLED",
+                    revision=deployment_mapping["revision"],
+                )
             )
             deployment_mapping["status"] = "DISABLED"
-            deployment_mapping["revision"] = int(deployment_mapping["revision"]) + 1
         _insert_baseline(
             bind,
             states,
@@ -970,4 +973,198 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """0017 changes data only; 0016 owns the table schema."""
+    """Remove only the baselines and evidence written by this revision."""
+    bind = op.get_bind()
+    deployments, states, audit_events, domain_events, heads, watermarks = _tables(bind)
+    owned_audits = (
+        bind.execute(
+            select(audit_events)
+            .where(
+                audit_events.c.actor_id == "alembic:0017",
+                audit_events.c.action_type == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+            )
+            .with_for_update()
+        )
+        .mappings()
+        .all()
+    )
+    if not owned_audits:
+        return
+
+    owned: list[tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]] = []
+    for audit in owned_audits:
+        summary = _mapping_value(audit.get("summary"))
+        evidence = summary.get(_EVIDENCE_KEY) if summary else None
+        if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
+            raise RuntimeError("0017 downgrade found ambiguous scheduler evidence")
+        deployment_rows = (
+            bind.execute(
+                select(deployments).where(
+                    deployments.c.workspace_id == evidence["workspace_id"],
+                    deployments.c.paper_id == evidence["paper_id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if len(deployment_rows) != 1:
+            raise RuntimeError("0017 downgrade found ambiguous paper deployment")
+        state_rows = (
+            bind.execute(
+                select(states).where(
+                    states.c.workspace_id == deployment_rows[0]["workspace_id"],
+                    states.c.paper_id == deployment_rows[0]["id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
+        event_rows = (
+            bind.execute(
+                select(domain_events).where(
+                    domain_events.c.workspace_id == evidence["workspace_id"],
+                    domain_events.c.event_id == evidence["state_transition_id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if len(state_rows) != 1 or len(event_rows) != 1:
+            raise RuntimeError("0017 downgrade found incomplete scheduler evidence")
+        owned.append((audit, evidence, deployment_rows[0]))
+
+    workspaces = {str(evidence["workspace_id"]) for _, evidence, _ in owned}
+    _drop_downgrade_guards(bind)
+    try:
+        for audit, evidence, deployment in owned:
+            bind.execute(
+                states.delete().where(
+                    states.c.workspace_id == deployment["workspace_id"],
+                    states.c.paper_id == deployment["id"],
+                )
+            )
+            bind.execute(
+                domain_events.delete().where(
+                    domain_events.c.workspace_id == evidence["workspace_id"],
+                    domain_events.c.event_id == evidence["state_transition_id"],
+                )
+            )
+            bind.execute(
+                audit_events.delete().where(
+                    audit_events.c.workspace_id == audit["workspace_id"],
+                    audit_events.c.sequence == audit["sequence"],
+                )
+            )
+            if evidence["from_state"] == "STOPPED":
+                if (
+                    deployment["status"] != "DISABLED"
+                    or int(deployment["revision"]) < 2
+                ):
+                    raise RuntimeError(
+                        "0017 downgrade found an unexpected STOPPED deployment"
+                    )
+                bind.execute(
+                    deployments.update()
+                    .where(deployments.c.id == deployment["id"])
+                    .where(deployments.c.workspace_id == deployment["workspace_id"])
+                    .values(status="STOPPED", revision=int(deployment["revision"]) - 1)
+                )
+        for workspace_id in workspaces:
+            remaining_audit = bind.execute(
+                select(audit_events.c.event_hash)
+                .where(audit_events.c.workspace_id == workspace_id)
+                .order_by(audit_events.c.sequence.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            head = (
+                bind.execute(select(heads).where(heads.c.workspace_id == workspace_id))
+                .mappings()
+                .one_or_none()
+            )
+            if head is not None:
+                inserted = sum(
+                    1
+                    for _, evidence, _ in owned
+                    if str(evidence["workspace_id"]) == workspace_id
+                )
+                previous_revision = int(head["revision"]) - inserted
+                if remaining_audit is None and previous_revision <= 0:
+                    bind.execute(
+                        heads.delete().where(heads.c.workspace_id == workspace_id)
+                    )
+                else:
+                    bind.execute(
+                        heads.update()
+                        .where(heads.c.workspace_id == workspace_id)
+                        .values(
+                            event_sha256=remaining_audit,
+                            revision=max(1, previous_revision),
+                        )
+                    )
+            last_event = bind.execute(
+                select(domain_events.c.sequence)
+                .where(domain_events.c.workspace_id == workspace_id)
+                .order_by(domain_events.c.sequence.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            bind.execute(
+                watermarks.update()
+                .where(watermarks.c.workspace_id == workspace_id)
+                .values(last_sequence=int(last_event or 0))
+            )
+    finally:
+        _restore_downgrade_guards(bind)
+
+
+def _drop_downgrade_guards(bind: Connection) -> None:
+    if bind.dialect.name == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS qf_audit_events_immutable ON audit_events")
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_domain_events_update_immutable ON domain_events"
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_domain_events_delete_immutable ON domain_events"
+        )
+    elif bind.dialect.name == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS qf_audit_events_update_immutable")
+        op.execute("DROP TRIGGER IF EXISTS qf_audit_events_delete_immutable")
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_delete_immutable")
+    else:
+        raise RuntimeError(
+            f"0017 downgrade does not support dialect {bind.dialect.name}"
+        )
+
+
+def _restore_downgrade_guards(bind: Connection) -> None:
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "CREATE TRIGGER qf_audit_events_immutable BEFORE UPDATE OR DELETE ON "
+            "audit_events FOR EACH ROW EXECUTE FUNCTION qf_reject_change()"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
+            "domain_events FOR EACH ROW EXECUTE FUNCTION qf_reject_change()"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_delete_immutable BEFORE DELETE ON "
+            "domain_events FOR EACH ROW EXECUTE FUNCTION qf_reject_unexpired_event_delete()"
+        )
+    else:
+        op.execute(
+            "CREATE TRIGGER qf_audit_events_update_immutable BEFORE UPDATE ON "
+            "audit_events BEGIN SELECT RAISE(ABORT, 'immutable evidence cannot be changed'); END"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_audit_events_delete_immutable BEFORE DELETE ON "
+            "audit_events BEGIN SELECT RAISE(ABORT, 'immutable evidence cannot be changed'); END"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
+            "domain_events BEGIN SELECT RAISE(ABORT, 'immutable evidence cannot be changed'); END"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_delete_immutable BEFORE DELETE ON "
+            "domain_events WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN SELECT "
+            "RAISE(ABORT, 'unexpired event cannot be deleted'); END"
+        )

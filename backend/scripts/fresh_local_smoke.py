@@ -288,7 +288,15 @@ def main() -> None:
             raise RuntimeError("fresh local smoke root must be empty")
     else:
         root = Path(tempfile.mkdtemp(prefix="qf-local-"))
-    environment = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV") or "local"
+    configured_environment = os.getenv("QF_ENVIRONMENT")
+    legacy_environment = os.getenv("QF_ENV")
+    if (
+        configured_environment is not None
+        and legacy_environment is not None
+        and configured_environment != legacy_environment
+    ):
+        raise RuntimeError("QF_ENVIRONMENT and QF_ENV disagree")
+    environment = configured_environment or legacy_environment or "local"
     if environment not in {"local", "development", "test"}:
         raise RuntimeError(
             "fresh local smoke is forbidden outside local/development/test"
@@ -340,11 +348,17 @@ def main() -> None:
         provider.serve_forever()
 
     provider_thread = threading.Thread(target=serve_provider, daemon=True)
-    provider_thread.start()
-    if not provider_started.wait(timeout=2):
-        raise RuntimeError("local provider failed to start")
-    provider_url = f"http://127.0.0.1:{provider.server_address[1]}/v1"
-    os.environ["QF_CODEX_BASE_URL"] = provider_url
+    try:
+        provider_thread.start()
+        if not provider_started.wait(timeout=2):
+            raise RuntimeError("local provider failed to start")
+        provider_url = f"http://127.0.0.1:{provider.server_address[1]}/v1"
+        os.environ["QF_CODEX_BASE_URL"] = provider_url
+    except BaseException:
+        provider.shutdown()
+        provider.server_close()
+        provider_thread.join(timeout=2)
+        raise
     try:
         health = httpx.get(
             f"http://127.0.0.1:{provider.server_address[1]}/healthz", timeout=2
@@ -581,7 +595,7 @@ def main() -> None:
                 ),
                 202,
             )
-        observed_analyze_wait, _diagnostic = _drive_worker_turns(
+        observed_analyze_wait, _ = _drive_worker_turns(
             lambda iteration: run_agent_once(identity=f"fresh-local-agent-{iteration}"),
             lambda iteration: run_once(identity=f"fresh-local-core-{iteration}"),
             lambda: _workflow_observation(

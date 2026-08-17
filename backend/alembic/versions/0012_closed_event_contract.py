@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 
 from alembic import op
+from quantfoundry.domain.value_objects.public_ids import is_public_id
 
 revision = "0012_closed_events"
 down_revision = "0011_provider_credentials"
@@ -130,10 +132,57 @@ def _fallback_object_id(object_type: str, workspace_id: str, sequence: int) -> s
     if object_type == "agent_config":
         return "RESEARCH_DIRECTOR"
     if object_type == "provider_connection":
-        return _migrated_public_id("CONN", workspace_id, sequence).removeprefix(
-            "CONN-"
-        )
+        return _migrated_public_id("CONN", workspace_id, sequence).removeprefix("CONN-")
     return _migrated_public_id(prefixes[object_type], workspace_id, sequence)
+
+
+_OBJECT_ID_KINDS = {
+    "job": "job",
+    "research": "research",
+    "conclusion": "conclusion",
+    "experiment": "experiment",
+    "factor": "factor",
+    "strategy_version": "strategy",
+    "validation": "validation",
+    "approval": "approval",
+    "paper": "paper",
+    "paper_run": "paper_run",
+    "review": "performance_review",
+    "capability": "capability",
+    "snapshot": "snapshot",
+    "agent_run": "agent_run",
+    "tool_call": "tool_call",
+    "memo": "memo",
+    "notification": "notification",
+}
+
+
+def _valid_existing_object_id(object_type: str, value: str | None) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if object_type == "settings":
+        return value == "SETTINGS-DEFAULT"
+    if object_type == "agent_config":
+        return value in {
+            "RESEARCH_DIRECTOR",
+            "FACTOR_SCIENTIST",
+            "STRATEGY_SCIENTIST",
+            "PORTFOLIO_ANALYST",
+            "RED_TEAM_RESEARCHER",
+            "PERFORMANCE_ANALYST",
+        }
+    if object_type == "provider_connection":
+        return (
+            re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                value,
+            )
+            is not None
+        )
+    if object_type == "event_stream":
+        return is_public_id("domain_event", value)
+    kind = _OBJECT_ID_KINDS.get(object_type)
+    return kind is not None and is_public_id(kind, value)
 
 
 def _canonical_event_type(value: str | None) -> str:
@@ -205,7 +254,8 @@ def upgrade() -> None:
     rows = (
         connection.execute(
             sa.text(
-                "SELECT workspace_id, sequence, event_id, event_type, payload "
+                "SELECT workspace_id, sequence, event_id, event_type, object_id, "
+                "object_type, payload "
                 "FROM domain_events"
             )
         )
@@ -215,9 +265,19 @@ def upgrade() -> None:
     for row in rows:
         event_type = _canonical_event_type(row["event_type"])
         object_type = EVENT_OBJECT_TYPES[event_type]
-        object_id = row["event_id"] or _fallback_object_id(
-            object_type, row["workspace_id"], row["sequence"]
+        event_id = (
+            row["event_id"]
+            if is_public_id("domain_event", row["event_id"] or "")
+            else _migrated_public_id("EVT", row["workspace_id"], row["sequence"])
         )
+        if event_type == "system.resync_required":
+            object_id = event_id
+        elif _valid_existing_object_id(object_type, row["object_id"]):
+            object_id = row["object_id"]
+        else:
+            object_id = _fallback_object_id(
+                object_type, row["workspace_id"], row["sequence"]
+            )
         payload = (
             json.dumps(
                 {"state": "RESYNC_REQUIRED", "status": None},
@@ -233,7 +293,7 @@ def upgrade() -> None:
                 SET event_id = :event_id,
                     event_type = :event_type,
                     object_type = :object_type,
-                    object_id = COALESCE(object_id, :object_id),
+                    object_id = :object_id,
                     payload = :payload,
                     request_id = COALESCE(request_id, :request_id),
                     occurred_at = COALESCE(occurred_at, :occurred_at),
@@ -244,10 +304,7 @@ def upgrade() -> None:
             {
                 "workspace_id": row["workspace_id"],
                 "sequence": row["sequence"],
-                "event_id": row["event_id"]
-                or _migrated_public_id(
-                    "EVT", row["workspace_id"], row["sequence"]
-                ),
+                "event_id": event_id,
                 "event_type": event_type,
                 "object_type": object_type,
                 "object_id": object_id,

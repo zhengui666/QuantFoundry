@@ -52,7 +52,9 @@ def provision(email: str, workspace_name: str, ttl_hours: int) -> tuple[str, str
     session = SessionLocal()
     try:
         if session.get_bind().dialect.name != "postgresql":
-            raise RuntimeError("OWNER bootstrap requires the production PostgreSQL store")
+            raise RuntimeError(
+                "OWNER bootstrap requires the production PostgreSQL store"
+            )
         session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:identity, 0))"),
             {"identity": email},
@@ -67,7 +69,9 @@ def provision(email: str, workspace_name: str, ttl_hours: int) -> tuple[str, str
             session.add(user)
             session.flush()
         elif user.role != "OWNER":
-            raise RuntimeError("existing account is not an OWNER; refusing privilege change")
+            raise RuntimeError(
+                "existing account is not an OWNER; refusing privilege change"
+            )
 
         workspace = session.execute(
             select(Workspace)

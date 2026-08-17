@@ -44,13 +44,11 @@ def upgrade() -> None:
         sa.Column(
             "workspace_id",
             sa.String(),
-            sa.ForeignKey("workspaces.id"),
             nullable=False,
         ),
         sa.Column(
             "owner_actor_id",
             sa.String(),
-            sa.ForeignKey("users.id"),
             nullable=False,
         ),
         sa.Column("provider_id", sa.String(64), nullable=False),
@@ -81,8 +79,13 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "(status = 'VALIDATED' AND consumed_at IS NULL AND expires_at IS NOT NULL) OR "
             "(status = 'ACTIVE' AND consumed_at IS NOT NULL AND expires_at IS NULL) OR "
-            "(status = 'REVOKED' AND consumed_at IS NOT NULL AND expires_at IS NULL)",
+            "(status = 'REVOKED' AND expires_at IS NULL)",
             name="provider_connection_lifecycle",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "owner_actor_id"],
+            ["workspaces.id", "workspaces.owner_id"],
+            name="fk_provider_connections_workspace_owner",
         ),
         sa.UniqueConstraint(
             "workspace_id",

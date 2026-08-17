@@ -55,10 +55,7 @@ def _report(connection) -> dict[str, object]:
             "EMPTY"
             if users == 0 and workspaces == 0
             else "READY"
-            if users == 1
-            and workspaces == 1
-            and owners == 1
-            and owner_workspaces == 1
+            if users == 1 and workspaces == 1 and owners == 1 and owner_workspaces == 1
             else "QUARANTINE"
         ),
     }
@@ -71,6 +68,22 @@ def _restore_env(name: str, value: str | None) -> None:
         os.environ[name] = value
 
 
+def _apply_migration(config: Config, database_url: str, connection=None) -> None:
+    if connection is not None:
+        config.attributes["connection"] = connection
+    else:
+        config.attributes.pop("connection", None)
+    previous_alembic = os.environ.get("QF_ALEMBIC_URL")
+    previous_database = os.environ.get("QF_DATABASE_URL")
+    os.environ["QF_ALEMBIC_URL"] = database_url
+    os.environ["QF_DATABASE_URL"] = database_url
+    try:
+        command.upgrade(config, "head")
+    finally:
+        _restore_env("QF_ALEMBIC_URL", previous_alembic)
+        _restore_env("QF_DATABASE_URL", previous_database)
+
+
 def main() -> int:
     migrate = len(sys.argv) == 2 and sys.argv[1] == "--migrate"
     if len(sys.argv) > 1 and not migrate:
@@ -81,26 +94,40 @@ def main() -> int:
         print(json.dumps({"status": "QUARANTINE", "reason": "DATABASE_URL_MISSING"}))
         return 2
     engine = None
+    report: dict[str, object] = {
+        "users": None,
+        "workspaces": None,
+        "owners": None,
+        "status": "QUARANTINE",
+        "reason": "PREFLIGHT_NOT_COMPLETED",
+    }
     try:
         engine = create_engine(database_url, pool_pre_ping=True)
-        with engine.begin() as connection:
+        root = Path(__file__).resolve().parents[1]
+        config = Config(str(root / "alembic.ini"))
+        with engine.connect() as connection:
             report = _report(connection)
             if migrate and report["status"] in {"READY", "EMPTY"}:
-                root = Path(__file__).resolve().parents[1]
-                config = Config(str(root / "alembic.ini"))
-                config.attributes["connection"] = connection
-                previous_alembic = os.environ.get("QF_ALEMBIC_URL")
-                previous_database = os.environ.get("QF_DATABASE_URL")
-                os.environ["QF_ALEMBIC_URL"] = database_url
-                os.environ["QF_DATABASE_URL"] = database_url
-                try:
-                    command.upgrade(config, "head")
-                finally:
-                    _restore_env("QF_ALEMBIC_URL", previous_alembic)
-                    _restore_env("QF_DATABASE_URL", previous_database)
-                report = {**report, "migration": "APPLIED"}
-    except (SQLAlchemyError, ValueError) as error:
-        reason = "DATABASE_UNAVAILABLE" if isinstance(error, SQLAlchemyError) else "INVALID_DATABASE"
+                if connection.dialect.name != "sqlite":
+                    with connection.begin():
+                        _apply_migration(config, database_url, connection)
+                    report = {**report, "migration": "APPLIED"}
+        if (
+            migrate
+            and report["status"] in {"READY", "EMPTY"}
+            and database_url.startswith("sqlite")
+        ):
+            _apply_migration(config, database_url)
+            with engine.connect() as connection:
+                report = {**_report(connection), "migration": "APPLIED"}
+    except Exception as error:
+        reason = (
+            "DATABASE_UNAVAILABLE"
+            if isinstance(error, SQLAlchemyError)
+            else "INVALID_DATABASE"
+            if isinstance(error, ValueError)
+            else "MIGRATION_FAILED"
+        )
         report = {
             "users": None,
             "workspaces": None,

@@ -605,15 +605,15 @@ def compute_factor_rows(
     for key, value in (parameters or {}).items():
         resolved = resolved.replace("{" + key + "}", value)
     if resolved == "close":
-        calculated = [
+        calculated_close = [
             {**row, "factor_score": float(row["close"])}
             for row in rows
             if _parse_timestamp(row["available_at"], "available_at")
             <= _parse_timestamp(row["event_time"], "event_time")
         ]
-        if not calculated:
+        if not calculated_close:
             raise EngineInputError("factor formula has no PIT-visible rows")
-        return calculated
+        return calculated_close
     match = re.fullmatch(r"(momentum|return|mean_reversion)_(\d+)", resolved)
     if match is None:
         raise EngineInputError(f"unsupported factor expression: {expression}")
@@ -663,6 +663,8 @@ def factor_metrics(
 ) -> dict[str, Any]:
     if not horizons or any(value < 1 for value in horizons):
         raise EngineInputError("factor horizons must be positive")
+    if len(horizons) != len(set(horizons)):
+        raise EngineInputError("factor horizons must be unique")
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
     sectors: dict[str, dict[str, str]] = defaultdict(dict)
     canonical_rows = rows if market_rows is None else market_rows
@@ -1049,8 +1051,15 @@ def _portfolio_returns(
         turnovers.append(turnover)
         exposures.append(sum(abs(value) for value in target.values()))
         for symbol in set(holding_age) | set(target):
-            if abs(target.get(symbol, 0.0)) > 1e-12:
-                holding_age[symbol] = holding_age.get(symbol, 0) + 1
+            prior = previous_weights.get(symbol, 0.0)
+            current = target.get(symbol, 0.0)
+            if abs(current) > 1e-12:
+                if prior * current < -(1e-12):
+                    if symbol in holding_age:
+                        holding_periods.append(holding_age[symbol])
+                    holding_age[symbol] = 1
+                else:
+                    holding_age[symbol] = holding_age.get(symbol, 0) + 1
             elif symbol in holding_age:
                 holding_periods.append(holding_age.pop(symbol))
         trade_count += sum(
@@ -1198,7 +1207,9 @@ def simulation_metrics(
         "exposure": statistics.fmean(exposures),
         "cash_weight": 1.0 - sum(final_weights.values()),
         "final_weights": final_weights,
-        "risk_contribution": _risk_contribution(rows, final_weights),
+        "risk_contribution": _risk_contribution(
+            rows if market_rows is None else market_rows, final_weights
+        ),
         "returns": returns,
     }
     if not math.isfinite(benchmark_wealth) or any(
@@ -1249,13 +1260,34 @@ def validation_checks(
     )
     split_ok = split_ok and row_bounds_ok
     leakage_ok = all(row["partition"] == "VALIDATION" for row in rows)
+    try:
+        observations = int(metrics["observations"])
+        maximum_drawdown = float(metrics["maximum_drawdown"])
+        turnover = float(metrics["turnover"])
+        commission = float(metrics["commission"])
+        slippage = float(metrics["slippage"])
+        returns = metrics["returns"]
+        if not isinstance(returns, list):
+            raise TypeError("returns must be a list")
+        parsed_returns = [float(value) for value in returns]
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise EngineInputError("validation metrics are malformed") from error
     numerical_ok = (
-        int(metrics["observations"]) >= 2
-        and -1.0 <= float(metrics["maximum_drawdown"]) <= 0.0
-        and float(metrics["turnover"]) >= 0.0
-        and float(metrics["commission"]) >= 0.0
-        and float(metrics["slippage"]) >= 0.0
-        and all(math.isfinite(float(value)) for value in metrics["returns"])
+        observations >= 2
+        and all(
+            math.isfinite(value)
+            for value in (
+                maximum_drawdown,
+                turnover,
+                commission,
+                slippage,
+                *parsed_returns,
+            )
+        )
+        and -1.0 <= maximum_drawdown <= 0.0
+        and turnover >= 0.0
+        and commission >= 0.0
+        and slippage >= 0.0
     )
     checks = [
         (

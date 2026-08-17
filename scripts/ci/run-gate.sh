@@ -6,6 +6,7 @@ repo_root="${QF_CI_REPO_ROOT:-$script_repo_root}"
 orchestrator_root="${QF_CI_TRUSTED_ROOT:-$script_repo_root}"
 gate="${1:-}"
 report_dir="${QF_CI_REPORT_DIR:-}"
+orchestrator_commit="$(git -C "$orchestrator_root" rev-parse HEAD 2>/dev/null || true)"
 
 usage() {
   printf '%s\n' 'usage: scripts/ci/run-gate.sh <pr-fast|main-full|nightly|agent-change|rc> [REPORT_DIR]' >&2
@@ -19,7 +20,11 @@ fi
 if [[ -z "$report_dir" ]]; then
   report_dir="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-${gate}.XXXXXX")"
 fi
+mkdir -p "$report_dir"
+chmod 700 "$report_dir"
+report_dir="$(mktemp -d "$report_dir/quantfoundry-${gate}.XXXXXX")"
 mkdir -p "$report_dir/logs"
+chmod 700 "$report_dir/logs"
 report_dir="$(cd "$report_dir" && pwd)"
 
 commit="$(git -C "$repo_root" rev-parse HEAD)"
@@ -49,13 +54,25 @@ PY
 
 finish() {
   local status="$1"
+  set +e
   python3 - "$report_dir/result.json" "$gate" "$commit" "$ref" "$started_at" "$status" "$results_file" "$report_dir/fullstack-diagnostics.json" <<'PY'
 import json
 import pathlib
 import sys
 
 output = pathlib.Path(sys.argv[1])
-steps = [json.loads(line) for line in pathlib.Path(sys.argv[7]).read_text(encoding="utf-8").splitlines()]
+steps = []
+reporting_errors = []
+try:
+    lines = pathlib.Path(sys.argv[7]).read_text(encoding="utf-8").splitlines()
+except OSError as error:
+    lines = []
+    reporting_errors.append(f"cannot read step records: {error}")
+for line_number, line in enumerate(lines, 1):
+    try:
+        steps.append(json.loads(line))
+    except (json.JSONDecodeError, TypeError) as error:
+        reporting_errors.append(f"invalid step record at line {line_number}: {error}")
 result = {
     "gate": sys.argv[2],
     "commit": sys.argv[3],
@@ -68,9 +85,21 @@ result = {
 }
 diagnostics_path = pathlib.Path(sys.argv[8])
 if diagnostics_path.is_file():
-    result["diagnostics"] = {"fullstack": json.loads(diagnostics_path.read_text(encoding="utf-8"))}
-output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        result["diagnostics"] = {"fullstack": json.loads(diagnostics_path.read_text(encoding="utf-8"))}
+    except (OSError, json.JSONDecodeError) as error:
+        reporting_errors.append(f"invalid fullstack diagnostics: {error}")
+if reporting_errors:
+    result["reporting_errors"] = reporting_errors
+temporary = output.with_name(f".{output.name}.tmp")
+temporary.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+temporary.replace(output)
 PY
+  local report_status=$?
+  set -e
+  if [[ "$report_status" != 0 ]]; then
+    printf '%s\n' 'CI gate result reporting failed.' >&2
+  fi
   exit "$status"
 }
 
@@ -103,13 +132,48 @@ for argument in sys.argv[1:]:
 print(" ".join(arguments))
 PY
   )"
+  redact_ci_secrets() {
+    python3 -c '
+import os, sys
+secrets = [value for name, value in os.environ.items() if name in {
+    "GITHUB_TOKEN", "GH_TOKEN", "QF_CODEX_API_KEY", "QF_OPENAI_API_KEY",
+    "QF_CREDENTIAL_ENCRYPTION_KEY", "QF_CREDENTIAL_FINGERPRINT_KEY",
+    "QF_POSTGRES_PASSWORD", "PGPASSWORD", "QF_LOCAL_PROVIDER_API_KEY",
+    "QF_LOCAL_DATA_CREDENTIAL",
+} and value]
+for line in sys.stdin:
+    for secret in secrets:
+        line = line.replace(secret, "[REDACTED]")
+    sys.stdout.write(line)
+'
+  }
   local status=0
   set +e
-  (cd "$repo_root" && "$@") >"$report_dir/logs/$name.log" 2>&1
-  status=$?
+  (cd "$repo_root" && "$@") 2>&1 \
+    | redact_ci_secrets >"$report_dir/logs/$name.log"
+  status=${PIPESTATUS[0]}
   set -e
   write_result "$name" "$command_text" "$status"
   [[ "$status" == 0 ]] || exit "$status"
+}
+
+require_trusted_orchestrator() {
+  [[ -n "$orchestrator_commit" ]] || {
+    write_result trusted-orchestrator 'trusted orchestrator checkout is required' 2 'missing trusted orchestrator checkout'
+    exit 2
+  }
+  [[ "$(git -C "$orchestrator_root" rev-parse HEAD)" == "$orchestrator_commit" ]] || {
+    write_result trusted-orchestrator 'trusted orchestrator commit changed' 2 'trusted orchestrator checkout was modified'
+    exit 2
+  }
+  git -C "$orchestrator_root" diff --quiet || {
+    write_result trusted-orchestrator 'trusted orchestrator worktree is clean' 2 'trusted orchestrator checkout was modified'
+    exit 2
+  }
+  [[ -z "$(git -C "$orchestrator_root" status --porcelain --untracked-files=all)" ]] || {
+    write_result trusted-orchestrator 'trusted orchestrator has no untracked files' 2 'trusted orchestrator checkout was modified'
+    exit 2
+  }
 }
 
 require_command() {
@@ -152,7 +216,7 @@ require_ci_environment() {
     write_result ci-postgres 'QF_CI_DISPOSABLE_DATABASE/QF_DATABASE_URL/QF_ALEMBIC_URL/QF_SKIP_AUTO_CREATE are required' 2 'missing explicitly disposable real PostgreSQL CI configuration'
     exit 2
   fi
-  run_step ci-disposable-database scripts/ci/verify-disposable-ci-database.py "$QF_DATABASE_URL"
+  run_step ci-disposable-database "$orchestrator_root/scripts/ci/verify-disposable-ci-database.py" "$QF_DATABASE_URL"
 }
 
 run_pr_fast() {
@@ -173,7 +237,7 @@ run_main_full() {
   require_ci_environment
   require_common_tooling
   run_step p0-registry-snapshot bash -c 'scripts/p0-check.sh docs/治理/p0-blockers.yaml --report'
-  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
+  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step full-ci-platform make platform
   run_step full-ci-hygiene make hygiene
   run_step full-ci-migration scripts/ci.sh migration
@@ -201,14 +265,23 @@ run_agent_change() {
   require_ci_environment
   require_common_tooling
   run_step governance make governance
-  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
+  require_trusted_orchestrator
+  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step tool-registry-exact make tools
   run_step agent-contract-and-policy make backend-ci
   local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
   if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
     run_step independent-review-locator "$orchestrator_root/scripts/ci/fetch-independent-review-report.sh" "$commit" "$review_locator"
   fi
-  run_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
+  if [[ "${QF_INDEPENDENT_REVIEW_ALREADY_VERIFIED:-0}" == 1 ]]; then
+    [[ -s "$review_locator" ]] || {
+      write_result independent-review-report 'verified independent review locator exists' 2 'missing trusted-job review locator'
+      exit 2
+    }
+  else
+    require_trusted_orchestrator
+    run_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
+  fi
 }
 
 verify_remote_release_tag() {
@@ -243,8 +316,8 @@ run_rc() {
   }
   run_step remote-release-tag verify_remote_release_tag
   run_step release-governance-static scripts/ci/release-governance-static-gate.sh
-  run_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" scripts/p0-check.sh docs/治理/p0-blockers.yaml --require-closed-except-supply-chain
-  run_step known-issues-review scripts/release-known-issues-check.sh
+  run_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" "$orchestrator_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed-except-supply-chain
+  run_step known-issues-review "$orchestrator_root/scripts/release-known-issues-check.sh"
   run_step rc-full-ci make ci
   run_step fresh-compose-migration make fullstack
   run_step pg18-migration make pg18

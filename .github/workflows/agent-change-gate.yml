@@ -19,13 +19,15 @@ jobs:
   trusted-independent-review:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      QF_TRUSTED_COMMIT: ${{ github.event.pull_request.base.sha || github.sha }}
     permissions:
       contents: read
       actions: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ env.QF_TRUSTED_COMMIT }}
           fetch-depth: 1
       - name: Fetch and verify independent review from trusted checkout
         shell: bash
@@ -82,6 +84,7 @@ jobs:
           --health-cmd "pg_isready -U quantfoundry -d qf_ci_${{ github.run_id }}"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
+      QF_TRUSTED_COMMIT: ${{ github.event.pull_request.base.sha || github.sha }}
       QF_ENV: test
       QF_ENVIRONMENT: test
       QF_GIT_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -116,7 +119,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ env.QF_TRUSTED_COMMIT }}
           path: trusted-gate
           fetch-depth: 1
           persist-credentials: false
@@ -135,11 +138,25 @@ jobs:
           corepack prepare pnpm@10.32.1 --activate
           uv --directory backend sync --frozen --all-groups
           pnpm --dir frontend install --frozen-lockfile
-          scripts/ci/install-shellcheck.sh
           curl --fail --location --silent --show-error --output /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check --strict
           tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint
           sudo install --mode 0755 /tmp/actionlint /usr/local/bin/actionlint
+      - name: Recreate trusted gate after candidate installation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.QF_TRUSTED_COMMIT }}
+          path: trusted-gate
+          fetch-depth: 1
+          clean: true
+          persist-credentials: false
+      - name: Install trusted CI linters
+        shell: bash
+        run: |
+          set -euo pipefail
+          trusted_root="$GITHUB_WORKSPACE/trusted-gate"
+          "$trusted_root/scripts/ci/install-shellcheck.sh"
+          test -z "$(git -C "$trusted_root" status --porcelain --untracked-files=all)"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: independent-review-locator-${{ github.run_id }}-${{ github.run_attempt }}
@@ -148,10 +165,9 @@ jobs:
         shell: bash
         env:
           QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           QF_INDEPENDENT_REVIEW_REPORT: ${{ runner.temp }}/qf-independent-review/independent-review-locator.json
+          QF_INDEPENDENT_REVIEW_ALREADY_VERIFIED: '1'
           QF_CI_REPO_ROOT: ${{ github.workspace }}
           QF_CI_TRUSTED_ROOT: ${{ github.workspace }}/trusted-gate
         run: |

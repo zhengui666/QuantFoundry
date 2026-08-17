@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, event, func, select, update
+from sqlalchemy import delete, event, func, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,12 +27,6 @@ RETENTION_DAYS = 7
 def _reject_operation_commit(session: Session) -> None:
     if session.info.get("qf_idempotency_operation_active"):
         raise RuntimeError("idempotency operation must not commit its session")
-
-
-@event.listens_for(Session, "after_rollback")
-def _reject_operation_rollback(session: Session) -> None:
-    if session.info.get("qf_idempotency_operation_active"):
-        raise RuntimeError("idempotency operation must not roll back its session")
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -108,7 +102,7 @@ def _database_now(session: Session) -> datetime:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
-def execute(
+def _execute(
     session: Session,
     record_type: Any,
     key: str | None,
@@ -121,8 +115,6 @@ def execute(
     workspace_id: str,
     method: str,
 ) -> JSONResponse:
-    session.info["actor_id"] = actor_id
-    session.info["workspace_id"] = workspace_id
     if key is None:
         raise fail(428, "PRECONDITION_REQUIRED", "Idempotency-Key required")
     if not 20 <= len(key) <= 128:
@@ -134,6 +126,13 @@ def execute(
     lease_owner_id = uuid.uuid4().hex
     try:
         now = _database_now(session)
+        if session.get_bind().dialect.name == "postgresql":
+            coordination_key = "\x1f".join((actor_id, workspace_id, method, path, key))
+            if not session.scalar(
+                text("SELECT pg_try_advisory_xact_lock(hashtext(:key))"),
+                {"key": coordination_key},
+            ):
+                raise fail(409, "IDEMPOTENCY_IN_PROGRESS", None)
 
         def resolve_existing(existing: Any, current_time: datetime) -> Any:
             if existing.request_hash != request_hash:
@@ -269,3 +268,42 @@ def execute(
     except Exception:
         session.rollback()
         raise
+
+
+def execute(
+    session: Session,
+    record_type: Any,
+    key: str | None,
+    request: dict[str, Any],
+    path: str,
+    operation: Callable[[], tuple[int, dict[str, Any]]],
+    fail: Callable[[int, str, str | None], Exception],
+    *,
+    actor_id: str,
+    workspace_id: str,
+    method: str,
+) -> JSONResponse:
+    sentinel = object()
+    previous = {
+        name: session.info.get(name, sentinel) for name in ("actor_id", "workspace_id")
+    }
+    session.info.update(actor_id=actor_id, workspace_id=workspace_id)
+    try:
+        return _execute(
+            session,
+            record_type,
+            key,
+            request,
+            path,
+            operation,
+            fail,
+            actor_id=actor_id,
+            workspace_id=workspace_id,
+            method=method,
+        )
+    finally:
+        for name, value in previous.items():
+            if value is sentinel:
+                session.info.pop(name, None)
+            else:
+                session.info[name] = value

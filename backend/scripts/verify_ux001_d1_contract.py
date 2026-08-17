@@ -13,11 +13,58 @@ HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "tra
 REGISTRY_DATA_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["schema_version", "contract_stage", "tools"],
+    "required": [
+        "$schema",
+        "title",
+        "schema_version",
+        "contract_stage",
+        "additionalProperties",
+        "required",
+        "properties",
+        "tools",
+    ],
     "properties": {
+        "$schema": {"type": "string", "format": "uri"},
+        "title": {"type": "string", "minLength": 1},
         "schema_version": {"const": 1},
         "contract_stage": {"const": "P0_P0_5_EXECUTABLE"},
-        "tools": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "additionalProperties": {"const": False},
+        "required": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "properties": {"type": "object"},
+        "tools": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "name",
+                    "version",
+                    "input_schema",
+                    "output_schema",
+                    "allowed_agent_roles",
+                    "idempotency_class",
+                    "side_effect_class",
+                    "execution_mode",
+                    "timeout_seconds",
+                    "requires_policy_checks",
+                    "requires_snapshot",
+                ],
+                "properties": {
+                    "name": {"type": "string", "minLength": 1},
+                    "version": {"type": "string", "pattern": r"^1\.0$"},
+                    "input_schema": {"type": "object"},
+                    "output_schema": {"type": "object"},
+                    "allowed_agent_roles": {"type": "array"},
+                    "idempotency_class": {"type": "string"},
+                    "side_effect_class": {"type": "string"},
+                    "execution_mode": {"enum": ["SYNC", "JOB"]},
+                    "timeout_seconds": {"type": "integer", "minimum": 1},
+                    "requires_policy_checks": {"type": "array"},
+                    "requires_snapshot": {"type": "boolean"},
+                },
+            },
+        },
     },
 }
 
@@ -41,12 +88,7 @@ def main() -> int:
     matrix = load("ux001-d1-test-matrix.yaml")
     registry = load("tools/v1-p0.yaml")
     registry_errors = sorted(
-        Draft202012Validator(REGISTRY_DATA_SCHEMA).iter_errors(
-            {
-                key: registry[key]
-                for key in ("schema_version", "contract_stage", "tools")
-            }
-        ),
+        Draft202012Validator(REGISTRY_DATA_SCHEMA).iter_errors(registry),
         key=lambda error: list(error.path),
     )
     require(
@@ -59,7 +101,25 @@ def main() -> int:
             Draft202012Validator.check_schema(schema)
         except Exception as error:
             raise AssertionError(f"invalid OpenAPI schema: {name}") from error
+    required_entry_fields = {
+        "key",
+        "group",
+        "schema_version",
+        "scope",
+        "sensitivity",
+        "apply_mode",
+        "consumers",
+        "dependencies",
+        "schema",
+        "validator",
+        "safe_range",
+    }
+    require(isinstance(catalog.get("entries"), list), "catalog entries are malformed")
     for entry in catalog["entries"]:
+        require(
+            isinstance(entry, dict) and required_entry_fields <= set(entry),
+            "catalog entry fields are incomplete",
+        )
         try:
             Draft202012Validator.check_schema(entry["schema"])
         except Exception as error:
@@ -115,23 +175,6 @@ def main() -> int:
         all(entry["scope"] == "INSTALLATION" for entry in catalog["entries"]),
         "catalog entry scope is invalid",
     )
-    required_entry_fields = {
-        "key",
-        "group",
-        "schema_version",
-        "scope",
-        "sensitivity",
-        "apply_mode",
-        "consumers",
-        "dependencies",
-        "schema",
-        "validator",
-        "safe_range",
-    }
-    require(
-        all(required_entry_fields <= set(entry) for entry in catalog["entries"]),
-        "catalog entry fields are incomplete",
-    )
     require(
         expected["x-quantfoundry-configuration-catalog-version"]
         == catalog["catalog_version"],
@@ -158,13 +201,10 @@ def main() -> int:
     require(matrix["status"] == "FROZEN", "test matrix is not frozen")
     tools = registry.get("tools")
     require(isinstance(tools, list), "semantic tool registry is malformed")
-    tool_identities = {
-        (tool.get("name"), tool.get("version"))
-        for tool in tools
-        if isinstance(tool, dict)
-    }
+    tool_identities = [(tool["name"], tool["version"]) for tool in tools]
     require(
-        len(tools) == len(tool_identities), "semantic tool identities are not unique"
+        len(tool_identities) == len(set(tool_identities)),
+        "semantic tool identities are not unique",
     )
     require(
         matrix["counts"]
@@ -195,11 +235,16 @@ def main() -> int:
         len(operation_ids) == len(set(operation_ids)), "operation IDs are not unique"
     )
     operation_ids = set(operation_ids)
-    matrix_operation_ids = {
+    matrix_operation_id_list = [
         operation_id
         for family in matrix["families"]
         for operation_id in family.get("operations", [])
-    }
+    ]
+    require(
+        len(matrix_operation_id_list) == len(set(matrix_operation_id_list)),
+        "test matrix operation assignments are not unique",
+    )
+    matrix_operation_ids = set(matrix_operation_id_list)
     require(
         matrix_operation_ids == operation_ids,
         "test matrix operation coverage does not exactly match OpenAPI",

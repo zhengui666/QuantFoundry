@@ -41,6 +41,13 @@ def _resolve_response(response: dict[str, Any]) -> dict[str, Any]:
     return canonical_openapi()["components"]["responses"][name]
 
 
+def _resolve_request_body(body: dict[str, Any]) -> dict[str, Any]:
+    if "$ref" not in body:
+        return body
+    name = body["$ref"].rsplit("/", 1)[-1]
+    return canonical_openapi()["components"]["requestBodies"][name]
+
+
 def _problem(request: Request, detail: str) -> JSONResponse:
     from quantfoundry.api.app import problem_payload
 
@@ -90,8 +97,14 @@ class CanonicalRoute(APIRoute):
                         value = request.path_params.get(name)
                     elif location == "query":
                         value = request.query_params.get(name)
-                    else:
+                    elif location == "header":
                         value = request.headers.get(name)
+                    elif location == "cookie":
+                        value = request.cookies.get(name)
+                    else:
+                        raise jsonschema.ValidationError(
+                            f"unsupported parameter location: {location}"
+                        )
                     if value is None:
                         if parameter.get("required"):
                             if request.method.upper() in {
@@ -134,6 +147,7 @@ class CanonicalRoute(APIRoute):
                     validate_json_schema(schema, value)
                 request_body = operation.get("requestBody")
                 if request_body is not None:
+                    request_body = _resolve_request_body(request_body)
                     content = request_body.get("content", {})
                     content_type = (
                         request.headers.get("content-type", "")
@@ -212,6 +226,22 @@ class CanonicalRoute(APIRoute):
                     )
                 return response
             if not declared_content:
+                if hasattr(response, "body"):
+                    response_body = getattr(response, "body", b"")
+                    if isinstance(response_body, memoryview):
+                        response_body = response_body.tobytes()
+                    if response_body:
+                        return _problem(
+                            request,
+                            "handler returned content for a contentless response",
+                        )
+                return response
+            if not hasattr(response, "body"):
+                if content_type not in declared_content:
+                    return _problem(
+                        request,
+                        "streaming response returned an undeclared content type",
+                    )
                 return response
             response_body = getattr(response, "body", b"")
             if isinstance(response_body, memoryview):

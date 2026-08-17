@@ -68,9 +68,9 @@ def test_signed_submit_is_idempotent_and_capability_gated() -> None:
         return httpx.Response(200, json=_capabilities())
 
     transport = httpx.MockTransport(handler)
-    client = httpx.Client(base_url="https://connector.test", transport=transport)
+    client = httpx.Client(base_url="https://1.1.1.1", transport=transport)
     with ConnectorClient(
-        "https://connector.test",
+        "https://1.1.1.1",
         key_id="key-1",
         credential="secret",
         http_client=client,
@@ -152,11 +152,11 @@ def test_transport_failure_is_unknown_outcome() -> None:
         raise httpx.ReadTimeout("timeout")
 
     client = httpx.Client(
-        base_url="https://connector.test", transport=httpx.MockTransport(handler)
+        base_url="https://1.1.1.1", transport=httpx.MockTransport(handler)
     )
     with (
         ConnectorClient(
-            "https://connector.test",
+            "https://1.1.1.1",
             key_id="key-1",
             credential="secret",
             http_client=client,
@@ -170,14 +170,14 @@ def test_validation_request_rejects_non_https_and_embedded_credentials() -> None
     with pytest.raises(ValidationError):
         LiveConnectorValidationRequest(
             connection_id="live-1",
-            endpoint="http://connector.test",
+            endpoint="http://1.1.1.1",
             key_id="key-1",
             credential="secret",
         )
     with pytest.raises(ValidationError):
         LiveConnectorValidationRequest(
             connection_id="live-1",
-            endpoint="https://user:pass@connector.test",
+            endpoint="https://user:pass@1.1.1.1",
             key_id="key-1",
             credential="secret",
         )
@@ -253,7 +253,7 @@ def test_activation_and_fill_rules_fail_closed() -> None:
             cumulative_quantity="0.75",
             order_quantity="1",
             previous_cumulative_quantity="0.5",
-            terminal=True,
+            terminal_status="EXPIRED",
         )[0]
         == "EXPIRED"
     )

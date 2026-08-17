@@ -4,6 +4,7 @@ set -euo pipefail
 script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo_root="${QF_RELEASE_CHECK_ROOT:-$script_root}"
 verifier_root="${QF_RELEASE_CHECK_VERIFIER_ROOT:-$repo_root}"
+trusted_verifier_root="${QF_RELEASE_CHECK_TRUSTED_VERIFIER_ROOT:-}"
 tag="${1:-}"
 
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]] || {
@@ -48,6 +49,10 @@ trusted_branch="origin/main"
   printf '%s\n' '{"result":"invalid","reason":"release branch override is not allowed"}' >&2
   exit 1
 }
+git -C "$repo_root" fetch --no-tags origin "refs/heads/main:refs/remotes/origin/main" >/dev/null 2>&1 || {
+  printf '%s\n' '{"result":"invalid","reason":"trusted release branch could not be refreshed"}' >&2
+  exit 1
+}
 git -C "$repo_root" rev-parse --verify "${trusted_branch}^{commit}" >/dev/null 2>&1 || {
   printf '{"result":"invalid","reason":"trusted release branch is unavailable","branch":"%s"}\n' "$trusted_branch" >&2
   exit 1
@@ -63,10 +68,28 @@ git -C "$verifier_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
 }
 verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
 verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
-[[ "$verifier_head" == "$tag_target" && -z "$verifier_status" ]] || {
-  printf '%s\n' '{"result":"invalid","reason":"verifier code is not clean at the trusted tag commit"}' >&2
+if [[ -n "$trusted_verifier_root" ]]; then
+  [[ "$verifier_root" == "$trusted_verifier_root" && -z "$verifier_status" ]] || {
+    printf '%s\n' '{"result":"invalid","reason":"trusted verifier code is not clean"}' >&2
+    exit 1
+  }
+else
+  [[ "$verifier_head" == "$tag_target" && -z "$verifier_status" ]] || {
+    printf '%s\n' '{"result":"invalid","reason":"verifier code is not clean at the trusted tag commit"}' >&2
+    exit 1
+  }
+fi
+
+if [[ -n "$trusted_verifier_root" ]]; then
+  trusted_verifier_head="$verifier_head"
+else
+  trusted_verifier_head="$tag_target"
+fi
+
+if [[ -n "$trusted_verifier_root" && ! -x "$verifier_root/scripts/p0-check.sh" ]]; then
+  printf '%s\n' '{"result":"invalid","reason":"trusted verifier is missing p0-check.sh"}' >&2
   exit 1
-}
+fi
 
 worktree_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ -z "$worktree_status" ]] || {
@@ -97,12 +120,13 @@ final_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)
 
 pre_p0_verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
 pre_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
-[[ "$pre_p0_verifier_head" == "$tag_target" && -z "$pre_p0_verifier_status" ]] || {
+[[ "$pre_p0_verifier_head" == "$trusted_verifier_head" && -z "$pre_p0_verifier_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"verifier code changed immediately before P0 verification"}' >&2
   exit 1
 }
 
-QF_RELEASE_COMMIT="$tag_target" "$verifier_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
+QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="$tag_target" \
+  "$verifier_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
 post_p0_head="$(git -C "$repo_root" rev-parse HEAD)"
 post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ "$post_p0_head" == "$tag_target" && -z "$post_p0_status" ]] || {
@@ -111,7 +135,7 @@ post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=al
 }
 post_p0_verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
 post_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
-[[ "$post_p0_verifier_head" == "$tag_target" && -z "$post_p0_verifier_status" ]] || {
+[[ "$post_p0_verifier_head" == "$trusted_verifier_head" && -z "$post_p0_verifier_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"verifier code changed during P0 verification"}' >&2
   exit 1
 }

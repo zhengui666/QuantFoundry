@@ -46,7 +46,13 @@ def run_migrations_offline():
 def run_migrations_online():
     injected_connection = config.attributes.get("connection")
     if injected_connection is not None:
-        context.configure(connection=injected_connection, target_metadata=target_metadata)
+        if injected_connection.dialect.name == "sqlite":
+            raise RuntimeError(
+                "injected SQLite Alembic connections are unsupported; use the managed connection path"
+            )
+        context.configure(
+            connection=injected_connection, target_metadata=target_metadata
+        )
         with context.begin_transaction():
             context.run_migrations()
         return

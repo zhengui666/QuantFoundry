@@ -20,7 +20,7 @@ def main() -> int:
     engine = create_engine(sys.argv[1])
     try:
         with engine.connect() as connection:
-            actual = connection.execute(text("SELECT current_database()" )).scalar_one()
+            actual = connection.execute(text("SELECT current_database()")).scalar_one()
     finally:
         engine.dispose()
     if actual != expected or not re.fullmatch(r"qf_ci_[0-9]+", str(actual)):

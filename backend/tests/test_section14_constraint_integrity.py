@@ -29,8 +29,8 @@ def _frozen_locator_truth_table() -> dict[str, list[dict[str, str | int | None]]
     path = BACKEND_ROOT / "alembic/versions/0016_section14_physical.json"
     value = json.loads(path.read_text(encoding="utf-8"))
     truth_table = value["locator_helper_contract"]["truth_table"]
-    assert len(truth_table["valid"]) == 69
-    assert len(truth_table["invalid"]) == 76
+    assert len(truth_table["valid"]) == 140
+    assert len(truth_table["invalid"]) == 159
     return truth_table
 
 
@@ -243,10 +243,14 @@ def test_locator_quartet_enforces_every_generated_branch(
         valid = [dict(row) for row in truth_table["valid"]]
         invalid = [dict(row) for row in truth_table["invalid"]]
         if allow_null:
-            valid.append(invalid.pop(2))
-            assert len(valid) == 70 and len(invalid) == 75
+            all_null = next(
+                row for row in invalid if all(value is None for value in row.values())
+            )
+            invalid.remove(all_null)
+            valid.append(all_null)
+            assert len(valid) == 141 and len(invalid) == 158
         else:
-            assert len(valid) == 69 and len(invalid) == 76
+            assert len(valid) == 140 and len(invalid) == 159
         for row in valid:
             connection.execute(statement, row)
         for row in invalid:
@@ -284,10 +288,16 @@ def test_locator_helpers_are_total_boolean_for_frozen_truth_table() -> None:
 def test_json_locator_surfaces_share_closed_total_boolean_contract() -> None:
     truth_table = _frozen_locator_truth_table()
     valid_locators = [dict(row) for row in truth_table["valid"]]
-    all_null = dict(truth_table["invalid"][2])
+    all_null = next(
+        dict(row)
+        for row in truth_table["invalid"]
+        if all(value is None for value in row.values())
+    )
     valid_locators.append(all_null)
     invalid_locators = [
-        dict(row) for index, row in enumerate(truth_table["invalid"]) if index != 2
+        dict(row)
+        for row in truth_table["invalid"]
+        if not all(value is None for value in row.values())
     ]
     for row in valid_locators:
         assert job_result_ref_valid({**row, "artifact_id": None})
@@ -730,7 +740,7 @@ def test_records_and_setup_physical_shapes_are_exact() -> None:
     value = json.loads(path.read_text(encoding="utf-8"))
     assert value["table_count"] == 63
     assert value["column_count"] == 967
-    assert sum(len(table["checks"]) for table in value["tables"]) == 191
+    assert sum(len(table["checks"]) for table in value["tables"]) == 218
 
     specs = {table["name"]: table for table in value["tables"]}
     records = specs["records"]
@@ -741,9 +751,16 @@ def test_records_and_setup_physical_shapes_are_exact() -> None:
     assert record_id["type"] == {"name": "uuid"}
     assert record_id["server_default"] == "uuidv7()"
     assert records["unique_constraints"] == [
-        {"columns": ["workspace_id", "id"], "name": "uq_records_workspace_id_id"},
+        {
+            "columns": ["workspace_id", "id"],
+            "deferrable": None,
+            "initially": None,
+            "name": "uq_records_workspace_id_id",
+        },
         {
             "columns": ["workspace_id", "record_key"],
+            "deferrable": None,
+            "initially": None,
             "name": "uq_records_workspace_id_record_key",
         },
     ]

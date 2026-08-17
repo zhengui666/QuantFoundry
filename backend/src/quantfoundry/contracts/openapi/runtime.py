@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,8 @@ from quantfoundry.contracts.openapi.api_models import validate_schema
 _SPEC: dict[str, Any] | None = None
 
 
-def canonical_openapi() -> dict[str, Any]:
+@lru_cache(maxsize=1)
+def _canonical_openapi_cached() -> dict[str, Any]:
     global _SPEC
     if _SPEC is None:
         resource = files("quantfoundry.contracts.openapi").joinpath("openapi-v1.yaml")
@@ -34,7 +36,11 @@ def canonical_openapi() -> dict[str, Any]:
                     / "docs/后端系统技术方案/contracts/openapi-v1.yaml"
                 ).read_text(encoding="utf-8")
             )
-    return deepcopy(_SPEC)
+    return _SPEC
+
+
+def canonical_openapi() -> dict[str, Any]:
+    return deepcopy(_canonical_openapi_cached())
 
 
 def now() -> str:
@@ -43,7 +49,7 @@ def now() -> str:
 
 def validate_json_schema(schema: dict[str, Any], payload: Any) -> None:
     """Validate a schema fragment against the OpenAPI component resource."""
-    specification = canonical_openapi()
+    specification = _canonical_openapi_cached()
     root_schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "#/$target",

@@ -28,6 +28,11 @@ def _json_type() -> sa.TypeEngine[object]:
 def upgrade() -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name
+    if dialect == "sqlite":
+        # SQLite rebuilds jobs for the NOT NULL backfill; a trigger on
+        # experiments that references jobs makes the temporary-table rename
+        # fail while jobs is absent.
+        op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_binding")
     owns_checkpoint_schema = False
     if dialect == "postgresql":
         owns_checkpoint_schema = not bool(
@@ -63,6 +68,21 @@ def upgrade() -> None:
         "uq_jobs_resume_token_hash", "jobs", ["resume_token_hash"], unique=True
     )
     op.add_column("jobs", sa.Column("resume_fencing_token", sa.Integer()))
+    if dialect == "sqlite":
+        op.execute(
+            "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON "
+            "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
+            "NEW.research_id IS OLD.research_id AND "
+            "NEW.source_experiment_id IS OLD.source_experiment_id AND "
+            "NEW.revision = OLD.revision + 1 AND "
+            "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+            "EXISTS (SELECT 1 FROM jobs j WHERE "
+            "j.id = json_extract(NEW.detail, '$.job_id') AND "
+            "j.job_type = 'EXPERIMENT' AND "
+            "j.status IN ('RUNNING', 'COMPLETED') AND "
+            "json_extract(j.input_payload, '$.experiment_id') = NEW.id) ) "
+            "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
+        )
 
     op.create_table(
         "job_dependencies",
@@ -188,5 +208,24 @@ def downgrade() -> None:
     op.drop_column("jobs", "resume_token_hash")
     op.drop_index("uq_jobs_internal_id", table_name="jobs")
     op.drop_column("jobs", "internal_id")
-    # A collidable marker cannot prove ownership of a pre-existing checkpoint
-    # schema. Leave it untouched on rollback rather than deleting user data.
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        owns_marker = bool(
+            bind.execute(
+                sa.text(
+                    "SELECT to_regclass('agent_checkpoint._qf_owned_0014') IS NOT NULL"
+                )
+            ).scalar_one()
+        )
+        if owns_marker:
+            table_count = bind.execute(
+                sa.text(
+                    "SELECT count(*) FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'agent_checkpoint' AND c.relkind IN ('r', 'p') "
+                    "AND c.relname <> '_qf_owned_0014'"
+                )
+            ).scalar_one()
+            if table_count == 0:
+                op.execute("DROP TABLE agent_checkpoint._qf_owned_0014")
+                op.execute("DROP SCHEMA agent_checkpoint")

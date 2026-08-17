@@ -147,11 +147,17 @@ def probe_health(
             probe_session.execute(select(job_model.id).limit(1))
             states["job_queue"] = _runtime_state(probe_session, heartbeat_model)
         except SQLAlchemyError:
+            probe_session.rollback()
             states["job_queue"] = "UNAVAILABLE"
+        else:
+            # _runtime_state deliberately converts database failures to a
+            # state; clear any failed transaction before probing the next table.
+            probe_session.rollback()
         try:
             probe_session.execute(select(event_model.sequence).limit(1))
             states["event_stream"] = "HEALTHY"
         except SQLAlchemyError:
+            probe_session.rollback()
             states["event_stream"] = "UNAVAILABLE"
         return states
     finally:

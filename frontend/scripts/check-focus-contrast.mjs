@@ -6,11 +6,15 @@ const css = await readFile(
   join(dirname(fileURLToPath(import.meta.url)), '../src/design-system/tokens/semantic.css'),
   'utf8',
 );
+const stylesheet = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 function token(name) {
-  const match = css.match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'));
-  if (!match) throw new Error(`Missing color token: --${name}`);
-  return match[1];
+  const declaration = new RegExp(`(?:^|[;{}])\\s*--${name}\\s*:\\s*([^;{}]+)`, 'gi');
+  let value;
+  for (const match of stylesheet.matchAll(declaration)) value = match[1].trim();
+  if (!value || !/^#[0-9a-f]{6}$/i.test(value))
+    throw new Error(`Missing or invalid color token: --${name}`);
+  return value;
 }
 
 function relativeLuminance(hex) {

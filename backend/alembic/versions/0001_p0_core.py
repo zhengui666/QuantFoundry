@@ -37,7 +37,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "domain_events",
-        sa.Column("sequence", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("sequence", sa.BigInteger(), primary_key=True, autoincrement=True),
         # Legacy rows are canonicalized by 0012 before the closed event contract.
         sa.Column("event_id", sa.String(), unique=True),
         sa.Column("event_type", sa.String(), nullable=False),

@@ -103,7 +103,15 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             # Invalid output is intentional here: the Agent boundary records a
             # durable failure instead of falsely completing without evidence.
             return {"type": "blocked", "reason": "LOCAL_RESEARCH_INPUT_MISSING"}
-        names = [str(item.get("tool_name")) for item in tool_results]
+        names = [
+            str(item.get("tool_name"))
+            for item in tool_results
+            if item.get("status") in {None, "SUCCESS", "COMPLETED"}
+            and (
+                isinstance(item.get("result_summary"), dict)
+                or isinstance(item.get("result_ref"), dict)
+            )
+        ]
         dataset_id = dataset_ids[0]
         if "validate_dataset" not in names:
             return {
@@ -234,26 +242,32 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                 }
             )
         self.server.request_log.append(request_log)
+        failure_status: int | None = None
+        invalid_request = False
         with self.server.state_lock:
             if self.server.failure_statuses:
                 failure_status = self.server.failure_statuses.pop(0)
-                self._json(
-                    HTTPStatus(failure_status), {"error": "injected_provider_failure"}
-                )
-                return
             if self.server.deterministic_research_plan and not self.server.actions:
-                try:
-                    action = self._deterministic_action(request)
-                except ValueError:
-                    self._json(
-                        HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"}
-                    )
-                    return
+                if failure_status is None:
+                    try:
+                        action = self._deterministic_action(request)
+                    except ValueError:
+                        invalid_request = True
             else:
-                index = min(self.server.action_index, len(self.server.actions) - 1)
-                action = self.server.actions[index]
-            self.server.action_index += 1
-            action_id = self.server.action_index
+                if failure_status is None:
+                    index = min(self.server.action_index, len(self.server.actions) - 1)
+                    action = self.server.actions[index]
+            if failure_status is None and not invalid_request:
+                self.server.action_index += 1
+                action_id = self.server.action_index
+        if failure_status is not None:
+            self._json(
+                HTTPStatus(failure_status), {"error": "injected_provider_failure"}
+            )
+            return
+        if invalid_request:
+            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"})
+            return
         self._json(
             HTTPStatus.OK,
             {
@@ -304,20 +318,21 @@ def create_server(
         )
     if actions is not None and not actions:
         raise ValueError("actions must be non-empty when explicitly configured")
-    server = LocalProviderServer((host, port), LocalProviderHandler)
-    server.deterministic_research_plan = actions is None
-    server.actions = list(actions) if actions is not None else []
-    server.action_index = 0
-    server.api_key = effective_key
-    server.model_name = model_name
-    server.failure_statuses = list(failure_statuses or [])
-    for status in server.failure_statuses:
+    statuses = list(failure_statuses or [])
+    for status in statuses:
         try:
             HTTPStatus(status)
         except ValueError as error:
             raise ValueError(f"invalid provider failure status: {status}") from error
         if not 400 <= status <= 599:
             raise ValueError("provider failure statuses must be HTTP 4xx/5xx")
+    server = LocalProviderServer((host, port), LocalProviderHandler)
+    server.deterministic_research_plan = actions is None
+    server.actions = list(actions) if actions is not None else []
+    server.action_index = 0
+    server.api_key = effective_key
+    server.model_name = model_name
+    server.failure_statuses = statuses
     server.request_log = []
     server.state_lock = Lock()
     return server

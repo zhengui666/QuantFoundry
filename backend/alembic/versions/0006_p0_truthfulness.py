@@ -181,7 +181,7 @@ def _replace_strategy_guard() -> None:
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   (OLD.state <> 'CANDIDATE' AND
+                   ((OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND
                     (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
                      'latest_backtest' - 'validation_summary' - 'artifacts' -
                      'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
@@ -252,7 +252,7 @@ def _replace_strategy_guard() -> None:
           ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
              NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
              NEW.spec_sha256 IS NOT OLD.spec_sha256 OR
-             (OLD.state != 'CANDIDATE' AND
+             ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND
               json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen',
                 '$.latest_backtest', '$.validation_summary', '$.artifacts',
                 '$.provenance', '$.frozen_at', '$.frozen_by', '$.revision',

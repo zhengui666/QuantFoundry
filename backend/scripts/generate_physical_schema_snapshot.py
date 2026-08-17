@@ -275,7 +275,14 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
             key=lambda item: (item["name"] or "", item["sql"]),
         )
         indexes = []
-        for index in sorted(table.indexes, key=lambda item: item.name or ""):
+        for index in sorted(
+            table.indexes,
+            key=lambda item: (
+                item.name or "",
+                tuple(str(expression) for expression in item.expressions),
+                bool(item.unique),
+            ),
+        ):
             where = index.dialect_options["postgresql"].get("where")
             include = index.dialect_options["postgresql"].get("include") or []
             method = index.dialect_options["postgresql"].get("using") or "btree"
@@ -305,6 +312,11 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                 "schema": schema,
                 "name": table.name,
                 "primary_key": [column.name for column in table.primary_key.columns],
+                "primary_key_constraint": {
+                    "name": table.primary_key.name,
+                    "deferrable": table.primary_key.deferrable,
+                    "initially": table.primary_key.initially,
+                },
                 "columns": columns,
                 "unique_constraints": unique_constraints,
                 "foreign_keys": foreign_keys,
@@ -327,11 +339,13 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    source = parser.add_mutually_exclusive_group(required=True)
+    source = parser.add_mutually_exclusive_group()
     source.add_argument("--orm", action="store_true")
     source.add_argument("--database-url", default=os.getenv("QF_DATABASE_URL"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if bool(args.orm) == bool(args.database_url):
+        parser.error("provide exactly one of --orm or --database-url/QF_DATABASE_URL")
     if args.orm:
         from quantfoundry.api.app import Base
 

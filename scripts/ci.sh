@@ -193,6 +193,7 @@ fresh_local_smoke() {
     env \
       -u QF_DATABASE_URL \
       -u QF_ALEMBIC_URL \
+      -u QF_CONTROL_DB_URL \
       -u QF_AGENT_CHECKPOINT_URL \
       -u QF_AGENT_CHECKPOINT_SQLITE \
       -u QF_ARTIFACT_ROOT \

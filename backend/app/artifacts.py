@@ -1,3 +1,11 @@
 """Compatibility shim; canonical implementation lives in quantfoundry.infrastructure."""
 
-from quantfoundry.infrastructure.artifacts.store import *  # noqa: F403
+from quantfoundry.infrastructure.artifacts import store as _canonical
+
+
+def __getattr__(name: str):
+    return getattr(_canonical, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_canonical)))

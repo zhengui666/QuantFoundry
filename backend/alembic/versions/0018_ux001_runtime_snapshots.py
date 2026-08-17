@@ -69,7 +69,9 @@ def _type_matches(column: dict[str, object], expected: str, length: int | None) 
         matches = actual.startswith(("varchar", "charactervarying", "string"))
     if not matches:
         return False
-    return length is None or getattr(column["type"], "length", None) == length
+    if expected in {"bigint", "integer"}:
+        return True
+    return getattr(column["type"], "length", None) == length
 
 
 def _validate_section14_columns() -> None:
@@ -93,6 +95,10 @@ def _validate_section14_columns() -> None:
 
 def _remove_legacy_defaults() -> None:
     if op.get_bind().dialect.name == "sqlite":
+        for table, columns in RUNTIME_COLUMNS.items():
+            with op.batch_alter_table(table, recreate="always") as batch:
+                for column in columns:
+                    batch.alter_column(column, server_default=None)
         return
     for table, columns in RUNTIME_COLUMNS.items():
         for column in columns:

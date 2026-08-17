@@ -1,3 +1,11 @@
 """Compatibility shim; canonical implementation lives in quantfoundry.application."""
 
-from quantfoundry.application.system.services import *  # noqa: F403
+from quantfoundry.application.system import services as _canonical
+
+
+def __getattr__(name: str):
+    return getattr(_canonical, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_canonical)))

@@ -245,8 +245,12 @@ class DateRangeCompat(TypeDecorator[Any]):
                 if start >= end:
                     raise ValueError("date range start must precede end")
                 if dialect.name == "postgresql":
-                    return Range(start, end, bounds="[)")
-                return value
+                    return Range(start, end + timedelta(days=1), bounds="[)")
+                return json.dumps(
+                    {"start": start.isoformat(), "end": end.isoformat()},
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
         if isinstance(value, dict):
             if set(value) != {"start", "end"}:
                 raise ValueError("date range must contain only start and end")
@@ -254,24 +258,12 @@ class DateRangeCompat(TypeDecorator[Any]):
                 value.get("end"), str
             ):
                 raise ValueError("date range bounds must be ISO dates")
-            start = (
-                date.fromisoformat(value["start"])
-                if value.get("start") is not None
-                else None
-            )
-            end = (
-                date.fromisoformat(value["end"])
-                if value.get("end") is not None
-                else None
-            )
-            if start is None or end is None or start >= end:
+            start = date.fromisoformat(value["start"])
+            end = date.fromisoformat(value["end"])
+            if start >= end:
                 raise ValueError("date range bounds are invalid")
             if dialect.name == "postgresql":
-                return Range(
-                    start,
-                    end + timedelta(days=1) if end is not None else None,
-                    bounds="[)",
-                )
+                return Range(start, end + timedelta(days=1), bounds="[)")
             return json.dumps(value, separators=(",", ":"), sort_keys=True)
         return value
 
@@ -545,10 +537,7 @@ def _check_sql(column: dict[str, Any]) -> str | None:
     if "CHECK false→true monotonic" in text:
         return f"{name} IN (FALSE, TRUE)"
     if "CHECK parses canonical half-open date range" in text:
-        return (
-            f"length({name}) = 23 AND substr({name}, 1, 1) = '[' "
-            f"AND substr({name}, 12, 1) = ',' AND substr({name}, 23, 1) = ')'"
-        )
+        return None
     if "CHECK" in text and any(
         marker in text
         for marker in (
@@ -572,9 +561,7 @@ def _check_sql(column: dict[str, Any]) -> str | None:
     return None
 
 
-def _append_contract_constraints(
-    table: Table, spec: dict[str, Any], *, workspace_scoped: bool
-) -> None:
+def _append_contract_constraints(table: Table, spec: dict[str, Any]) -> None:
     replaced_checks = {
         "agent_runs": "ck_agent_runs_object_id_type_prefix",
         "notifications": "ck_notifications_object_id_type_prefix",
@@ -599,6 +586,37 @@ def _append_contract_constraints(
         for constraint in table.constraints
         if isinstance(constraint, UniqueConstraint)
     }
+    existing_indexes = {
+        str(index.name) for index in table.indexes if index.name is not None
+    }
+    for column in spec["columns"]:
+        if "CHECK parses canonical half-open date range" in column["constraints"]:
+            name = column["name"]
+            constraint_name = _constraint_name(table.name, f"{name}_valid")
+            if constraint_name not in existing_names:
+                postgres_sql = (
+                    f"{name} ~ '^\\[[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}},"
+                    f"[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}\\)$' AND "
+                    f"make_date(CAST(substr({name},2,4) AS INTEGER), "
+                    f"CAST(substr({name},7,2) AS INTEGER), CAST(substr({name},10,2) AS INTEGER)) < "
+                    f"make_date(CAST(substr({name},13,4) AS INTEGER), "
+                    f"CAST(substr({name},18,2) AS INTEGER), CAST(substr({name},21,2) AS INTEGER))"
+                )
+                sqlite_sql = (
+                    f"length({name}) = 23 AND substr({name},1,1) = '[' AND "
+                    f"substr({name},12,1) = ',' AND substr({name},23,1) = ')' AND "
+                    f"strftime('%Y-%m-%d', substr({name},2,10)) = substr({name},2,10) AND "
+                    f"strftime('%Y-%m-%d', substr({name},13,10)) = substr({name},13,10) AND "
+                    f"date(substr({name},2,10)) < date(substr({name},13,10))"
+                )
+                table.append_constraint(
+                    ContractCheckConstraint(
+                        postgres_sql,
+                        sqlite_sql=sqlite_sql,
+                        name=constraint_name,
+                    )
+                )
+                existing_names.add(constraint_name)
     for column in spec["columns"]:
         constraints = column["constraints"]
         check_sql = _check_sql(column)
@@ -692,6 +710,17 @@ def _append_contract_constraints(
                 table.append_constraint(UniqueConstraint(column["name"], name=name))
                 existing_names.add(name)
                 existing_unique_columns.add((column["name"],))
+        partial_index = re.search(r"INDEX\s+WHERE\s+(.+)$", constraints, re.IGNORECASE)
+        if partial_index and column["name"] in table.c:
+            name = f"ix_{table.name}_{column['name']}"[:63]
+            if name not in existing_indexes:
+                Index(
+                    name,
+                    table.c[column["name"]],
+                    sqlite_where=text(partial_index.group(1)),
+                    postgresql_where=text(partial_index.group(1)),
+                )
+                existing_indexes.add(name)
     typed_public_id_checks: dict[str, str] = {}
     if table.name == "portfolio_scenarios":
         typed_public_id_checks["baseline_ref"] = (
@@ -778,10 +807,15 @@ def _append_contract_constraints(
             )
         )
     for constraint in closed_checks:
-        constraint_name = constraint.name
-        if constraint_name is not None and constraint_name not in existing_names:
+        closed_constraint_name = (
+            str(constraint.name) if constraint.name is not None else None
+        )
+        if (
+            closed_constraint_name is not None
+            and closed_constraint_name not in existing_names
+        ):
             table.append_constraint(constraint)
-            existing_names.add(constraint_name)
+            existing_names.add(closed_constraint_name)
     if table.name == "paper_scheduler_states":
         invariant = (
             "((scheduler_status = 'ACTIVE' AND suppressed_since_utc IS NULL) OR "
@@ -826,12 +860,11 @@ def _append_contract_constraints(
             )
         )
 
-    existing_indexes = {
-        str(index.name) for index in table.indexes if index.name is not None
-    }
     for column in spec["columns"]:
         constraints = column["constraints"]
-        if "INDEX" not in constraints:
+        if "INDEX" not in constraints or re.search(
+            r"INDEX\s+WHERE\s+", constraints, re.IGNORECASE
+        ):
             continue
         columns = [column["name"]]
         composite = re.search(r"INDEX\(([^)]+)\)", constraints)
@@ -938,9 +971,7 @@ def augment_section14_metadata(metadata: MetaData) -> None:
     # Constraints are appended after all targets exist, including cyclic FKs.
     for table_name, spec in specs.items():
         table = metadata.tables[table_name]
-        _append_contract_constraints(
-            table, spec, workspace_scoped="workspace_id" in table.c
-        )
+        _append_contract_constraints(table, spec)
 
 
 def section14_table_names() -> frozenset[str]:

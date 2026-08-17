@@ -88,6 +88,11 @@ def _assert_integrity_backfill_is_mappable() -> None:
                 "tool_calls IN ACCESS EXCLUSIVE MODE"
             )
         )
+    elif bind.dialect.name == "sqlite":
+        if bind.in_transaction():
+            bind.execute(sa.text("UPDATE jobs SET id = id WHERE 0"))
+        else:
+            bind.exec_driver_sql("BEGIN IMMEDIATE")
     tables = (
         "jobs",
         "domain_events",
@@ -236,8 +241,7 @@ def _create_immutability_guards() -> None:
                    COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED' AND
                    EXISTS (
                      SELECT 1 FROM jobs j
-                     WHERE j.job_id = NEW.detail::jsonb ->> 'job_id'
-                       AND j.workspace_id = NEW.workspace_id
+                     WHERE j.id = NEW.detail::jsonb ->> 'job_id'
                        AND j.job_type = 'EXPERIMENT'
                        AND j.status IN ('RUNNING', 'COMPLETED')
                        AND j.input_payload::jsonb ->> 'experiment_id' = NEW.id
@@ -393,8 +397,8 @@ def _create_immutability_guards() -> None:
         "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
         "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
         "EXISTS (SELECT 1 FROM jobs j WHERE "
-        "j.job_id = json_extract(NEW.detail, '$.job_id') AND "
-        "j.workspace_id IS NEW.workspace_id AND j.job_type = 'EXPERIMENT' AND "
+        "j.id = json_extract(NEW.detail, '$.job_id') AND "
+        "j.job_type = 'EXPERIMENT' AND "
         "j.status IN ('RUNNING', 'COMPLETED') AND "
         "json_extract(j.input_payload, '$.experiment_id') IS NEW.id)) "
         "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"

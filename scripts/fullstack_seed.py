@@ -44,7 +44,8 @@ def ensure_fullstack_compat_setup() -> None:
     timestamp = datetime.now(UTC)
     with SessionLocal.begin() as db:
         ai = db.scalar(
-            select(ModelProviderConnectionRow).where(
+            select(ModelProviderConnectionRow)
+            .where(
                 ModelProviderConnectionRow.workspace_id == workspace_id,
                 ModelProviderConnectionRow.owner_actor_id == owner_id,
                 ModelProviderConnectionRow.provider_id == "REMOTE_CODEX",
@@ -322,8 +323,8 @@ def activate_fullstack_database(
             "connection": {
                 "host": parsed.hostname,
                 "port": parsed.port or 5432,
-            "database": database_name,
-            "tls_mode": desired["tls_mode"],
+                "database": database_name,
+                "tls_mode": desired["tls_mode"],
                 "username": unquote(parsed.username),
                 "password": unquote(parsed.password or ""),
                 "pool_profile": "fullstack-ci",

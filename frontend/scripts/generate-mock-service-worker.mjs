@@ -85,6 +85,12 @@ export const patchWorker = (source) => {
 `,
     'uncontrolled active client reconciliation',
   );
+  patched = replaceOnce(
+    patched,
+    '  const liveClientIds = new Set(allClients.map((client) => client.id))\n\n  for (const clientId of activeClientIds) {',
+    '  const liveClientIds = new Set(allClients.map((client) => client.id))\n  if (generation !== lifecycleGeneration) return allClients\n\n  for (const clientId of activeClientIds) {',
+    'stale reconciliation guard',
+  );
 
   patched = replaceOnce(
     patched,

@@ -246,57 +246,31 @@ def _expected_foreign_keys(
 
 def _constraint_shapes(
     table: Any,
-) -> tuple[
-    set[tuple[str | None, tuple[str, ...]]],
-    set[
-        tuple[
-            str | None,
-            tuple[str, ...],
-            tuple[str, ...],
-            str | None,
-        ]
-    ],
-    set[
-        tuple[
-            str | None,
-            str,
-            tuple[tuple[str | None, str, str, str], ...],
-            tuple[str, ...],
-            bool,
-            str | None,
-        ]
-    ],
-    dict[str, str],
-]:
-    unique: set[tuple[str | None, tuple[str, ...]]] = {
+) -> tuple[set[Any], set[Any], set[Any], dict[str, str]]:
+    unique: set[tuple[str | None, tuple[str, ...], Any, Any]] = {
         (
             cast(str | None, constraint.name),
             tuple(str(column.name) for column in constraint.columns),
+            getattr(constraint, "deferrable", None),
+            getattr(constraint, "initially", None),
         )
         for constraint in table.constraints
         if constraint.__class__.__name__ == "UniqueConstraint"
     }
-    foreign_keys: set[
-        tuple[str | None, tuple[str, ...], tuple[str, ...], str | None]
-    ] = {
+    foreign_keys: set[tuple[Any, ...]] = {
         (
             cast(str | None, constraint.name),
             tuple(str(element.parent.name) for element in constraint.elements),
             tuple(str(element.target_fullname) for element in constraint.elements),
             cast(str | None, constraint.ondelete),
+            cast(str | None, constraint.onupdate),
+            getattr(constraint, "deferrable", None),
+            getattr(constraint, "initially", None),
+            cast(str | None, constraint.match),
         )
         for constraint in table.foreign_key_constraints
     }
-    indexes: set[
-        tuple[
-            str | None,
-            str,
-            tuple[tuple[str | None, str, str, str], ...],
-            tuple[str, ...],
-            bool,
-            str | None,
-        ]
-    ] = {
+    indexes: set[tuple[Any, ...]] = {
         (
             cast(str | None, index.name),
             str(index.dialect_options["postgresql"].get("using") or "btree"),
@@ -316,6 +290,16 @@ def _constraint_shapes(
                 if index.dialect_options["sqlite"].get("where") is not None
                 else None
             ),
+            tuple(
+                str(item)
+                for item in index.dialect_options["postgresql"].get("operator_classes")
+                or ()
+            ),
+            index.dialect_options["postgresql"].get("nulls_not_distinct"),
+            str(index.dialect_options["postgresql"].get("with"))
+            if index.dialect_options["postgresql"].get("with") is not None
+            else None,
+            cast(str | None, index.dialect_options["postgresql"].get("tablespace")),
         )
         for index in table.indexes
     }
@@ -373,6 +357,16 @@ def _index_key_tuple(
         direction,
         str(nulls).upper(),
     )
+
+
+def _index_with_signature(value: Any) -> tuple[tuple[str, str], ...]:
+    if not value:
+        return ()
+    if value == "{}":
+        return ()
+    if not isinstance(value, Mapping):
+        raise RuntimeError(f"index storage parameters are not a mapping: {value!r}")
+    return tuple(sorted((str(key), str(item)) for key, item in value.items()))
 
 
 def _legacy_index_key(value: str) -> dict[str, str]:
@@ -444,9 +438,9 @@ def _physical_contract(
     if (
         value.get("table_count") != 63
         or value.get("column_count") != 967
-        or sum(len(table["checks"]) for table in value["tables"]) != 191
+        or sum(len(table["checks"]) for table in value["tables"]) != 218
     ):
-        raise RuntimeError("physical schema is not canonical 63/967/191")
+        raise RuntimeError("physical schema is not canonical 63/967/218")
     documented = _manifest_named_checks(manifest)
     if documented != _DOCUMENTED_NAMED_CHECKS:
         raise RuntimeError(
@@ -469,10 +463,10 @@ def _physical_contract(
     if hashlib.sha256(helper_sql.encode()).hexdigest() != helper_contract["sha256"]:
         raise RuntimeError("physical locator helper contract hash is invalid")
     if (
-        len(helper_contract["truth_table"]["valid"]) != 69
-        or len(helper_contract["truth_table"]["invalid"]) != 76
+        len(helper_contract["truth_table"]["valid"]) != 140
+        or len(helper_contract["truth_table"]["invalid"]) != 159
     ):
-        raise RuntimeError("physical locator truth table is not canonical 69/76")
+        raise RuntimeError("physical locator truth table is not canonical 140/159")
     contract = {table["name"]: table for table in value["tables"]}
     manifest_specs = {table["name"]: table for table in manifest["tables"]}
     for table_spec in manifest["tables"]:
@@ -793,6 +787,8 @@ def _check_metadata(
                     dialect,
                 ),
                 tuple(constraint["columns"]),
+                constraint.get("deferrable"),
+                constraint.get("initially"),
             )
             for constraint in physical_table["unique_constraints"]
         }
@@ -809,6 +805,10 @@ def _check_metadata(
                 tuple(constraint["columns"]),
                 tuple(constraint["targets"]),
                 constraint["ondelete"],
+                constraint.get("onupdate"),
+                constraint.get("deferrable"),
+                constraint.get("initially"),
+                constraint.get("match"),
             )
             for constraint in physical_table["foreign_keys"]
         }
@@ -822,6 +822,10 @@ def _check_metadata(
                 (parsed_expected_indexes or {}).get(
                     (table_name, index["name"]), index["where"]
                 ),
+                tuple(index.get("operator_classes") or ()),
+                index.get("nulls_not_distinct"),
+                _index_with_signature(index.get("with")),
+                index.get("tablespace"),
             )
             for index in physical_table["indexes"]
         }
@@ -836,8 +840,23 @@ def _check_metadata(
                 include,
                 unique,
                 (parsed_actual_indexes or {}).get((table_name, str(name)), where),
+                operator_classes,
+                nulls_not_distinct,
+                _index_with_signature(index_with),
+                tablespace,
             )
-            for name, method, keys, include, unique, where in actual_indexes
+            for (
+                name,
+                method,
+                keys,
+                include,
+                unique,
+                where,
+                operator_classes,
+                nulls_not_distinct,
+                index_with,
+                tablespace,
+            ) in actual_indexes
         }
         for unique_shape in sorted(expected_unique - actual_unique):
             errors.append(f"{label}:missing-unique:{table_name}:{unique_shape}")
@@ -1206,7 +1225,7 @@ def _alembic_revisions(database_url: str) -> tuple[str | None, str | None]:
     return expected, actual
 
 
-def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
+def _check_impl(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
     manifest = load_manifest()
     current = extract_manifest(DEFAULT_DOCUMENT)
     errors: list[str] = []
@@ -1307,6 +1326,33 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
         "alembic_actual": actual_revision,
         "errors": errors,
     }
+
+
+def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
+    try:
+        return _check_impl(database_url, orm=orm)
+    except Exception as error:  # noqa: BLE001 - CLI contract must remain structured
+        try:
+            manifest = load_manifest()
+            manifest_tables = manifest["table_count"]
+            manifest_columns = manifest["column_count"]
+        except Exception:  # noqa: BLE001 - preserve the same structured failure
+            manifest_tables = manifest_columns = None
+        return {
+            "ok": False,
+            "manifest_path": str(MANIFEST_PATH),
+            "manifest_tables": manifest_tables,
+            "manifest_columns": manifest_columns,
+            "locator_helper_sha256": None,
+            "orm_tables": None,
+            "database_tables": None,
+            "database_catalog_tables": None,
+            "database_internal_tables": None,
+            "physical_snapshot_exact": None,
+            "alembic_expected": None,
+            "alembic_actual": None,
+            "errors": [f"inspection:{type(error).__name__}:{error}"],
+        }
 
 
 def main() -> int:

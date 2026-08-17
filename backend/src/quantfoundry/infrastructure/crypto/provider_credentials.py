@@ -28,9 +28,7 @@ def _decode_key(key_id: str, encoded: str) -> bytes:
         if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", encoded):
             raise ValueError("invalid URL-safe base64 alphabet")
         padded = encoded + "=" * (-len(encoded) % 4)
-        key = base64.b64decode(
-            padded.encode("ascii"), altchars=b"-_", validate=True
-        )
+        key = base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
     except (UnicodeEncodeError, binascii.Error, ValueError) as error:
         raise CredentialConfigurationError(
             f"provider credential key is invalid: {key_id}"
@@ -97,14 +95,14 @@ def credential_aad(
     provider_id: str,
     model_name: str | None,
 ) -> bytes:
-    fields = (
+    fields = [
         connection_id,
         workspace_id,
         actor_id,
         provider_id,
-        model_name or "",
-    )
-    return "\x1f".join(fields).encode("utf-8")
+        model_name,
+    ]
+    return json.dumps(fields, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def encrypt_credential(credential: str, *, aad: bytes) -> tuple[bytes, bytes, str]:
@@ -121,9 +119,27 @@ def decrypt_credential(
     key = keys.get(key_id)
     if key is None:
         raise CredentialConfigurationError("provider credential key id is unavailable")
+    candidates = [aad]
     try:
-        plaintext = AESGCM(key).decrypt(nonce, ciphertext, aad)
-        return plaintext.decode("utf-8")
+        fields = json.loads(aad.decode("utf-8"))
+        if (
+            isinstance(fields, list)
+            and len(fields) == 5
+            and all(isinstance(value, str) or value is None for value in fields)
+        ):
+            candidates.append(
+                "\x1f".join(value or "" for value in fields).encode("utf-8")
+            )
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        pass
+    try:
+        for candidate in candidates:
+            try:
+                plaintext = AESGCM(key).decrypt(nonce, ciphertext, candidate)
+                return plaintext.decode("utf-8")
+            except (InvalidTag, UnicodeDecodeError):
+                continue
+        raise InvalidTag
     except (InvalidTag, UnicodeDecodeError, ValueError) as error:
         raise CredentialConfigurationError(
             "provider credential authentication failed"

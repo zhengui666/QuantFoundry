@@ -123,6 +123,15 @@ triggering_actor = (
 )
 if not isinstance(run_actor, str) or not isinstance(triggering_actor, str):
     raise SystemExit("independent review run has no actor identity")
+commit_payload = gh_json(f"/repos/{repository}/commits/{commit}")
+commit_authors = {
+    item.get("login")
+    for field in ("author", "committer")
+    for item in (commit_payload.get(field),)
+    if isinstance(item, dict) and isinstance(item.get("login"), str)
+}
+if run_actor in commit_authors or triggering_actor in commit_authors:
+    raise SystemExit("independent review actor must be independent from the reviewed commit")
 artifacts = gh_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts").get("artifacts", [])
 artifact = next(
     (

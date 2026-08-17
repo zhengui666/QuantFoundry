@@ -39,6 +39,10 @@ def _event_object_types() -> dict[str, str]:
         isinstance(value, str) for value in envelope_values
     ):
         raise RuntimeError("generated SSE event_type is not a closed string enum")
+    if set(envelope_values) != set(EVENT_TYPES) or len(envelope_values) != len(
+        EVENT_TYPES
+    ):
+        raise RuntimeError("generated SSE and EventType enums are inconsistent")
     for rule in schema.get("allOf", []):
         if not isinstance(rule, dict):
             continue

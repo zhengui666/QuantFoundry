@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import socket
 import time
 from datetime import UTC, datetime
 
@@ -16,9 +18,11 @@ from quantfoundry.infrastructure.jobs.queue import reap_expired_jobs, record_hea
 from quantfoundry.scheduler.paper import PaperScheduler
 from quantfoundry.workers.main import cleanup_expired_events
 
+logger = logging.getLogger(__name__)
+
 
 def scheduler_id() -> str:
-    return os.getenv("QF_SCHEDULER_ID") or "scheduler"
+    return os.getenv("QF_SCHEDULER_ID") or f"{socket.gethostname()}:{os.getpid()}"
 
 
 def _domain_ready() -> bool:
@@ -36,20 +40,39 @@ def _domain_ready() -> bool:
 def run_once() -> int:
     if not _domain_ready():
         return 0
-    probe_artifact_store()
-    session = SessionLocal()
+    maintenance_error: Exception | None = None
     try:
-        record_heartbeat(session, "scheduler", scheduler_id(), None)
-        PaperScheduler().discover(session, now=datetime.now(UTC), owner=scheduler_id())
-        retried, failed = reap_expired_jobs(session)
-        reap_orphan_artifacts(session, ArtifactRow)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-    cleanup_expired_events()
+        probe_artifact_store()
+        session = SessionLocal()
+    except Exception as error:
+        logger.exception("scheduler artifact maintenance failed")
+        maintenance_error = error
+        session = None
+    if session is not None:
+        try:
+            record_heartbeat(session, "scheduler", scheduler_id(), None)
+            PaperScheduler().discover(
+                session, now=datetime.now(UTC), owner=scheduler_id()
+            )
+            retried, failed = reap_expired_jobs(session)
+            reap_orphan_artifacts(session, ArtifactRow)
+            session.commit()
+        except Exception as error:
+            session.rollback()
+            logger.exception("scheduler domain maintenance failed")
+            maintenance_error = error
+            retried = failed = 0
+        finally:
+            session.close()
+    else:
+        retried = failed = 0
+    try:
+        cleanup_expired_events()
+    except Exception as error:
+        logger.exception("scheduler event retention failed")
+        maintenance_error = maintenance_error or error
+    if maintenance_error is not None:
+        raise maintenance_error
     return retried + failed
 
 
@@ -58,7 +81,7 @@ def run_forever(poll_seconds: float = 15.0) -> None:
         try:
             run_once()
         except Exception:  # noqa: BLE001 - scheduler retries after recovery
-            pass
+            logger.exception("scheduler iteration failed; retrying")
         time.sleep(poll_seconds)
 
 

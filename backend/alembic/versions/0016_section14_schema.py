@@ -376,9 +376,7 @@ def _lock_singleton_migration(bind: Any) -> None:
         )
     )
     for name in _application_table_names(bind):
-        bind.execute(
-            text(f"LOCK TABLE {_quoted(bind, name)} IN ACCESS EXCLUSIVE MODE")
-        )
+        bind.execute(text(f"LOCK TABLE {_quoted(bind, name)} IN ACCESS EXCLUSIVE MODE"))
     tables = set(_application_table_names(bind))
     if not {"users", "workspaces"}.issubset(tables):
         return
@@ -755,7 +753,7 @@ def _ordinary_authority(
         ):
             revision = row.get("revision")
             matches.append((None, revision if isinstance(revision, int) else None))
-    return list(dict.fromkeys(matches))
+    return matches
 
 
 def _special_authority(
@@ -795,7 +793,7 @@ def _special_authority(
                 and role == object_id
             ):
                 matches.append((None, row.get("revision")))
-    return list(dict.fromkeys(matches))
+    return matches
 
 
 def _strategy_authority(
@@ -1481,7 +1479,7 @@ def _install_guards() -> None:
                    NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   (OLD.state <> 'CANDIDATE' AND
+                   ((OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND
                     (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
                      'latest_backtest' - 'validation_summary' - 'artifacts' -
                      'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
@@ -1600,7 +1598,7 @@ def _install_guards() -> None:
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
         "(OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR "
         "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
-        "(OLD.state != 'CANDIDATE' AND json_remove(NEW.detail, "
+        "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND json_remove(NEW.detail, "
         "'$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
         "'$.validation_summary', '$.artifacts', '$.provenance', '$.frozen_at', "
         "'$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
@@ -1644,6 +1642,17 @@ def _install_guards() -> None:
         "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
         "NEW.revision IS NOT OLD.revision) BEGIN SELECT RAISE(ABORT, "
         "'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
+        "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
+        "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE "
+        "j.job_id = json_extract(NEW.detail, '$.job_id') AND "
+        "j.job_type = 'EXPERIMENT' AND j.status IN ('RUNNING', 'COMPLETED') AND "
+        "json_extract(j.input_payload, '$.experiment_id') = NEW.experiment_id)) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE ON "
@@ -1727,7 +1736,7 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         return load_physical_metadata(
             path,
             include_checks=(bind.dialect.name == "postgresql"),
-            include_sqlite_partial_indexes=(bind.dialect.name == "postgresql"),
+            include_sqlite_null_ordering=(bind.dialect.name == "postgresql"),
             # The frozen physical authority requires records.id to retain its
             # PostgreSQL uuidv7() default.  SQLite deliberately omits it: its
             # compatibility path supplies explicit UUID values instead.

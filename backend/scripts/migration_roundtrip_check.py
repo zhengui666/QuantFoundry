@@ -18,7 +18,7 @@ from alembic import command
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 GATE_MANIFEST_PATH = BACKEND_ROOT / "schema/populated_migration_gate.json"
 APPLICATION_TABLE_COUNT = 63
-CHECK_CONSTRAINT_COUNT = 191
+CHECK_CONSTRAINT_COUNT = 218
 MIGRATION_GATE_MARKER_TABLE = "migration_gate_control.marker"
 COMMITTED_MINIMUM_ROWS = 2503
 COMMITTED_MINIMUM_NONEMPTY_TABLES = 38

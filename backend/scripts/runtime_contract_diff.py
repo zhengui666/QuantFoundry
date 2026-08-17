@@ -27,9 +27,25 @@ def resolve(document: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
     if "$ref" not in value:
         return value
     current: Any = document
-    for segment in value["$ref"].removeprefix("#/").split("/"):
+    for raw_segment in value["$ref"].removeprefix("#/").split("/"):
+        segment = raw_segment.replace("~1", "/").replace("~0", "~")
         current = current[segment]
     return current
+
+
+def normalized_fragment(document: dict[str, Any], value: Any) -> Any:
+    if isinstance(value, dict) and "$ref" in value:
+        target = resolve(document, value)
+        siblings = {key: item for key, item in value.items() if key != "$ref"}
+        value = {**target, **siblings}
+    if isinstance(value, dict):
+        return {
+            key: normalized_fragment(document, item)
+            for key, item in sorted(value.items())
+        }
+    if isinstance(value, list):
+        return [normalized_fragment(document, item) for item in value]
+    return value
 
 
 def normalized_schema(
@@ -55,16 +71,9 @@ def normalized_schema(
             )
         return normalized_schema(document, target, active_refs | {reference})
     result = deepcopy(schema)
-    if not any(
-        key in result
-        for key in ("type", "properties", "items", "$ref", "allOf", "oneOf", "anyOf")
-    ):
-        return result
     result.pop("title", None)
     result.pop("description", None)
     result.pop("examples", None)
-    if result.get("default", object()) is None:
-        result.pop("default", None)
     type_value = result.get("type")
     if isinstance(type_value, list):
         base = {key: value for key, value in result.items() if key != "type"}
@@ -72,30 +81,36 @@ def normalized_schema(
         for branch_type in type_value:
             branch: dict[str, Any]
             if branch_type == "null":
-                branch = {"type": "null"}
+                if base.get("const") is not None or (
+                    isinstance(base.get("enum"), list) and None not in base["enum"]
+                ):
+                    continue
+                branch = {**base, "type": "null"}
+                if isinstance(branch.get("enum"), list):
+                    branch["enum"] = [None]
             else:
                 branch = {**base, "type": branch_type}
                 if isinstance(branch.get("enum"), list):
                     branch["enum"] = [
                         item for item in branch["enum"] if item is not None
                     ]
-            branches.append(normalized_schema(document, branch))
+            branches.append(normalized_schema(document, branch, active_refs))
         return {
             "union": sorted(branches, key=lambda item: json.dumps(item, sort_keys=True))
         }
-    union: list[Any] = []
-    union_keywords = []
-    for keyword in ("oneOf", "anyOf"):
-        branches = result.pop(keyword, None)
-        if branches is not None:
-            union_keywords.append(keyword)
-            union.extend(branches)
-    if union:
-        result["union_keyword"] = tuple(union_keywords)
+    any_of = result.pop("anyOf", None)
+    one_of = result.pop("oneOf", None)
+    if any_of is not None:
         result["union"] = sorted(
-            [normalized_schema(document, branch) for branch in union],
+            [normalized_schema(document, branch, active_refs) for branch in any_of],
             key=lambda item: json.dumps(item, sort_keys=True),
         )
+    if one_of is not None:
+        result["exclusive_union"] = sorted(
+            [normalized_schema(document, branch, active_refs) for branch in one_of],
+            key=lambda item: json.dumps(item, sort_keys=True),
+        )
+    if "union" in result:
         if result.get("type") == "string" and all(
             isinstance(branch, dict)
             and (
@@ -111,6 +126,15 @@ def normalized_schema(
             for branch in result["union"]
         ):
             result.pop("type")
+    if (
+        "exclusive_union" in result
+        and result.get("type") == "string"
+        and all(
+            isinstance(branch, dict) and branch.get("type") == "string"
+            for branch in result["exclusive_union"]
+        )
+    ):
+        result.pop("type")
     for key, value in list(result.items()):
         result[key] = normalized_schema(document, value, active_refs)
     branches = result.get("allOf")
@@ -159,18 +183,25 @@ def normalized_schema(
         def lower_bound(branch: dict[str, Any]) -> int:
             nested = branch.get("union")
             if isinstance(nested, list) and nested:
-                return min(lower_bound(item) for item in nested)
-            return int(branch.get("minLength", 0))
+                values = [
+                    lower_bound(item) for item in nested if isinstance(item, dict)
+                ]
+                return min(values) if values else 0
+            return int(branch.get("minLength", 0)) if isinstance(branch, dict) else 0
 
         def upper_bound(branch: dict[str, Any]) -> int | None:
             nested = branch.get("union")
             if isinstance(nested, list) and nested:
-                values = [upper_bound(item) for item in nested]
+                values = [
+                    upper_bound(item) for item in nested if isinstance(item, dict)
+                ]
                 return (
                     None
                     if None in values
                     else max(cast(int, value) for value in values)
                 )
+            if not isinstance(branch, dict):
+                return None
             value = branch.get("maxLength")
             return int(value) if value is not None else None
 
@@ -202,10 +233,7 @@ def normalized_schema(
         result["enum"] = sorted(result["enum"], key=str)
     if isinstance(result.get("required"), list):
         result["required"] = sorted(result["required"])
-    if (
-        result.get("format") in {"uri", "uri-reference"}
-        and result.get("minLength") == 1
-    ):
+    if result.get("format") == "uri" and result.get("minLength") == 1:
         result.pop("minLength")
     return result
 
@@ -226,21 +254,6 @@ def normalized_parameters(
     for parameter in effective.values():
         location = parameter["in"]
         schema = normalized_schema(document, parameter.get("schema"))
-        if not parameter.get("required", False) and isinstance(schema, dict):
-            non_null = [
-                branch
-                for branch in schema.get("union", [])
-                if branch != {"type": "null"}
-            ]
-            if len(non_null) == 1:
-                schema = {
-                    **non_null[0],
-                    **{
-                        key: value
-                        for key, value in schema.items()
-                        if key not in {"union", "union_keyword"}
-                    },
-                }
         values.append(
             (
                 location,
@@ -260,6 +273,7 @@ def normalized_parameters(
                 ),
                 parameter.get("allowReserved", False),
                 parameter.get("allowEmptyValue", False),
+                parameter.get("deprecated", False),
                 schema,
                 tuple(
                     sorted(
@@ -342,11 +356,15 @@ for key, expected in canonical_operations.items():
         ):
             errors.append(f"{label}: response {status} content types")
         expected_headers = {
-            name.lower(): normalized_schema(canonical, resolve(canonical, header))
+            name.lower(): normalized_schema(
+                canonical, resolve(canonical, header).get("schema")
+            )
             for name, header in expected_response.get("headers", {}).items()
         }
         actual_headers = {
-            name.lower(): normalized_schema(runtime, resolve(runtime, header))
+            name.lower(): normalized_schema(
+                runtime, resolve(runtime, header).get("schema")
+            )
             for name, header in actual_response.get("headers", {}).items()
         }
         if expected_headers != actual_headers:
@@ -359,6 +377,20 @@ for key, expected in canonical_operations.items():
                 errors.append(f"{label}: response {status} {media_type} schema")
             if normalized_encoding(expected_media) != normalized_encoding(actual_media):
                 errors.append(f"{label}: response {status} {media_type} encoding")
+        if normalized_fragment(
+            canonical, expected_response.get("links", {})
+        ) != normalized_fragment(runtime, actual_response.get("links", {})):
+            errors.append(f"{label}: response {status} links")
+    if expected.get("deprecated", False) != actual.get("deprecated", False):
+        errors.append(f"{label}: deprecated")
+    if normalized_fragment(
+        canonical, expected.get("servers", [])
+    ) != normalized_fragment(runtime, actual.get("servers", [])):
+        errors.append(f"{label}: servers")
+    if normalized_fragment(
+        canonical, expected.get("callbacks", {})
+    ) != normalized_fragment(runtime, actual.get("callbacks", {})):
+        errors.append(f"{label}: callbacks")
     expected_security = expected.get("security", canonical.get("security"))
     actual_security = actual.get("security", runtime.get("security"))
     if normalized_security(expected_security) != normalized_security(actual_security):

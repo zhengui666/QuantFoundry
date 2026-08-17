@@ -45,11 +45,11 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     desc,
+    event,
     inspect,
     select,
     text,
     update,
-    event,
 )
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
@@ -342,19 +342,82 @@ def _control_path() -> Path:
     return Path.home() / ".quantfoundry" / "control.db"
 
 
+def _sqlite_bootstrap_audit_hash(
+    sequence,
+    event_id,
+    event_type,
+    actor_principal,
+    access_key_id,
+    session_id_sha256,
+    configuration_revision,
+    database_connection_revision,
+    before_sha256,
+    after_sha256,
+    masked_summary,
+    previous_event_hash,
+    created_at,
+):
+    if isinstance(masked_summary, str):
+        try:
+            masked_summary = json.loads(masked_summary)
+        except json.JSONDecodeError:
+            pass
+    created_at = str(created_at)
+    try:
+        parsed = datetime.fromisoformat(created_at.replace(" ", "T"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        created_at = (
+            parsed.astimezone(UTC)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z")
+        )
+    except ValueError:
+        pass
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "sequence": sequence,
+                "event_id": event_id,
+                "event_type": event_type,
+                "actor_principal": actor_principal,
+                "access_key_id": access_key_id,
+                "session_id_sha256": session_id_sha256,
+                "configuration_revision": configuration_revision,
+                "database_connection_revision": database_connection_revision,
+                "before_sha256": before_sha256,
+                "after_sha256": after_sha256,
+                "masked_summary": masked_summary,
+                "previous_event_hash": previous_event_hash,
+                "created_at": created_at,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(", ", ": "),
+            default=str,
+        ).encode()
+    ).hexdigest()
+
+
 def _engine():
     configured_url = os.getenv("QF_CONTROL_DB_URL")
     if configured_url:
-        return create_engine(configured_url)
-    path = _control_path()
-    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-    engine = create_engine(
-        f"sqlite:///{path}", connect_args={"check_same_thread": False}
-    )
+        engine = create_engine(configured_url)
+    else:
+        path = _control_path()
+        path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+        engine = create_engine(
+            f"sqlite:///{path}", connect_args={"check_same_thread": False}
+        )
 
-    @event.listens_for(engine, "connect")
-    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
-        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+    if engine.dialect.name == "sqlite":
+
+        @event.listens_for(engine, "connect")
+        def _configure_sqlite_control_connection(dbapi_connection, _connection_record):
+            dbapi_connection.execute("PRAGMA foreign_keys=ON")
+            dbapi_connection.create_function(
+                "qf_bootstrap_audit_hash", 13, _sqlite_bootstrap_audit_hash
+            )
 
     return engine
 
@@ -709,7 +772,7 @@ def _load_catalog_seed() -> list[dict[str, Any]]:
     return list(document["entries"])
 
 
-def _upgrade_control_columns() -> None:
+def _upgrade_control_columns(connection=None) -> None:
     """Add only forward-compatible nullable columns to pre-D2 local control DBs."""
     additions = {
         "general_access_keys": {
@@ -724,21 +787,23 @@ def _upgrade_control_columns() -> None:
             "secret_key_id": "VARCHAR(128)",
         },
     }
-    with CONTROL_ENGINE.begin() as connection:
-        for table, columns in additions.items():
-            present = {
-                column["name"] for column in inspect(connection).get_columns(table)
-            }
-            for name, sql_type in columns.items():
-                if name not in present:
-                    connection.execute(
-                        text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
-                    )
+    if connection is None:
+        with CONTROL_ENGINE.begin() as managed_connection:
+            _upgrade_control_columns(managed_connection)
+        return
+    for table, columns in additions.items():
+        present = {column["name"] for column in inspect(connection).get_columns(table)}
+        for name, sql_type in columns.items():
+            if name not in present:
+                connection.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
+                )
 
 
-def init_control_db() -> None:
+def init_control_db(connection=None) -> None:
+    bind = connection or CONTROL_ENGINE
     try:
-        existing_tables = set(inspect(CONTROL_ENGINE).get_table_names())
+        existing_tables = set(inspect(bind).get_table_names())
     except SQLAlchemyError as error:
         raise RuntimeError(
             "BOOTSTRAP_LOCKED: control database is unreadable"
@@ -750,9 +815,14 @@ def init_control_db() -> None:
         raise RuntimeError(
             f"BOOTSTRAP_LOCKED: control schema is incomplete ({missing})"
         )
-    CONTROL_METADATA.create_all(CONTROL_ENGINE)
-    _upgrade_control_columns()
-    with ControlSessionLocal.begin() as session:
+    CONTROL_METADATA.create_all(bind)
+    _upgrade_control_columns(connection)
+    session_context = (
+        ControlSessionLocal.begin()
+        if connection is None
+        else Session(bind=connection, expire_on_commit=False)
+    )
+    with session_context as session:
         now = _now()
         state = session.get(BootstrapState, "BOOTSTRAP-DEFAULT")
         if state is None:
@@ -766,9 +836,7 @@ def init_control_db() -> None:
             )
             session.add(state)
         elif state.schema_version != CONTROL_SCHEMA_VERSION:
-            raise RuntimeError(
-                "BOOTSTRAP_LOCKED: control schema version mismatch"
-            )
+            raise RuntimeError("BOOTSTRAP_LOCKED: control schema version mismatch")
         if session.execute(select(ConfigurationCatalogRow)).first() is None:
             for entry in _load_catalog_seed():
                 session.add(
@@ -811,6 +879,7 @@ def init_control_db() -> None:
             state.active_configuration_revision = revision.revision
             state.last_known_good_configuration_revision = revision.revision
             state.updated_at = now
+        session.flush()
 
 
 def _root_key() -> tuple[str, bytes]:
@@ -981,7 +1050,26 @@ def _audit(
             "previous_event_hash": previous_hash,
             "created_at": now.isoformat(),
         }
-        event_hash = _json_hash(event)
+        event_hash = _sqlite_bootstrap_audit_hash(
+            *(
+                event[name]
+                for name in (
+                    "sequence",
+                    "event_id",
+                    "event_type",
+                    "actor_principal",
+                    "access_key_id",
+                    "session_id_sha256",
+                    "configuration_revision",
+                    "database_connection_revision",
+                    "before_sha256",
+                    "after_sha256",
+                    "masked_summary",
+                    "previous_event_hash",
+                    "created_at",
+                )
+            )
+        )
         session.add(
             BootstrapAuditEvent(
                 sequence=sequence,
@@ -1043,6 +1131,19 @@ def _login_rate_limited(request: Request, session: Session) -> bool:
     source = request.client.host if request.client else "unknown"
     now = _now()
     source_hash = hashlib.sha256(source.encode()).hexdigest()
+    state = session.scalar(
+        select(BootstrapState)
+        .where(BootstrapState.singleton_key == "BOOTSTRAP-DEFAULT")
+        .with_for_update()
+    )
+    if state is not None:
+        # The write makes SQLite acquire its database lock; PostgreSQL uses the
+        # row lock above. Keep it until the login attempt commits.
+        session.execute(
+            update(BootstrapState)
+            .where(BootstrapState.singleton_key == "BOOTSTRAP-DEFAULT")
+            .values(updated_at=state.updated_at)
+        )
     failures = [
         event
         for event in session.scalars(
@@ -1345,7 +1446,7 @@ def _run_catalog_validator(
         if timezone:
             try:
                 ZoneInfo(str(timezone))
-            except ZoneInfoNotFoundError:
+            except (ZoneInfoNotFoundError, ValueError):
                 invalid("timezone is not supported")
         elif value.get("calendar") == "CUSTOM":
             invalid("CUSTOM calendar requires timezone")
@@ -1365,7 +1466,7 @@ def _run_catalog_validator(
             invalid("language must be a BCP-47 tag")
         try:
             ZoneInfo(str(value.get("timezone")))
-        except ZoneInfoNotFoundError:
+        except (ZoneInfoNotFoundError, ValueError):
             invalid("timezone is not supported")
     elif validator == "observability.runtime.secret_redaction_and_payload_policy":
         if value.get("metrics_endpoint") and not _https_endpoint(
@@ -1875,6 +1976,11 @@ def restore_active_domain_database() -> None:
         previous_engine, _candidate_engine = _rebind_domain_database(active)
         _dispose_engine(previous_engine)
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
+        with ControlSessionLocal.begin() as db:
+            state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+            if state is not None:
+                state.readiness_state = "DEGRADED"
+                state.updated_at = _now()
         domain_main.app.state.domain_database_available = False
         domain_main.app.state.domain_database_revision = None
         canonical_main.app.state.domain_database_available = False
@@ -1882,6 +1988,12 @@ def restore_active_domain_database() -> None:
         return
     domain_main.app.state.domain_database_available = True
     canonical_main.app.state.domain_database_available = True
+    with ControlSessionLocal.begin() as db:
+        state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+        if state is not None:
+            state.readiness_state = "READY"
+            state.active_database_connection_revision = active.revision
+            state.updated_at = _now()
 
 
 def ensure_domain_database_current() -> None:
@@ -2072,9 +2184,11 @@ def build_router() -> APIRouter:
             else:
                 peppered, pepper_key_id = _peppered_secret(secret, key.per_key_salt)
                 verified = PH.verify(verifier, peppered)
-                verified = verified and hmac.compare_digest(
-                    pepper_key_id, key.pepper_key_id
-                )
+                stored_pepper_key_id = cast(object, key.pepper_key_id)
+                if not isinstance(stored_pepper_key_id, str):
+                    verified = False
+                elif verified:
+                    verified = hmac.compare_digest(pepper_key_id, stored_pepper_key_id)
             valid = valid and verified
             if valid and key is not None and legacy:
                 per_key_salt = secrets.token_bytes(16)
@@ -2268,23 +2382,33 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
-            row = db.get(GeneralAccessKey, key_id)
-            if row is None:
-                return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
-            mismatch = _if_match(if_match, "key", row.revision)
-            if mismatch is not None:
-                return mismatch
-            row.label = data.label
-            row.revision += 1
-            _audit(
-                db,
-                "KEY_RENAMED",
-                current.access_key_id if current else None,
-                {"key_id": key_id, "revision": row.revision},
-                session_id=current.session_id if current else None,
-            )
-            return _metadata(row)
+        lock = (
+            _access_key_mutation_lock()
+            if CONTROL_ENGINE.dialect.name == "sqlite"
+            else nullcontext()
+        )
+        with lock:
+            with ControlSessionLocal.begin() as db:
+                row = db.execute(
+                    select(GeneralAccessKey)
+                    .where(GeneralAccessKey.key_id == key_id)
+                    .with_for_update()
+                ).scalar_one_or_none()
+                if row is None:
+                    return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
+                mismatch = _if_match(if_match, "key", row.revision)
+                if mismatch is not None:
+                    return mismatch
+                row.label = data.label
+                row.revision += 1
+                _audit(
+                    db,
+                    "KEY_RENAMED",
+                    current.access_key_id if current else None,
+                    {"key_id": key_id, "revision": row.revision},
+                    session_id=current.session_id if current else None,
+                )
+                return _metadata(row)
 
     def _revoke_key(key_id: str, request: Request, status: str, if_match: str | None):
         current, error = _csrf_session(request)
@@ -2297,7 +2421,11 @@ def build_router() -> APIRouter:
         )
         with lock:
             with ControlSessionLocal.begin() as db:
-                row = db.get(GeneralAccessKey, key_id)
+                row = db.execute(
+                    select(GeneralAccessKey)
+                    .where(GeneralAccessKey.key_id == key_id)
+                    .with_for_update()
+                ).scalar_one_or_none()
                 if row is None:
                     return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
                 mismatch = _if_match(if_match, "key", row.revision)
@@ -2379,53 +2507,65 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with _control_transaction() as db:
-            old = db.get(GeneralAccessKey, key_id)
-            if old is None:
-                return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
-            mismatch = _if_match(if_match, "key", old.revision)
-            if mismatch is not None:
-                return mismatch
-            new_id = "gak_" + "".join(
-                secrets.choice("abcdefghijklmnopqrstuvwxyz0123456789")
-                for _ in range(20)
-            )
-            secret = (
-                base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
-            )
-            now = _now()
-            per_key_salt = secrets.token_bytes(16)
-            peppered, pepper_key_id = _peppered_secret(secret, per_key_salt)
-            new = GeneralAccessKey(
-                key_id=new_id,
-                label=old.label,
-                verifier_phc=PH.hash(peppered),
-                per_key_salt=per_key_salt,
-                pepper_key_id=pepper_key_id,
-                masked_hint=f"…{secret[-8:]}",
-                expires_at=old.expires_at,
-                created_at=now,
-                revision=1,
-            )
-            db.add(new)
-            old.status = "REVOKED"
-            old.revoked_at = now
-            old.revision += 1
-            db.query(OwnerSession).filter(
-                OwnerSession.access_key_id == old.key_id,
-                OwnerSession.revoked_at.is_(None),
-                OwnerSession.session_id != current.session_id,
-            ).update({"revoked_at": now, "revoke_reason": "ROTATED"})
-            _audit(
-                db,
-                "KEY_ROTATED",
-                current.access_key_id if current else None,
-                {"new_key_id": new_id, "replaced_key_id": old.key_id},
-                session_id=current.session_id if current else None,
-            )
-        return GeneralAccessKeyIssued(
-            key=_metadata(new), secret=f"qfk_{new_id}.{secret}"
+        lock = (
+            _access_key_mutation_lock()
+            if CONTROL_ENGINE.dialect.name == "sqlite"
+            else nullcontext()
         )
+        with lock:
+            with _control_transaction() as db:
+                old = db.execute(
+                    select(GeneralAccessKey)
+                    .where(GeneralAccessKey.key_id == key_id)
+                    .with_for_update()
+                ).scalar_one_or_none()
+                if old is None:
+                    return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
+                mismatch = _if_match(if_match, "key", old.revision)
+                if mismatch is not None:
+                    return mismatch
+                new_id = "gak_" + "".join(
+                    secrets.choice("abcdefghijklmnopqrstuvwxyz0123456789")
+                    for _ in range(20)
+                )
+                secret = (
+                    base64.urlsafe_b64encode(secrets.token_bytes(32))
+                    .decode()
+                    .rstrip("=")
+                )
+                now = _now()
+                per_key_salt = secrets.token_bytes(16)
+                peppered, pepper_key_id = _peppered_secret(secret, per_key_salt)
+                new = GeneralAccessKey(
+                    key_id=new_id,
+                    label=old.label,
+                    verifier_phc=PH.hash(peppered),
+                    per_key_salt=per_key_salt,
+                    pepper_key_id=pepper_key_id,
+                    masked_hint=f"…{secret[-8:]}",
+                    expires_at=old.expires_at,
+                    created_at=now,
+                    revision=1,
+                )
+                db.add(new)
+                old.status = "REVOKED"
+                old.revoked_at = now
+                old.revision += 1
+                db.query(OwnerSession).filter(
+                    OwnerSession.access_key_id == old.key_id,
+                    OwnerSession.revoked_at.is_(None),
+                    OwnerSession.session_id != current.session_id,
+                ).update({"revoked_at": now, "revoke_reason": "ROTATED"})
+                _audit(
+                    db,
+                    "KEY_ROTATED",
+                    current.access_key_id if current else None,
+                    {"new_key_id": new_id, "replaced_key_id": old.key_id},
+                    session_id=current.session_id if current else None,
+                )
+            return GeneralAccessKeyIssued(
+                key=_metadata(new), secret=f"qfk_{new_id}.{secret}"
+            )
 
     @router.get(
         "/configuration/catalog",
@@ -2836,7 +2976,10 @@ def build_router() -> APIRouter:
             workspace_id = (
                 getattr(actor, "workspace_id", None) if actor is not None else None
             )
-            callback = lambda: _sync_domain_compat_setup(workspace_id)
+
+            def callback() -> None:
+                _sync_domain_compat_setup(workspace_id)
+
             post_commit = _IDEMPOTENCY_POST_COMMIT.get()
             if post_commit is None:
                 callback()
@@ -3233,6 +3376,7 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
+        switched: tuple[Any, Any] | None = None
         try:
             with _control_transaction() as db:
                 state = _lock_bootstrap_state(db)
@@ -3282,10 +3426,7 @@ def build_router() -> APIRouter:
                         409, probe_failure, "database candidate is no longer valid"
                     )
                 try:
-                    previous_engine, candidate_engine = _rebind_domain_database(
-                        candidate
-                    )
-                    _schedule_domain_switch_cleanup(previous_engine, candidate_engine)
+                    switched = _rebind_domain_database(candidate)
                 except (
                     SQLAlchemyError,
                     OSError,
@@ -3300,10 +3441,6 @@ def build_router() -> APIRouter:
                         409, "DATABASE_SWITCH_FAILED", "database canary failed"
                     )
                 now = _now()
-                if active is not None:
-                    active.state = "SUPERSEDED"
-                candidate.state = "ACTIVE"
-                candidate.activated_at = now
                 active_revision_filter = (
                     BootstrapState.active_database_connection_revision.is_(None)
                     if current_revision == 0
@@ -3326,9 +3463,17 @@ def build_router() -> APIRouter:
                     )
                 )
                 if state_update.rowcount != 1:
+                    _restore_domain_database(*switched)
+                    switched = None
                     return _problem(
                         412, "REVISION_MISMATCH", "database revision does not match"
                     )
+                if active is not None:
+                    active.state = "SUPERSEDED"
+                candidate.state = "ACTIVE"
+                candidate.activated_at = now
+                _schedule_domain_switch_cleanup(*switched)
+                switched = None
                 _audit(
                     db,
                     "DATABASE_ACTIVATED",
@@ -3358,6 +3503,8 @@ def build_router() -> APIRouter:
             TypeError,
             RuntimeError,
         ):
+            if switched is not None:
+                _restore_domain_database(*switched)
             raise
         return payload
 
@@ -3379,6 +3526,7 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
+        switched: tuple[Any, Any] | None = None
         try:
             with _control_transaction() as db:
                 state = _lock_bootstrap_state(db)
@@ -3416,8 +3564,7 @@ def build_router() -> APIRouter:
                         409, probe_failure, "last-known-good database is unavailable"
                     )
                 try:
-                    previous_engine, candidate_engine = _rebind_domain_database(lkg)
-                    _schedule_domain_switch_cleanup(previous_engine, candidate_engine)
+                    switched = _rebind_domain_database(lkg)
                 except (
                     SQLAlchemyError,
                     OSError,
@@ -3429,8 +3576,6 @@ def build_router() -> APIRouter:
                     return _problem(
                         409, "DATABASE_SWITCH_FAILED", "last-known-good canary failed"
                     )
-                active.state = "SUPERSEDED"
-                lkg.state = "ACTIVE"
                 now = _now()
                 state_update = db.execute(
                     update(BootstrapState)
@@ -3446,9 +3591,15 @@ def build_router() -> APIRouter:
                     )
                 )
                 if state_update.rowcount != 1:
+                    _restore_domain_database(*switched)
+                    switched = None
                     return _problem(
                         412, "REVISION_MISMATCH", "database revision does not match"
                     )
+                active.state = "SUPERSEDED"
+                lkg.state = "ACTIVE"
+                _schedule_domain_switch_cleanup(*switched)
+                switched = None
                 _audit(
                     db,
                     "DATABASE_REVERTED",
@@ -3476,6 +3627,8 @@ def build_router() -> APIRouter:
             TypeError,
             RuntimeError,
         ):
+            if switched is not None:
+                _restore_domain_database(*switched)
             raise
         return payload
 

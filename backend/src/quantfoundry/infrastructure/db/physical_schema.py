@@ -92,7 +92,7 @@ def load_physical_metadata(
     path: Path,
     *,
     include_checks: bool = True,
-    include_sqlite_partial_indexes: bool = True,
+    include_sqlite_null_ordering: bool = True,
     include_server_defaults: bool = True,
 ) -> MetaData:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -223,9 +223,8 @@ def load_physical_metadata(
                         raise ValueError(
                             f"unsupported index direction {direction!r} on {index['name']}"
                         )
-                    if not include_sqlite_partial_indexes:
-                        # SQLite rejects PostgreSQL's NULLS FIRST/LAST index
-                        # syntax; retain the SQLite-compatible partial predicate.
+                    if not include_sqlite_null_ordering:
+                        # SQLite rejects PostgreSQL's NULLS FIRST/LAST index syntax.
                         nulls = None
                     if nulls == "FIRST":
                         expression = expression.nulls_first()
@@ -245,8 +244,6 @@ def load_physical_metadata(
                 postgresql_using=index.get("method"),
                 postgresql_include=index.get("include"),
                 postgresql_where=text(index["where"]) if index["where"] else None,
-                sqlite_where=(
-                    text(index["where"]) if index["where"] else None
-                ),
+                sqlite_where=(text(index["where"]) if index["where"] else None),
             )
     return metadata
