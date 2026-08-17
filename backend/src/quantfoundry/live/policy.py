@@ -219,6 +219,8 @@ def apply_fill(
         "FILLED",
     }:
         raise LivePolicyError("terminal status is invalid")
+    if terminal_status == "FILLED" and cumulative != quantity:
+        raise LivePolicyError("FILLED status requires the complete order quantity")
     target: OrderStatus = (
         "FILLED" if cumulative == quantity else terminal_status or "PARTIALLY_FILLED"
     )

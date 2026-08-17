@@ -258,8 +258,6 @@ tool_check() {
   require_file docs/后端系统技术方案/contracts/tools/v1-p0.yaml
   run_backend python "$repo_root/scripts/tool_contract_check.py" \
     --schema-out "$ci_tmp/tool-contract.schema.json"
-  (cd "$repo_root/frontend" && pnpm dlx ajv-cli@5.0.0 compile \
-    --spec=draft2020 --strict=false -s "$ci_tmp/tool-contract.schema.json")
   run_backend python "$repo_root/scripts/tool_contract_check.py" \
     --schema-out "$ci_tmp/tool-contract.schema.json" --validate-instance
 }

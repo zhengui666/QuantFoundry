@@ -55,6 +55,8 @@ from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from quantfoundry.infrastructure.crypto.provider_credentials import credential_fingerprint
+
 try:
     import fcntl
 except ImportError:  # pragma: no cover - Windows has no supported deployment path
@@ -375,7 +377,7 @@ def _sqlite_bootstrap_audit_hash(
     except ValueError:
         pass
     return hashlib.sha256(
-        json.dumps(
+        _canonical_json(
             {
                 "sequence": sequence,
                 "event_id": event_id,
@@ -390,13 +392,25 @@ def _sqlite_bootstrap_audit_hash(
                 "masked_summary": masked_summary,
                 "previous_event_hash": previous_event_hash,
                 "created_at": created_at,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(", ", ": "),
-            default=str,
+            }
         ).encode()
     ).hexdigest()
+
+
+def _canonical_json(value: Any) -> str:
+    """Match PostgreSQL jsonb output ordering for the control audit vector."""
+    if isinstance(value, dict):
+        items = sorted(
+            value.items(),
+            key=lambda item: (len(str(item[0]).encode()), str(item[0]).encode()),
+        )
+        return "{" + ",".join(
+            f"{json.dumps(str(key), ensure_ascii=False)}:{_canonical_json(item)}"
+            for key, item in items
+        ) + "}"
+    if isinstance(value, list):
+        return "[" + ",".join(_canonical_json(item) for item in value) + "]"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
 def _engine():
@@ -801,6 +815,11 @@ def _upgrade_control_columns(connection=None) -> None:
 
 
 def init_control_db(connection=None) -> None:
+    with _control_file_lock("control.db.init.lock"):
+        _init_control_db(connection)
+
+
+def _init_control_db(connection=None) -> None:
     bind = connection or CONTROL_ENGINE
     try:
         existing_tables = set(inspect(bind).get_table_names())
@@ -823,6 +842,13 @@ def init_control_db(connection=None) -> None:
         else Session(bind=connection, expire_on_commit=False)
     )
     with session_context as session:
+        if session.get_bind().dialect.name == "postgresql":
+            session.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtext('quantfoundry.control.init'))"
+                )
+            )
         now = _now()
         state = session.get(BootstrapState, "BOOTSTRAP-DEFAULT")
         if state is None:
@@ -1275,16 +1301,15 @@ def _session_view(session: OwnerSession, csrf_token: str) -> OwnerSessionView:
 def _value_view(
     session: Session, row: ConfigurationValue, catalog: ConfigurationCatalogRow
 ) -> ConfigurationValueView:
-    is_secret = catalog.sensitivity == "SECRET" or row.ciphertext is not None
+    configured = row.ciphertext is not None or row.typed_value is not None
+    is_protected = catalog.sensitivity in {"SECRET", "MASKED"} or row.ciphertext is not None
     return ConfigurationValueView.model_validate(
         {
             "key": row.key,
             "sensitivity": catalog.sensitivity,
-            "configured": row.ciphertext is not None or row.typed_value is not None,
-            "value": None if is_secret else row.typed_value,
-            "masked_hint": "configured"
-            if is_secret and row.ciphertext is not None
-            else None,
+            "configured": configured,
+            "value": None if is_protected else row.typed_value,
+            "masked_hint": "configured" if is_protected and configured else None,
         }
     )
 
@@ -1686,6 +1711,8 @@ def _database_url(
             mode="w", encoding="utf-8", delete=False
         ) as handle:
             handle.write(ca_pem)
+            handle.flush()
+            os.chmod(handle.name, 0o600)
             temp_paths.append(handle.name)
         connect_args["sslrootcert"] = temp_paths[-1]
     client_key = secret.get("client_key_pem")
@@ -1694,6 +1721,8 @@ def _database_url(
             mode="w", encoding="utf-8", delete=False
         ) as handle:
             handle.write(client_key)
+            handle.flush()
+            os.chmod(handle.name, 0o600)
             temp_paths.append(handle.name)
         connect_args["sslkey"] = temp_paths[-1]
     return url, connect_args, temp_paths
@@ -2146,7 +2175,7 @@ def _sync_domain_compat_setup(workspace_id: str | None = None) -> None:
                 binding.revision += 1
                 binding.updated_at = timestamp
     except (ImportError, OSError, SQLAlchemyError, RuntimeError, ValueError, TypeError):
-        return
+        raise
 
 
 def build_router() -> APIRouter:
@@ -2678,13 +2707,13 @@ def build_router() -> APIRouter:
                             key=item.key,
                             ciphertext=encrypted,
                             secret_key_id=key_id,
-                            value_sha256=hashlib.sha256(secret.encode()).hexdigest(),
+                            value_sha256=credential_fingerprint(secret),
                         )
                     )
                     snapshot[item.key] = {
                         "configured": True,
                         "secret": True,
-                        "value_sha256": hashlib.sha256(secret.encode()).hexdigest(),
+                        "value_sha256": credential_fingerprint(secret),
                     }
                 else:
                     typed = value.get("value")
@@ -2728,12 +2757,13 @@ def build_router() -> APIRouter:
         if error is not None:
             return error
         with _control_transaction() as db:
-            candidate = db.scalar(
-                select(ConfigurationRevision)
-                .where(ConfigurationRevision.state == "CANDIDATE")
-                .order_by(desc(ConfigurationRevision.revision))
+            active = db.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
+            candidate = (
+                db.get(ConfigurationRevision, active.candidate_revision)
+                if active is not None and active.candidate_revision is not None
+                else None
             )
-            if candidate is None:
+            if candidate is None or candidate.state != "CANDIDATE":
                 return _problem(
                     404, "RESOURCE_NOT_FOUND", "candidate configuration not found"
                 )
@@ -2749,7 +2779,6 @@ def build_router() -> APIRouter:
                     )
                 )
             )
-            active = db.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
             effective_rows = (
                 _effective_value_rows(db, active.active_revision) if active else {}
             )

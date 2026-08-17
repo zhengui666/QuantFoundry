@@ -52,12 +52,22 @@ def args() -> argparse.Namespace:
 def read_commands(options: argparse.Namespace) -> list[dict[str, Any]]:
     if options.result_file:
         result = json.loads(options.result_file.read_text(encoding="utf-8"))
+        expected_gate = (
+            "supply-chain-review"
+            if options.blocker == [SUPPLY_BLOCKER]
+            else "main-full"
+            if options.role == "test"
+            else "independent-review"
+        )
         if (
             result.get("result") != "pass"
             or result.get("exit_code") != 0
             or result.get("commit") != options.commit_sha
+            or result.get("gate") != expected_gate
         ):
-            raise SystemExit("P0 evidence requires a passing gate result")
+            raise SystemExit(
+                f"P0 evidence requires a passing {expected_gate} gate result"
+            )
         steps = result.get("steps")
         if not isinstance(steps, list) or not steps:
             raise SystemExit("P0 evidence requires structured gate steps")
@@ -83,6 +93,9 @@ def main() -> None:
     run_id = os.environ.get("GITHUB_RUN_ID")
     if not repository or not run_id or not run_id.isdigit() or int(run_id) < 1:
         raise SystemExit("GITHUB_REPOSITORY and GITHUB_RUN_ID are required")
+    github_sha = os.environ.get("GITHUB_SHA", "")
+    if github_sha != options.commit_sha:
+        raise SystemExit("commit_sha must equal the GitHub Actions commit")
     registry_path = (
         pathlib.Path(__file__).resolve().parents[2] / "docs/治理/p0-blockers.yaml"
     )
@@ -134,7 +147,11 @@ def main() -> None:
             )
             + b"\n"
         )
-        destination.write_bytes(payload)
+        try:
+            with destination.open("xb") as handle:
+                handle.write(payload)
+        except FileExistsError as error:
+            raise SystemExit(f"refusing to overwrite immutable evidence: {destination}") from error
 
 
 if __name__ == "__main__":

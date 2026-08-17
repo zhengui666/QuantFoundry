@@ -27,9 +27,9 @@ criteria = [
     "Independent review commands completed successfully on the reviewed commit.",
 ]
 scope_paths = [
-    "AGENTS.md", "PROJECT_BACKGROUND.md", "backend/src/quantfoundry", "backend/app/agent_runtime.py", "backend/workers",
+    "AGENTS.md", "PROJECT_BACKGROUND.md", "Makefile", "backend/pyproject.toml", "backend/uv.lock", "backend/src/quantfoundry", "backend/app/agent_runtime.py", "backend/workers", "frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/src",
     "docs/Agent技术方案", "docs/后端系统技术方案/contracts/tools", "docs/治理",
-    ".github/workflows", "scripts/ci", "scripts/ci.sh", "scripts/tool_contract_check.py", "scripts/release-check.sh", "scripts/release-evidence.sh", "scripts/release-known-issues-check.sh",
+    ".github/workflows", "scripts/ci", "scripts/ci.sh", "scripts/api_healthcheck.py", "scripts/p0-check.sh", "scripts/p0-check-test.sh", "scripts/tool_contract_check.py", "scripts/release-check.sh", "scripts/release-evidence.sh", "scripts/release-known-issues-check.sh",
 ]
 scope_digest = hashlib.sha256(subprocess.check_output([
     "git", "-C", repository_root, "ls-tree", "-r", "--full-tree", commit, "--", *scope_paths,
@@ -89,7 +89,7 @@ printf '%s\n' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/commits/* ]]; then printf "{\"author\":{\"login\":\"%s\"},\"committer\":{\"login\":\"%s\"}}\n" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
-  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"9c42061823b49952e28d66434de97b98e61f7b06\"}\n"; exit 0; fi' \
+  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"51bf6299bb3c1a290530efe7a99a6e043a43359d\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then if [[ -n "$output" ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; else cat "$QF_REVIEW_MOCK_ARCHIVE"; fi; exit 0; fi' \
   'exit 1' > "$mock_gh"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -55,12 +56,45 @@ REGISTRY_DATA_SCHEMA = {
                     "version": {"type": "string", "pattern": r"^1\.0$"},
                     "input_schema": {"type": "object"},
                     "output_schema": {"type": "object"},
-                    "allowed_agent_roles": {"type": "array"},
-                    "idempotency_class": {"type": "string"},
-                    "side_effect_class": {"type": "string"},
+                    "allowed_agent_roles": {
+                        "type": "array",
+                        "minItems": 1,
+                        "uniqueItems": True,
+                        "items": {
+                            "enum": [
+                                "RESEARCH_DIRECTOR",
+                                "FACTOR_SCIENTIST",
+                                "STRATEGY_SCIENTIST",
+                                "PORTFOLIO_ANALYST",
+                                "RED_TEAM_RESEARCHER",
+                                "PERFORMANCE_ANALYST",
+                            ]
+                        },
+                    },
+                    "idempotency_class": {
+                        "enum": [
+                            "READ_ONLY",
+                            "IDEMPOTENT",
+                            "NATURAL_KEY",
+                            "NON_IDEMPOTENT",
+                        ]
+                    },
+                    "side_effect_class": {
+                        "enum": [
+                            "NONE",
+                            "CREATE_RESEARCH_OBJECT",
+                            "LIFECYCLE_MUTATION",
+                            "APPROVAL_REQUEST",
+                            "CAPITAL_GATE",
+                        ]
+                    },
                     "execution_mode": {"enum": ["SYNC", "JOB"]},
                     "timeout_seconds": {"type": "integer", "minimum": 1},
-                    "requires_policy_checks": {"type": "array"},
+                    "requires_policy_checks": {
+                        "type": "array",
+                        "uniqueItems": True,
+                        "items": {"type": "string"},
+                    },
                     "requires_snapshot": {"type": "boolean"},
                 },
             },
@@ -81,12 +115,83 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def _resolve_local(document: dict[str, Any], reference: str, location: str) -> Any:
+    if not reference.startswith("#/"):
+        raise AssertionError(f"{location}: external OpenAPI reference is not allowed")
+    current: Any = document
+    try:
+        for raw_segment in reference[2:].split("/"):
+            segment = raw_segment.replace("~1", "/").replace("~0", "~")
+            current = current[segment]
+    except (KeyError, IndexError, TypeError) as error:
+        raise AssertionError(f"{location}: unresolved OpenAPI reference {reference}") from error
+    return current
+
+
+def validate_openapi_document(document: dict[str, Any]) -> None:
+    require(
+        isinstance(document.get("openapi"), str)
+        and document["openapi"].startswith("3.1."),
+        "OpenAPI document must declare 3.1.x",
+    )
+    require(
+        isinstance(document.get("info"), dict)
+        and isinstance(document["info"].get("title"), str)
+        and isinstance(document["info"].get("version"), str),
+        "OpenAPI info is incomplete",
+    )
+    require(isinstance(document.get("paths"), dict), "OpenAPI paths are malformed")
+    require(
+        isinstance(document.get("components"), dict),
+        "OpenAPI components are malformed",
+    )
+
+    def walk(value: Any, location: str, active: frozenset[str] = frozenset()) -> None:
+        if isinstance(value, dict):
+            reference = value.get("$ref")
+            if isinstance(reference, str) and reference not in active:
+                walk(
+                    _resolve_local(document, reference, location),
+                    f"{location} -> {reference}",
+                    active | {reference},
+                )
+            for key, child in value.items():
+                walk(child, f"{location}.{key}", active)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                walk(child, f"{location}[{index}]", active)
+
+    walk(document, "root")
+    for path, path_item in document["paths"].items():
+        require(path.startswith("/"), f"OpenAPI path is invalid: {path}")
+        require(isinstance(path_item, dict), f"OpenAPI path item is invalid: {path}")
+        for method in HTTP_METHODS:
+            if method not in path_item:
+                continue
+            operation = path_item[method]
+            require(
+                isinstance(operation, dict),
+                f"{method.upper()} {path} is not an object",
+            )
+            require(
+                isinstance(operation.get("operationId"), str)
+                and operation["operationId"].strip(),
+                f"{method.upper()} {path} has no operationId",
+            )
+            require(
+                isinstance(operation.get("responses"), dict)
+                and bool(operation["responses"]),
+                f"{method.upper()} {path} has no responses",
+            )
+
+
 def main() -> int:
     openapi = load("openapi-v1.yaml")
     catalog = load("configuration-catalog-v1.yaml")
     bootstrap = load("bootstrap-control-v1.yaml")
     matrix = load("ux001-d1-test-matrix.yaml")
     registry = load("tools/v1-p0.yaml")
+    validate_openapi_document(openapi)
     registry_errors = sorted(
         Draft202012Validator(REGISTRY_DATA_SCHEMA).iter_errors(registry),
         key=lambda error: list(error.path),

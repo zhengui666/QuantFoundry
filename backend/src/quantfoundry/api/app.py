@@ -284,15 +284,15 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def optional_idempotency_key(
-    value: Annotated[
-        str | None, Header(alias="Idempotency-Key", min_length=20, max_length=128)
-    ] = None,
+    value: str | None = Header(
+        None, alias="Idempotency-Key", min_length=20, max_length=128
+    ),
 ) -> str | None:
     return value
 
 
 def optional_if_match(
-    value: Annotated[str | None, Header(alias="If-Match", min_length=1)] = None,
+    value: str | None = Header(None, alias="If-Match", min_length=1),
 ) -> str | None:
     return value
 
@@ -313,8 +313,8 @@ ToolCallId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["tool_call"])]
 JobId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["job"])]
 Version = Annotated[int, ApiPath(ge=1)]
 LastEventId = Annotated[
-    int,
-    Header(alias="Last-Event-ID", ge=0, json_schema_extra={"format": "int64"}),
+    str,
+    Header(alias="Last-Event-ID", pattern=r"^[0-9]+$"),
 ]
 AgentRole = Literal[
     "RESEARCH_DIRECTOR",
@@ -2673,7 +2673,7 @@ def emit(
         {
             "schema_version": 1,
             "event_id": event_id,
-            "sequence": 1,
+            "sequence": "1",
             "event_type": canonical_event_type,
             "occurred_at": now.isoformat(),
             "object_type": kind,
@@ -6507,7 +6507,7 @@ def stream(
         durable_event_stream(
             SessionLocal,
             Event,
-            last_event_id,
+            int(last_event_id) if last_event_id is not None else None,
             lambda data: validated_payload("SseEnvelope", data),
             NOW,
             workspace_id=actor.workspace_id,

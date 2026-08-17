@@ -15,7 +15,7 @@ const MESSAGE_TIMEOUT = 10_000
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 let lifecycleGeneration = 0
 
-async function reconcileActiveClients(sender) {
+async function reconcileActiveClients(sender, excludedClientId) {
   const generation = ++lifecycleGeneration
   const allClients = await self.clients.matchAll({
     type: 'window',
@@ -24,16 +24,23 @@ async function reconcileActiveClients(sender) {
   if (sender?.id && !allClients.some((client) => client.id === sender.id)) {
     allClients.push(sender)
   }
-  const liveClientIds = new Set(allClients.map((client) => client.id))
+  const liveClientIds = new Set(allClients.map((client) => client.id).filter((id) => id !== excludedClientId))
   if (generation !== lifecycleGeneration) return allClients
+  const remainingClients = allClients.filter((client) => client.id !== excludedClientId)
 
   for (const clientId of activeClientIds) {
     if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)
   }
 
-  if (activeClientIds.size === 0 && allClients.length === 0) {
-    await Promise.resolve()
-    if (generation === lifecycleGeneration) await self.registration.unregister()
+  if (activeClientIds.size === 0 && remainingClients.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const remainingClients = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    })
+    if (generation === lifecycleGeneration && activeClientIds.size === 0 && remainingClients.length === 0) {
+      await self.registration.unregister()
+    }
   }
 
   return allClients
@@ -55,6 +62,12 @@ async function handleMessage(event) {
   await reconcileActiveClients(event.source)
 
   const clientId = Reflect.get(event.source || {}, 'id')
+
+  if (event.data === 'CLIENT_CLOSED' && clientId && self.clients) {
+    activeClientIds.delete(clientId)
+    await reconcileActiveClients(undefined, clientId)
+    return
+  }
 
   if (!clientId || !self.clients) {
     return
@@ -175,7 +188,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
     // Clone the response so both the client and the library could consume it.
     const responseClone = isEventStreamResponse ? null : response.clone()
 
-    await sendToClient(
+    void sendToClient(
       client,
       {
         type: 'RESPONSE',
@@ -224,10 +237,7 @@ async function resolveMainClient(event) {
   const activeClients = allClients.filter((candidate) =>
     activeClientIds.has(candidate.id),
   )
-  return (
-    activeClients.find((candidate) => candidate.visibilityState === 'visible') ||
-    activeClients[0]
-  )
+  return activeClients.find((candidate) => candidate.id === event.clientId)
 }
 
 /**

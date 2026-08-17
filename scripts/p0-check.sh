@@ -78,6 +78,10 @@ allowed_verification_workflows = {
     "Independent Test Agent": {".github/workflows/independent-agent-test.yml"},
     "Independent Review Agent": {".github/workflows/independent-agent-review.yml"},
 }
+trusted_verification_workflow_blobs = {
+    ".github/workflows/independent-agent-test.yml": "697e21c0cf03b7f1605ca7eb40b9a0281ff7f399",
+    ".github/workflows/independent-agent-review.yml": "51bf6299bb3c1a290530efe7a99a6e043a43359d",
+}
 
 
 def invalid_value(value):
@@ -228,6 +232,12 @@ class RemoteVerifier:
         workflow_path = run.get("path", "")
         if workflow_path not in allowed_verification_workflows[role] or run.get("head_branch") != "main":
             raise RuntimeError(f"GitHub Actions run {run_id} used an unauthorized verification workflow")
+        workflow_source = self.gh_json(
+            f"/repos/{self.repository}/contents/{quote(workflow_path, safe='')}"
+            f"?ref={quote(commit, safe='')}"
+        )
+        if workflow_source.get("sha") != trusted_verification_workflow_blobs[workflow_path]:
+            raise RuntimeError(f"GitHub Actions run {run_id} used an untrusted workflow revision")
 
     def resolve_tag_commit(self, tag):
         ref = self.gh_json(f"/repos/{self.repository}/git/ref/tags/{quote(tag, safe='')}")
@@ -371,12 +381,8 @@ def validate_closed_evidence(blocker_id, item, remote):
         commit_sha = record.get("commit_sha")
         if not isinstance(commit_sha, str) or not sha_pattern.fullmatch(commit_sha):
             errors.append(f"{prefix}.commit_sha must be a full lowercase 40-character SHA")
-        elif subprocess.run(
-            ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", commit_sha, expected_commit],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        ).returncode != 0:
-            errors.append(f"{prefix}.commit_sha must be an ancestor of the current release commit")
+        elif commit_sha != expected_commit:
+            errors.append(f"{prefix}.commit_sha must equal the current release commit")
         build_id = record.get("build_id")
         build_match = github_build_pattern.fullmatch(build_id) if isinstance(build_id, str) else None
         if not build_match:

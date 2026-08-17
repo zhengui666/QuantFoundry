@@ -53,6 +53,12 @@ def _version_table(name: str, public_column: str) -> None:
             "id",
             name=f"uq_{name}_workspace_id",
         ),
+        sa.UniqueConstraint(
+            "workspace_id",
+            "id",
+            "status",
+            name=f"uq_{name}_workspace_id_status",
+        ),
     )
     op.create_index(f"ix_{name}_workspace_id", name, ["workspace_id"])
 
@@ -131,14 +137,32 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column(
+            "research_policy_version_status",
+            sa.String(16),
+            nullable=False,
+            server_default="ACTIVE",
+        ),
+        sa.Column(
             "risk_policy_version_id",
             sa.String(),
             nullable=False,
         ),
         sa.Column(
+            "risk_policy_version_status",
+            sa.String(16),
+            nullable=False,
+            server_default="ACTIVE",
+        ),
+        sa.Column(
             "cost_model_version_id",
             sa.String(),
             nullable=False,
+        ),
+        sa.Column(
+            "cost_model_version_status",
+            sa.String(16),
+            nullable=False,
+            server_default="ACTIVE",
         ),
         sa.Column("revision", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -162,19 +186,47 @@ def upgrade() -> None:
             name="setup_bindings_ai_connection_kind",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "research_policy_version_id"],
-            ["research_policy_versions.workspace_id", "research_policy_versions.id"],
+            [
+                "workspace_id",
+                "research_policy_version_id",
+                "research_policy_version_status",
+            ],
+            [
+                "research_policy_versions.workspace_id",
+                "research_policy_versions.id",
+                "research_policy_versions.status",
+            ],
             name="fk_setup_bindings_research_policy_versions",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "risk_policy_version_id"],
-            ["risk_policy_versions.workspace_id", "risk_policy_versions.id"],
+            ["workspace_id", "risk_policy_version_id", "risk_policy_version_status"],
+            [
+                "risk_policy_versions.workspace_id",
+                "risk_policy_versions.id",
+                "risk_policy_versions.status",
+            ],
             name="fk_setup_bindings_risk_policy_versions",
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "cost_model_version_id"],
-            ["cost_model_versions.workspace_id", "cost_model_versions.id"],
+            ["workspace_id", "cost_model_version_id", "cost_model_version_status"],
+            [
+                "cost_model_versions.workspace_id",
+                "cost_model_versions.id",
+                "cost_model_versions.status",
+            ],
             name="fk_setup_bindings_cost_model_versions",
+        ),
+        sa.CheckConstraint(
+            "research_policy_version_status = 'ACTIVE'",
+            name="setup_bindings_research_policy_active",
+        ),
+        sa.CheckConstraint(
+            "risk_policy_version_status = 'ACTIVE'",
+            name="setup_bindings_risk_policy_active",
+        ),
+        sa.CheckConstraint(
+            "cost_model_version_status = 'ACTIVE'",
+            name="setup_bindings_cost_model_active",
         ),
     )
 

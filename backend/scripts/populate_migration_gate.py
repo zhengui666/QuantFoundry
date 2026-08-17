@@ -180,6 +180,15 @@ def _clone(
         values["record_key"] = f"ART-{_uuid()}"
     if "legacy_id" in values:
         values["legacy_id"] = f"QF-GATE-{table.name}-{index}"
+    if table.name == "agent_configs" and "role_key" in values:
+        values["role_key"] = f"QF-GATE-ROLE-{index}"
+    if table.name == "runtime_heartbeats":
+        if "component" in values:
+            values["component"] = f"qf-migration-gate-{index}"
+        if "instance_id" in values:
+            values["instance_id"] = f"instance-{_uuid()}"
+    if table.name == "cost_model_versions" and "cost_model_id" in values:
+        values["cost_model_id"] = f"COST-{_uuid()}"
     if "policy_id" in values:
         if not isinstance(values["policy_id"], uuid.UUID):
             values["policy_id"] = f"RP-{_uuid()}"
@@ -263,7 +272,17 @@ def _clone_gate_row(
         validation_runs = candidates("validation_runs")
         if not validation_runs:
             raise RuntimeError("migration gate fixture requires a validation run")
-        validation_run = validation_runs[index % len(validation_runs)]
+        used_validation_ids = set(
+            connection.execute(select(table.c.validation_id)).scalars()
+        )
+        available_validation_runs = [
+            row
+            for row in validation_runs
+            if row["validation_id"] not in used_validation_ids
+        ]
+        if not available_validation_runs:
+            raise RuntimeError("migration gate fixture lacks unused validation run")
+        validation_run = available_validation_runs[index % len(available_validation_runs)]
         validation = metadata.tables["validations"]
         validation_row = (
             connection.execute(

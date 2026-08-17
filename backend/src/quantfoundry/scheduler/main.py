@@ -41,12 +41,18 @@ def run_once() -> int:
     if not _domain_ready():
         return 0
     maintenance_error: Exception | None = None
+    artifact_store_ready = True
     try:
         probe_artifact_store()
-        session = SessionLocal()
     except Exception as error:
         logger.exception("scheduler artifact maintenance failed")
         maintenance_error = error
+        artifact_store_ready = False
+    try:
+        session = SessionLocal()
+    except Exception as error:
+        logger.exception("scheduler domain session creation failed")
+        maintenance_error = maintenance_error or error
         session = None
     if session is not None:
         try:
@@ -55,7 +61,6 @@ def run_once() -> int:
                 session, now=datetime.now(UTC), owner=scheduler_id()
             )
             retried, failed = reap_expired_jobs(session)
-            reap_orphan_artifacts(session, ArtifactRow)
             session.commit()
         except Exception as error:
             session.rollback()
@@ -66,6 +71,20 @@ def run_once() -> int:
             session.close()
     else:
         retried = failed = 0
+    if artifact_store_ready:
+        artifact_session = None
+        try:
+            artifact_session = SessionLocal()
+            reap_orphan_artifacts(artifact_session, ArtifactRow)
+            artifact_session.commit()
+        except Exception as error:
+            if artifact_session is not None:
+                artifact_session.rollback()
+            logger.exception("scheduler artifact reaping failed")
+            maintenance_error = maintenance_error or error
+        finally:
+            if artifact_session is not None:
+                artifact_session.close()
     try:
         cleanup_expired_events()
     except Exception as error:

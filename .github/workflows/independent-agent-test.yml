@@ -21,21 +21,21 @@ jobs:
       postgres:
         image: mirror.gcr.io/library/postgres:18.0-alpine3.22@sha256:48c8ad3a7284b82be4482a52076d47d879fd6fb084a1cbfccbd551f9331b0e40
         env:
-          POSTGRES_DB: quantfoundry
+          POSTGRES_DB: qf_ci_${{ github.run_id }}_${{ github.run_attempt }}
           POSTGRES_USER: quantfoundry
           POSTGRES_PASSWORD: ci-only-not-a-secret
         ports:
           - '5432:5432'
         options: >-
-          --health-cmd "pg_isready -U quantfoundry -d quantfoundry"
+          --health-cmd "pg_isready -U quantfoundry -d qf_ci_${{ github.run_id }}_${{ github.run_attempt }}"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       QF_ENV: test
       QF_ENVIRONMENT: test
       QF_GIT_COMMIT: ${{ github.sha }}
       QF_BUILD_ID: independent-test-${{ github.run_id }}-${{ github.run_attempt }}
-      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
-      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
+      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}_${{ github.run_attempt }}
       QF_CI_DISPOSABLE_DATABASE: '1'
       QF_SKIP_AUTO_CREATE: '1'
       QF_ARTIFACT_ROOT: /tmp/quantfoundry/artifacts
@@ -108,20 +108,23 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          gate_result="$(find "$RUNNER_TEMP/qf-independent-test" -type f -name result.json -print -quit)"
+          test -n "$gate_result"
           evidence_commit="$GITHUB_SHA"
           if [[ -n "$RELEASE_TAG" ]]; then
             release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
             test "$release_commit" = "$GITHUB_SHA"
             evidence_commit="$release_commit"
           fi
-          uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$evidence_commit" "$RUNNER_TEMP/qf-p0-test-evidence" --result-file "$RUNNER_TEMP/qf-independent-test/result.json"
+          uv --directory backend run --frozen python "$GITHUB_WORKSPACE/scripts/ci/build-p0-evidence.py" test "$evidence_commit" "$RUNNER_TEMP/qf-p0-test-evidence" --result-file "$gate_result"
           if [[ -n "$RELEASE_TAG" ]]; then
             mkdir -p "$RUNNER_TEMP/qf-independent-test"
             python3 - "$evidence_commit" "$RUNNER_TEMP/qf-independent-test/release-gate-result.json" <<'PY'
           import json
           import pathlib
           import sys
-          pathlib.Path(sys.argv[2]).write_text(json.dumps({
+            pathlib.Path(sys.argv[2]).write_text(json.dumps({
+              "gate": "supply-chain-review",
               "commit": sys.argv[1],
               "result": "pass",
               "exit_code": 0,

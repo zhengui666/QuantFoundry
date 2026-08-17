@@ -57,7 +57,7 @@ class NautilusTraderConnector:
         if not callable(getattr(port, "request", None)):
             raise ValueError("NautilusTrader port must expose request()")
         self._port = port
-        self._preview_fingerprints: dict[str, float] = {}
+        self._preview_fingerprints: dict[str, tuple[float, str]] = {}
         self._order_fingerprints: dict[tuple[str, str], str] = {}
         self._capabilities: ConnectorCapabilities | None = None
         self._capabilities_fetched_at: float | None = None
@@ -130,6 +130,7 @@ class NautilusTraderConnector:
         return _validate_positions_response(result)
 
     def preview_order(self, account_id: str, order: OrderRequest) -> dict[str, Any]:
+        capabilities = self.capabilities()
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/preview",
@@ -138,7 +139,10 @@ class NautilusTraderConnector:
         validated = _validate_preview_response(result)
         now = time.monotonic()
         _purge_expired_fingerprints(self._preview_fingerprints, now)
-        self._preview_fingerprints[_order_fingerprint(account_id, order)] = now + 60
+        self._preview_fingerprints[_order_fingerprint(account_id, order)] = (
+            now + 60,
+            capabilities.content_hash(),
+        )
         return validated
 
     def submit_order(
@@ -165,8 +169,12 @@ class NautilusTraderConnector:
         self._order_fingerprints[identity] = fingerprint
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
             _purge_expired_fingerprints(self._preview_fingerprints, time.monotonic())
-            expires_at = self._preview_fingerprints.pop(fingerprint, None)
-            if expires_at is None or expires_at <= time.monotonic():
+            preview = self._preview_fingerprints.get(fingerprint)
+            if (
+                preview is None
+                or preview[0] <= time.monotonic()
+                or preview[1] != capabilities.content_hash()
+            ):
                 raise ConnectorProtocolError("validated margin preview is required")
         result = self._request(
             "POST",
@@ -177,6 +185,8 @@ class NautilusTraderConnector:
             ),
         )
         validated = _validate_order_response(result, order.client_order_id)
+        if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
+            self._preview_fingerprints.pop(fingerprint, None)
         return validated
 
     def orders(

@@ -69,7 +69,7 @@ elif os.getenv("QF_ALLOW_EXTERNAL_TEST_DATABASE") != "1":
 os.environ["QF_ENV"] = "test"
 os.environ["QF_ENVIRONMENT"] = "test"
 if os.environ["QF_DATABASE_URL"].startswith("sqlite"):
-    os.environ.setdefault("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP", "1")
+    os.environ["QF_ALLOW_TEST_SCHEMA_BOOTSTRAP"] = "1"
 else:
     # PostgreSQL tests are always Alembic-only.  Never let a caller's inherited
     # environment silently turn the suite into a metadata.create_all test.
@@ -78,9 +78,9 @@ if os.getenv("QF_CONTROL_DB_URL"):
     raise RuntimeError(
         "QF_CONTROL_DB_URL is forbidden for tests because control-plane teardown is destructive"
     )
-os.environ.setdefault(
-    "QF_TEST_AUTH_TOKENS",
-    json.dumps(
+os.environ[
+    "QF_TEST_AUTH_TOKENS"
+] = json.dumps(
         {
             "test": {
                 "actor_id": "test-owner",
@@ -98,20 +98,17 @@ os.environ.setdefault(
                 "role": "VIEWER",
             },
         }
-    ),
+    )
+os.environ["QF_SSE_TEST_CLOSE"] = "1"
+os.environ["QF_AGENT_PROVIDER"] = "local-deterministic"
+os.environ["QF_AGENT_MODEL"] = "local-test-v1"
+os.environ["QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER"] = "1"
+os.environ["QF_CREDENTIAL_ENCRYPTION_KEY_ID"] = "test-key-v1"
+os.environ["QF_CREDENTIAL_ENCRYPTION_KEY"] = (
+    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 )
-os.environ.setdefault("QF_SSE_TEST_CLOSE", "1")
-os.environ.setdefault("QF_AGENT_PROVIDER", "local-deterministic")
-os.environ.setdefault("QF_AGENT_MODEL", "local-test-v1")
-os.environ.setdefault("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER", "1")
-os.environ.setdefault("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "test-key-v1")
-os.environ.setdefault(
-    "QF_CREDENTIAL_ENCRYPTION_KEY",
-    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
-)
-os.environ.setdefault(
-    "QF_CREDENTIAL_FINGERPRINT_KEY",
-    "AgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICE=",
+os.environ["QF_CREDENTIAL_FINGERPRINT_KEY"] = (
+    "AgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICE="
 )
 artifact_root = _test_runtime_directory("artifacts", "QF_ARTIFACT_DIR")
 dataset_root = _test_runtime_directory("datasets", "QF_DATASET_DIR")
@@ -156,7 +153,7 @@ for validation_policy_id in (VALIDATION_POLICY_ID, MATRIX_VALIDATION_POLICY_ID):
         ),
         encoding="utf-8",
     )
-os.environ.setdefault("QF_DEFAULT_VALIDATION_POLICY_ID", VALIDATION_POLICY_ID)
+os.environ["QF_DEFAULT_VALIDATION_POLICY_ID"] = VALIDATION_POLICY_ID
 
 
 def pytest_sessionfinish() -> None:

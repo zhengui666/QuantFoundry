@@ -104,9 +104,17 @@ def upgrade() -> None:
     op.create_table(
         "event_stream_watermarks",
         sa.Column("workspace_id", sa.String(), primary_key=True),
-        sa.Column("last_sequence", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(
-            "expired_through_sequence", sa.Integer(), nullable=False, server_default="0"
+            "last_sequence",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            nullable=False,
+            server_default="0",
+        ),
+        sa.Column(
+            "expired_through_sequence",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            nullable=False,
+            server_default="0",
         ),
     )
     op.execute(

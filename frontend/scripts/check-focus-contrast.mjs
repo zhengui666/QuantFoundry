@@ -10,11 +10,10 @@ const stylesheet = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 function token(name) {
   const declaration = new RegExp(`(?:^|[;{}])\\s*--${name}\\s*:\\s*([^;{}]+)`, 'gi');
-  let value;
-  for (const match of stylesheet.matchAll(declaration)) value = match[1].trim();
-  if (!value || !/^#[0-9a-f]{6}$/i.test(value))
-    throw new Error(`Missing or invalid color token: --${name}`);
-  return value;
+  const values = [...stylesheet.matchAll(declaration)].map((match) => match[1].trim());
+  if (values.length !== 1 || !/^#[0-9a-f]{6}$/i.test(values[0]))
+    throw new Error(`Expected exactly one valid root color token: --${name}`);
+  return values[0];
 }
 
 function relativeLuminance(hex) {
@@ -41,7 +40,10 @@ const checks = [
   ['qf-color-focus-on-dark', 'qf-color-action-hover', 3],
   ['qf-color-focus', 'qf-color-surface-canvas', 3],
   ['qf-color-focus', 'qf-color-surface-panel', 3],
-  ['qf-color-on-accent', 'qf-color-sidebar-active', 4.5],
+  ['qf-color-sidebar-active-text', 'qf-color-sidebar-active', 4.5],
+  ['qf-color-on-accent', 'qf-color-sidebar', 4.5],
+  ['qf-color-on-accent', 'qf-color-action', 4.5],
+  ['qf-color-on-accent', 'qf-color-action-hover', 4.5],
   ['qf-color-disabled-text', 'qf-color-disabled-surface', 4.5],
 ];
 const failures = checks

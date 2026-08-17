@@ -10,8 +10,8 @@ export default defineConfig({
       configureServer(server) {
         if (process.env.QF_E2E_MOCK_AUTH !== '1' || process.env.QF_E2E_MODE !== '1') return;
         server.middlewares.use((request, response, next) => {
-          const remoteAddress = request.socket.remoteAddress;
-          if (remoteAddress !== '127.0.0.1' && remoteAddress !== '::1') {
+          const expectedToken = process.env.QF_E2E_MOCK_TOKEN;
+          if (!expectedToken || request.headers['x-qf-e2e-mock-token'] !== expectedToken) {
             next();
             return;
           }

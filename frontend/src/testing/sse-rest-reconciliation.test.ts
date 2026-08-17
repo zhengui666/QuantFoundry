@@ -7,7 +7,7 @@ import { SseRestReconciliationWitness } from './sse-rest-reconciliation';
 const event = {
   schema_version: 1,
   event_id: PublicIdExamples.domain_event.ulid,
-  sequence: 4,
+  sequence: '4',
   event_type: 'research.updated',
   occurred_at: '2026-08-11T00:00:00Z',
   object_type: 'research',

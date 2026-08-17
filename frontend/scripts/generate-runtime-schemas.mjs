@@ -36,9 +36,7 @@ if (Object.keys(schemas).length !== document.info?.['x-quantfoundry-schema-count
   );
 const canonicalErrorCount = schemas.CanonicalErrorCode?.enum?.length;
 if (canonicalErrorCount !== 75)
-  throw new Error(
-    `Expected 75 canonical errors, found ${canonicalErrorCount}`,
-  );
+  throw new Error(`Expected 75 canonical errors, found ${canonicalErrorCount}`);
 if (canonicalErrorCount !== document.info?.['x-quantfoundry-error-count'])
   throw new Error('Canonical error metadata does not match CanonicalErrorCode');
 for (const name of ['EventPayload', 'EventWaitingOn', 'SseEnvelope'])
@@ -146,6 +144,44 @@ const zodFor = (schema, schemaName) => {
     not: notSchema,
     ...baseSchema
   } = schema;
+  const supportedKeywords = new Set([
+    'additionalProperties',
+    'const',
+    'default',
+    'dependentRequired',
+    'description',
+    'deprecated',
+    'discriminator',
+    'enum',
+    'examples',
+    'format',
+    'items',
+    'maxItems',
+    'maxLength',
+    'maximum',
+    'minItems',
+    'minLength',
+    'minProperties',
+    'minimum',
+    'pattern',
+    'properties',
+    'readOnly',
+    'required',
+    'title',
+    'type',
+    'uniqueItems',
+    'writeOnly',
+  ]);
+  const unsupportedKeywords = Object.keys(baseSchema).filter(
+    (keyword) => !supportedKeywords.has(keyword),
+  );
+  if (unsupportedKeywords.length)
+    throw new Error(`Unsupported constrained schema keywords: ${unsupportedKeywords.join(', ')}`);
+  if (
+    baseSchema.format !== undefined &&
+    !new Set(['date-time', 'date', 'uri', 'int64']).has(baseSchema.format)
+  )
+    throw new Error(`Unsupported schema format: ${String(baseSchema.format)}`);
   let expression;
   if (baseSchema.const !== undefined) expression = `z.literal(${quote(baseSchema.const)})`;
   else if (baseSchema.enum) expression = literalUnion(baseSchema.enum);
@@ -184,6 +220,9 @@ const zodFor = (schema, schemaName) => {
     expression = type === 'integer' ? 'z.number().int()' : 'z.number()';
     if (baseSchema.minimum !== undefined) expression += `.min(${baseSchema.minimum})`;
     if (baseSchema.maximum !== undefined) expression += `.max(${baseSchema.maximum})`;
+    if (baseSchema.format === 'int64')
+      expression +=
+        ".refine(Number.isSafeInteger, { message: 'Integer must be exactly representable in JavaScript' })";
   } else if (!expression && type === 'boolean') expression = 'z.boolean()';
   else if (!expression && type === 'array')
     expression = addArrayConstraints(`z.array(${zodFor(baseSchema.items)})`, baseSchema);
@@ -202,33 +241,25 @@ const zodFor = (schema, schemaName) => {
       const value = zodFor(propertySchema) + (required.has(name) ? '' : '.optional()');
       return `${quote(name)}: ${value}`;
     });
+    const compositionBranches = [...allOf, ...anyOf, ...oneOf];
     const composedObject =
-      allOf.length > 0 && properties.length === 0 && baseSchema.additionalProperties === false;
+      baseSchema.additionalProperties === false &&
+      (properties.length === 0 ||
+        compositionBranches.some((branch) =>
+          Object.keys(branch?.properties ?? {}).some((name) => !propertyNames.has(name)),
+        ));
     expression = `z.object({${properties.join(',')}})`;
     if (composedObject) expression += '.passthrough()';
     else if (baseSchema.additionalProperties === false) expression += '.strict()';
     else if (typeof baseSchema.additionalProperties === 'object')
       expression += `.catchall(${zodFor(baseSchema.additionalProperties)})`;
     else expression += '.passthrough()';
+    for (const name of required) {
+      expression += `.refine((value) => Object.hasOwn(value, ${quote(name)}), { path: [${quote(name)}], message: 'Required property is missing' })`;
+    }
     if (baseSchema.minProperties !== undefined)
       expression += `.refine((value) => Object.keys(value).length >= ${baseSchema.minProperties}, { message: 'Object requires at least ${baseSchema.minProperties} properties' })`;
-  } else if (!expression) {
-    const unconstrainedKeywords = new Set([
-      'description',
-      'deprecated',
-      'discriminator',
-      'examples',
-      'readOnly',
-      'title',
-      'writeOnly',
-    ]);
-    const unsupported = Object.keys(baseSchema).filter(
-      (keyword) => !unconstrainedKeywords.has(keyword),
-    );
-    if (unsupported.length)
-      throw new Error(`Unsupported constrained schema keywords: ${unsupported.join(', ')}`);
-    expression = 'z.unknown()';
-  }
+  } else if (!expression) expression = 'z.unknown()';
 
   const addBranchIssues = (condition) =>
     `.superRefine((value, context) => { ${condition} for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path as (string | number)[], message: issue.message }); } } })`;
@@ -501,7 +532,7 @@ const publicIdDeclarations = publicIdEntries
 const publicIdSchemaObject = publicIdEntries
   .map(([name]) => `${quote(name)}: ${pascalCase(name)}IdSchema`)
   .join(',');
-  const publicIdExampleObject = publicIdEntries
+const publicIdExampleObject = publicIdEntries
   .map(([name, schema]) => {
     if (schema.examples?.length !== 2)
       throw new Error(`${name} must publish exactly one ULID and one UUIDv4 example`);
@@ -532,14 +563,15 @@ const output = (
     `// Generated from canonical openapi-v1.yaml. Do not edit.\nimport { z } from 'zod';\n\nconst normalizeCanonicalDecimal = (value: string) => {\n  const [integer, fraction = ''] = value.split('.');\n  const negative = integer.startsWith('-');\n  const digits = (negative ? integer.slice(1) : integer).replace(/^0+(?=\\d)/, '');\n  const trimmedFraction = fraction.replace(/0+$/, '');\n  return {\n    negative: (negative && (digits !== '0' || trimmedFraction !== '')),\n    integer: digits,\n    fraction: trimmedFraction,\n  };\n};\nconst compareCanonicalDecimal = (left: string, right: string) => {\n  const a = normalizeCanonicalDecimal(left);\n  const b = normalizeCanonicalDecimal(right);\n  if (a.negative !== b.negative) return a.negative ? -1 : 1;\n  const sign = a.negative ? -1 : 1;\n  if (a.integer.length !== b.integer.length) return (a.integer.length - b.integer.length) * sign;\n  if (a.integer !== b.integer) return (a.integer < b.integer ? -1 : 1) * sign;\n  const width = Math.max(a.fraction.length, b.fraction.length);\n  const af = a.fraction.padEnd(width, '0');\n  const bf = b.fraction.padEnd(width, '0');\n  return (af === bf ? 0 : af < bf ? -1 : 1) * sign;\n};\nconst isCanonicalInteger = (value: string) => !normalizeCanonicalDecimal(value).fraction;\n${publicIdDeclarations}\nexport const PublicIdSchemas = {${publicIdSchemaObject}} as const;\nexport const PublicIdExamples = {${publicIdExampleObject}} as const;\nexport type PublicIdType = keyof typeof PublicIdSchemas;\nexport const AnyPublicSemanticIdSchema = z.union([${anyPublicIdUnion}]);\n${eventObjectDeclarations}\n${declarations}\n`,
     { parser: 'typescript', printWidth: 100, singleQuote: true, trailingComma: 'all' },
   )
-).replace(
-  "import { z } from 'zod';\n\n",
-  "import { z } from 'zod';\n\nconst canonicalJson = (value: unknown): string => {\n  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';\n  if (value && typeof value === 'object') {\n    const object = value as Record<string, unknown>;\n    return '{' + Object.keys(object).sort().map((key) => JSON.stringify(key) + ':' + canonicalJson(object[key])).join(',') + '}';\n  }\n  return JSON.stringify(value);\n};\n\n",
 )
-.replace(
-  "const [integer, fraction = ''] = value.split('.');",
-  "const [integer = '', fraction = ''] = value.split('.');",
-);
+  .replace(
+    "import { z } from 'zod';\n\n",
+    "import { z } from 'zod';\n\nconst canonicalJson = (value: unknown): string => {\n  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';\n  if (value && typeof value === 'object') {\n    const object = value as Record<string, unknown>;\n    return '{' + Object.keys(object).sort().map((key) => JSON.stringify(key) + ':' + canonicalJson(object[key])).join(',') + '}';\n  }\n  return JSON.stringify(value);\n};\n\n",
+  )
+  .replace(
+    "const [integer, fraction = ''] = value.split('.');",
+    "const [integer = '', fraction = ''] = value.split('.');",
+  );
 
 if (process.argv.includes('--check')) {
   const current = await readFile(outputPath, 'utf8').catch(() => '');

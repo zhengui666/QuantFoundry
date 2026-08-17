@@ -393,12 +393,14 @@ test.describe('platform-driven full-stack Golden Flow', () => {
         const browserCursors = await page.evaluate(() =>
           Object.entries(sessionStorage)
             .filter(([key]) => key.startsWith('qf.sse.cursor:'))
-            .map(([, value]) => Number(value)),
+            .map(([, value]) => value),
         );
         const probeCursors = sseProbe.snapshot().frames.map(({ cursor }) => cursor);
-        return browserCursors.length === 1 && probeCursors.length > 0
-          ? browserCursors[0]! - Math.max(...probeCursors)
-          : null;
+        if (browserCursors.length !== 1 || probeCursors.length === 0) return null;
+        const latestProbeCursor = probeCursors.reduce((latest, cursor) =>
+          BigInt(cursor) > BigInt(latest) ? cursor : latest,
+        );
+        return BigInt(browserCursors[0]!) === BigInt(latestProbeCursor) ? 0 : null;
       })
       .toBe(0);
     const actualFrames = sseProbe.snapshot().frames;

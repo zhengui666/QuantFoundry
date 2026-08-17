@@ -133,7 +133,7 @@ test('P05 SSE refetches the active Experiment from REST without enumerating inac
         'EVT-4V9MRDSPQPS3YCZXZ34PBT306X',
         'EVT-2MVNBFRCR3VPGS5KQKF2F77FS7',
       ][sequence - 1]!,
-      sequence,
+      sequence: String(sequence),
       event_type: eventType,
       occurred_at: '2026-08-10T02:00:00Z',
       object_type: eventType.startsWith('experiment.') ? 'experiment' : 'tool_call',

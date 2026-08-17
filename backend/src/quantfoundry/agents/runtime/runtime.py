@@ -1787,7 +1787,7 @@ def advance_agent_run(
         checkpoint["semantic_call_hashes"].append(semantic_hash)
         checkpoint["result_refs"].append(result_summary)
         checkpoint["tool_results"].append(
-            {"tool_name": name, "result_summary": result_summary}
+            {"tool_name": name, "status": "SUCCESS", "result_summary": result_summary}
         )
         emit(
             session,

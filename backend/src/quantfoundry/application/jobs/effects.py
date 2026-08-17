@@ -1171,13 +1171,9 @@ def _complete_experiment(
         and output_sha256 != source_output_sha256
     ):
         raise InvalidJobState("exact reproduction output hash differs from source")
-    evidence = {
-        "experiment_id": experiment_id,
-        **calculation_output,
-        "engine": detail["engine"],
-        "output_sha256": output_sha256,
-    }
-    artifact_id = _artifact(session, job, "experiment_result", evidence)
+    artifact_id = _artifact(
+        session, job, "experiment_result", calculation_output
+    )
     if sensitivity_search_result is not None:
         sensitivity_search_result["result_ref"] = _job_result_ref(
             "experiment", experiment_id, artifact_id
@@ -2125,9 +2121,9 @@ def _sync_holdout_strategy(
     strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
     if strategy is None or strategy.workspace_id != job.workspace_id:
         return
-    desired_state = (
-        "VALIDATED" if result == "PASS" and status == "COMPLETED" else "REJECTED"
-    )
+    desired_state = strategy.state
+    if status == "COMPLETED":
+        desired_state = "VALIDATED" if result == "PASS" else "REJECTED"
     if strategy.state in {"VALIDATED", "VALIDATING"}:
         strategy.state = desired_state
     strategy.revision += 1
@@ -2845,7 +2841,15 @@ def _compare_backtest_evidence(
     compared = []
     for experiment_id in inputs["experiment_ids"]:
         experiment = session.get(ExperimentRow, experiment_id)
-        if experiment is None or experiment.workspace_id != job.workspace_id:
+        if (
+            experiment is None
+            or experiment.workspace_id != job.workspace_id
+            or experiment.experiment_type
+            not in {"FAST_BACKTEST", "PARAMETER_SENSITIVITY"}
+            or experiment.status != "COMPLETED"
+            or experiment.validity_state != "VALID"
+            or not experiment.immutable
+        ):
             raise InvalidJobState("backtest experiment is missing")
         detail = json.loads(experiment.detail)
         if detail.get("status") != "COMPLETED" or not experiment.immutable:
@@ -2865,7 +2869,11 @@ def _compare_backtest_evidence(
 def _run_parameter_sensitivity(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
-    strategy = session.get(StrategyVersionRow, inputs["strategy_version_id"])
+    strategy = session.execute(
+        select(StrategyVersionRow)
+        .where(StrategyVersionRow.id == inputs["strategy_version_id"])
+        .with_for_update()
+    ).scalar_one_or_none()
     snapshot = session.get(SnapshotRow, inputs["snapshot_id"])
     if (
         strategy is None
@@ -3132,7 +3140,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             correlation_id=job.correlation_id,
         )
         return
-    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE"}:
+    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE", "FACTOR_ANALYSIS"}:
         experiment_id = inputs.get("experiment_id")
         if not isinstance(experiment_id, str):
             return

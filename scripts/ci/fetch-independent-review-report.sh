@@ -35,21 +35,30 @@ criteria = [
 scope_paths = [
     "AGENTS.md",
     "PROJECT_BACKGROUND.md",
+    "Makefile",
+    "backend/pyproject.toml",
+    "backend/uv.lock",
     "backend/src/quantfoundry",
     "backend/app/agent_runtime.py",
     "backend/workers",
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml",
+    "frontend/src",
     "docs/Agent技术方案",
     "docs/后端系统技术方案/contracts/tools",
     "docs/治理",
     ".github/workflows",
     "scripts/ci",
     "scripts/ci.sh",
+    "scripts/api_healthcheck.py",
+    "scripts/p0-check.sh",
+    "scripts/p0-check-test.sh",
     "scripts/tool_contract_check.py",
     "scripts/release-check.sh",
     "scripts/release-evidence.sh",
     "scripts/release-known-issues-check.sh",
 ]
-trusted_workflow_blob_sha = "9c42061823b49952e28d66434de97b98e61f7b06"
+trusted_workflow_blob_sha = "51bf6299bb3c1a290530efe7a99a6e043a43359d"
 
 def gh_json(endpoint):
     completed = subprocess.run(

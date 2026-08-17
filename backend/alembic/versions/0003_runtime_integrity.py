@@ -167,9 +167,11 @@ def _create_immutability_guards() -> None:
                 RAISE EXCEPTION 'frozen strategy version cannot be changed';
               END IF;
               IF TG_OP = 'UPDATE' AND OLD.state <> 'CANDIDATE' AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.frozen_at IS DISTINCT FROM OLD.frozen_at OR
                    (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
                     'latest_backtest' - 'validation_summary' - 'artifacts' -
                     'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
@@ -183,15 +185,25 @@ def _create_immutability_guards() -> None:
               END IF;
               IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN'
                  AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   NEW.detail IS DISTINCT FROM OLD.detail
+                   NEW.frozen_at IS NULL OR
+                   (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities') IS DISTINCT FROM
+                   (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities')
                  ) THEN
                 RAISE EXCEPTION 'strategy evidence cannot change while freezing';
               END IF;
               IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE'
                  AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
@@ -236,8 +248,17 @@ def _create_immutability_guards() -> None:
               END IF;
               IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
                  AND NOT (
+                   NEW.id IS NOT DISTINCT FROM OLD.id AND
                    NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
                    NEW.revision = OLD.revision + 1 AND
+                   (NEW.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') IS NOT DISTINCT FROM
+                   (OLD.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') AND
                    COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED' AND
                    EXISTS (
                      SELECT 1 FROM jobs j
@@ -344,8 +365,9 @@ def _create_immutability_guards() -> None:
     op.execute(
         "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state != 'CANDIDATE' AND ("
+        "NEW.id IS NOT OLD.id OR "
         "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
-        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.frozen_at IS NOT OLD.frozen_at OR "
         "json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen', "
         "'$.latest_backtest', '$.validation_summary', '$.artifacts', '$.provenance', "
         "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
@@ -368,8 +390,14 @@ def _create_immutability_guards() -> None:
     op.execute(
         "CREATE TRIGGER qf_strategy_versions_freeze_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND ("
-        "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
-        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) OR NOT ("
+        "NEW.id IS NOT OLD.id OR NEW.strategy_id IS NOT OLD.strategy_id OR "
+        "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
+        "NEW.frozen_at IS NULL OR json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', '$.provenance', "
+        "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
+        "json_remove(OLD.detail, '$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
+        "'$.validation_summary', '$.artifacts', '$.provenance', '$.frozen_at', '$.frozen_by', "
+        "'$.revision', '$.action_capabilities')) OR NOT ("
         "NEW.state = OLD.state OR (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
         "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
         "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
@@ -380,21 +408,27 @@ def _create_immutability_guards() -> None:
     op.execute(
         "CREATE TRIGGER qf_strategy_versions_candidate_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
-        "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
+        "NEW.id IS NOT OLD.id OR NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
         "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail) "
         "BEGIN SELECT RAISE(ABORT, 'candidate strategy evidence must be append-only'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE "
         "ON experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
-        "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
+        "NEW.id IS NOT OLD.id OR NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
         "NEW.revision IS NOT OLD.revision) "
         "BEGIN SELECT RAISE(ABORT, 'experiment evidence cannot change while completing'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
         "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
-        "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "NEW.id IS OLD.id AND NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "json_remove(NEW.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') IS "
+        "json_remove(OLD.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') AND "
         "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
         "EXISTS (SELECT 1 FROM jobs j WHERE "
         "j.id = json_extract(NEW.detail, '$.job_id') AND "

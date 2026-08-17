@@ -99,7 +99,7 @@ def safe_resync_payload(sequence: int | None = None) -> dict[str, Any]:
         "status": None,
     }
     if sequence is not None:
-        value["resync_from_sequence"] = max(1, sequence)
+        value["resync_from_sequence"] = str(max(1, sequence))
     return validate_event_payload(value)
 
 

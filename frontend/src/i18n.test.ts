@@ -6,9 +6,9 @@ import i18n, {
 } from './i18n';
 
 describe('server Settings locale projection', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
-    resetServerSettingsLocale();
+    await resetServerSettingsLocale();
   });
 
   it('applies server-decoded language/timezone display settings in memory', async () => {

@@ -125,10 +125,11 @@ def decrypt_credential(
         if (
             isinstance(fields, list)
             and len(fields) == 5
-            and all(isinstance(value, str) or value is None for value in fields)
+            and all(isinstance(value, str) for value in fields)
+            and all("\x1f" not in value for value in fields)
         ):
             candidates.append(
-                "\x1f".join(value or "" for value in fields).encode("utf-8")
+                "\x1f".join(fields).encode("utf-8")
             )
     except (UnicodeDecodeError, json.JSONDecodeError):
         pass

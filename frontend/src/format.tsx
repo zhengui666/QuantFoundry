@@ -138,6 +138,22 @@ export function formatCanonicalDecimal(
   }
 }
 
+export function formatCanonicalPercent(value: string, locale: string): string | null {
+  const parsed = parseCanonicalDecimal(value);
+  if (!parsed) return null;
+  const digits = parsed.integer + parsed.fraction;
+  const decimalIndex = parsed.integer.length + 2;
+  const integer =
+    decimalIndex <= 0
+      ? '0'
+      : decimalIndex >= digits.length
+        ? digits + '0'.repeat(decimalIndex - digits.length)
+        : digits.slice(0, decimalIndex);
+  const fraction = decimalIndex >= digits.length ? '' : digits.slice(decimalIndex);
+  const scaled = `${parsed.negative ? '-' : ''}${integer}${fraction ? `.${fraction}` : ''}`;
+  return formatCanonicalDecimal(scaled, locale);
+}
+
 export function formatServerDateTime(
   value: string,
   settings: { language: 'zh-CN' | 'en'; timezone: string } = getRestoredServerLocale() ?? {

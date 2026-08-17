@@ -81,6 +81,12 @@ for asset in assets:
         if (
             parsed.scheme != "https"
             or not parsed.hostname
+            or parsed.hostname
+            not in {
+                "api.github.com",
+                "github.com",
+                "objects.githubusercontent.com",
+            }
             or parsed.username
             or parsed.password
         ):
@@ -138,8 +144,12 @@ def statements(value):
         if not isinstance(entry, dict):
             continue
         verification = entry.get("verificationResult")
-        if isinstance(verification, dict) and isinstance(
+        if (
+            isinstance(verification, dict)
+            and verification.get("verified") is True
+            and isinstance(
             verification.get("statement"), dict
+            )
         ):
             found.append(verification["statement"])
     return found

@@ -207,6 +207,7 @@ def _validate_order_response(
     if (
         not required.issubset(result)
         or not isinstance(result.get("client_order_id"), str)
+        or not result["client_order_id"]
         or (
             client_order_id is not None
             and result.get("client_order_id") != client_order_id
@@ -214,10 +215,8 @@ def _validate_order_response(
         or not isinstance(result.get("broker_order_id"), str)
         or not result["broker_order_id"]
         or result.get("status") not in statuses
-        or not isinstance(result.get("accepted_at"), str)
-        or not result["accepted_at"]
-        or not isinstance(result.get("updated_at"), str)
-        or not result["updated_at"]
+        or not _valid_timestamp(result.get("accepted_at"))
+        or not _valid_timestamp(result.get("updated_at"))
         or not isinstance(result.get("fills"), list)
         or not all(_validate_fill_entry(fill) for fill in result["fills"])
     ):
@@ -286,6 +285,13 @@ def _valid_response_decimal(value: Any) -> bool:
     return isinstance(value, str) and bool(value) and _decimal_is_valid(value)
 
 
+def _valid_positive_response_decimal(value: Any) -> bool:
+    return (
+        _valid_response_decimal(value)
+        and Decimal(value) > 0
+    )
+
+
 def _decimal_is_valid(value: str) -> bool:
     try:
         parsed = Decimal(value)
@@ -305,8 +311,8 @@ def _validate_fill_entry(value: Any) -> bool:
         and bool(value["broker_order_id"])
         and isinstance(value.get("execution_id"), str)
         and bool(value["execution_id"])
-        and _valid_response_decimal(value.get("quantity"))
-        and _valid_response_decimal(value.get("price"))
+        and _valid_positive_response_decimal(value.get("quantity"))
+        and _valid_positive_response_decimal(value.get("price"))
         and _valid_timestamp(value.get("executed_at"))
     )
 
@@ -370,8 +376,10 @@ def _validate_market_clock_response(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _purge_expired_fingerprints(store: dict[str, float], now: float) -> None:
-    for key, expires_at in list(store.items()):
+def _purge_expired_fingerprints(
+    store: dict[str, tuple[float, str]], now: float
+) -> None:
+    for key, (expires_at, _capabilities_hash) in list(store.items()):
         if expires_at <= now:
             del store[key]
 
@@ -418,6 +426,36 @@ class Instrument:
             value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value):
                 raise ValueError(f"{name} is invalid")
+        allowed_fields = {
+            "EQUITY": {"currency"},
+            "FUTURE": {"expiry", "multiplier", "currency"},
+            "OPTION": {
+                "underlying",
+                "expiry",
+                "strike",
+                "right",
+                "style",
+                "multiplier",
+                "currency",
+            },
+            "FX_SPOT": {"base_currency", "quote_currency"},
+            "CRYPTO_SPOT": {"base_currency", "quote_currency"},
+            "CRYPTO_PERPETUAL": {"multiplier", "margin_currency"},
+        }[self.asset_class]
+        for name in (
+            "currency",
+            "base_currency",
+            "quote_currency",
+            "underlying",
+            "expiry",
+            "strike",
+            "right",
+            "style",
+            "multiplier",
+            "margin_currency",
+        ):
+            if name not in allowed_fields and getattr(self, name) is not None:
+                raise ValueError(f"{name} is not valid for {self.asset_class}")
         if self.asset_class == "OPTION" and not all(
             (
                 self.underlying,
@@ -725,7 +763,7 @@ class ConnectorClient:
         self._credential = credential.encode("utf-8")
         self._clock = clock
         self._nonce_factory = nonce_factory
-        self._preview_fingerprints: dict[str, float] = {}
+        self._preview_fingerprints: dict[str, tuple[float, str]] = {}
         self._order_fingerprints: dict[tuple[str, str], str] = {}
         self._capabilities: ConnectorCapabilities | None = None
         self._capabilities_fetched_at: float | None = None
@@ -868,6 +906,7 @@ class ConnectorClient:
         return _validate_positions_response(result)
 
     def preview_order(self, account_id: str, order: OrderRequest) -> dict[str, Any]:
+        capabilities = self.capabilities()
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/preview",
@@ -876,7 +915,10 @@ class ConnectorClient:
         validated = _validate_preview_response(result)
         now = self._clock()
         _purge_expired_fingerprints(self._preview_fingerprints, now)
-        self._preview_fingerprints[_order_fingerprint(account_id, order)] = now + 60
+        self._preview_fingerprints[_order_fingerprint(account_id, order)] = (
+            now + 60,
+            capabilities.content_hash(),
+        )
         return validated
 
     def submit_order(
@@ -900,8 +942,12 @@ class ConnectorClient:
         self._order_fingerprints[identity] = fingerprint
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
             _purge_expired_fingerprints(self._preview_fingerprints, self._clock())
-            expires_at = self._preview_fingerprints.pop(fingerprint, None)
-            if expires_at is None or expires_at <= self._clock():
+            preview = self._preview_fingerprints.get(fingerprint)
+            if (
+                preview is None
+                or preview[0] <= self._clock()
+                or preview[1] != capabilities.content_hash()
+            ):
                 raise ConnectorProtocolError("validated margin preview is required")
         result = self._request(
             "POST",
@@ -912,6 +958,8 @@ class ConnectorClient:
             ),
         )
         validated = _validate_order_response(result, order.client_order_id)
+        if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
+            self._preview_fingerprints.pop(fingerprint, None)
         return validated
 
     def orders(

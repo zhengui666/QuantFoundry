@@ -104,6 +104,8 @@ printf '%s\n' \
   'fi' \
   'if [[ "$endpoint" == */git/ref/tags/v0.1.0-alpha ]]; then printf "{\\\"object\\\":{\\\"type\\\":\\\"commit\\\",\\\"sha\\\":\\\"%s\\\"}}\\n" "$QF_MOCK_COMMIT"; exit 0; fi' \
   'if [[ "$endpoint" == */releases/tags/v0.1.0-alpha ]]; then printf "{\\\"assets\\\":[{\\\"name\\\":\\\"review-evidence.zip\\\",\\\"id\\\":204}]}\\n"; exit 0; fi' \
+  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github%2Fworkflows%2Findependent-agent-test.yml?ref=$QF_MOCK_COMMIT" ]]; then printf "{\\\"sha\\\":\\\"697e21c0cf03b7f1605ca7eb40b9a0281ff7f399\\\"}\\n"; exit 0; fi' \
+  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github%2Fworkflows%2Findependent-agent-review.yml?ref=$QF_MOCK_COMMIT" ]]; then printf "{\\\"sha\\\":\\\"51bf6299bb3c1a290530efe7a99a6e043a43359d\\\"}\\n"; exit 0; fi' \
   'exit 1' > "$mock_gh"
 chmod +x "$mock_gh"
 

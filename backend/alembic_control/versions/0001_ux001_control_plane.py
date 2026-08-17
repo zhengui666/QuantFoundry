@@ -60,14 +60,24 @@ def _sqlite_audit_hash(
         "created_at": created_at,
     }
     return hashlib.sha256(
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(", ", ": "),
-            default=str,
-        ).encode()
+        _canonical_json(payload).encode()
     ).hexdigest()
+
+
+def _canonical_json(value):
+    """Match PostgreSQL jsonb output ordering for the control audit vector."""
+    if isinstance(value, dict):
+        items = sorted(
+            value.items(),
+            key=lambda item: (len(str(item[0]).encode()), str(item[0]).encode()),
+        )
+        return "{" + ",".join(
+            f"{json.dumps(str(key), ensure_ascii=False)}:{_canonical_json(item)}"
+            for key, item in items
+        ) + "}"
+    if isinstance(value, list):
+        return "[" + ",".join(_canonical_json(item) for item in value) + "]"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
 def upgrade() -> None:
@@ -426,7 +436,7 @@ def upgrade() -> None:
               PERFORM pg_advisory_xact_lock(hashtextextended('qf-bootstrap-audit', 0));
               SELECT sequence, event_hash INTO tail_sequence, tail_hash FROM bootstrap_audit_events
               ORDER BY sequence DESC LIMIT 1 FOR UPDATE;
-              IF NEW.sequence IS NULL OR NEW.sequence <= COALESCE(tail_sequence, 0) THEN
+              IF NEW.sequence IS NULL OR NEW.sequence <> COALESCE(tail_sequence, 0) + 1 THEN
                 RAISE EXCEPTION 'bootstrap audit sequence is not monotonic';
               END IF;
               IF NEW.previous_event_hash IS DISTINCT FROM tail_hash THEN
@@ -506,6 +516,7 @@ def upgrade() -> None:
         "CREATE TRIGGER qf_bootstrap_audit_append_only BEFORE INSERT ON bootstrap_audit_events "
         "WHEN NEW.sequence IS NULL OR NEW.sequence <= 0 OR "
         "NEW.sequence <> COALESCE((SELECT MAX(sequence) FROM bootstrap_audit_events), 0) + 1 OR "
+        "EXISTS (SELECT 1 FROM bootstrap_audit_events WHERE event_id = NEW.event_id) OR "
         "NEW.previous_event_hash IS NOT (SELECT event_hash FROM bootstrap_audit_events "
         "ORDER BY sequence DESC LIMIT 1) OR NEW.event_hash IS NOT qf_bootstrap_audit_hash("
         "NEW.sequence, NEW.event_id, NEW.event_type, NEW.actor_principal, NEW.access_key_id, "

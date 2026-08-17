@@ -39,6 +39,9 @@ _INDEX_SUFFIX = re.compile(
     r"(?:\s+NULLS\s+(?P<nulls>FIRST|LAST))?$",
     re.IGNORECASE,
 )
+_IMPLICIT_SERIAL_DEFAULT = re.compile(
+    r"^nextval\('(?P<sequence>(?:[^']|'')+)'::regclass\)$"
+)
 
 
 def _type_spec(type_: Any) -> dict[str, Any]:
@@ -131,6 +134,13 @@ def _server_default_spec(column: Any) -> str | None:
         raise ValueError(
             f"unsupported server default for {column.table.name}.{column.name}"
         )
+    if server_default_arg is not None and _autoincrement_spec(column):
+        rendered = str(server_default_arg).strip()
+        match = _IMPLICIT_SERIAL_DEFAULT.fullmatch(rendered)
+        if match is not None:
+            sequence = match.group("sequence").split(".")[-1].replace('"', "")
+            if sequence == f"{column.table.name}_{column.name}_seq":
+                return None
     return str(server_default_arg) if server_default_arg is not None else None
 
 

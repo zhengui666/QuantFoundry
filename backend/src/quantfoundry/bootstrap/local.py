@@ -165,9 +165,13 @@ def seed_local(
     owner_email: str,
     session_token: str,
     ttl_hours: int = 30 * 24,
+    workspace_name: str = "QuantFoundry Local",
 ) -> dict[str, Any]:
     if ttl_hours <= 0:
         raise ValueError("ttl_hours must be positive")
+    if not 1 <= len(workspace_name.strip()) <= 128:
+        raise ValueError("workspace_name must contain 1 to 128 characters")
+    workspace_name = workspace_name.strip()
     workspace_id = canonical_workspace_id(workspace_id)
     cost_root = Path(os.environ["QF_COST_MODEL_DIR"])
     policy_root = Path(os.environ["QF_POLICY_DIR"])
@@ -222,13 +226,13 @@ def seed_local(
                 Workspace(
                     id=workspace_id,
                     owner_id=owner_id,
-                    name="QuantFoundry Local",
+                    name=workspace_name,
                     revision=1,
                 )
             )
         elif (
             existing_workspace.owner_id != owner_id
-            or existing_workspace.name != "QuantFoundry Local"
+            or existing_workspace.name != workspace_name
             or existing_workspace.revision != 1
         ):
             raise RuntimeError("local workspace is already bound to another owner")

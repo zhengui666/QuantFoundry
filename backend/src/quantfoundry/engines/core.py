@@ -178,11 +178,17 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
                 "survivorship_policy": "POINT_IN_TIME_MEMBERSHIP_V1",
             }
         )
+    metadata_text: dict[str, str] = {}
+    for field in required_metadata | policy_metadata:
+        value = metadata.get(field)
+        if not isinstance(value, str) or not value:
+            raise EngineInputError(f"dataset metadata field is invalid: {field}")
+        metadata_text[field] = value
     try:
-        timezone = ZoneInfo(str(metadata["timezone"]))
+        timezone = ZoneInfo(metadata_text["timezone"])
     except ZoneInfoNotFoundError as error:
         raise EngineInputError("dataset timezone is unknown") from error
-    calendar = str(metadata["calendar"])
+    calendar = metadata_text["calendar"]
     if calendar not in {"WEEKDAY", "24X7"}:
         raise EngineInputError("unsupported dataset calendar")
     table = _read_table(source)
@@ -193,8 +199,12 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
         available_at = _parse_timestamp(raw["available_at"], "available_at")
         if available_at < event_time:
             raise EngineInputError("available_at cannot precede event_time")
-        symbol = str(raw["symbol"])
-        partition = str(raw["partition"])
+        symbol = raw["symbol"]
+        partition = raw["partition"]
+        if not isinstance(symbol, str) or not symbol:
+            raise EngineInputError("market row symbol is invalid")
+        if not isinstance(partition, str):
+            raise EngineInputError("market row partition is invalid")
         try:
             close = float(raw["close"])
             benchmark_close = float(raw["benchmark_close"])
@@ -209,7 +219,7 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
             raise EngineInputError(f"off-calendar market row: {local_date}")
         if partition not in {"RESEARCH", "VALIDATION", "HOLDOUT"}:
             raise EngineInputError(f"invalid dataset partition: {partition}")
-        if not symbol or not all(
+        if not all(
             math.isfinite(value) and value > 0
             for value in (close, benchmark_close, split_factor)
         ):
@@ -258,15 +268,15 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
     ).hexdigest()
     return DatasetBundle(
         rows=rows,
-        provider_id=str(metadata["provider_id"]),
-        adapter_key=str(metadata["adapter_key"]),
-        adapter_version=str(metadata["adapter_version"]),
-        timezone=str(metadata["timezone"]),
+        provider_id=metadata_text["provider_id"],
+        adapter_key=metadata_text["adapter_key"],
+        adapter_version=metadata_text["adapter_version"],
+        timezone=metadata_text["timezone"],
         calendar=calendar,
         schema_sha256=schema_sha256,
-        pit_policy=str(metadata["pit_policy"]),
-        corporate_action_policy=str(metadata["corporate_action_policy"]),
-        survivorship_policy=str(metadata["survivorship_policy"]),
+        pit_policy=metadata_text["pit_policy"],
+        corporate_action_policy=metadata_text["corporate_action_policy"],
+        survivorship_policy=metadata_text["survivorship_policy"],
     )
 
 
@@ -919,18 +929,10 @@ def _portfolio_returns(
     adjusted_prices = _adjusted_price_map(canonical_rows)
     for index in range(len(dates) - 1):
         today, tomorrow = dates[index], dates[index + 1]
-        next_rows = {
-            symbol: row
-            for symbol, row in market_by_date[tomorrow].items()
-            if _parse_timestamp(row["available_at"], "available_at")
-            <= _parse_timestamp(row["event_time"], "event_time")
-        }
-        today_market_rows = {
-            symbol: row
-            for symbol, row in market_by_date[today].items()
-            if _parse_timestamp(row["available_at"], "available_at")
-            <= _parse_timestamp(row["event_time"], "event_time")
-        }
+        # Valuation rows are ex-post observations. Only the signal information
+        # set is PIT-filtered; delayed closes remain valid for return marking.
+        next_rows = market_by_date[tomorrow]
+        today_market_rows = market_by_date[today]
         today_rows = {
             symbol: row
             for symbol, row in by_date.get(today, {}).items()
@@ -1274,6 +1276,7 @@ def validation_checks(
         raise EngineInputError("validation metrics are malformed") from error
     numerical_ok = (
         observations >= 2
+        and observations == len(parsed_returns)
         and all(
             math.isfinite(value)
             for value in (

@@ -1223,7 +1223,7 @@ export interface components {
             apply_mode: "LIVE_NEW_WORK" | "DRAIN_RELOAD" | "RESTART_REQUIRED" | "SECURITY_IMMEDIATE";
             consumers: string[];
             dependencies: string[];
-            /** @description Closed JSON Schema for this key; it is immutable catalog data */
+            /** @description Closed JSON Schema for this key; it is immutable catalog data, not a user-supplied override. */
             schema: {
                 [key: string]: unknown;
             };
@@ -1234,10 +1234,6 @@ export interface components {
         };
         ConfigurationValueWrite: {
             key: string;
-            value?: string | number | boolean | {
-                [key: string]: unknown;
-            } | unknown[] | null;
-            secret?: string;
         } & ({
             key: string;
             value: string | number | boolean | {
@@ -3025,7 +3021,7 @@ export interface components {
             status?: string | null;
             state?: string | null;
             reason_code?: components["schemas"]["CanonicalErrorCode"] | null;
-            resync_from_sequence?: number | null;
+            resync_from_sequence?: string | null;
             /** @enum {string|null} */
             progress_mode?: "NONE" | "UNITS" | null;
             /** Format: int64 */
@@ -3053,8 +3049,7 @@ export interface components {
              * @example EVT-550e8400-e29b-41d4-a716-446655440000
              */
             event_id: string;
-            /** Format: int64 */
-            sequence: number;
+            sequence: string;
             event_type: components["schemas"]["EventType"];
             /** Format: date-time */
             occurred_at: string;
@@ -5261,7 +5256,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "Last-Event-ID"?: number;
+                "Last-Event-ID"?: string;
             };
             path?: never;
             cookie?: never;

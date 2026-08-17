@@ -382,11 +382,17 @@ def request_cancellation(
     if row.status == "QUEUED":
         from quantfoundry.application.jobs.effects import apply_job_cancellation
 
+        if row.queue_name == "agent":
+            from quantfoundry.agents.runtime.runtime import cancel_agent_run
+
+            cancel_agent_run(session, row)
         apply_job_cancellation(session, row)
         row.status = "CANCELLED"
         row.finished_at = timestamp
     row.revision += 1
     _update_wire_payload(row, timestamp)
+    if row.status == "CANCELLED":
+        _terminalize_success_dependents(session, row, timestamp)
     emit(
         session,
         "job",
@@ -682,6 +688,8 @@ def reap_expired_jobs(
                     next_retry_at=next_retry_at,
                 ),
             )
+        if row.status in {"FAILED", "CANCELLED"}:
+            _terminalize_success_dependents(session, row, timestamp)
         emit(
             session,
             "job",

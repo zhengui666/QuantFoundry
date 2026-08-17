@@ -18,6 +18,10 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError(
+            "0007 workspace snapshot identity supports PostgreSQL and SQLite only"
+        )
     null_count = bind.execute(
         sa.text("SELECT COUNT(*) FROM data_snapshots WHERE workspace_id IS NULL")
     ).scalar_one()

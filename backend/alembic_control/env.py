@@ -3,8 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-
-from sqlalchemy import engine_from_config, event, pool
+from sqlalchemy import engine_from_config, event, make_url, pool
 
 from alembic import context
 
@@ -15,7 +14,19 @@ from app.control_plane import CONTROL_METADATA, _control_path  # noqa: E402
 config = context.config
 database_url = os.getenv("QF_CONTROL_DB_URL") or f"sqlite:///{_control_path()}"
 if database_url.startswith("sqlite"):
-    _control_path().parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    database = make_url(database_url).database
+    if not database or database == ":memory:":
+        database_path = None
+    else:
+        database_path = database
+    if database_path is None:
+        pass
+    elif database_path.startswith("file:"):
+        raise RuntimeError("SQLite URI filenames are not supported for control migrations")
+    else:
+        Path(database_path).expanduser().parent.mkdir(
+            mode=0o750, parents=True, exist_ok=True
+        )
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 target_metadata = CONTROL_METADATA
 

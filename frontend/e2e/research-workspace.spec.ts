@@ -84,7 +84,7 @@ for (const [tab, label, emptyCopy] of tabs) {
       const event = {
         schema_version: 1,
         event_id: 'EVT-7BSW7QFNPFN7FGSNW2WW07V82M',
-        sequence: 1,
+        sequence: '1',
         event_type: 'research.updated',
         occurred_at: '2026-08-10T00:00:00Z',
         object_type: 'research',

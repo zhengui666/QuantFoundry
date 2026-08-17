@@ -238,6 +238,36 @@ def normalized_schema(
     return result
 
 
+def normalized_header(document: dict[str, Any], value: Any) -> Any:
+    if not isinstance(value, dict):
+        return normalized_fragment(document, value)
+    value = resolve(document, value)
+    return {
+        key: normalized_schema(document, item)
+        if key == "schema"
+        else {
+            media_type: {
+                **{field: normalized_fragment(document, field_value) for field, field_value in media.items() if field != "schema"},
+                **({"schema": normalized_schema(document, media.get("schema"))} if "schema" in media else {}),
+            }
+            for media_type, media in item.items()
+        }
+        if key == "content" and isinstance(item, dict)
+        else normalized_fragment(document, item)
+        for key, item in sorted(value.items())
+    }
+
+
+def effective_servers(
+    document: dict[str, Any], path_item: dict[str, Any], operation: dict[str, Any]
+) -> Any:
+    if "servers" in operation:
+        return operation["servers"]
+    if "servers" in path_item:
+        return path_item["servers"]
+    return document.get("servers", [])
+
+
 def normalized_parameters(
     document: dict[str, Any],
     operation: dict[str, Any],
@@ -356,15 +386,11 @@ for key, expected in canonical_operations.items():
         ):
             errors.append(f"{label}: response {status} content types")
         expected_headers = {
-            name.lower(): normalized_schema(
-                canonical, resolve(canonical, header).get("schema")
-            )
+            name.lower(): normalized_header(canonical, header)
             for name, header in expected_response.get("headers", {}).items()
         }
         actual_headers = {
-            name.lower(): normalized_schema(
-                runtime, resolve(runtime, header).get("schema")
-            )
+            name.lower(): normalized_header(runtime, header)
             for name, header in actual_response.get("headers", {}).items()
         }
         if expected_headers != actual_headers:
@@ -384,8 +410,10 @@ for key, expected in canonical_operations.items():
     if expected.get("deprecated", False) != actual.get("deprecated", False):
         errors.append(f"{label}: deprecated")
     if normalized_fragment(
-        canonical, expected.get("servers", [])
-    ) != normalized_fragment(runtime, actual.get("servers", [])):
+        canonical, effective_servers(canonical, canonical["paths"][key[0]], expected)
+    ) != normalized_fragment(
+        runtime, effective_servers(runtime, runtime["paths"][key[0]], actual)
+    ):
         errors.append(f"{label}: servers")
     if normalized_fragment(
         canonical, expected.get("callbacks", {})

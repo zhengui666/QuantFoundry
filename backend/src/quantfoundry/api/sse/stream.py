@@ -26,7 +26,7 @@ def _wire(
         {
             "schema_version": 1,
             "event_id": event.event_id,
-            "sequence": event.sequence,
+            "sequence": str(event.sequence),
             "event_type": event.event_type,
             "occurred_at": occurred_at.astimezone(UTC)
             .isoformat()
@@ -62,7 +62,7 @@ def _resync_wire(
         {
             "schema_version": 1,
             "event_id": event_id,
-            "sequence": sequence,
+            "sequence": str(sequence),
             "event_type": "system.resync_required",
             "occurred_at": now(),
             "object_type": "event_stream",
@@ -76,12 +76,12 @@ def _resync_wire(
             "payload": {
                 "state": "RESYNC_REQUIRED",
                 "status": None,
-                "resync_from_sequence": sequence,
+                "resync_from_sequence": str(sequence),
             },
         }
     )
     return (
-        "id:\n"
+        f"id: {sequence}\n"
         "event: system.resync_required\n"
         f"data: {json.dumps(value, separators=(',', ':'))}\n\n"
     )
@@ -163,6 +163,7 @@ async def durable_event_stream(
                     .all()
                 )
                 if watermark_model is not None and has_cursor:
+                    current_state = stream_state
                     if stream_state is not None:
                         session.expire(stream_state)
                         current_state = session.get(watermark_model, workspace_id)
@@ -170,11 +171,7 @@ async def durable_event_stream(
                         current_state is not None
                         and cursor_value <= current_state.expired_through_sequence
                     ):
-                        return [], (
-                            events[0].sequence
-                            if events
-                            else int(current_state.last_sequence) + 1
-                        )
+                        return [], int(current_state.expired_through_sequence) + 1
                 return events, None
             finally:
                 session.close()

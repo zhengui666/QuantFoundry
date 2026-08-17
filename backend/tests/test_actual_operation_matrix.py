@@ -1132,7 +1132,49 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         },
     )
     assert seeded_backtest.status_code == 202
-    assert drain_core_job(seeded_backtest.json()["job_id"]).status == "COMPLETED"
+    seeded_backtest_job = drain_core_job(seeded_backtest.json()["job_id"])
+    assert seeded_backtest_job.status == "COMPLETED"
+    candidate_backtest = client.post(
+        f"/api/v1/strategies/{candidate_strategy_id}/versions/1/backtests",
+        headers=_key("agent-candidate-backtest"),
+        json={
+            "snapshot_id": snapshot_id,
+            "cost_model_id": "COST-00000000-0000-4000-8000-000000000103",
+            "engine_key": "qf-simulation-v1",  # gitleaks:allow
+            "engine_version": "1.0.0",
+            "parameters": [],
+        },
+    )
+    assert candidate_backtest.status_code == 202
+    candidate_backtest_job = drain_core_job(candidate_backtest.json()["job_id"])
+    assert candidate_backtest_job.status == "COMPLETED"
+    comparison_experiment_ids = []
+    research_revision = client.get(
+        f"/api/v1/research/{research_id}", headers=AUTH
+    ).json()["revision"]
+    for label in ("comparison-a", "comparison-b"):
+        comparison = client.post(
+            "/api/v1/experiments",
+            headers=_key(label),
+            json={
+                "research_id": research_id,
+                "research_revision_no": research_revision,
+                "objective": "Compare deterministic strategy evidence",
+                "hypothesis": "The strategy produces deterministic returns",
+                "experiment_type": "FAST_BACKTEST",
+                "data_snapshot_id": snapshot_id,
+                "strategy_id": candidate_strategy_id,
+                "strategy_version": 1,
+                "cost_model_id": "COST-00000000-0000-4000-8000-000000000103",
+                "parameters": [],
+                "engine_key": "qf-simulation-v1",
+                "engine_version": "1.0.0",
+            },
+        )
+        assert comparison.status_code == 202
+        comparison_job = drain_core_job(comparison.json()["job_id"])
+        assert comparison_job.status == "COMPLETED", comparison_job.error_detail
+        comparison_experiment_ids.append(comparison.json()["resource_ref"]["id"])
     seeded_strategy_read = client.get(
         f"/api/v1/strategies/{frozen_strategy_id}/versions/1", headers=AUTH
     )
@@ -1285,7 +1327,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         {
             "type": "tool",
             "name": "compare_backtests",
-            "arguments": {"experiment_ids": [experiment_id, child_id]},
+            "arguments": {"experiment_ids": comparison_experiment_ids},
         },
         {
             "type": "tool",
@@ -1552,7 +1594,29 @@ def test_45_canonical_operation_ids_execute_real_handlers(
     public_metadata = json.loads(public_record.body)
     holdout_metadata = json.loads(holdout_record.body)
     public_artifact = json.dumps(
-        read_parquet(public_metadata["storage_key"], public_metadata["content_sha256"])
+        {
+            partition: read_parquet(
+                json.loads(
+                    session.execute(
+                        select(Record).where(
+                            Record.workspace_id == "matrix-workspace",
+                            Record.record_key == bindings[partition].artifact_id,
+                        )
+                    ).scalar_one().body
+                )["storage_key"],
+                json.loads(
+                    session.execute(
+                        select(Record).where(
+                            Record.workspace_id == "matrix-workspace",
+                            Record.record_key == bindings[partition].artifact_id,
+                        )
+                    ).scalar_one().body
+                )["content_sha256"],
+            )
+            for partition in bindings
+            if partition != "HOLDOUT"
+        },
+        sort_keys=True,
     )
     protected_artifact = json.dumps(
         read_parquet(
@@ -1567,7 +1631,13 @@ def test_45_canonical_operation_ids_execute_real_handlers(
             *(
                 value
                 for row in session.query(ToolCallRow).all()
-                for value in (row.result_summary or "", row.warnings or "")
+                for value in (
+                    row.input_payload or "",
+                    json.dumps(row.input, sort_keys=True) if row.input else "",
+                    row.result_summary or "",
+                    row.warnings or "",
+                    row.provenance or "",
+                )
             ),
             *(
                 value
@@ -1575,7 +1645,17 @@ def test_45_canonical_operation_ids_execute_real_handlers(
                 for value in (
                     row.payload or "",
                     row.input_payload or "",
+                    row.result_ref or "",
                     row.error_detail or "",
+                )
+            ),
+            *(
+                value
+                for row in session.query(AgentRunRow).all()
+                for value in (
+                    row.decision_summary or "",
+                    row.next_action or "",
+                    row.objective or "",
                 )
             ),
             *(row.body for row in session.query(Record).all()),

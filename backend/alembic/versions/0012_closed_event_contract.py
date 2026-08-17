@@ -97,6 +97,26 @@ EVENT_OBJECT_TYPES = {
     "system.resync_required": "event_stream",
 }
 
+_EVENT_PAYLOAD_FIELDS = {
+    "status",
+    "state",
+    "reason_code",
+    "resync_from_sequence",
+    "progress_mode",
+    "completed_units",
+    "total_units",
+    "current_step_key",
+    "agent_run_id",
+    "role",
+    "objective",
+    "research_id",
+    "object_type",
+    "object_id",
+    "object_version",
+    "object_revision",
+    "waiting_on",
+}
+
 
 def _migrated_public_id(prefix: str, workspace_id: str, sequence: int) -> str:
     digest = hashlib.sha256(f"{prefix}:{workspace_id}:{sequence}".encode()).hexdigest()
@@ -233,6 +253,16 @@ def _canonical_event_type(value: str | None) -> str:
     return "system.resync_required"
 
 
+def _preserved_payload(raw: object) -> str | None:
+    try:
+        value = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(value, dict) or not set(value).issubset(_EVENT_PAYLOAD_FIELDS):
+        return None
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
 def upgrade() -> None:
     connection = op.get_bind()
     dialect = connection.dialect.name
@@ -284,7 +314,7 @@ def upgrade() -> None:
                 separators=(",", ":"),
             )
             if event_type == "system.resync_required"
-            else "{}"
+            else (_preserved_payload(row["payload"]) or "{}")
         )
         connection.execute(
             sa.text(

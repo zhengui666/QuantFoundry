@@ -132,7 +132,14 @@ const intentionalRejection = (token, context) => {
 };
 
 const grammarNotation = (token, context, file, key = '') => {
-  if (/public-id-prose/i.test(context)) return true;
+  const proseDirectivePattern = /\bpublic-id-prose\s*:?\s+([A-Za-z][A-Za-z0-9]*-[A-Za-z0-9_-]*)/gi;
+  if (
+    [...context.matchAll(proseDirectivePattern)].some(
+      (match) => match[1].toUpperCase() === token.toUpperCase(),
+    )
+  )
+    return true;
+  if (/\bpublic-id-prose\b/i.test(context) && context.includes(token)) return true;
   const extension = extname(file).toLowerCase();
   const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(
     key,
@@ -180,17 +187,11 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
     const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
     const suffix = value.slice(rawPrefix.length + 1);
-    const looksLikeLowercaseId =
-      rawPrefix !== prefix &&
-      suffix.length >= 20 &&
-      /^[0-9a-f]/i.test(suffix) &&
-      /[0-9]/.test(suffix);
-    if (
+    const recognized =
       canonical &&
-      (rawPrefix === prefix || looksLikeLowercaseId) &&
-      !canonical.some((matcher) => matcher.test(value))
-    )
-      report(value);
+      (rawPrefix === prefix ||
+        (suffix.length >= 20 && /^[A-Za-z0-9_-]+$/.test(suffix) && /[0-9]/.test(suffix)));
+    if (recognized && !canonical.some((matcher) => matcher.test(value))) report(value);
   }
   const matches = [
     ...text.matchAll(tokenPattern),
@@ -205,13 +206,11 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
     const rawPrefix = match[1] ?? '';
     const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
-    const looksLikeLowercaseId =
-      rawPrefix !== prefix &&
-      match[2].length >= 20 &&
-      /^[0-9a-f]/i.test(match[2]) &&
-      /[0-9]/.test(match[2]);
+    const suffix = match[2] ?? '';
     const recognized =
-      (canonical !== undefined && (rawPrefix === prefix || looksLikeLowercaseId)) ||
+      (canonical !== undefined &&
+        (rawPrefix === prefix ||
+          (suffix.length >= 20 && /^[A-Za-z0-9_-]+$/.test(suffix) && /[0-9]/.test(suffix)))) ||
       (prefix === 'MEM' && rawPrefix === prefix);
     if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
     if (match[2] !== '' && grammarNotation(token, context, file, key)) continue;
@@ -236,7 +235,14 @@ const scanLines = (file, content, matchers) => {
   let marker = '';
   for (const [index, line] of lines.entries()) {
     failures.push(
-      ...invalidTokens(line, marker ? `${marker} ${line}` : line, `${file}:${index + 1}`, matchers),
+      ...invalidTokens(
+        line,
+        marker ? `${marker} ${line}` : line,
+        `${file}:${index + 1}`,
+        matchers,
+        '',
+        file,
+      ),
     );
     marker = /(?:reject_fixture|must\s+reject|public-id-prose)\s*:?\s+[A-Za-z][A-Za-z0-9]*-/i.test(
       line,

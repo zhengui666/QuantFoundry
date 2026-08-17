@@ -94,6 +94,15 @@ export function isPublicId<T extends PublicIdType>(type: T, value: string): bool
 }
 
 const eventCursorPrefix = 'qf.sse.cursor:';
+const readEventCursor = (scope: string): bigint => {
+  const raw = transientStorage.get(`${eventCursorPrefix}${scope}`) ?? '0';
+  if (!/^\d+$/.test(raw)) return 0n;
+  try {
+    return BigInt(raw);
+  } catch {
+    return 0n;
+  }
+};
 const nextOpaqueScope = (): string => `owner:${crypto.randomUUID()}`;
 const clearEventCursor = (scope: string): void => {
   transientStorage.remove(`${eventCursorPrefix}${scope}`);
@@ -184,6 +193,9 @@ function headersFor(operationId: CanonicalOperationId, init: RequestInit) {
     if (headers.has(header) && !canonicalHeaders.includes(header))
       throw new ContractError(`${header} is not defined by canonical operation ${operationId}.`);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  const e2eMockToken = (import.meta.env as { VITE_E2E_MOCK_TOKEN?: unknown }).VITE_E2E_MOCK_TOKEN;
+  if (typeof e2eMockToken === 'string' && e2eMockToken)
+    headers.set('X-QF-E2E-Mock-Token', e2eMockToken);
   if (init.body) headers.set('Content-Type', 'application/json');
   if (
     operation.authenticated &&
@@ -266,6 +278,16 @@ async function requestText(
     location: response.headers.get('Location'),
   };
 }
+
+let authMutationQueue: Promise<unknown> = Promise.resolve();
+const runSerializedAuthMutation = <T>(operation: () => Promise<T>): Promise<T> => {
+  const next = authMutationQueue.then(operation, operation);
+  authMutationQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+};
 
 function validateResult<T>(
   result: ApiResult<unknown>,
@@ -374,40 +396,43 @@ function validateStrategyDetail(
 }
 
 export const api = {
-  login: async (key: string) => {
-    const requestScope = auth.scope();
-    const body = validateInput<Schema<'GeneralAccessKeyLoginRequest'>>(
-      { key },
-      GeneralAccessKeyLoginRequestSchema,
-      'GeneralAccessKeyLogin',
-    );
-    const result = validateResult<Schema<'SessionBootstrapResponse'>>(
-      await request<unknown>('loginWithGeneralAccessKey', { body: JSON.stringify(body) }),
-      SessionBootstrapResponseSchema,
-      'SessionBootstrapResponse',
-    );
-    auth.establish(result.body.session, { expectedScope: requestScope, rotate: true });
-    return result;
-  },
-  session: async (signal?: AbortSignal) => {
-    const requestScope = auth.scope();
-    const result = validateResult<Schema<'OwnerSessionView'>>(
-      await request<unknown>('getCurrentOwnerSession', { signal: signal ?? null }),
-      OwnerSessionViewSchema,
-      'OwnerSessionView',
-    );
-    auth.establish(result.body, {
-      expectedScope: requestScope,
-      rotate: !auth.get(),
-    });
-    return result;
-  },
-  logout: async () => {
-    const requestScope = auth.scope();
-    const result = await request<undefined>('logoutOwnerSession');
-    if (auth.scope() === requestScope) auth.clear();
-    return result;
-  },
+  login: (key: string) =>
+    runSerializedAuthMutation(async () => {
+      const requestScope = auth.scope();
+      const body = validateInput<Schema<'GeneralAccessKeyLoginRequest'>>(
+        { key },
+        GeneralAccessKeyLoginRequestSchema,
+        'GeneralAccessKeyLogin',
+      );
+      const result = validateResult<Schema<'SessionBootstrapResponse'>>(
+        await request<unknown>('loginWithGeneralAccessKey', { body: JSON.stringify(body) }),
+        SessionBootstrapResponseSchema,
+        'SessionBootstrapResponse',
+      );
+      auth.establish(result.body.session, { expectedScope: requestScope, rotate: true });
+      return result;
+    }),
+  session: (signal?: AbortSignal) =>
+    runSerializedAuthMutation(async () => {
+      const requestScope = auth.scope();
+      const result = validateResult<Schema<'OwnerSessionView'>>(
+        await request<unknown>('getCurrentOwnerSession', { signal: signal ?? null }),
+        OwnerSessionViewSchema,
+        'OwnerSessionView',
+      );
+      auth.establish(result.body, {
+        expectedScope: requestScope,
+        rotate: !auth.get(),
+      });
+      return result;
+    }),
+  logout: () =>
+    runSerializedAuthMutation(async () => {
+      const requestScope = auth.scope();
+      const result = await request<undefined>('logoutOwnerSession');
+      if (auth.scope() === requestScope) auth.clear();
+      return result;
+    }),
   accessKeys: async (signal?: AbortSignal) =>
     validateResult<Schema<'GeneralAccessKeyList'>>(
       await request<unknown>('listGeneralAccessKeys', { signal: signal ?? null }),
@@ -1293,7 +1318,7 @@ export const isSafeHoldoutNotification = (event: EventEnvelope): boolean => {
 
 /** A wire frame is not trusted until both the SSE cursor and generated envelope agree. */
 export type DecodedSseFrame = Readonly<{
-  cursor: number;
+  cursor: string;
   event: EventEnvelope;
 }>;
 
@@ -1303,9 +1328,9 @@ export function decodeCanonicalSseFrame(frame: string): DecodedSseFrame | undefi
   const dataLine = lines.find((line) => line.startsWith('data:'));
   if (!dataLine) return undefined; // heartbeat/comment-only frame
   if (!idLine) throw new ContractError('Canonical SSE data frame is missing its sequence cursor.');
-  const cursor = Number(idLine.slice(3).trim());
-  if (!Number.isSafeInteger(cursor) || cursor < 1)
-    throw new ContractError('Canonical SSE frame cursor is not a positive safe integer.');
+  const cursor = idLine.slice(3).trim();
+  if (!/^[1-9]\d*$/.test(cursor))
+    throw new ContractError('Canonical SSE frame cursor is not a positive decimal integer.');
   let decoded: unknown;
   try {
     decoded = JSON.parse(dataLine.slice(5).trim());
@@ -1342,8 +1367,7 @@ export function streamEvents(
   onProblem?: (error: ApiError) => void,
 ): () => void {
   let streamScope = auth.scope();
-  const cursorKey = () => `qf.sse.cursor:${streamScope}`;
-  let last = Number(transientStorage.get(cursorKey()) ?? '0');
+  let last = readEventCursor(streamScope);
   let active: AbortController | undefined;
   let stopped = false;
   let authorizationBlocked = false;
@@ -1376,7 +1400,7 @@ export function streamEvents(
     void (async () => {
       try {
         const headers: Record<string, string> = { Accept: 'text/event-stream' };
-        if (connectionLast) headers['Last-Event-ID'] = String(connectionLast);
+        if (connectionLast > 0n) headers['Last-Event-ID'] = String(connectionLast);
         const response = await fetch(pathFor('streamEvents'), {
           method: operationMap.streamEvents.method,
           headers: headersFor('streamEvents', { headers }),
@@ -1443,12 +1467,13 @@ export function streamEvents(
               continue;
             }
             consecutiveContractSkews = 0;
-            if (event.sequence <= connectionLast) continue;
-            const hasGap = connectionLast > 0 && event.sequence > connectionLast + 1;
+            const eventCursor = BigInt(event.sequence);
+            if (eventCursor <= connectionLast) continue;
+            const hasGap = connectionLast > 0n && eventCursor > connectionLast + 1n;
             if (event.event_type === 'system.resync_required') {
               if (!(await safeResync())) break streamLoop;
               if (!current()) return;
-              connectionLast = event.sequence;
+              connectionLast = eventCursor;
               last = connectionLast;
               transientStorage.set(connectionCursorKey, String(connectionLast));
               continue;
@@ -1457,9 +1482,6 @@ export function streamEvents(
               if (!(await safeResync())) break streamLoop;
               if (!current()) return;
             }
-            connectionLast = event.sequence;
-            last = connectionLast;
-            transientStorage.set(connectionCursorKey, String(connectionLast));
             try {
               onEvent(event);
             } catch {
@@ -1467,6 +1489,9 @@ export function streamEvents(
               onState?.('degraded');
               return;
             }
+            connectionLast = eventCursor;
+            last = connectionLast;
+            transientStorage.set(connectionCursorKey, String(connectionLast));
           }
         }
       } catch (error) {
@@ -1501,7 +1526,7 @@ export function streamEvents(
     }
     active?.abort();
     streamScope = auth.scope();
-    last = Number(transientStorage.get(cursorKey()) ?? '0');
+    last = readEventCursor(streamScope);
     if (!auth.get()) return;
     authorizationBlocked = false;
     reconnect();

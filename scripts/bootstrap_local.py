@@ -137,6 +137,7 @@ def main() -> int:
 
     owner_id = workspace_id = session_token = None
     owner_existed = False
+    workspace_created = False
     cleanup_paths: list[Path] = []
     preserved_paths: set[Path] = set()
     try:
@@ -147,9 +148,13 @@ def main() -> int:
             raise RuntimeError(
                 "refusing to bootstrap an existing workspace; local bootstrap is fresh-only"
             )
-        owner_id, workspace_id, session_token = provision(
+        owner_id, workspace_id, session_token, workspace_created = provision(
             args.email, args.workspace_name, args.ttl_hours
         )
+        if not workspace_created:
+            raise RuntimeError(
+                "refusing to bootstrap an existing workspace; local bootstrap is fresh-only"
+            )
         cleanup_paths = _seed_paths(workspace_id)
         preserved_paths = {path for path in cleanup_paths if path.exists()}
         seeded = seed_local(
@@ -158,6 +163,7 @@ def main() -> int:
             owner_email=args.email,
             session_token=session_token,
             ttl_hours=args.ttl_hours,
+            workspace_name=args.workspace_name,
         )
         base_url = os.getenv("QF_BOOTSTRAP_API_URL", "http://api:8000/api/v1")
         auth = {"Authorization": f"Bearer {session_token}"}
@@ -226,7 +232,7 @@ def main() -> int:
         ValueError,
     ) as error:
         compensation_error = None
-        if owner_id is not None and workspace_id is not None:
+        if workspace_created and owner_id is not None and workspace_id is not None:
             try:
                 _compensate_workspace(
                     workspace_id,

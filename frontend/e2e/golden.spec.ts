@@ -623,7 +623,7 @@ test.skip('SSE resync refetches REST truth without clearing a P00 draft', async 
     await streamGate;
     return route.fulfill({
       contentType: 'text/event-stream',
-      body: 'data: {"schema_version":1,"event_id":"e1","sequence":1,"event_type":"system.resync_required","occurred_at":"2026-01-01T00:00:00Z","object_type":"system","object_id":"root","object_version":null,"object_revision":null,"request_id":null,"job_id":null,"agent_run_id":null,"tool_call_id":null,"payload":{"resync_from_sequence":1}}\n\n',
+      body: 'data: {"schema_version":1,"event_id":"e1","sequence":"1","event_type":"system.resync_required","occurred_at":"2026-01-01T00:00:00Z","object_type":"event_stream","object_id":"EVT-7BSW7QFNPFN7FGSNW2WW07V82M","object_version":null,"object_revision":1,"request_id":"REQ-7BSW7QFNPFN7FGSNW2WW07V82M","job_id":null,"agent_run_id":null,"tool_call_id":null,"payload":{"resync_from_sequence":"1","state":"RESYNC_REQUIRED","status":null}}\n\n',
     });
   });
   await page.route('**/api/v1/setup/status', (route) => {

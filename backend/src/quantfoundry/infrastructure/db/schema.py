@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -38,11 +38,13 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    literal_column,
     text,
 )
 from sqlalchemy.dialects.postgresql import DATERANGE, JSONB
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.schema import ColumnDefault
+from sqlalchemy.schema import ColumnDefault, DefaultClause
+from sqlalchemy.sql.elements import ClauseElement
 from sqlalchemy.types import TypeDecorator
 
 from quantfoundry.contracts.events.locator import (
@@ -213,6 +215,28 @@ def _compile_sqlite_contract_check(
     return f"CONSTRAINT {name} CHECK ({constraint.sqlite_sql})"
 
 
+class _DialectServerDefault(ClauseElement):
+    inherit_cache = True
+
+    def __init__(self, postgresql: str, sqlite: str) -> None:
+        self.postgresql = postgresql
+        self.sqlite = sqlite
+
+
+@compiles(_DialectServerDefault)
+def _compile_server_default(
+    element: _DialectServerDefault, _compiler: Any, **_: Any
+) -> str:
+    return element.postgresql
+
+
+@compiles(_DialectServerDefault, "sqlite")
+def _compile_sqlite_server_default(
+    element: _DialectServerDefault, _compiler: Any, **_: Any
+) -> str:
+    return element.sqlite
+
+
 class DateRangeCompat(TypeDecorator[Any]):
     """Native PostgreSQL daterange with JSON-compatible SQLite values."""
 
@@ -245,7 +269,7 @@ class DateRangeCompat(TypeDecorator[Any]):
                 if start >= end:
                     raise ValueError("date range start must precede end")
                 if dialect.name == "postgresql":
-                    return Range(start, end + timedelta(days=1), bounds="[)")
+                    return Range(start, end, bounds="[)")
                 return json.dumps(
                     {"start": start.isoformat(), "end": end.isoformat()},
                     separators=(",", ":"),
@@ -263,7 +287,7 @@ class DateRangeCompat(TypeDecorator[Any]):
             if start >= end:
                 raise ValueError("date range bounds are invalid")
             if dialect.name == "postgresql":
-                return Range(start, end + timedelta(days=1), bounds="[)")
+                return Range(start, end, bounds="[)")
             return json.dumps(value, separators=(",", ":"), sort_keys=True)
         return value
 
@@ -272,8 +296,6 @@ class DateRangeCompat(TypeDecorator[Any]):
             if getattr(value, "isempty", False):
                 return None
             upper = value.upper
-            if upper is not None and not value.upper_inc:
-                upper -= timedelta(days=1)
             return {
                 "start": value.lower.isoformat() if value.lower is not None else None,
                 "end": upper.isoformat() if upper is not None else None,
@@ -404,6 +426,37 @@ def _default_value(column: dict[str, Any]) -> Any:
     if raw not in {"", "-"}:
         return raw
     raise ValueError(f"unsupported manifest default {raw!r}")
+
+
+def _server_default_value(column: dict[str, Any]) -> str | None:
+    raw = column["default"]
+    if raw in {"NULL", "-", "workspace sequence allocator"}:
+        return None
+    if raw == "now()":
+        return "CURRENT_TIMESTAMP"
+    if raw == "zero hash":
+        return "'" + ("0" * 64) + "'"
+    if raw.lower() in {"true", "false"}:
+        return raw.upper()
+    if raw in {"uuidv7()", "now()+interval '7 days'"}:
+        return raw
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", raw):
+        return raw
+    if raw.startswith("'") and raw.endswith("'"):
+        return raw
+    return "'" + raw.replace("'", "''") + "'"
+
+
+def _server_default_clause(column: dict[str, Any]) -> DefaultClause | None:
+    if column["default"] == "now()+interval '7 days'":
+        return DefaultClause(
+            _DialectServerDefault(
+                "now()+interval '7 days'",
+                "datetime(CURRENT_TIMESTAMP, '+7 days')",
+            )
+        )
+    value = _server_default_value(column)
+    return DefaultClause(literal_column(value)) if value is not None else None
 
 
 def _constraint_name(table: str, suffix: str) -> str:
@@ -900,6 +953,7 @@ def augment_section14_metadata(metadata: MetaData) -> None:
                 existing.default = (
                     ColumnDefault(default) if default is not None else None
                 )
+                existing.server_default = _server_default_clause(column)
                 existing.info = {"section14": column}
                 continue
             constraints = column["constraints"]
@@ -913,6 +967,7 @@ def augment_section14_metadata(metadata: MetaData) -> None:
                     primary_key=is_primary,
                     nullable=False if is_primary else column["nullable"],
                     default=_default_value(column),
+                    server_default=_server_default_clause(column),
                     info={"section14": column},
                 )
             )

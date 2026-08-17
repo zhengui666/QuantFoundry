@@ -5,7 +5,14 @@ const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
   if (value && typeof value === 'object') {
     const object = value as Record<string, unknown>;
-    return '{' + Object.keys(object).sort().map((key) => JSON.stringify(key) + ':' + canonicalJson(object[key])).join(',') + '}';
+    return (
+      '{' +
+      Object.keys(object)
+        .sort()
+        .map((key) => JSON.stringify(key) + ':' + canonicalJson(object[key]))
+        .join(',') +
+      '}'
+    );
   }
   return JSON.stringify(value);
 };
@@ -1406,7 +1413,9 @@ export const EventObjectLocatorSchemas = {
             });
         }),
       object_version: z.number().int().min(1),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   validation: z
@@ -1798,7 +1807,9 @@ export const EventObjectLocatorSchemas = {
     .object({
       object_id: z.literal('SETTINGS-DEFAULT'),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   provider_connection: z
@@ -1807,7 +1818,9 @@ export const EventObjectLocatorSchemas = {
         .string()
         .regex(new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   agent_config: z
@@ -1821,7 +1834,9 @@ export const EventObjectLocatorSchemas = {
         z.literal('PERFORMANCE_ANALYST'),
       ]),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   event_stream: z
@@ -1856,7 +1871,9 @@ export const EventObjectLocatorSchemas = {
             });
         }),
       object_version: z.null().nullable(),
-      object_revision: z.number().int().min(1),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
 } as const;
@@ -2007,7 +2024,19 @@ export const CanonicalErrorCodeSchema = z.union([
 ]);
 export const FieldErrorSchema = z
   .object({ field: z.string(), code: z.string(), message: z.string() })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'field'), {
+    path: ['field'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'code'), {
+    path: ['code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'message'), {
+    path: ['message'],
+    message: 'Required property is missing',
+  });
 export const ProblemContextSchema = z
   .object({
     object_type: z
@@ -2633,7 +2662,14 @@ export const ProblemContextSchema = z
       })
       .optional(),
     object_version: z.union([z.number().int().min(1), z.null()]).optional(),
-    object_revision: z.union([z.number().int().min(1), z.null()]).optional(),
+    object_revision: z
+      .union([
+        z.number().int().min(1).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
+        z.null(),
+      ])
+      .optional(),
     expected_revision: z.union([z.number().int().min(1), z.null()]).optional(),
     actual_revision: z.union([z.number().int().min(1), z.null()]).optional(),
     approval_id: z
@@ -2733,6 +2769,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('job') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -2787,6 +2827,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('research') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -2841,6 +2885,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('conclusion') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -2895,6 +2943,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('experiment') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -2949,6 +3001,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('factor') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3003,6 +3059,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('strategy_version') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3039,9 +3099,19 @@ export const ProblemContextSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_version'), {
+                    path: ['object_version'],
+                    message: 'Required property is missing',
+                  })
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -3059,6 +3129,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('validation') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3113,6 +3187,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('approval') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3167,6 +3245,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3221,6 +3303,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3275,6 +3361,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('review') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3329,6 +3419,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('capability') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3383,6 +3477,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('snapshot') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3437,6 +3535,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3491,6 +3593,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('tool_call') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3545,6 +3651,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('memo') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3599,6 +3709,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('notification') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3653,6 +3767,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('settings') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3660,9 +3778,15 @@ export const ProblemContextSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -3680,6 +3804,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('provider_connection') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3694,9 +3822,15 @@ export const ProblemContextSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -3714,6 +3848,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_config') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3730,9 +3868,15 @@ export const ProblemContextSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -3750,6 +3894,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.literal('event_stream') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3786,9 +3934,15 @@ export const ProblemContextSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -3806,6 +3960,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_type: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3833,6 +3991,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ object_id: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_id'), {
+              path: ['object_id'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3860,6 +4022,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('job.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3883,6 +4049,10 @@ export const ProblemContextSchema = z
               event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3904,6 +4074,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('research.conclusion.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3930,6 +4104,10 @@ export const ProblemContextSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3951,6 +4129,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('factor.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -3974,6 +4156,10 @@ export const ProblemContextSchema = z
               event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4001,6 +4187,10 @@ export const ProblemContextSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4024,6 +4214,10 @@ export const ProblemContextSchema = z
               event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4047,6 +4241,10 @@ export const ProblemContextSchema = z
               event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4068,6 +4266,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('paper.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4091,6 +4293,10 @@ export const ProblemContextSchema = z
               event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4112,6 +4318,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.provider.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4133,6 +4343,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.capability.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4154,6 +4368,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.quality.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4175,6 +4393,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('agent.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4196,6 +4418,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('tool.call.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4217,6 +4443,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4238,6 +4468,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('setup.completed') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4264,6 +4498,10 @@ export const ProblemContextSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4290,6 +4528,10 @@ export const ProblemContextSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4311,6 +4553,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4332,6 +4578,10 @@ export const ProblemContextSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4358,6 +4608,10 @@ export const ProblemContextSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4437,7 +4691,47 @@ export const ApiProblemSchema = z
     field_errors: z.array(FieldErrorSchema),
     context: ProblemContextSchema,
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'title'), {
+    path: ['title'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'code'), {
+    path: ['code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'detail'), {
+    path: ['detail'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'instance'), {
+    path: ['instance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'request_id'), {
+    path: ['request_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'retryable'), {
+    path: ['retryable'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'field_errors'), {
+    path: ['field_errors'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'context'), {
+    path: ['context'],
+    message: 'Required property is missing',
+  });
 export const GeneralAccessKeyLoginRequestSchema = z
   .object({
     key: z
@@ -4446,7 +4740,11 @@ export const GeneralAccessKeyLoginRequestSchema = z
       .max(256)
       .regex(new RegExp('^qfk_gak_[a-z0-9]{16,32}\\.[A-Za-z0-9_-]{43,}$')),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  });
 export const GeneralAccessKeyMetadataSchema = z
   .object({
     key_id: z.string().regex(new RegExp('^gak_[a-z0-9]{16,32}$')),
@@ -4455,19 +4753,61 @@ export const GeneralAccessKeyMetadataSchema = z
     status: z.union([z.literal('ACTIVE'), z.literal('REVOKED'), z.literal('EXPIRED')]),
     expires_at: z.union([z.iso.datetime({ offset: true }), z.null()]),
     last_used_at: z.union([z.iso.datetime({ offset: true }), z.null()]),
-    revision: z.number().int().min(1),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key_id'), {
+    path: ['key_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'label'), {
+    path: ['label'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'masked_hint'), {
+    path: ['masked_hint'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'expires_at'), {
+    path: ['expires_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'last_used_at'), {
+    path: ['last_used_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const GeneralAccessKeyListSchema = z
   .object({ items: z.array(GeneralAccessKeyMetadataSchema) })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  });
 export const GeneralAccessKeyCreateRequestSchema = z
   .object({
     label: z.string().min(1).max(80),
     expires_at: z.union([z.iso.datetime({ offset: true }), z.null()]).optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'label'), {
+    path: ['label'],
+    message: 'Required property is missing',
+  });
 export const GeneralAccessKeyIssuedSchema = z
   .object({
     key: GeneralAccessKeyMetadataSchema,
@@ -4477,7 +4817,15 @@ export const GeneralAccessKeyIssuedSchema = z
       .max(256)
       .regex(new RegExp('^qfk_gak_[a-z0-9]{16,32}\\.[A-Za-z0-9_-]{43,}$')),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'secret'), {
+    path: ['secret'],
+    message: 'Required property is missing',
+  });
 export const OwnerSessionViewSchema = z
   .object({
     principal: z.literal('OWNER'),
@@ -4488,10 +4836,42 @@ export const OwnerSessionViewSchema = z
     expires_at: z.iso.datetime({ offset: true }),
     csrf_token: z.string().min(32).max(256),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'principal'), {
+    path: ['principal'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'auth_method'), {
+    path: ['auth_method'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'key_id'), {
+    path: ['key_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'issued_at'), {
+    path: ['issued_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'last_seen_at'), {
+    path: ['last_seen_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'expires_at'), {
+    path: ['expires_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'csrf_token'), {
+    path: ['csrf_token'],
+    message: 'Required property is missing',
+  });
 export const SessionBootstrapResponseSchema = z
   .object({ session: OwnerSessionViewSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'session'), {
+    path: ['session'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationCatalogEntrySchema = z
   .object({
     key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
@@ -4511,37 +4891,68 @@ export const ConfigurationCatalogEntrySchema = z
     validator: z.string().min(1).max(160),
     safe_range: z.union([z.object({}).passthrough(), z.null()]).optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'group'), {
+    path: ['group'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'schema_version'), {
+    path: ['schema_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'scope'), {
+    path: ['scope'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sensitivity'), {
+    path: ['sensitivity'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'apply_mode'), {
+    path: ['apply_mode'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'consumers'), {
+    path: ['consumers'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'dependencies'), {
+    path: ['dependencies'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'schema'), {
+    path: ['schema'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validator'), {
+    path: ['validator'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationCatalogSchema = z
   .object({
     catalog_version: z.string().min(1).max(64),
     entries: z.array(ConfigurationCatalogEntrySchema),
   })
-  .strict();
-export const ConfigurationValueWriteSchema = z
-  .object({
-    key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
-    value: z
-      .unknown()
-      .superRefine((value, context) => {
-        const matches = [
-          z.string().safeParse(value).success,
-          z.number().safeParse(value).success,
-          z.boolean().safeParse(value).success,
-          z.object({}).passthrough().safeParse(value).success,
-          z.array(z.unknown()).safeParse(value).success,
-          z.null().nullable().safeParse(value).success,
-        ].filter(Boolean).length;
-        if (matches === 0)
-          context.addIssue({
-            code: 'custom',
-            message: 'Value must match at least one canonical variant',
-          });
-      })
-      .optional(),
-    secret: z.string().min(1).max(16384).optional(),
-  })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'catalog_version'), {
+    path: ['catalog_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'entries'), {
+    path: ['entries'],
+    message: 'Required property is missing',
+  });
+export const ConfigurationValueWriteSchema = z
+  .object({ key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')) })
+  .passthrough()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     const matches = [
       z
@@ -4564,6 +4975,14 @@ export const ConfigurationValueWriteSchema = z
           }),
         })
         .strict()
+        .refine((value) => Object.hasOwn(value, 'key'), {
+          path: ['key'],
+          message: 'Required property is missing',
+        })
+        .refine((value) => Object.hasOwn(value, 'value'), {
+          path: ['value'],
+          message: 'Required property is missing',
+        })
         .safeParse(value).success,
       z
         .object({
@@ -4571,6 +4990,14 @@ export const ConfigurationValueWriteSchema = z
           secret: z.string().min(1).max(16384),
         })
         .strict()
+        .refine((value) => Object.hasOwn(value, 'key'), {
+          path: ['key'],
+          message: 'Required property is missing',
+        })
+        .refine((value) => Object.hasOwn(value, 'secret'), {
+          path: ['secret'],
+          message: 'Required property is missing',
+        })
         .safeParse(value).success,
     ].filter(Boolean).length;
     if (matches !== 1)
@@ -4581,10 +5008,20 @@ export const ConfigurationValueWriteSchema = z
   });
 export const ConfigurationCandidateRequestSchema = z
   .object({
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     values: z.array(ConfigurationValueWriteSchema).min(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'base_revision'), {
+    path: ['base_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'values'), {
+    path: ['values'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationValueViewSchema = z
   .object({
     key: z.string().regex(new RegExp('^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')),
@@ -4607,10 +5044,32 @@ export const ConfigurationValueViewSchema = z
     }),
     masked_hint: z.union([z.string().max(80), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sensitivity'), {
+    path: ['sensitivity'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'configured'), {
+    path: ['configured'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'value'), {
+    path: ['value'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'masked_hint'), {
+    path: ['masked_hint'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationCandidateSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     state: z.union([
       z.literal('CANDIDATE'),
       z.literal('VALIDATED'),
@@ -4619,31 +5078,101 @@ export const ConfigurationCandidateSchema = z
       z.literal('ACTIVE'),
       z.literal('SUPERSEDED'),
     ]),
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     catalog_version: z.string(),
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'base_revision'), {
+    path: ['base_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'catalog_version'), {
+    path: ['catalog_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'values'), {
+    path: ['values'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'snapshot_sha256'), {
+    path: ['snapshot_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationValidationResultSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     errors: z.array(FieldErrorSchema),
     warnings: z.array(FieldErrorSchema),
     validated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'errors'), {
+    path: ['errors'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'warnings'), {
+    path: ['warnings'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validated_at'), {
+    path: ['validated_at'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationActivateRequestSchema = z
-  .object({ revision: z.number().int().min(1) })
-  .strict();
+  .object({
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
+  })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationRollbackRequestSchema = z
-  .object({ source_revision: z.number().int().min(1) })
-  .strict();
+  .object({
+    source_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
+  })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'source_revision'), {
+    path: ['source_revision'],
+    message: 'Required property is missing',
+  });
 export const DatabaseConnectionCandidateSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     state: z.union([
       z.literal('CANDIDATE'),
       z.literal('VALIDATED'),
@@ -4651,7 +5180,9 @@ export const DatabaseConnectionCandidateSchema = z
       z.literal('FAILED'),
       z.literal('SUPERSEDED'),
     ]),
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     host: z.string().min(1).max(253),
     port: z.number().int().min(1).max(65535),
     database: z.string().min(1).max(63),
@@ -4662,7 +5193,51 @@ export const DatabaseConnectionCandidateSchema = z
     pool_profile: z.union([z.string().max(64), z.null()]).optional(),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'base_revision'), {
+    path: ['base_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'host'), {
+    path: ['host'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'port'), {
+    path: ['port'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'database'), {
+    path: ['database'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'tls_mode'), {
+    path: ['tls_mode'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'username_masked'), {
+    path: ['username_masked'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'password_configured'), {
+    path: ['password_configured'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'client_key_configured'), {
+    path: ['client_key_configured'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const DatabaseConnectionStatusSchema = z
   .object({
     state: z.union([
@@ -4673,9 +5248,24 @@ export const DatabaseConnectionStatusSchema = z
       z.literal('READY'),
       z.literal('DEGRADED'),
     ]),
-    active_revision: z.union([z.number().int().min(1), z.null()]),
-    candidate_revision: z.union([z.number().int().min(1), z.null()]),
-    last_known_good_revision: z.union([z.number().int().min(1), z.null()]),
+    active_revision: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
+    candidate_revision: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
+    last_known_good_revision: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
     active: z.unknown().superRefine((value, context) => {
       const matches = [
         DatabaseConnectionCandidateSchema.safeParse(value).success,
@@ -4705,10 +5295,44 @@ export const DatabaseConnectionStatusSchema = z
     ]),
     checked_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'active_revision'), {
+    path: ['active_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'candidate_revision'), {
+    path: ['candidate_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'last_known_good_revision'), {
+    path: ['last_known_good_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'active'), {
+    path: ['active'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'candidate'), {
+    path: ['candidate'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'domain_operations'), {
+    path: ['domain_operations'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'checked_at'), {
+    path: ['checked_at'],
+    message: 'Required property is missing',
+  });
 export const DatabaseConnectionCandidateRequestSchema = z
   .object({
-    base_revision: z.number().int().min(1),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     connection: z
       .object({
         host: z.string().min(1).max(253),
@@ -4725,9 +5349,33 @@ export const DatabaseConnectionCandidateRequestSchema = z
         ca_certificate_pem: z.string().min(1).max(16384).optional(),
         pool_profile: z.union([z.string().max(64), z.null()]).optional(),
       })
-      .strict(),
+      .strict()
+      .refine((value) => Object.hasOwn(value, 'host'), {
+        path: ['host'],
+        message: 'Required property is missing',
+      })
+      .refine((value) => Object.hasOwn(value, 'port'), {
+        path: ['port'],
+        message: 'Required property is missing',
+      })
+      .refine((value) => Object.hasOwn(value, 'database'), {
+        path: ['database'],
+        message: 'Required property is missing',
+      })
+      .refine((value) => Object.hasOwn(value, 'tls_mode'), {
+        path: ['tls_mode'],
+        message: 'Required property is missing',
+      }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'base_revision'), {
+    path: ['base_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'connection'), {
+    path: ['connection'],
+    message: 'Required property is missing',
+  });
 export const DatabaseConnectionCheckSchema = z
   .object({
     name: z.union([
@@ -4742,15 +5390,45 @@ export const DatabaseConnectionCheckSchema = z
     status: z.union([z.literal('PASS'), z.literal('FAIL'), z.literal('SKIPPED')]),
     detail: z.string().max(300),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'name'), {
+    path: ['name'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'detail'), {
+    path: ['detail'],
+    message: 'Required property is missing',
+  });
 export const DatabaseConnectionValidationResultSchema = z
   .object({
-    revision: z.number().int().min(1),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     checks: z.array(DatabaseConnectionCheckSchema).min(1),
     validated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'checks'), {
+    path: ['checks'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validated_at'), {
+    path: ['validated_at'],
+    message: 'Required property is missing',
+  });
 export const SetupStatusSchema = z
   .object({
     completed: z.boolean(),
@@ -4889,6 +5567,54 @@ export const SetupStatusSchema = z
     ]),
   })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'completed'), {
+    path: ['completed'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'owner_session_ready'), {
+    path: ['owner_session_ready'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'ai_provider_configured'), {
+    path: ['ai_provider_configured'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'ai_connection_id'), {
+    path: ['ai_connection_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_provider_configured'), {
+    path: ['data_provider_configured'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_policy_active'), {
+    path: ['research_policy_active'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_policy_id'), {
+    path: ['research_policy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'risk_policy_active'), {
+    path: ['risk_policy_active'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'risk_policy_id'), {
+    path: ['risk_policy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_active'), {
+    path: ['cost_model_active'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_id'), {
+    path: ['cost_model_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'fallback_step'), {
+    path: ['fallback_step'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     for (const result of [
       z
@@ -4897,6 +5623,10 @@ export const SetupStatusSchema = z
           const conditional = z
             .object({ ai_provider_configured: z.literal(true) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'ai_provider_configured'), {
+              path: ['ai_provider_configured'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4918,6 +5648,10 @@ export const SetupStatusSchema = z
           const conditional = z
             .object({ research_policy_active: z.literal(true) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'research_policy_active'), {
+              path: ['research_policy_active'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -4972,6 +5706,10 @@ export const SetupStatusSchema = z
           const conditional = z
             .object({ risk_policy_active: z.literal(true) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'risk_policy_active'), {
+              path: ['risk_policy_active'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -5026,6 +5764,10 @@ export const SetupStatusSchema = z
           const conditional = z
             .object({ cost_model_active: z.literal(true) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'cost_model_active'), {
+              path: ['cost_model_active'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -5080,6 +5822,10 @@ export const SetupStatusSchema = z
           const conditional = z
             .object({ ai_provider_configured: z.literal(false) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'ai_provider_configured'), {
+              path: ['ai_provider_configured'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -5088,6 +5834,10 @@ export const SetupStatusSchema = z
                   const conditional = z
                     .object({ cost_model_active: z.literal(false) })
                     .passthrough()
+                    .refine((value) => Object.hasOwn(value, 'cost_model_active'), {
+                      path: ['cost_model_active'],
+                      message: 'Required property is missing',
+                    })
                     .safeParse(value).success;
                   const result = (
                     conditional
@@ -5102,10 +5852,21 @@ export const SetupStatusSchema = z
                                 z
                                   .object({ research_policy_active: z.literal(false) })
                                   .passthrough()
+                                  .refine(
+                                    (value) => Object.hasOwn(value, 'research_policy_active'),
+                                    {
+                                      path: ['research_policy_active'],
+                                      message: 'Required property is missing',
+                                    },
+                                  )
                                   .safeParse(value).success,
                                 z
                                   .object({ risk_policy_active: z.literal(false) })
                                   .passthrough()
+                                  .refine((value) => Object.hasOwn(value, 'risk_policy_active'), {
+                                    path: ['risk_policy_active'],
+                                    message: 'Required property is missing',
+                                  })
                                   .safeParse(value).success,
                               ].filter(Boolean).length;
                               if (matches === 0)
@@ -5159,6 +5920,10 @@ export const SetupStatusSchema = z
           const conditional = z
             .object({ completed: z.literal(true) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'completed'), {
+              path: ['completed'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -5337,20 +6102,56 @@ export const SetupStatusSchema = z
 export const SetupProviderKindSchema = z.union([z.literal('AI'), z.literal('DATA')]);
 export const SetupModelCapabilitySchema = z
   .object({ model_name: z.string(), connection_test_supported: z.literal(true) })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'model_name'), {
+    path: ['model_name'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'connection_test_supported'), {
+    path: ['connection_test_supported'],
+    message: 'Required property is missing',
+  });
 export const DateCoverageSchema = z
   .object({ start: z.union([z.iso.date(), z.null()]), end: z.union([z.iso.date(), z.null()]) })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'start'), {
+    path: ['start'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'end'), {
+    path: ['end'],
+    message: 'Required property is missing',
+  });
 export const PointInTimeCapabilitySchema = z
   .object({
     supported: z.union([z.boolean(), z.null()]),
     available_from: z.union([z.iso.date(), z.null()]),
     semantics: z.union([z.string(), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'supported'), {
+    path: ['supported'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'available_from'), {
+    path: ['available_from'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'semantics'), {
+    path: ['semantics'],
+    message: 'Required property is missing',
+  });
 export const CapabilityLimitationSchema = z
   .object({ code: z.string(), detail: z.string() })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'code'), {
+    path: ['code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'detail'), {
+    path: ['detail'],
+    message: 'Required property is missing',
+  });
 export const DataCapabilitySchema = z
   .object({
     capability_id: z
@@ -5398,7 +6199,51 @@ export const DataCapabilitySchema = z
     limitations: z.array(CapabilityLimitationSchema),
     checked_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'capability_id'), {
+    path: ['capability_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provider_id'), {
+    path: ['provider_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'capability_key'), {
+    path: ['capability_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'asset_classes'), {
+    path: ['asset_classes'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'frequencies'), {
+    path: ['frequencies'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'coverage'), {
+    path: ['coverage'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'point_in_time'), {
+    path: ['point_in_time'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'fields'), {
+    path: ['fields'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'limitations'), {
+    path: ['limitations'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'checked_at'), {
+    path: ['checked_at'],
+    message: 'Required property is missing',
+  });
 export const SetupProviderCapabilitySchema = z
   .object({
     provider_id: z.string(),
@@ -5408,13 +6253,45 @@ export const SetupProviderCapabilitySchema = z
     models: z.array(SetupModelCapabilitySchema),
     data_capabilities: z.array(DataCapabilitySchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'provider_id'), {
+    path: ['provider_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'display_name'), {
+    path: ['display_name'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'connection_test_supported'), {
+    path: ['connection_test_supported'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'models'), {
+    path: ['models'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_capabilities'), {
+    path: ['data_capabilities'],
+    message: 'Required property is missing',
+  });
 export const SetupCapabilityCatalogSchema = z
   .object({
     providers: z.array(SetupProviderCapabilitySchema),
     server_checked_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'providers'), {
+    path: ['providers'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'server_checked_at'), {
+    path: ['server_checked_at'],
+    message: 'Required property is missing',
+  });
 export const LiveConnectorValidationRequestSchema = z
   .object({
     connection_id: z.string().min(1).max(80).regex(new RegExp('^[A-Za-z0-9._-]+$')),
@@ -5423,7 +6300,23 @@ export const LiveConnectorValidationRequestSchema = z
     credential: z.string().min(1).max(16384),
     expected_account_id: z.union([z.string().min(1).max(160), z.null()]).optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'connection_id'), {
+    path: ['connection_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'endpoint'), {
+    path: ['endpoint'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'key_id'), {
+    path: ['key_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'credential'), {
+    path: ['credential'],
+    message: 'Required property is missing',
+  });
 export const LiveConnectorValidationResultSchema = z
   .object({
     connection_id: z.string().min(1).max(80),
@@ -5445,7 +6338,43 @@ export const LiveConnectorValidationResultSchema = z
     ),
     checked_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'connection_id'), {
+    path: ['connection_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'error_code'), {
+    path: ['error_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'connector_id'), {
+    path: ['connector_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'protocol_version'), {
+    path: ['protocol_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'capabilities_hash'), {
+    path: ['capabilities_hash'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'account_ids'), {
+    path: ['account_ids'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'assets'), {
+    path: ['assets'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'checked_at'), {
+    path: ['checked_at'],
+    message: 'Required property is missing',
+  });
 export const SetupProviderConnectionValidationRequestSchema = z
   .object({
     provider_id: z.string(),
@@ -5453,7 +6382,19 @@ export const SetupProviderConnectionValidationRequestSchema = z
     model_name: z.union([z.string(), z.null()]).optional(),
     credential: z.string().min(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'provider_id'), {
+    path: ['provider_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'credential'), {
+    path: ['credential'],
+    message: 'Required property is missing',
+  });
 export const SetupProviderConnectionValidationSuccessSchema = z
   .object({
     connection_id: z.string().min(1),
@@ -5464,7 +6405,35 @@ export const SetupProviderConnectionValidationSuccessSchema = z
     data_capabilities: z.array(DataCapabilitySchema),
     checked_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'connection_id'), {
+    path: ['connection_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provider_id'), {
+    path: ['provider_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'detail'), {
+    path: ['detail'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_capabilities'), {
+    path: ['data_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'checked_at'), {
+    path: ['checked_at'],
+    message: 'Required property is missing',
+  });
 export const SetupProviderConnectionValidationFailureSchema = z
   .object({
     provider_id: z.string(),
@@ -5475,7 +6444,35 @@ export const SetupProviderConnectionValidationFailureSchema = z
     data_capabilities: z.array(DataCapabilitySchema),
     checked_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'provider_id'), {
+    path: ['provider_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'detail'), {
+    path: ['detail'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'error_code'), {
+    path: ['error_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_capabilities'), {
+    path: ['data_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'checked_at'), {
+    path: ['checked_at'],
+    message: 'Required property is missing',
+  });
 export const SetupProviderConnectionValidationResultSchema = z
   .unknown()
   .superRefine((value, context) => {
@@ -5490,13 +6487,28 @@ export const SetupProviderConnectionValidationResultSchema = z
       });
   });
 export const SetupCompleteRequestSchema = z
-  .object({ configuration_revision: z.number().int().min(1) })
-  .strict();
+  .object({
+    configuration_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
+  })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'configuration_revision'), {
+    path: ['configuration_revision'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationConsumerStateSchema = z
   .object({
     consumer: z.string().min(1).max(80),
-    desired_revision: z.number().int().min(1),
-    applied_revision: z.union([z.number().int().min(1), z.null()]),
+    desired_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
+    applied_revision: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
     ack: z.union([z.literal('PENDING'), z.literal('ACKED'), z.literal('FAILED')]),
     error_code: z.unknown().superRefine((value, context) => {
       const matches = [
@@ -5511,18 +6523,74 @@ export const ConfigurationConsumerStateSchema = z
     }),
     heartbeat_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'consumer'), {
+    path: ['consumer'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'desired_revision'), {
+    path: ['desired_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'applied_revision'), {
+    path: ['applied_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'ack'), {
+    path: ['ack'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'error_code'), {
+    path: ['error_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'heartbeat_at'), {
+    path: ['heartbeat_at'],
+    message: 'Required property is missing',
+  });
 export const ConfigurationActiveSchema = z
   .object({
-    active_revision: z.number().int().min(1),
-    last_known_good_revision: z.number().int().min(1),
+    active_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
+    last_known_good_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     catalog_version: z.string(),
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     consumer_states: z.array(ConfigurationConsumerStateSchema),
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'active_revision'), {
+    path: ['active_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'last_known_good_revision'), {
+    path: ['last_known_good_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'catalog_version'), {
+    path: ['catalog_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'values'), {
+    path: ['values'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'snapshot_sha256'), {
+    path: ['snapshot_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'consumer_states'), {
+    path: ['consumer_states'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const SettingsDetailSchema = z
   .object({})
   .passthrough()
@@ -5581,6 +6649,22 @@ export const ObjectRefSchema = z
     revision: z.number().int().min(1),
   })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'id'), {
+    path: ['id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     const schema = PublicIdSchemas[value.type as keyof typeof PublicIdSchemas];
     if (schema && !schema.safeParse(value.id).success)
@@ -5618,7 +6702,47 @@ export const ActionCapabilitySchema = z
       z.literal('CAPITAL_GATE'),
     ]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'action'), {
+    path: ['action'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'visibility'), {
+    path: ['visibility'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'allowed'), {
+    path: ['allowed'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'reason_code'), {
+    path: ['reason_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'reason_detail'), {
+    path: ['reason_detail'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'requires_confirmation'), {
+    path: ['requires_confirmation'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'idempotency_required'), {
+    path: ['idempotency_required'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'if_match_required'), {
+    path: ['if_match_required'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_mode'), {
+    path: ['result_mode'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'danger_level'), {
+    path: ['danger_level'],
+    message: 'Required property is missing',
+  });
 export const OverviewAttentionItemSchema = z
   .object({
     attention_id: z.string(),
@@ -5651,7 +6775,39 @@ export const OverviewAttentionItemSchema = z
     }),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'attention_id'), {
+    path: ['attention_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'severity'), {
+    path: ['severity'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object'), {
+    path: ['object'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'title_key'), {
+    path: ['title_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'summary'), {
+    path: ['summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'reason_code'), {
+    path: ['reason_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  });
 export const ResearchStatusSchema = z.union([
   z.literal('DRAFT'),
   z.literal('PLANNING'),
@@ -5666,14 +6822,52 @@ export const ResearchStatusSchema = z.union([
 export const JobProgressSchema = z
   .object({
     mode: z.union([z.literal('NONE'), z.literal('UNITS')]),
-    completed_units: z.union([z.number().int().min(0), z.null()]),
-    total_units: z.union([z.number().int().min(1), z.null()]),
+    completed_units: z.union([
+      z.number().int().min(0).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
+    total_units: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
     unit: z.union([z.string(), z.null()]),
     percent: z.union([z.number().min(0).max(100), z.null()]),
     current_step_key: z.union([z.string(), z.null()]),
     current_step_label: z.union([z.string(), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'mode'), {
+    path: ['mode'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'completed_units'), {
+    path: ['completed_units'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'total_units'), {
+    path: ['total_units'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'unit'), {
+    path: ['unit'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'percent'), {
+    path: ['percent'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_step_key'), {
+    path: ['current_step_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_step_label'), {
+    path: ['current_step_label'],
+    message: 'Required property is missing',
+  });
 export const AgentRoleKeySchema = z.union([
   z.literal('RESEARCH_DIRECTOR'),
   z.literal('FACTOR_SCIENTIST'),
@@ -5715,7 +6909,15 @@ export const OverviewCurrentAgentSchema = z
           });
       }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'role'), {
+    path: ['role'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'agent_run_id'), {
+    path: ['agent_run_id'],
+    message: 'Required property is missing',
+  });
 export const OverviewActiveResearchItemSchema = z
   .object({
     research_id: z
@@ -5768,11 +6970,49 @@ export const OverviewActiveResearchItemSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    revision: z.number().int().min(1),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     action_capabilities: z.array(ActionCapabilitySchema),
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'research_id'), {
+    path: ['research_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'title'), {
+    path: ['title'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence_status'), {
+    path: ['evidence_status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'progress'), {
+    path: ['progress'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_agent'), {
+    path: ['current_agent'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const OverviewStrategyPipelineSchema = z
   .object({
     candidate: z.number().int().min(0),
@@ -5781,7 +7021,27 @@ export const OverviewStrategyPipelineSchema = z
     validated: z.number().int().min(0),
     paper: z.number().int().min(0),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'candidate'), {
+    path: ['candidate'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'frozen'), {
+    path: ['frozen'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validating'), {
+    path: ['validating'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validated'), {
+    path: ['validated'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'paper'), {
+    path: ['paper'],
+    message: 'Required property is missing',
+  });
 export const ProvenanceRefSchema = z
   .object({
     provenance_id: z
@@ -5814,7 +7074,11 @@ export const ProvenanceRefSchema = z
           });
       }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'provenance_id'), {
+    path: ['provenance_id'],
+    message: 'Required property is missing',
+  });
 export const OverviewPaperSummarySchema = z
   .object({
     active_count: z.number().int().min(0),
@@ -5837,13 +7101,57 @@ export const OverviewPaperSummarySchema = z
         });
     }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'active_count'), {
+    path: ['active_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'total_nav'), {
+    path: ['total_nav'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'currency'), {
+    path: ['currency'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'daily_return'), {
+    path: ['daily_return'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'mtd_return'), {
+    path: ['mtd_return'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'since_start_return'), {
+    path: ['since_start_return'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'benchmark_since_start_return'), {
+    path: ['benchmark_since_start_return'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'as_of_date'), {
+    path: ['as_of_date'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  });
 export const ChartXAxisSchema = z
   .object({
     kind: z.union([z.literal('TIME'), z.literal('CATEGORY'), z.literal('NUMERIC')]),
     timezone: z.union([z.string(), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'timezone'), {
+    path: ['timezone'],
+    message: 'Required property is missing',
+  });
 export const ChartValueFormatSchema = z
   .object({
     kind: z.union([
@@ -5855,7 +7163,15 @@ export const ChartValueFormatSchema = z
     ]),
     precision: z.union([z.number().int().min(0).max(18), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'precision'), {
+    path: ['precision'],
+    message: 'Required property is missing',
+  });
 export const ChartPointSchema = z
   .object({
     x: z.unknown().superRefine((value, context) => {
@@ -5871,7 +7187,15 @@ export const ChartPointSchema = z
     }),
     y: z.union([z.string(), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'x'), {
+    path: ['x'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'y'), {
+    path: ['y'],
+    message: 'Required property is missing',
+  });
 export const ChartSeriesSchema = z
   .object({
     series_id: z.string(),
@@ -5881,7 +7205,31 @@ export const ChartSeriesSchema = z
     value_format: ChartValueFormatSchema,
     points: z.array(ChartPointSchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'series_id'), {
+    path: ['series_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'series_key'), {
+    path: ['series_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'display_label'), {
+    path: ['display_label'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'unit'), {
+    path: ['unit'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'value_format'), {
+    path: ['value_format'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'points'), {
+    path: ['points'],
+    message: 'Required property is missing',
+  });
 export const ChartPeriodMarkerSchema = z
   .object({
     period_type: z.union([
@@ -5894,22 +7242,66 @@ export const ChartPeriodMarkerSchema = z
     end: z.iso.date(),
     state: z.union([z.literal('EXPOSED'), z.literal('LOCKED')]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'period_type'), {
+    path: ['period_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'start'), {
+    path: ['start'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'end'), {
+    path: ['end'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  });
 export const ChartAssumptionSchema = z
   .object({ key: z.string(), value: z.string(), unit: z.union([z.string(), z.null()]) })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'value'), {
+    path: ['value'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'unit'), {
+    path: ['unit'],
+    message: 'Required property is missing',
+  });
 export const EquityCurveSummaryParamsSchema = z
   .object({
     ending_nav: z.union([z.string(), z.null()]),
     benchmark_ending_nav: z.union([z.string(), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'ending_nav'), {
+    path: ['ending_nav'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'benchmark_ending_nav'), {
+    path: ['benchmark_ending_nav'],
+    message: 'Required property is missing',
+  });
 export const ChartSummarySchema = z
   .object({
     template_key: z.literal('chart.equity_curve.summary'),
     params: EquityCurveSummaryParamsSchema,
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'template_key'), {
+    path: ['template_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'params'), {
+    path: ['params'],
+    message: 'Required property is missing',
+  });
 export const ChartDownsamplingSchema = z
   .object({
     applied: z.boolean(),
@@ -5917,7 +7309,23 @@ export const ChartDownsamplingSchema = z
     returned_points: z.number().int().min(0),
     method: z.union([z.string(), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'applied'), {
+    path: ['applied'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'source_points'), {
+    path: ['source_points'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'returned_points'), {
+    path: ['returned_points'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'method'), {
+    path: ['method'],
+    message: 'Required property is missing',
+  });
 export const ChartAggregateSchema = z
   .object({
     schema_version: z.literal(1),
@@ -5933,7 +7341,55 @@ export const ChartAggregateSchema = z
     provenance: ProvenanceRefSchema,
     generated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'schema_version'), {
+    path: ['schema_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'chart_id'), {
+    path: ['chart_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'chart_type'), {
+    path: ['chart_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'metric_key'), {
+    path: ['metric_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'x_axis'), {
+    path: ['x_axis'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'series'), {
+    path: ['series'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'period_markers'), {
+    path: ['period_markers'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'assumptions'), {
+    path: ['assumptions'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'summary'), {
+    path: ['summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'downsampling'), {
+    path: ['downsampling'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'generated_at'), {
+    path: ['generated_at'],
+    message: 'Required property is missing',
+  });
 export const OverviewRecentFindingSchema = z
   .object({
     finding_id: z.string(),
@@ -5949,7 +7405,31 @@ export const OverviewRecentFindingSchema = z
     provenance: ProvenanceRefSchema,
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'finding_id'), {
+    path: ['finding_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence_status'), {
+    path: ['evidence_status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'finding'), {
+    path: ['finding'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research'), {
+    path: ['research'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const OverviewAgentActivityItemSchema = z
   .object({
     agent_run_id: z
@@ -5995,7 +7475,35 @@ export const OverviewAgentActivityItemSchema = z
     next_action: z.union([z.string(), z.null()]),
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'agent_run_id'), {
+    path: ['agent_run_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'role'), {
+    path: ['role'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective'), {
+    path: ['objective'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'decision_summary'), {
+    path: ['decision_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'next_action'), {
+    path: ['next_action'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const OverviewDataHealthSchema = z
   .object({
     state: z.union([
@@ -6009,11 +7517,33 @@ export const OverviewDataHealthSchema = z
     checked_at: z.iso.datetime({ offset: true }),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'blocker_count'), {
+    path: ['blocker_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'warning_count'), {
+    path: ['warning_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'checked_at'), {
+    path: ['checked_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  });
 export const OverviewReadModelSchema = z
   .object({
     as_of: z.iso.datetime({ offset: true }),
-    revision: z.number().int().min(1),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     needs_attention: z.array(OverviewAttentionItemSchema),
     active_research: z.array(OverviewActiveResearchItemSchema),
     strategy_pipeline: OverviewStrategyPipelineSchema,
@@ -6035,7 +7565,55 @@ export const OverviewReadModelSchema = z
     provenance: z.array(ProvenanceRefSchema),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'as_of'), {
+    path: ['as_of'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'needs_attention'), {
+    path: ['needs_attention'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'active_research'), {
+    path: ['active_research'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strategy_pipeline'), {
+    path: ['strategy_pipeline'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'paper_summary'), {
+    path: ['paper_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'paper_performance_chart'), {
+    path: ['paper_performance_chart'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'recent_findings'), {
+    path: ['recent_findings'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'agent_activity'), {
+    path: ['agent_activity'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_health'), {
+    path: ['data_health'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  });
 export const DataCapabilityListSchema = z.array(DataCapabilitySchema);
 export const ResearchSummarySchema = z
   .object({
@@ -6081,13 +7659,57 @@ export const ResearchSummarySchema = z
     revision: z.number().int().min(1),
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'research_id'), {
+    path: ['research_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'title'), {
+    path: ['title'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence_status'), {
+    path: ['evidence_status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_revision_no'), {
+    path: ['current_revision_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const PageInfoSchema = z
   .object({ next_cursor: z.union([z.string(), z.null()]), has_more: z.boolean() })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'next_cursor'), {
+    path: ['next_cursor'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'has_more'), {
+    path: ['has_more'],
+    message: 'Required property is missing',
+  });
 export const ResearchPageSchema = z
   .object({ items: z.array(ResearchSummarySchema), page: PageInfoSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'page'), {
+    path: ['page'],
+    message: 'Required property is missing',
+  });
 export const ResearchCreateRequestSchema = z
   .object({
     title: z.string().min(1).max(256),
@@ -6136,21 +7758,59 @@ export const ResearchCreateRequestSchema = z
       })
       .optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'title'), {
+    path: ['title'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'original_user_prompt'), {
+    path: ['original_user_prompt'],
+    message: 'Required property is missing',
+  });
 export const ResearchStartRequestSchema = z
   .object({
     research_revision_no: z.number().int().min(1),
     capability_evaluation_confirmed: z.literal(true),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'research_revision_no'), {
+    path: ['research_revision_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'capability_evaluation_confirmed'), {
+    path: ['capability_evaluation_confirmed'],
+    message: 'Required property is missing',
+  });
 export const UniverseSpecSchema = z
   .object({
     asset_class: z.string(),
     symbols: z.array(z.string()),
     universe_id: z.union([z.string(), z.null()]),
   })
-  .strict();
-export const DateRangeSchema = z.object({ start: z.iso.date(), end: z.iso.date() }).strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'asset_class'), {
+    path: ['asset_class'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'symbols'), {
+    path: ['symbols'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'universe_id'), {
+    path: ['universe_id'],
+    message: 'Required property is missing',
+  });
+export const DateRangeSchema = z
+  .object({ start: z.iso.date(), end: z.iso.date() })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'start'), {
+    path: ['start'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'end'), {
+    path: ['end'],
+    message: 'Required property is missing',
+  });
 export const ResearchBriefReadModelSchema = z
   .object({
     revision_no: z.number().int().min(1),
@@ -6165,7 +7825,51 @@ export const ResearchBriefReadModelSchema = z
     frequency: z.literal('DAILY'),
     content_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'revision_no'), {
+    path: ['revision_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'question'), {
+    path: ['question'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'hypothesis'), {
+    path: ['hypothesis'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'economic_rationale'), {
+    path: ['economic_rationale'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'supporting_evidence_definition'), {
+    path: ['supporting_evidence_definition'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'disconfirming_evidence_definition'), {
+    path: ['disconfirming_evidence_definition'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'universe'), {
+    path: ['universe'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'benchmark'), {
+    path: ['benchmark'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'period'), {
+    path: ['period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'frequency'), {
+    path: ['frequency'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'content_sha256'), {
+    path: ['content_sha256'],
+    message: 'Required property is missing',
+  });
 export const ResearchConclusionReadModelSchema = z
   .object({
     conclusion_id: z
@@ -6221,7 +7925,39 @@ export const ResearchConclusionReadModelSchema = z
     }),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'conclusion_id'), {
+    path: ['conclusion_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence_status'), {
+    path: ['evidence_status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'summary'), {
+    path: ['summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence_refs'), {
+    path: ['evidence_refs'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'uncertainties'), {
+    path: ['uncertainties'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'recommendation'), {
+    path: ['recommendation'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ResearchPlanNodeReadModelSchema = z
   .object({
     node_key: z.string(),
@@ -6240,7 +7976,43 @@ export const ResearchPlanNodeReadModelSchema = z
     experiment_count: z.number().int().min(0),
     sort_order: z.number().int(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'node_key'), {
+    path: ['node_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'title'), {
+    path: ['title'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'owner_agent_role'), {
+    path: ['owner_agent_role'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'depends_on'), {
+    path: ['depends_on'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective'), {
+    path: ['objective'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'finding_summary'), {
+    path: ['finding_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'experiment_count'), {
+    path: ['experiment_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sort_order'), {
+    path: ['sort_order'],
+    message: 'Required property is missing',
+  });
 export const ResearchEvidenceResultLocatorSchema = z
   .object({
     result_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -6257,7 +8029,19 @@ export const ResearchEvidenceResultLocatorSchema = z
         });
     }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'result_sha256'), {
+    path: ['result_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'metric_key'), {
+    path: ['metric_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'artifact'), {
+    path: ['artifact'],
+    message: 'Required property is missing',
+  });
 export const ResearchEvidenceItemSchema = z
   .object({
     evidence: ObjectRefSchema,
@@ -6281,8 +8065,58 @@ export const ResearchEvidenceItemSchema = z
     }),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
-export const NamedVersionSchema = z.object({ name: z.string(), version: z.string() }).strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'evidence'), {
+    path: ['evidence'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'stance'), {
+    path: ['stance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'claim'), {
+    path: ['claim'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'source_experiment'), {
+    path: ['source_experiment'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_locator'), {
+    path: ['result_locator'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strength'), {
+    path: ['strength'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'limitations'), {
+    path: ['limitations'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'is_invalidated'), {
+    path: ['is_invalidated'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
+export const NamedVersionSchema = z
+  .object({ name: z.string(), version: z.string() })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'name'), {
+    path: ['name'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  });
 export const ResearchCurrentAgentWorkSchema = z
   .object({
     agent_run_id: z
@@ -6350,7 +8184,43 @@ export const ResearchCurrentAgentWorkSchema = z
     }),
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'agent_run_id'), {
+    path: ['agent_run_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'agent_role'), {
+    path: ['agent_role'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective'), {
+    path: ['objective'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_action'), {
+    path: ['current_action'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'tool'), {
+    path: ['tool'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'next_action'), {
+    path: ['next_action'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const ResearchOverviewReadModelSchema = z
   .object({
     brief: ResearchBriefReadModelSchema,
@@ -6379,7 +8249,27 @@ export const ResearchOverviewReadModelSchema = z
         });
     }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'brief'), {
+    path: ['brief'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_conclusion'), {
+    path: ['current_conclusion'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'progress'), {
+    path: ['progress'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'latest_evidence'), {
+    path: ['latest_evidence'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_agent_work'), {
+    path: ['current_agent_work'],
+    message: 'Required property is missing',
+  });
 export const ResearchPlanReadModelSchema = z
   .object({
     plan_version: z.number().int().min(1),
@@ -6401,7 +8291,39 @@ export const ResearchPlanReadModelSchema = z
     }),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'plan_version'), {
+    path: ['plan_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'source_revision_no'), {
+    path: ['source_revision_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'rationale_summary'), {
+    path: ['rationale_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'nodes'), {
+    path: ['nodes'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'content_sha256'), {
+    path: ['content_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ResearchTimelineItemSchema = z
   .object({
     event_id: z
@@ -6473,10 +8395,58 @@ export const ResearchTimelineItemSchema = z
     }),
     occurred_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'event_id'), {
+    path: ['event_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'agent_role'), {
+    path: ['agent_role'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective'), {
+    path: ['objective'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'tool'), {
+    path: ['tool'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_summary'), {
+    path: ['result_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'decision_summary'), {
+    path: ['decision_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'next_action'), {
+    path: ['next_action'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object'), {
+    path: ['object'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'occurred_at'), {
+    path: ['occurred_at'],
+    message: 'Required property is missing',
+  });
 export const ResearchTimelinePageSchema = z
   .object({ items: z.array(ResearchTimelineItemSchema), page: PageInfoSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'page'), {
+    path: ['page'],
+    message: 'Required property is missing',
+  });
 export const ExperimentStatusSchema = z.union([
   z.literal('DRAFT'),
   z.literal('QUEUED'),
@@ -6558,20 +8528,70 @@ export const ResearchExperimentItemSchema = z
     }),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'experiment'), {
+    path: ['experiment'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective'), {
+    path: ['objective'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'experiment_type'), {
+    path: ['experiment_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validity_state'), {
+    path: ['validity_state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ResearchExperimentPageSchema = z
   .object({ items: z.array(ResearchExperimentItemSchema), page: PageInfoSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'page'), {
+    path: ['page'],
+    message: 'Required property is missing',
+  });
 export const ResearchEvidencePageSchema = z
   .object({ items: z.array(ResearchEvidenceItemSchema), page: PageInfoSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'page'), {
+    path: ['page'],
+    message: 'Required property is missing',
+  });
 export const ArtifactReadModelSchema = z
   .object({
     artifact: ObjectRefSchema,
     kind: z.string(),
     media_type: z.string(),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    size_bytes: z.number().int().min(0),
+    size_bytes: z.number().int().min(0).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     provenance: z.unknown().superRefine((value, context) => {
       const matches = [
         ProvenanceRefSchema.safeParse(value).success,
@@ -6585,16 +8605,60 @@ export const ArtifactReadModelSchema = z
     }),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'artifact'), {
+    path: ['artifact'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'media_type'), {
+    path: ['media_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sha256'), {
+    path: ['sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'size_bytes'), {
+    path: ['size_bytes'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ArtifactPageSchema = z
   .object({ items: z.array(ArtifactReadModelSchema), page: PageInfoSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'page'), {
+    path: ['page'],
+    message: 'Required property is missing',
+  });
 export const RequesterRefSchema = z
   .object({
     type: z.union([z.literal('AGENT'), z.literal('SYSTEM'), z.literal('OWNER')]),
     id: z.string(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'id'), {
+    path: ['id'],
+    message: 'Required property is missing',
+  });
 export const ResearchAuditItemSchema = z
   .object({
     event_id: z
@@ -6643,10 +8707,46 @@ export const ResearchAuditItemSchema = z
     }),
     occurred_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'event_id'), {
+    path: ['event_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action'), {
+    path: ['action'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'actor'), {
+    path: ['actor'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object'), {
+    path: ['object'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'request_id'), {
+    path: ['request_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'occurred_at'), {
+    path: ['occurred_at'],
+    message: 'Required property is missing',
+  });
 export const ResearchAuditPageSchema = z
   .object({ items: z.array(ResearchAuditItemSchema), page: PageInfoSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'page'), {
+    path: ['page'],
+    message: 'Required property is missing',
+  });
 export const ResearchDetailSchema = z
   .object({
     research_id: z
@@ -6824,8 +8924,114 @@ export const ResearchDetailSchema = z
     updated_at: z.iso.datetime({ offset: true }),
     completed_at: z.union([z.iso.datetime({ offset: true }), z.null()]),
   })
-  .strict();
-export const ParameterSchema = z.object({ key: z.string(), value: z.string() }).strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'research_id'), {
+    path: ['research_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'title'), {
+    path: ['title'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'original_user_prompt'), {
+    path: ['original_user_prompt'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'normalized_question'), {
+    path: ['normalized_question'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence_status'), {
+    path: ['evidence_status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_revision_no'), {
+    path: ['current_revision_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'active_plan_version'), {
+    path: ['active_plan_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_policy_id'), {
+    path: ['research_policy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'director_agent_version'), {
+    path: ['director_agent_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_agent_run_id'), {
+    path: ['current_agent_run_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'current_job_id'), {
+    path: ['current_job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'overview'), {
+    path: ['overview'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'plan'), {
+    path: ['plan'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'timeline'), {
+    path: ['timeline'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'experiments'), {
+    path: ['experiments'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence'), {
+    path: ['evidence'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'artifacts'), {
+    path: ['artifacts'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'audit'), {
+    path: ['audit'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'completed_at'), {
+    path: ['completed_at'],
+    message: 'Required property is missing',
+  });
+export const ParameterSchema = z
+  .object({ key: z.string(), value: z.string() })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'value'), {
+    path: ['value'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchSetDimensionSchema = z
   .object({
     parameter_key: z.string(),
@@ -6846,7 +9052,35 @@ export const ExperimentSearchSetDimensionSchema = z
     maximum: z.null().nullable(),
     step: z.null().nullable(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'parameter_key'), {
+    path: ['parameter_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'value_type'), {
+    path: ['value_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'values'), {
+    path: ['values'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'minimum'), {
+    path: ['minimum'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'maximum'), {
+    path: ['maximum'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'step'), {
+    path: ['step'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchRangeDimensionSchema = z
   .object({
     parameter_key: z.string(),
@@ -6858,6 +9092,34 @@ export const ExperimentSearchRangeDimensionSchema = z
     step: z.string().regex(new RegExp('^(0\\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\\.[0-9]+)?)$')),
   })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'parameter_key'), {
+    path: ['parameter_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'value_type'), {
+    path: ['value_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'kind'), {
+    path: ['kind'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'values'), {
+    path: ['values'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'minimum'), {
+    path: ['minimum'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'maximum'), {
+    path: ['maximum'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'step'), {
+    path: ['step'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     if (compareCanonicalDecimal(value.minimum, value.maximum) >= 0)
       context.addIssue({ code: 'custom', message: 'minimum must be less than maximum' });
@@ -6886,9 +9148,34 @@ export const ExperimentSearchConfigurationSchema = z
     objective_metric_key: z.string(),
     objective_direction: z.union([z.literal('MAXIMIZE'), z.literal('MINIMIZE')]),
     max_evaluations: z.number().int().min(1),
-    seed: z.union([z.number().int(), z.null()]),
+    seed: z.union([
+      z.number().int().refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'method'), {
+    path: ['method'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective_metric_key'), {
+    path: ['objective_metric_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective_direction'), {
+    path: ['objective_direction'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'max_evaluations'), {
+    path: ['max_evaluations'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'seed'), {
+    path: ['seed'],
+    message: 'Required property is missing',
+  });
 export const ExperimentCreateRequestSchema = z
   .object({
     research_id: z
@@ -7095,7 +9382,47 @@ export const ExperimentCreateRequestSchema = z
     engine_key: z.string(),
     engine_version: z.string(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'research_id'), {
+    path: ['research_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_revision_no'), {
+    path: ['research_revision_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective'), {
+    path: ['objective'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'hypothesis'), {
+    path: ['hypothesis'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'experiment_type'), {
+    path: ['experiment_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_snapshot_id'), {
+    path: ['data_snapshot_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_id'), {
+    path: ['cost_model_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'parameters'), {
+    path: ['parameters'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'engine_key'), {
+    path: ['engine_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'engine_version'), {
+    path: ['engine_version'],
+    message: 'Required property is missing',
+  });
 export const ExperimentReproduceExactRequestSchema = z
   .object({ mode: z.literal('EXACT').optional() })
   .strict();
@@ -7115,7 +9442,19 @@ export const ExperimentReproduceControlledOverrideRequestSchema = z
     execution_overrides: ExperimentReproduceExecutionOverridesSchema,
     reason: z.string().min(1).max(4000),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'mode'), {
+    path: ['mode'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'execution_overrides'), {
+    path: ['execution_overrides'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'reason'), {
+    path: ['reason'],
+    message: 'Required property is missing',
+  });
 export const ExperimentReproduceRequestSchema = z.unknown().superRefine((value, context) => {
   const matches = [
     ExperimentReproduceExactRequestSchema.safeParse(value).success,
@@ -7197,7 +9536,15 @@ export const VersionRefSchema = z
     }),
     version: z.number().int().min(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'id'), {
+    path: ['id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchResultNotApplicableSchema = z
   .object({
     state: z.literal('NOT_APPLICABLE'),
@@ -7207,7 +9554,31 @@ export const ExperimentSearchResultNotApplicableSchema = z
     result_ref: z.null().nullable(),
     failure_code: z.null().nullable(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evaluated_count'), {
+    path: ['evaluated_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_parameters'), {
+    path: ['selected_parameters'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_metric'), {
+    path: ['selected_metric'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_ref'), {
+    path: ['result_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failure_code'), {
+    path: ['failure_code'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchResultPendingSchema = z
   .object({
     state: z.literal('PENDING'),
@@ -7217,7 +9588,31 @@ export const ExperimentSearchResultPendingSchema = z
     result_ref: z.null().nullable(),
     failure_code: z.null().nullable(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evaluated_count'), {
+    path: ['evaluated_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_parameters'), {
+    path: ['selected_parameters'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_metric'), {
+    path: ['selected_metric'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_ref'), {
+    path: ['result_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failure_code'), {
+    path: ['failure_code'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchResultRunningSchema = z
   .object({
     state: z.literal('RUNNING'),
@@ -7227,10 +9622,46 @@ export const ExperimentSearchResultRunningSchema = z
     result_ref: z.null().nullable(),
     failure_code: z.null().nullable(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evaluated_count'), {
+    path: ['evaluated_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_parameters'), {
+    path: ['selected_parameters'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_metric'), {
+    path: ['selected_metric'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_ref'), {
+    path: ['result_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failure_code'), {
+    path: ['failure_code'],
+    message: 'Required property is missing',
+  });
 export const MetricSchema = z
   .object({ key: z.string(), value: z.string(), unit: z.union([z.string(), z.null()]) })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'value'), {
+    path: ['value'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'unit'), {
+    path: ['unit'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchResultCompletedSchema = z
   .object({
     state: z.literal('COMPLETED'),
@@ -7240,7 +9671,31 @@ export const ExperimentSearchResultCompletedSchema = z
     result_ref: ObjectRefSchema,
     failure_code: z.null().nullable(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evaluated_count'), {
+    path: ['evaluated_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_parameters'), {
+    path: ['selected_parameters'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_metric'), {
+    path: ['selected_metric'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_ref'), {
+    path: ['result_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failure_code'), {
+    path: ['failure_code'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchResultFailedSchema = z
   .object({
     state: z.literal('FAILED'),
@@ -7250,7 +9705,31 @@ export const ExperimentSearchResultFailedSchema = z
     result_ref: z.null().nullable(),
     failure_code: CanonicalErrorCodeSchema,
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evaluated_count'), {
+    path: ['evaluated_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_parameters'), {
+    path: ['selected_parameters'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'selected_metric'), {
+    path: ['selected_metric'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_ref'), {
+    path: ['result_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failure_code'), {
+    path: ['failure_code'],
+    message: 'Required property is missing',
+  });
 export const ExperimentSearchResultSchema = z.unknown().superRefine((value, context) => {
   const matches = [
     ExperimentSearchResultNotApplicableSchema.safeParse(value).success,
@@ -7262,7 +9741,17 @@ export const ExperimentSearchResultSchema = z.unknown().superRefine((value, cont
   if (matches !== 1)
     context.addIssue({ code: 'custom', message: 'Value must match exactly one canonical variant' });
 });
-export const CodeVersionSchema = z.object({ commit: z.string(), build_id: z.string() }).strict();
+export const CodeVersionSchema = z
+  .object({ commit: z.string(), build_id: z.string() })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'commit'), {
+    path: ['commit'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'build_id'), {
+    path: ['build_id'],
+    message: 'Required property is missing',
+  });
 export const PolicyRefSchema = z
   .object({
     type: z.union([z.literal('research_policy'), z.literal('risk_policy')]),
@@ -7338,6 +9827,18 @@ export const PolicyRefSchema = z
     version: z.number().int().min(1),
   })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'id'), {
+    path: ['id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     for (const result of [
       z
@@ -7346,6 +9847,10 @@ export const PolicyRefSchema = z
           const conditional = z
             .object({ type: z.literal('research_policy') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'type'), {
+              path: ['type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -7400,6 +9905,10 @@ export const PolicyRefSchema = z
           const conditional = z
             .object({ type: z.literal('risk_policy') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'type'), {
+              path: ['type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -7563,7 +10072,19 @@ export const VersionedHashRefSchema = z
     version: z.number().int().min(1),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'id'), {
+    path: ['id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sha256'), {
+    path: ['sha256'],
+    message: 'Required property is missing',
+  });
 export const ProvenanceSchema = z
   .object({
     provenance_id: z
@@ -7941,7 +10462,75 @@ export const ProvenanceSchema = z
     output_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
     calculated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'provenance_id'), {
+    path: ['provenance_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'schema_version'), {
+    path: ['schema_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'experiment_id'), {
+    path: ['experiment_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'source_experiment_id'), {
+    path: ['source_experiment_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'tool_call_id'), {
+    path: ['tool_call_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_snapshot_ids'), {
+    path: ['data_snapshot_ids'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'engine'), {
+    path: ['engine'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'adapter'), {
+    path: ['adapter'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'code'), {
+    path: ['code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'policies'), {
+    path: ['policies'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strategy'), {
+    path: ['strategy'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'factors'), {
+    path: ['factors'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model'), {
+    path: ['cost_model'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'parameters_sha256'), {
+    path: ['parameters_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'input_sha256'), {
+    path: ['input_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'output_sha256'), {
+    path: ['output_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'calculated_at'), {
+    path: ['calculated_at'],
+    message: 'Required property is missing',
+  });
 export const ExperimentDetailSchema = z
   .object({
     experiment_id: z
@@ -8369,7 +10958,139 @@ export const ExperimentDetailSchema = z
     }),
     invalid_reason_detail: z.union([z.string(), z.null()]),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'experiment_id'), {
+    path: ['experiment_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_id'), {
+    path: ['research_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'parent_experiment_id'), {
+    path: ['parent_experiment_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'source_experiment_id'), {
+    path: ['source_experiment_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_revision_no'), {
+    path: ['research_revision_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'objective'), {
+    path: ['objective'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'hypothesis'), {
+    path: ['hypothesis'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'experiment_type'), {
+    path: ['experiment_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validity_state'), {
+    path: ['validity_state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'data_snapshot_id'), {
+    path: ['data_snapshot_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'factor_ref'), {
+    path: ['factor_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strategy_ref'), {
+    path: ['strategy_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_id'), {
+    path: ['cost_model_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'parameters'), {
+    path: ['parameters'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'parameters_sha256'), {
+    path: ['parameters_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'search_space'), {
+    path: ['search_space'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'search_configuration'), {
+    path: ['search_configuration'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'search_result'), {
+    path: ['search_result'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'metrics'), {
+    path: ['metrics'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'artifacts'), {
+    path: ['artifacts'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'engine'), {
+    path: ['engine'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'adapter'), {
+    path: ['adapter'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'code_version'), {
+    path: ['code_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'started_at'), {
+    path: ['started_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'finished_at'), {
+    path: ['finished_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'invalidated_at'), {
+    path: ['invalidated_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'invalid_reason_code'), {
+    path: ['invalid_reason_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'invalid_reason_detail'), {
+    path: ['invalid_reason_detail'],
+    message: 'Required property is missing',
+  });
 export const StrategySignalSchema = z
   .object({
     factor_id: z
@@ -8405,7 +11126,23 @@ export const StrategySignalSchema = z
     direction: z.union([z.literal('LONG'), z.literal('SHORT')]),
     weight: z.string(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'factor_id'), {
+    path: ['factor_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'factor_version'), {
+    path: ['factor_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'direction'), {
+    path: ['direction'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'weight'), {
+    path: ['weight'],
+    message: 'Required property is missing',
+  });
 export const StrategyRulesSchema = z
   .object({
     selection_count: z.number().int().min(1),
@@ -8420,7 +11157,31 @@ export const StrategyRulesSchema = z
     leverage_limit: z.string(),
     position_limit: z.string(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'selection_count'), {
+    path: ['selection_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'weighting'), {
+    path: ['weighting'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'rebalance_frequency'), {
+    path: ['rebalance_frequency'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'long_short'), {
+    path: ['long_short'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'leverage_limit'), {
+    path: ['leverage_limit'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'position_limit'), {
+    path: ['position_limit'],
+    message: 'Required property is missing',
+  });
 export const StrategyCreateRequestSchema = z
   .object({
     research_id: z
@@ -8492,10 +11253,62 @@ export const StrategyCreateRequestSchema = z
     holdout_period: DateRangeSchema,
     known_failure_modes: z.array(z.string()),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'research_id'), {
+    path: ['research_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'name'), {
+    path: ['name'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'thesis'), {
+    path: ['thesis'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'universe'), {
+    path: ['universe'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'signals'), {
+    path: ['signals'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'rules'), {
+    path: ['rules'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_id'), {
+    path: ['cost_model_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'benchmark'), {
+    path: ['benchmark'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_period'), {
+    path: ['research_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validation_period'), {
+    path: ['validation_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'holdout_period'), {
+    path: ['holdout_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'known_failure_modes'), {
+    path: ['known_failure_modes'],
+    message: 'Required property is missing',
+  });
 export const FreezeStrategyRequestSchema = z
   .object({ expected_spec_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')) })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'expected_spec_sha256'), {
+    path: ['expected_spec_sha256'],
+    message: 'Required property is missing',
+  });
 export const BacktestRequestSchema = z
   .object({
     snapshot_id: z
@@ -8560,7 +11373,27 @@ export const BacktestRequestSchema = z
     engine_version: z.string(),
     parameters: z.array(ParameterSchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'snapshot_id'), {
+    path: ['snapshot_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_id'), {
+    path: ['cost_model_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'engine_key'), {
+    path: ['engine_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'engine_version'), {
+    path: ['engine_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'parameters'), {
+    path: ['parameters'],
+    message: 'Required property is missing',
+  });
 export const StrategySpecificationSchema = z
   .object({
     thesis: z.string(),
@@ -8603,7 +11436,51 @@ export const StrategySpecificationSchema = z
     known_failure_modes: z.array(z.string()),
     spec_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'thesis'), {
+    path: ['thesis'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'universe'), {
+    path: ['universe'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'signals'), {
+    path: ['signals'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'rules'), {
+    path: ['rules'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_id'), {
+    path: ['cost_model_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'benchmark'), {
+    path: ['benchmark'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_period'), {
+    path: ['research_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validation_period'), {
+    path: ['validation_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'holdout_period'), {
+    path: ['holdout_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'known_failure_modes'), {
+    path: ['known_failure_modes'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'spec_sha256'), {
+    path: ['spec_sha256'],
+    message: 'Required property is missing',
+  });
 export const StrategyBacktestResultSummarySchema = z
   .object({
     experiment: ObjectRefSchema,
@@ -8654,7 +11531,39 @@ export const StrategyBacktestResultSummarySchema = z
     started_at: z.union([z.iso.datetime({ offset: true }), z.null()]),
     finished_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'experiment'), {
+    path: ['experiment'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validity_state'), {
+    path: ['validity_state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_sha256'), {
+    path: ['result_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'started_at'), {
+    path: ['started_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'finished_at'), {
+    path: ['finished_at'],
+    message: 'Required property is missing',
+  });
 export const StrategyLatestBacktestAvailableSchema = z
   .object({
     state: z.literal('AVAILABLE'),
@@ -8662,7 +11571,23 @@ export const StrategyLatestBacktestAvailableSchema = z
     metrics: z.array(MetricSchema),
     chart: ChartAggregateSchema,
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result'), {
+    path: ['result'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'metrics'), {
+    path: ['metrics'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'chart'), {
+    path: ['chart'],
+    message: 'Required property is missing',
+  });
 export const StrategyLatestBacktestUnavailableSchema = z
   .object({
     state: z.union([z.literal('EMPTY'), z.literal('LOCKED')]),
@@ -8670,7 +11595,23 @@ export const StrategyLatestBacktestUnavailableSchema = z
     metrics: z.array(z.unknown()).max(0),
     chart: z.null().nullable(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result'), {
+    path: ['result'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'metrics'), {
+    path: ['metrics'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'chart'), {
+    path: ['chart'],
+    message: 'Required property is missing',
+  });
 export const StrategyLatestBacktestSchema = z.unknown().superRefine((value, context) => {
   const matches = [
     StrategyLatestBacktestAvailableSchema.safeParse(value).success,
@@ -8689,7 +11630,35 @@ export const ValidationResultCountsSchema = z
     locked: z.number().int().min(0),
     skipped: z.number().int().min(0),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'pending'), {
+    path: ['pending'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'running'), {
+    path: ['running'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'pass'), {
+    path: ['pass'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'warn'), {
+    path: ['warn'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'fail'), {
+    path: ['fail'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'locked'), {
+    path: ['locked'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'skipped'), {
+    path: ['skipped'],
+    message: 'Required property is missing',
+  });
 export const StrategyValidationSummarySchema = z
   .object({
     validation: ObjectRefSchema,
@@ -8724,7 +11693,35 @@ export const StrategyValidationSummarySchema = z
     }),
     revision: z.number().int().min(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'validation'), {
+    path: ['validation'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result'), {
+    path: ['result'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'holdout_state'), {
+    path: ['holdout_state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'test_counts'), {
+    path: ['test_counts'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  });
 export const StrategyVersionDetailSchema = z
   .object({
     strategy_id: z
@@ -8828,7 +11825,111 @@ export const StrategyVersionDetailSchema = z
     action_capabilities: z.array(ActionCapabilitySchema),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'strategy_id'), {
+    path: ['strategy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'name'), {
+    path: ['name'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'lifecycle_state'), {
+    path: ['lifecycle_state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'is_frozen'), {
+    path: ['is_frozen'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'thesis'), {
+    path: ['thesis'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'universe'), {
+    path: ['universe'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'signals'), {
+    path: ['signals'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'rules'), {
+    path: ['rules'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'cost_model_id'), {
+    path: ['cost_model_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'benchmark'), {
+    path: ['benchmark'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'research_period'), {
+    path: ['research_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validation_period'), {
+    path: ['validation_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'holdout_period'), {
+    path: ['holdout_period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'known_failure_modes'), {
+    path: ['known_failure_modes'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'spec_sha256'), {
+    path: ['spec_sha256'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'specification'), {
+    path: ['specification'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'latest_backtest'), {
+    path: ['latest_backtest'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'validation_summary'), {
+    path: ['validation_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'artifacts'), {
+    path: ['artifacts'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'frozen_at'), {
+    path: ['frozen_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'frozen_by'), {
+    path: ['frozen_by'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const NewExperimentResourceRefSchema = z
   .object({
     type: z.literal('experiment'),
@@ -8864,7 +11965,23 @@ export const NewExperimentResourceRefSchema = z
     version: z.null().nullable(),
     revision: z.literal(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'id'), {
+    path: ['id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  });
 export const ExperimentReproduceAcceptedSchema = z
   .object({
     job_id: z
@@ -8932,7 +12049,39 @@ export const ExperimentReproduceAcceptedSchema = z
     reproduce_mode: z.union([z.literal('EXACT'), z.literal('CONTROLLED_OVERRIDE')]),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'progress'), {
+    path: ['progress'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'resource_ref'), {
+    path: ['resource_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'source_experiment_id'), {
+    path: ['source_experiment_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'source_provenance'), {
+    path: ['source_provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'reproduce_mode'), {
+    path: ['reproduce_mode'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ValidationCreateRequestSchema = z
   .object({
     strategy_id: z
@@ -8998,7 +12147,31 @@ export const ValidationCreateRequestSchema = z
     strict_engine_version: z.string(),
     test_suite_version: z.string(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'strategy_id'), {
+    path: ['strategy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strategy_version'), {
+    path: ['strategy_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'policy_id'), {
+    path: ['policy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strict_engine_key'), {
+    path: ['strict_engine_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strict_engine_version'), {
+    path: ['strict_engine_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'test_suite_version'), {
+    path: ['test_suite_version'],
+    message: 'Required property is missing',
+  });
 export const ValidationTestResultSchema = z
   .object({
     test_key: z.string(),
@@ -9074,7 +12247,63 @@ export const ValidationTestResultSchema = z
     }),
     override_permitted: z.literal(false),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'test_key'), {
+    path: ['test_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'attempt_no'), {
+    path: ['attempt_no'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'test_version'), {
+    path: ['test_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'purpose'), {
+    path: ['purpose'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'configuration_summary'), {
+    path: ['configuration_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'calculated_result'), {
+    path: ['calculated_result'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'interpretation'), {
+    path: ['interpretation'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failure_code'), {
+    path: ['failure_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failure_detail'), {
+    path: ['failure_detail'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'warning_codes'), {
+    path: ['warning_codes'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'artifact_ids'), {
+    path: ['artifact_ids'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'override_permitted'), {
+    path: ['override_permitted'],
+    message: 'Required property is missing',
+  });
 export const ValidationDetailSchema = z
   .object({
     validation_id: z
@@ -9292,7 +12521,79 @@ export const ValidationDetailSchema = z
     finished_at: z.union([z.iso.datetime({ offset: true }), z.null()]),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'validation_id'), {
+    path: ['validation_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strategy'), {
+    path: ['strategy'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'policy_id'), {
+    path: ['policy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strict_engine'), {
+    path: ['strict_engine'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result'), {
+    path: ['result'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'test_suite_version'), {
+    path: ['test_suite_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'tests'), {
+    path: ['tests'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'warnings'), {
+    path: ['warnings'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'failures'), {
+    path: ['failures'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'holdout_state'), {
+    path: ['holdout_state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'red_team_run_id'), {
+    path: ['red_team_run_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'started_at'), {
+    path: ['started_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'finished_at'), {
+    path: ['finished_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ApprovalSummarySchema = z
   .object({
     approval_id: z
@@ -9333,7 +12634,19 @@ export const ApprovalSummarySchema = z
     ]),
     revision: z.number().int().min(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'approval_id'), {
+    path: ['approval_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  });
 export const HoldoutGateSchema = z
   .object({
     validation_id: z
@@ -9390,7 +12703,35 @@ export const HoldoutGateSchema = z
     revision: z.number().int().min(1),
     validation: ValidationDetailSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'validation_id'), {
+    path: ['validation_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'exposure_count'), {
+    path: ['exposure_count'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'period'), {
+    path: ['period'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'approval'), {
+    path: ['approval'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  });
 export const HoldoutResultSchema = z
   .object({
     validation_id: z
@@ -9456,8 +12797,38 @@ export const HoldoutResultSchema = z
     provenance: ProvenanceSchema,
     exposed_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
-export const HoldoutApprovalRequestSchema = z.object({ reason: z.string().min(1) }).strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'validation_id'), {
+    path: ['validation_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'exposure_id'), {
+    path: ['exposure_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result'), {
+    path: ['result'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'metrics'), {
+    path: ['metrics'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'exposed_at'), {
+    path: ['exposed_at'],
+    message: 'Required property is missing',
+  });
+export const HoldoutApprovalRequestSchema = z
+  .object({ reason: z.string().min(1) })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'reason'), {
+    path: ['reason'],
+    message: 'Required property is missing',
+  });
 export const HoldoutRunRequestSchema = z
   .object({
     approval_id: z
@@ -9490,7 +12861,11 @@ export const HoldoutRunRequestSchema = z
           });
       }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'approval_id'), {
+    path: ['approval_id'],
+    message: 'Required property is missing',
+  });
 export const ApprovalSubjectSchema = z
   .object({
     type: z.union([z.literal('STRATEGY_VERSION'), z.literal('VALIDATION'), z.literal('PAPER')]),
@@ -9598,6 +12973,26 @@ export const ApprovalSubjectSchema = z
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'id'), {
+    path: ['id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'version'), {
+    path: ['version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sha256'), {
+    path: ['sha256'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     for (const result of [
       z
@@ -9606,6 +13001,10 @@ export const ApprovalSubjectSchema = z
           const conditional = z
             .object({ type: z.literal('STRATEGY_VERSION') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'type'), {
+              path: ['type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -9660,6 +13059,10 @@ export const ApprovalSubjectSchema = z
           const conditional = z
             .object({ type: z.literal('VALIDATION') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'type'), {
+              path: ['type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -9714,6 +13117,10 @@ export const ApprovalSubjectSchema = z
           const conditional = z
             .object({ type: z.literal('PAPER') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'type'), {
+              path: ['type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -9825,17 +13232,77 @@ export const ApprovalListItemSchema = z
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'approval_id'), {
+    path: ['approval_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'subject'), {
+    path: ['subject'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'requester'), {
+    path: ['requester'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'reason'), {
+    path: ['reason'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'requested_at'), {
+    path: ['requested_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'decided_at'), {
+    path: ['decided_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  });
 export const ApprovalPageSchema = z
   .object({ items: z.array(ApprovalListItemSchema), page: PageInfoSchema })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'items'), {
+    path: ['items'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'page'), {
+    path: ['page'],
+    message: 'Required property is missing',
+  });
 export const ApprovalPrerequisiteSchema = z
   .object({
     key: z.string(),
     state: z.union([z.literal('PASS'), z.literal('WARN'), z.literal('FAIL')]),
     detail: z.string(),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'key'), {
+    path: ['key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'state'), {
+    path: ['state'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'detail'), {
+    path: ['detail'],
+    message: 'Required property is missing',
+  });
 export const RiskSummarySchema = z
   .object({
     risk_level: z.union([
@@ -9846,8 +13313,26 @@ export const RiskSummarySchema = z
     ]),
     warning_codes: z.array(z.string()),
   })
-  .strict();
-export const ApprovalEffectSchema = z.object({ code: z.string(), detail: z.string() }).strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'risk_level'), {
+    path: ['risk_level'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'warning_codes'), {
+    path: ['warning_codes'],
+    message: 'Required property is missing',
+  });
+export const ApprovalEffectSchema = z
+  .object({ code: z.string(), detail: z.string() })
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'code'), {
+    path: ['code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'detail'), {
+    path: ['detail'],
+    message: 'Required property is missing',
+  });
 export const ApprovalDetailSchema = z
   .object({
     approval_id: z
@@ -9903,16 +13388,80 @@ export const ApprovalDetailSchema = z
     revision: z.number().int().min(1),
     action_capabilities: z.array(ActionCapabilitySchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'approval_id'), {
+    path: ['approval_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'subject'), {
+    path: ['subject'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'requester'), {
+    path: ['requester'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'reason'), {
+    path: ['reason'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'prerequisites'), {
+    path: ['prerequisites'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'risk_summary'), {
+    path: ['risk_summary'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'effects'), {
+    path: ['effects'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'requested_at'), {
+    path: ['requested_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'decided_at'), {
+    path: ['decided_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  });
 export const ApprovalDecisionRequestSchema = z
   .object({ acknowledged_subject_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')) })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'acknowledged_subject_sha256'), {
+    path: ['acknowledged_subject_sha256'],
+    message: 'Required property is missing',
+  });
 export const ApprovalRejectRequestSchema = z
   .object({
     reason: z.string().min(1).max(4000),
     acknowledged_subject_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'reason'), {
+    path: ['reason'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'acknowledged_subject_sha256'), {
+    path: ['acknowledged_subject_sha256'],
+    message: 'Required property is missing',
+  });
 export const JobAcceptedSchema = z
   .object({
     job_id: z
@@ -9959,7 +13508,27 @@ export const JobAcceptedSchema = z
     }),
     created_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'progress'), {
+    path: ['progress'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'resource_ref'), {
+    path: ['resource_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  });
 export const ApprovalDecisionResultSchema = z
   .object({
     approval: ApprovalDetailSchema,
@@ -9976,7 +13545,19 @@ export const ApprovalDecisionResultSchema = z
         });
     }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'approval'), {
+    path: ['approval'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'subject_ref'), {
+    path: ['subject_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'next_job'), {
+    path: ['next_job'],
+    message: 'Required property is missing',
+  });
 export const MemoGenerateRequestSchema = z
   .object({
     strategy_id: z
@@ -10010,7 +13591,15 @@ export const MemoGenerateRequestSchema = z
       }),
     strategy_version: z.number().int().min(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'strategy_id'), {
+    path: ['strategy_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strategy_version'), {
+    path: ['strategy_version'],
+    message: 'Required property is missing',
+  });
 export const MemoEvidenceLinkSchema = z
   .object({
     experiment_id: z
@@ -10044,7 +13633,15 @@ export const MemoEvidenceLinkSchema = z
       }),
     provenance: ProvenanceRefSchema,
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'experiment_id'), {
+    path: ['experiment_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  });
 export const MemoSectionSchema = z
   .object({
     section_key: z.string(),
@@ -10052,7 +13649,23 @@ export const MemoSectionSchema = z
     content: z.string(),
     evidence_links: z.array(MemoEvidenceLinkSchema),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'section_key'), {
+    path: ['section_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'title'), {
+    path: ['title'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'content'), {
+    path: ['content'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'evidence_links'), {
+    path: ['evidence_links'],
+    message: 'Required property is missing',
+  });
 export const MemoDetailSchema = z
   .object({
     memo_id: z
@@ -10141,7 +13754,43 @@ export const MemoDetailSchema = z
     created_at: z.iso.datetime({ offset: true }),
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'memo_id'), {
+    path: ['memo_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'strategy'), {
+    path: ['strategy'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sections'), {
+    path: ['sections'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'provenance'), {
+    path: ['provenance'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const AgentConfigSchema = z
   .object({
     role_key: AgentRoleKeySchema,
@@ -10149,7 +13798,9 @@ export const AgentConfigSchema = z
     model_provider: z.string(),
     model_name: z.string(),
     ai_connection_id: z.string(),
-    ai_connection_revision: z.number().int().min(1),
+    ai_connection_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     runtime_profile: z.string(),
     tool_timeout_seconds: z.number().int().min(1),
     max_steps_override: z.union([z.number().int().min(1), z.null()]),
@@ -10159,7 +13810,63 @@ export const AgentConfigSchema = z
     created_at: z.iso.datetime({ offset: true }),
     updated_at: z.iso.datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'role_key'), {
+    path: ['role_key'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'enabled'), {
+    path: ['enabled'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'model_provider'), {
+    path: ['model_provider'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'model_name'), {
+    path: ['model_name'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'ai_connection_id'), {
+    path: ['ai_connection_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'ai_connection_revision'), {
+    path: ['ai_connection_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'runtime_profile'), {
+    path: ['runtime_profile'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'tool_timeout_seconds'), {
+    path: ['tool_timeout_seconds'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'max_steps_override'), {
+    path: ['max_steps_override'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'max_tool_calls_override'), {
+    path: ['max_tool_calls_override'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'action_capabilities'), {
+    path: ['action_capabilities'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'created_at'), {
+    path: ['created_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'updated_at'), {
+    path: ['updated_at'],
+    message: 'Required property is missing',
+  });
 export const AgentConfigListSchema = z.array(AgentConfigSchema);
 export const AgentConfigUpdateSchema = z
   .object({
@@ -10792,7 +14499,12 @@ export const JobResultRefSchema = z
         });
     }),
     object_version: z.union([z.number().int().min(1), z.null()]),
-    object_revision: z.union([z.number().int().min(1), z.null()]),
+    object_revision: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
     artifact_id: z.unknown().superRefine((value, context) => {
       const matches = [
         z
@@ -10835,6 +14547,26 @@ export const JobResultRefSchema = z
     }),
   })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'object_type'), {
+    path: ['object_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object_id'), {
+    path: ['object_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object_version'), {
+    path: ['object_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+    path: ['object_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'artifact_id'), {
+    path: ['artifact_id'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     for (const result of [
       z
@@ -10843,6 +14575,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('job') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -10897,6 +14633,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('research') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -10951,6 +14691,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('conclusion') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11005,6 +14749,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('experiment') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11059,6 +14807,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('factor') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11113,6 +14865,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('strategy_version') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11149,9 +14905,19 @@ export const JobResultRefSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_version'), {
+                    path: ['object_version'],
+                    message: 'Required property is missing',
+                  })
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -11169,6 +14935,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('validation') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11223,6 +14993,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('approval') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11277,6 +15051,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11331,6 +15109,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11385,6 +15167,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('review') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11439,6 +15225,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('capability') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11493,6 +15283,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('snapshot') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11547,6 +15341,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11601,6 +15399,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('tool_call') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11655,6 +15457,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('memo') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11709,6 +15515,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('notification') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11763,6 +15573,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('settings') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11770,9 +15584,15 @@ export const JobResultRefSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -11790,6 +15610,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('provider_connection') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11804,9 +15628,15 @@ export const JobResultRefSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -11824,6 +15654,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_config') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11840,9 +15674,15 @@ export const JobResultRefSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -11860,6 +15700,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.literal('event_stream') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11896,9 +15740,15 @@ export const JobResultRefSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -11916,6 +15766,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_type: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11943,6 +15797,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ object_id: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_id'), {
+              path: ['object_id'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11970,6 +15828,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('job.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -11993,6 +15855,10 @@ export const JobResultRefSchema = z
               event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12014,6 +15880,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('research.conclusion.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12040,6 +15910,10 @@ export const JobResultRefSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12061,6 +15935,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('factor.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12084,6 +15962,10 @@ export const JobResultRefSchema = z
               event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12111,6 +15993,10 @@ export const JobResultRefSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12134,6 +16020,10 @@ export const JobResultRefSchema = z
               event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12157,6 +16047,10 @@ export const JobResultRefSchema = z
               event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12178,6 +16072,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('paper.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12201,6 +16099,10 @@ export const JobResultRefSchema = z
               event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12222,6 +16124,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.provider.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12243,6 +16149,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.capability.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12264,6 +16174,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.quality.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12285,6 +16199,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('agent.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12306,6 +16224,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('tool.call.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12327,6 +16249,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12348,6 +16274,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('setup.completed') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12374,6 +16304,10 @@ export const JobResultRefSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12400,6 +16334,10 @@ export const JobResultRefSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12421,6 +16359,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12442,6 +16384,10 @@ export const JobResultRefSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12468,6 +16414,10 @@ export const JobResultRefSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -12563,7 +16513,51 @@ export const JobDetailSchema = z
     last_updated_at: z.iso.datetime({ offset: true }),
     revision: z.number().int().min(1),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'job_type'), {
+    path: ['job_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'status'), {
+    path: ['status'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'progress'), {
+    path: ['progress'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'error_code'), {
+    path: ['error_code'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'result_ref'), {
+    path: ['result_ref'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'queued_at'), {
+    path: ['queued_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'started_at'), {
+    path: ['started_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'finished_at'), {
+    path: ['finished_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'last_updated_at'), {
+    path: ['last_updated_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'revision'), {
+    path: ['revision'],
+    message: 'Required property is missing',
+  });
 export const EventTypeSchema = z.union([
   z.literal('job.updated'),
   z.literal('research.created'),
@@ -12634,7 +16628,15 @@ export const EventWaitingOnSchema = z
           });
       }),
   })
-  .strict();
+  .strict()
+  .refine((value) => Object.hasOwn(value, 'type'), {
+    path: ['type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  });
 export const EventPayloadSchema = z
   .object({
     status: z.union([z.string(), z.null()]).optional(),
@@ -12653,10 +16655,26 @@ export const EventPayloadSchema = z
           });
       })
       .optional(),
-    resync_from_sequence: z.union([z.number().int().min(1), z.null()]).optional(),
+    resync_from_sequence: z
+      .union([z.string().regex(new RegExp('^[1-9][0-9]*$')), z.null()])
+      .optional(),
     progress_mode: z.union([z.literal('NONE'), z.literal('UNITS'), z.literal(null)]).optional(),
-    completed_units: z.union([z.number().int().min(0), z.null()]).optional(),
-    total_units: z.union([z.number().int().min(1), z.null()]).optional(),
+    completed_units: z
+      .union([
+        z.number().int().min(0).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
+        z.null(),
+      ])
+      .optional(),
+    total_units: z
+      .union([
+        z.number().int().min(1).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
+        z.null(),
+      ])
+      .optional(),
     current_step_key: z.union([z.string(), z.null()]).optional(),
     agent_run_id: z
       .unknown()
@@ -13382,7 +17400,14 @@ export const EventPayloadSchema = z
       })
       .optional(),
     object_version: z.union([z.number().int().min(1), z.null()]).optional(),
-    object_revision: z.union([z.number().int().min(1), z.null()]).optional(),
+    object_revision: z
+      .union([
+        z.number().int().min(1).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
+        z.null(),
+      ])
+      .optional(),
     waiting_on: z
       .unknown()
       .superRefine((value, context) => {
@@ -13407,6 +17432,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('job') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13461,6 +17490,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('research') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13515,6 +17548,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('conclusion') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13569,6 +17606,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('experiment') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13623,6 +17664,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('factor') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13677,6 +17722,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('strategy_version') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13713,9 +17762,19 @@ export const EventPayloadSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_version'), {
+                    path: ['object_version'],
+                    message: 'Required property is missing',
+                  })
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -13733,6 +17792,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('validation') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13787,6 +17850,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('approval') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13841,6 +17908,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13895,6 +17966,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -13949,6 +18024,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('review') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14003,6 +18082,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('capability') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14057,6 +18140,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('snapshot') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14111,6 +18198,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14165,6 +18256,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('tool_call') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14219,6 +18314,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('memo') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14273,6 +18372,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('notification') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14327,6 +18430,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('settings') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14334,9 +18441,15 @@ export const EventPayloadSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -14354,6 +18467,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('provider_connection') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14368,9 +18485,15 @@ export const EventPayloadSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -14388,6 +18511,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_config') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14404,9 +18531,15 @@ export const EventPayloadSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -14424,6 +18557,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.literal('event_stream') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14460,9 +18597,15 @@ export const EventPayloadSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -14480,6 +18623,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_type: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14507,6 +18654,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ object_id: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_id'), {
+              path: ['object_id'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14534,6 +18685,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('job.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14557,6 +18712,10 @@ export const EventPayloadSchema = z
               event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14578,6 +18737,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('research.conclusion.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14604,6 +18767,10 @@ export const EventPayloadSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14625,6 +18792,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('factor.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14648,6 +18819,10 @@ export const EventPayloadSchema = z
               event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14675,6 +18850,10 @@ export const EventPayloadSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14698,6 +18877,10 @@ export const EventPayloadSchema = z
               event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14721,6 +18904,10 @@ export const EventPayloadSchema = z
               event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14742,6 +18929,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('paper.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14765,6 +18956,10 @@ export const EventPayloadSchema = z
               event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14786,6 +18981,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.provider.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14807,6 +19006,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.capability.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14828,6 +19031,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.quality.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14849,6 +19056,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('agent.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14870,6 +19081,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('tool.call.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14891,6 +19106,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14912,6 +19131,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('setup.completed') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14938,6 +19161,10 @@ export const EventPayloadSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14964,6 +19191,10 @@ export const EventPayloadSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -14985,6 +19216,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -15006,6 +19241,10 @@ export const EventPayloadSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -15032,6 +19271,10 @@ export const EventPayloadSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -15156,7 +19399,7 @@ export const SseEnvelopeSchema = z
             message: 'Value must match exactly one canonical variant',
           });
       }),
-    sequence: z.number().int().min(1),
+    sequence: z.string().regex(new RegExp('^[1-9][0-9]*$')),
     event_type: EventTypeSchema,
     occurred_at: z.iso.datetime({ offset: true }),
     object_type: z.union([
@@ -15749,7 +19992,12 @@ export const SseEnvelopeSchema = z
         });
     }),
     object_version: z.union([z.number().int().min(1), z.null()]),
-    object_revision: z.union([z.number().int().min(1), z.null()]),
+    object_revision: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
+      z.null(),
+    ]),
     request_id: z.union([z.string(), z.null()]),
     job_id: z.unknown().superRefine((value, context) => {
       const matches = [
@@ -15874,6 +20122,62 @@ export const SseEnvelopeSchema = z
     payload: EventPayloadSchema,
   })
   .strict()
+  .refine((value) => Object.hasOwn(value, 'schema_version'), {
+    path: ['schema_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'event_id'), {
+    path: ['event_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'sequence'), {
+    path: ['sequence'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'event_type'), {
+    path: ['event_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'occurred_at'), {
+    path: ['occurred_at'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object_type'), {
+    path: ['object_type'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object_id'), {
+    path: ['object_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object_version'), {
+    path: ['object_version'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+    path: ['object_revision'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'request_id'), {
+    path: ['request_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'job_id'), {
+    path: ['job_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'agent_run_id'), {
+    path: ['agent_run_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'tool_call_id'), {
+    path: ['tool_call_id'],
+    message: 'Required property is missing',
+  })
+  .refine((value) => Object.hasOwn(value, 'payload'), {
+    path: ['payload'],
+    message: 'Required property is missing',
+  })
   .superRefine((value, context) => {
     for (const result of [
       z
@@ -15882,6 +20186,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('job') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -15936,6 +20244,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('research') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -15990,6 +20302,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('conclusion') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16044,6 +20360,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('experiment') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16098,6 +20418,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('factor') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16152,6 +20476,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('strategy_version') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16188,9 +20516,19 @@ export const SseEnvelopeSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_version'), {
+                    path: ['object_version'],
+                    message: 'Required property is missing',
+                  })
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -16208,6 +20546,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('validation') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16262,6 +20604,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('approval') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16316,6 +20662,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16370,6 +20720,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('paper_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16424,6 +20778,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('review') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16478,6 +20836,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('capability') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16532,6 +20894,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('snapshot') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16586,6 +20952,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_run') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16640,6 +21010,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('tool_call') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16694,6 +21068,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('memo') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16748,6 +21126,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('notification') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16802,6 +21184,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('settings') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16809,9 +21195,15 @@ export const SseEnvelopeSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -16829,6 +21221,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('provider_connection') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16843,9 +21239,15 @@ export const SseEnvelopeSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -16863,6 +21265,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('agent_config') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16879,9 +21285,15 @@ export const SseEnvelopeSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -16899,6 +21311,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.literal('event_stream') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16935,9 +21351,15 @@ export const SseEnvelopeSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z.number().int().min(1),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
+                  .refine((value) => Object.hasOwn(value, 'object_revision'), {
+                    path: ['object_revision'],
+                    message: 'Required property is missing',
+                  })
               : z.unknown()
           ).safeParse(value);
           if (!result.success)
@@ -16955,6 +21377,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_type: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_type'), {
+              path: ['object_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -16982,6 +21408,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ object_id: z.null().nullable() })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'object_id'), {
+              path: ['object_id'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17009,6 +21439,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('job.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17032,6 +21466,10 @@ export const SseEnvelopeSchema = z
               event_type: z.union([z.literal('research.created'), z.literal('research.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17053,6 +21491,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('research.conclusion.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17079,6 +21521,10 @@ export const SseEnvelopeSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17100,6 +21546,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('factor.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17123,6 +21573,10 @@ export const SseEnvelopeSchema = z
               event_type: z.union([z.literal('strategy.created'), z.literal('strategy.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17150,6 +21604,10 @@ export const SseEnvelopeSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17173,6 +21631,10 @@ export const SseEnvelopeSchema = z
               event_type: z.union([z.literal('approval.created'), z.literal('approval.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17196,6 +21658,10 @@ export const SseEnvelopeSchema = z
               event_type: z.union([z.literal('paper.created'), z.literal('paper.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17217,6 +21683,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('paper.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17240,6 +21710,10 @@ export const SseEnvelopeSchema = z
               event_type: z.union([z.literal('review.created'), z.literal('review.updated')]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17261,6 +21735,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.provider.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17282,6 +21760,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.capability.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17303,6 +21785,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('data.quality.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17324,6 +21810,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('agent.run.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17345,6 +21835,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('tool.call.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17366,6 +21860,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.union([z.literal('memo.created'), z.literal('memo.updated')]) })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17387,6 +21885,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('setup.completed') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17413,6 +21915,10 @@ export const SseEnvelopeSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17439,6 +21945,10 @@ export const SseEnvelopeSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17460,6 +21970,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.created') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17481,6 +21995,10 @@ export const SseEnvelopeSchema = z
           const conditional = z
             .object({ event_type: z.literal('notification.updated') })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional
@@ -17507,6 +22025,10 @@ export const SseEnvelopeSchema = z
               ]),
             })
             .passthrough()
+            .refine((value) => Object.hasOwn(value, 'event_type'), {
+              path: ['event_type'],
+              message: 'Required property is missing',
+            })
             .safeParse(value).success;
           const result = (
             conditional

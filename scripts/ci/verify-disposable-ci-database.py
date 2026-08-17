@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from urllib.parse import urlsplit
 
 from sqlalchemy import create_engine, text
 
@@ -16,14 +17,39 @@ def main() -> int:
     run_id = os.getenv("GITHUB_RUN_ID", "")
     if not run_id.isdigit() or int(run_id) < 1:
         raise SystemExit("GITHUB_RUN_ID is required for disposable CI database proof")
-    expected = f"qf_ci_{run_id}"
-    engine = create_engine(sys.argv[1])
+    run_attempt = os.getenv("GITHUB_RUN_ATTEMPT", "")
+    if not run_attempt.isdigit() or int(run_attempt) < 1:
+        raise SystemExit(
+            "GITHUB_RUN_ATTEMPT is required for disposable CI database proof"
+        )
+    expected = f"qf_ci_{run_id}_{run_attempt}"
+    database_url = sys.argv[1]
+    parsed = urlsplit(database_url)
+    if (
+        parsed.hostname != "localhost"
+        or parsed.port != 5432
+        or parsed.username != "quantfoundry"
+    ):
+        raise SystemExit(
+            "CI database must use the fixed localhost:5432 quantfoundry endpoint"
+        )
+    engine = create_engine(database_url)
     try:
         with engine.connect() as connection:
-            actual = connection.execute(text("SELECT current_database()")).scalar_one()
+            actual, user, port = connection.execute(
+                text(
+                    "SELECT current_database(), current_user, "
+                    "inet_server_port()"
+                )
+            ).one()
     finally:
         engine.dispose()
-    if actual != expected or not re.fullmatch(r"qf_ci_[0-9]+", str(actual)):
+    if (
+        actual != expected
+        or user != "quantfoundry"
+        or port != 5432
+        or not re.fullmatch(r"qf_ci_[0-9]+_[0-9]+", str(actual))
+    ):
         raise SystemExit(
             f"database name {actual!r} is not the current run's disposable database"
         )

@@ -48,8 +48,13 @@ def upgrade() -> None:
                ))
                OR (v.holdout_state = 'EXPOSED' AND NOT EXISTS (
                     SELECT 1 FROM holdout_exposures e
+                    JOIN approval_requests a ON a.id = e.approval_id
+                    JOIN strategy_versions sv ON sv.id = e.strategy_version_id
                     WHERE e.validation_id = v.id
                       AND e.strategy_version_id = v.strategy_version_id
+                      AND a.validation_id = v.id
+                      AND a.status = 'APPROVED'
+                      AND a.subject_spec_sha256 = sv.spec_sha256
                ))
             LIMIT 1
             """
@@ -121,9 +126,15 @@ def upgrade() -> None:
                 END IF;
               END IF;
               IF NEW.holdout_state = 'EXPOSED' THEN
-                PERFORM 1 FROM holdout_exposures e
+                PERFORM 1
+                FROM holdout_exposures e
+                JOIN approval_requests a ON a.id = e.approval_id
+                JOIN strategy_versions sv ON sv.id = e.strategy_version_id
                 WHERE e.validation_id = OLD.id
                   AND e.strategy_version_id = NEW.strategy_version_id
+                  AND a.validation_id = OLD.id
+                  AND a.status = 'APPROVED'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
                 FOR UPDATE;
                 IF NOT FOUND THEN
                   RAISE EXCEPTION 'holdout exposure evidence is missing';
@@ -265,8 +276,11 @@ def upgrade() -> None:
         "WHERE a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
         "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (SELECT 1 FROM "
-        "holdout_exposures e WHERE e.validation_id = OLD.id AND "
-        "e.strategy_version_id = NEW.strategy_version_id)) BEGIN SELECT RAISE(ABORT, "
+        "holdout_exposures e JOIN approval_requests a ON a.id = e.approval_id "
+        "JOIN strategy_versions sv ON sv.id = e.strategy_version_id WHERE "
+        "e.validation_id = OLD.id AND e.strategy_version_id = NEW.strategy_version_id AND "
+        "a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) BEGIN SELECT RAISE(ABORT, "
         "'holdout state lacks durable evidence'); END"
     )
     op.execute(

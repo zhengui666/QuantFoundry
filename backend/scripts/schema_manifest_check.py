@@ -517,7 +517,7 @@ def _check_postgres_helpers(
                     "FROM pg_proc p "
                     "JOIN pg_namespace n ON n.oid=p.pronamespace "
                     "JOIN pg_language l ON l.oid=p.prolang "
-                    "WHERE n.nspname=current_schema() AND p.proname = ANY(:names)"
+                    "WHERE n.nspname='public' AND p.proname = ANY(:names)"
                 ),
                 {
                     "names": [
@@ -913,7 +913,10 @@ def _database_metadata(database_url: str) -> tuple[MetaData, str]:
     engine = create_engine(database_url)
     try:
         metadata = MetaData()
-        metadata.reflect(bind=engine)
+        with engine.connect() as connection:
+            if connection.dialect.name == "postgresql":
+                connection.execute(text("SET search_path TO public"))
+            metadata.reflect(bind=connection)
         return metadata, engine.dialect.name
     finally:
         engine.dispose()
@@ -929,6 +932,8 @@ def _postgres_parsed_expected_checks(
     try:
         with engine.connect() as connection:
             preparer = connection.dialect.identifier_preparer
+            connection.execute(text("SET search_path TO pg_temp, public"))
+            connection.commit()
             transaction = connection.begin()
             try:
                 for offset, (table_name, table) in enumerate(
@@ -986,7 +991,7 @@ def _postgres_actual_checks(database_url: str) -> dict[tuple[str, str], str]:
                     "JOIN pg_class t ON t.oid = c.conrelid "
                     "JOIN pg_namespace n ON n.oid = t.relnamespace "
                     "WHERE c.contype = 'c' "
-                    "AND n.nspname = current_schema()"
+                    "AND n.nspname = 'public'"
                 )
             )
             return {
@@ -1007,6 +1012,8 @@ def _postgres_parsed_expected_indexes(
     try:
         with engine.connect() as connection:
             preparer = connection.dialect.identifier_preparer
+            connection.execute(text("SET search_path TO pg_temp, public"))
+            connection.commit()
             transaction = connection.begin()
             try:
                 for offset, (table_name, table) in enumerate(
@@ -1072,7 +1079,7 @@ def _postgres_actual_indexes(database_url: str) -> dict[tuple[str, str], str]:
                     "JOIN pg_class t ON t.oid=i.indrelid "
                     "JOIN pg_class c ON c.oid=i.indexrelid "
                     "JOIN pg_namespace n ON n.oid=t.relnamespace "
-                    "WHERE i.indpred IS NOT NULL AND n.nspname=current_schema()"
+                    "WHERE i.indpred IS NOT NULL AND n.nspname='public'"
                 )
             )
             return {

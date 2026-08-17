@@ -14,6 +14,14 @@ require_tag_commit() {
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
   [[ "$(git -C "$repo_root" rev-parse "refs/tags/$tag^{commit}")" == "$commit" ]]
   [[ "$(git -C "$repo_root" rev-parse HEAD)" == "$commit" ]]
+  [[ -z "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]] || {
+    printf '%s\n' 'release evidence requires a clean repository worktree.' >&2
+    exit 1
+  }
+  if git -C "$repo_root" ls-files -v | awk '$1 ~ /^[a-z]/ { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf '%s\n' 'release evidence rejects assume-unchanged tracked inputs.' >&2
+    exit 1
+  fi
 }
 
 gate() {
@@ -95,6 +103,13 @@ def get(path, media_type=accept, expected_digest=None):
         if (
             parsed.scheme != "https"
             or not parsed.hostname
+            or parsed.hostname
+            not in {
+                "ghcr.io",
+                "github.com",
+                "objects.githubusercontent.com",
+                "pkg-containers.githubusercontent.com",
+            }
             or parsed.username
             or parsed.password
         ):
@@ -227,8 +242,12 @@ def statements(value):
         if not isinstance(entry, dict):
             continue
         verification = entry.get("verificationResult")
-        if isinstance(verification, dict) and isinstance(
+        if (
+            isinstance(verification, dict)
+            and verification.get("verified") is True
+            and isinstance(
             verification.get("statement"), dict
+            )
         ):
             found.append(verification["statement"])
     return found
@@ -557,7 +576,12 @@ for item in inventory:
     declared_digest = declared_hashes.get(item["source"])
     if declared_digest and hashlib.sha256(source.read_bytes()).hexdigest() != declared_digest:
         raise SystemExit(f"release asset source changed after manifest creation: {item['source']}")
-    shutil.copyfile(source, staging / item["name"])
+    payload = source.read_bytes()
+    if declared_digest and hashlib.sha256(payload).hexdigest() != declared_digest:
+        raise SystemExit(f"release asset source changed during packaging: {item['source']}")
+    destination = staging / item["name"]
+    with destination.open("xb") as handle:
+        handle.write(payload)
 
 checksum_entries = []
 for path in sorted(staging.iterdir(), key=lambda candidate: candidate.name):
@@ -600,6 +624,16 @@ create_or_validate_draft() {
   command -v gh >/dev/null || { printf '%s\n' 'gh is required to create or validate a draft release.' >&2; exit 1; }
 
   local release_json
+  local remote_tag_type remote_tag_object
+  remote_tag_type="$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.type')"
+  remote_tag_object="$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')"
+  if [[ "$remote_tag_type" == tag ]]; then
+    remote_tag_object="$(gh api "/repos/$GITHUB_REPOSITORY/git/tags/$remote_tag_object" --jq '.object.sha')"
+  fi
+  [[ "$remote_tag_object" == "$commit" ]] || {
+    printf '%s\n' 'remote release tag does not resolve to the requested commit.' >&2
+    exit 1
+  }
   if ! release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish 2>/dev/null)"; then
     gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --target "$commit" --title "$tag" --generate-notes --draft
     release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish)"
@@ -716,7 +750,13 @@ def download(name):
         location = error.headers.get("Location")
         redirect_url = urljoin(request.full_url, location or "")
         parsed = urlparse(redirect_url)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname
+            not in {"api.github.com", "github.com", "objects.githubusercontent.com"}
+            or parsed.username
+            or parsed.password
+        ):
             raise SystemExit(f"remote asset redirect is not a safe HTTPS URL: {name}") from error
         redirect_request = urllib.request.Request(redirect_url, headers={"Accept": "application/octet-stream"})
         with opener.open(redirect_request) as response:

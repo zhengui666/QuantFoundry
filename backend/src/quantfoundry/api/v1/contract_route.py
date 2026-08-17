@@ -107,6 +107,13 @@ class CanonicalRoute(APIRoute):
                         )
                     if value is None:
                         if parameter.get("required"):
+                            if location == "header" and name.lower() in {
+                                "idempotency-key",
+                                "if-match",
+                            }:
+                                # Domain handlers own the canonical 428 response;
+                                # contract validation must not turn it into 422.
+                                continue
                             if request.method.upper() in {
                                 "GET",
                                 "HEAD",
@@ -114,11 +121,6 @@ class CanonicalRoute(APIRoute):
                             } and (
                                 location == "header" and name.lower() == "x-csrf-token"
                             ):
-                                continue
-                            if location == "header" and name.lower() in {
-                                "idempotency-key",
-                                "if-match",
-                            }:
                                 continue
                             if (
                                 location == "header"

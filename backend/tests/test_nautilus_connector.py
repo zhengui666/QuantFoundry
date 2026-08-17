@@ -121,7 +121,8 @@ def test_nautilus_port_preserves_unknown_submit_outcome() -> None:
 
 
 def test_nautilus_port_fails_closed_on_missing_order_capability() -> None:
-    connector = NautilusTraderConnector(FakePort())
+    port = FakePort()
+    connector = NautilusTraderConnector(port)
     capabilities = ConnectorCapabilities.from_wire(
         {
             **_capabilities(),
@@ -130,3 +131,4 @@ def test_nautilus_port_fails_closed_on_missing_order_capability() -> None:
     )
     with pytest.raises(ConnectorProtocolError, match="required order operations"):
         connector.submit_order("acct-1", _order(), capabilities)
+    assert port.calls == []

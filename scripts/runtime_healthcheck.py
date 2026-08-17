@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import socket
 import sys
 from datetime import UTC, datetime, timedelta
 
@@ -32,14 +31,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("--queue is invalid for scheduler health checks")
     if args.max_age_seconds < 1:
         parser.error("--max-age-seconds must be positive")
-    explicit_instance_id = args.instance_id is not None
     if args.instance_id is None:
         if args.component == "worker":
-            args.instance_id = os.getenv("QF_WORKER_ID") or socket.gethostname()
+            configured = os.getenv("QF_WORKER_ID")
+            args.instance_id = f"{configured}:{args.queue}" if configured else None
         else:
-            args.instance_id = os.getenv("QF_SCHEDULER_ID") or "scheduler"
-    if args.component == "worker" and not explicit_instance_id:
-        args.instance_id = f"{args.instance_id}:{args.queue}"
+            args.instance_id = os.getenv("QF_SCHEDULER_ID")
     return args
 
 
@@ -57,8 +54,9 @@ def main() -> int:
         RuntimeHeartbeat.component == args.component,
         RuntimeHeartbeat.occurred_at >= threshold,
         RuntimeHeartbeat.occurred_at <= now,
-        RuntimeHeartbeat.instance_id == args.instance_id,
     )
+    if args.instance_id is not None:
+        statement = statement.where(RuntimeHeartbeat.instance_id == args.instance_id)
     if args.queue is not None:
         statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)
     session = SessionLocal()

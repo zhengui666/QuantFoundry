@@ -76,16 +76,20 @@ export function Capability({
   const { t } = useTranslation();
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [confirmationPending, setConfirmationPending] = useState(false);
+  const [pending, setPending] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string>();
   if (item.visibility === 'HIDE') return null;
   const executable = item.allowed && onClick !== undefined;
   const actionLabel = label ?? t(`action.${item.action}`, { defaultValue: item.action });
   const run = async () => {
+    setPending(true);
     setConfirmationError(undefined);
     try {
       await onClick?.();
     } catch (error) {
       setConfirmationError(error instanceof Error ? error.message : t('error.connection'));
+    } finally {
+      setPending(false);
     }
   };
   const runSafely = () => {
@@ -97,7 +101,7 @@ export function Capability({
       data-testid={`capability-action-${item.action}`}
       data-requires-confirmation={String(item.requires_confirmation)}
       onClick={item.requires_confirmation && !confirmationHandled ? undefined : runSafely}
-      disabled={!executable || busy}
+      disabled={!executable || busy || pending || confirmationPending}
       title={
         item.allowed
           ? onClick

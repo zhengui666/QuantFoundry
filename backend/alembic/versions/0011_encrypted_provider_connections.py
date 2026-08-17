@@ -123,6 +123,12 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column(
+            "settings_record_kind",
+            sa.String(32),
+            nullable=False,
+            server_default="settings",
+        ),
+        sa.Column(
             "ai_connection_id",
             sa.String(),
             nullable=False,
@@ -156,14 +162,11 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "settings_record_id"],
-            ["records.workspace_id", "records.id"],
+            ["workspace_id", "settings_record_id", "settings_record_kind"],
+            ["records.workspace_id", "records.id", "records.kind"],
             name="fk_setup_bindings_settings_record_records",
         ),
-        sa.CheckConstraint(
-            "settings_record_id = 'SETTINGS-DEFAULT'",
-            name="setup_bindings_settings_record_key",
-        ),
+        sa.CheckConstraint("settings_record_kind = 'settings'", name="setup_bindings_settings_record_kind"),
         sa.ForeignKeyConstraint(
             ["workspace_id", "ai_connection_id", "ai_connection_kind"],
             [

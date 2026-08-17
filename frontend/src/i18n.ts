@@ -1423,7 +1423,8 @@ const applyDocumentLocale = ({ language, timezone }: ServerLocaleSettings) => {
   document.documentElement.dataset.timezone = timezone;
 };
 
-applyDocumentLocale({ language: 'zh-CN', timezone: 'UTC' });
+const defaultServerLocale: ServerLocaleSettings = { language: 'zh-CN', timezone: 'UTC' };
+applyDocumentLocale(defaultServerLocale);
 i18n.on('languageChanged', (language) => {
   if (typeof document !== 'undefined') document.documentElement.lang = language;
 });
@@ -1454,8 +1455,14 @@ export const configurationLocale = (value: unknown): ServerLocaleSettings | unde
 
 export const getRestoredServerLocale = (): ServerLocaleSettings | undefined => activeLocale;
 
-export const resetServerSettingsLocale = (): void => {
-  activeLocale = undefined;
+export const resetServerSettingsLocale = async (): Promise<void> => {
+  const next = localeChange.then(async () => {
+    await i18n.changeLanguage(defaultServerLocale.language);
+    activeLocale = undefined;
+    applyDocumentLocale(defaultServerLocale);
+  });
+  localeChange = next.catch(() => undefined);
+  await next;
 };
 
 export default i18n;

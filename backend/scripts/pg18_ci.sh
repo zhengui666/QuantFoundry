@@ -4,6 +4,7 @@ set -eu
 database_name="qf_backend_ci_$$"
 database_created=0
 active_child_pid=""
+active_child_group_pid=""
 runtime_root="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-pg18-ci.XXXXXX")"
 mkdir -m 0750 \
   "$runtime_root/artifacts" \
@@ -18,6 +19,7 @@ start_managed_child() {
   QF_PROCESS_GROUP_READY="$launcher_ready" \
     .venv/bin/python scripts/process_group_launcher.py "$@" &
   active_child_pid=$!
+  active_child_group_pid=$active_child_pid
   while [ ! -e "$launcher_ready" ]; do
     if ! kill -0 "$active_child_pid" 2>/dev/null; then
       set +e
@@ -52,12 +54,17 @@ run_managed() {
 
 stop_active_child_group() {
   forwarded_signal=$1
-  if [ -z "$active_child_pid" ]; then
+  if [ -z "$active_child_pid" ] && [ -z "$active_child_group_pid" ]; then
     return 0
   fi
   child_pid=$active_child_pid
-  kill -s "$forwarded_signal" "$child_pid" 2>/dev/null || true
-  kill -s "$forwarded_signal" -- "-$child_pid" 2>/dev/null || true
+  group_pid=$active_child_group_pid
+  if [ -n "$child_pid" ]; then
+    kill -s "$forwarded_signal" "$child_pid" 2>/dev/null || true
+  fi
+  if [ -n "$group_pid" ]; then
+    kill -s "$forwarded_signal" -- "-$group_pid" 2>/dev/null || true
+  fi
   stop_timeout=${QF_PG18_CI_CHILD_STOP_TIMEOUT_SECONDS:-10}
   .venv/bin/python -c \
     'import os, signal, sys, time
@@ -66,17 +73,22 @@ try:
     os.killpg(int(sys.argv[2]), signal.SIGKILL)
 except ProcessLookupError:
     pass' \
-    "$stop_timeout" "$child_pid" &
+    "$stop_timeout" "${group_pid:-$child_pid}" &
   watchdog_pid=$!
   set +e
-  wait "$child_pid" 2>/dev/null
+  if [ -n "$child_pid" ]; then
+    wait "$child_pid" 2>/dev/null
+  fi
   kill "$watchdog_pid" 2>/dev/null
   wait "$watchdog_pid" 2>/dev/null
   set -e
   # The group leader may exit before a resistant grandchild.  Reap the leader,
   # then fail closed by killing any remaining member of its process group.
-  kill -s KILL -- "-$child_pid" 2>/dev/null || true
+  if [ -n "$group_pid" ]; then
+    kill -s KILL -- "-$group_pid" 2>/dev/null || true
+  fi
   active_child_pid=""
+  active_child_group_pid=""
 }
 
 cleanup_resources() {

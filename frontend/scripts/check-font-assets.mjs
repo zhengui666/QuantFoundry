@@ -14,29 +14,37 @@ const expected = [
 
 const declarations = (face) =>
   Object.fromEntries(
-    [...face.matchAll(/([\w-]+)\s*:\s*([^;{}]+)\s*;?/g)].map(([, key, value]) => [key, value.trim()]),
+    [...face.matchAll(/([\w-]+)\s*:\s*([^;{}]+)\s*;?/g)].map(([, key, value]) => [
+      key,
+      value.trim(),
+    ]),
   );
 const unquote = (value) => value.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2');
 const faces = [...css.matchAll(/@font-face\s*{([^{}]*)}/g)].map(([, face]) => declarations(face));
 for (const [weight, asset] of expected) {
-  const face = faces.find(
-    (value) => {
-      const src = value.src?.match(/url\(\s*(['"]?)(.*?)\1\s*\)/i)?.[2];
-      if (!src) return false;
-      const resolved = new URL(src, pathToFileURL(typographyPath)).pathname;
-      return (
-        unquote(value['font-family'] ?? '') === 'Noto Sans CJK SC' &&
-        value['font-weight'] === weight &&
-        resolved === join(frontendRoot, 'src/assets/fonts', asset)
-      );
-    },
-  );
+  const face = faces.find((value) => {
+    const src = value.src?.match(/url\(\s*(['"]?)(.*?)\1\s*\)/i)?.[2];
+    if (!src) return false;
+    const resolved = fileURLToPath(new URL(src, pathToFileURL(typographyPath)));
+    return (
+      unquote(value['font-family'] ?? '') === 'Noto Sans CJK SC' &&
+      value['font-weight'] === weight &&
+      resolved === join(frontendRoot, 'src/assets/fonts', asset)
+    );
+  });
   if (!face) throw new Error(`Missing Noto Sans CJK SC ${weight} face for ${asset}`);
   const fontPath = join(frontendRoot, 'src/assets/fonts', asset);
   const metadata = await stat(fontPath);
-  if (!metadata.isFile() || metadata.size < 4) throw new Error(`Invalid font asset: ${asset}`);
-  if ((await readFile(fontPath)).subarray(0, 4).toString('ascii') !== 'wOF2')
-    throw new Error(`Font asset is not WOFF2: ${asset}`);
+  const font = await readFile(fontPath);
+  if (!metadata.isFile() || font.length < 48) throw new Error(`Invalid font asset: ${asset}`);
+  if (
+    font.subarray(0, 4).toString('ascii') !== 'wOF2' ||
+    font.readUInt32BE(8) !== font.length ||
+    font.readUInt16BE(12) === 0 ||
+    font.readUInt16BE(14) !== 0 ||
+    font.readUInt32BE(16) === 0
+  )
+    throw new Error(`Font asset is not a structurally valid WOFF2 file: ${asset}`);
 }
 
 process.stdout.write('Font asset gate passed: Noto Sans CJK SC 400/500/600/700 faces and files.\n');

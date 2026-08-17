@@ -56,16 +56,22 @@ export async function startCanonicalSseProbe(
   };
   const publish = (frame: DecodedSseFrame) => {
     frames.push(frame);
-    for (const waiter of waiters) {
-      if (!waiter.predicate(frame)) continue;
+    for (const waiter of [...waiters]) {
+      try {
+        if (!waiter.predicate(frame)) continue;
+      } catch (error) {
+        waiters.delete(waiter);
+        waiter.reject(error);
+        continue;
+      }
       waiters.delete(waiter);
       waiter.resolve(frame);
     }
   };
   const reading = (async () => {
-    const reader = responseBody.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = '';
     try {
+      const reader = responseBody.pipeThrough(new TextDecoderStream()).getReader();
       while (!controller.signal.aborted) {
         const part = await reader.read();
         if (part.done) break;
@@ -92,7 +98,12 @@ export async function startCanonicalSseProbe(
   return {
     snapshot: () => ({ frames: [...frames], failure }),
     waitForFrame(predicate: (frame: DecodedSseFrame) => boolean) {
-      const current = frames.find(predicate);
+      let current: DecodedSseFrame | undefined;
+      try {
+        current = frames.find(predicate);
+      } catch (error) {
+        return Promise.reject(error);
+      }
       if (current) return Promise.resolve(current);
       if (terminalError) return Promise.reject(terminalError);
       return new Promise<DecodedSseFrame>((resolve, reject) => {

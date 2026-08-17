@@ -232,6 +232,8 @@ def _run_once(
                 apply_job_cancellation(session, job)
                 result_ref = None
             else:
+                heartbeat_job(session, lease)
+                session.commit()
                 heartbeat_thread = threading.Thread(
                     target=_lease_heartbeat_loop,
                     args=(lease, heartbeat_stop, heartbeat_failures),

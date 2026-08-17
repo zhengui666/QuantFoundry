@@ -139,7 +139,9 @@ export function Shell() {
             if (i18n.language !== locale.language) return i18n.changeLanguage(locale.language);
           });
       })
-      .finally(() => setLocaleReady(true))
+      .finally(() => {
+        if (auth.scope() === scope) setLocaleReady(true);
+      })
       .catch(() => undefined);
     return () => controller.abort();
   }, [authScopeKey]);
@@ -439,7 +441,7 @@ export function SetupPage() {
         Array.isArray(defaults)
       )
         throw new ContractError('Active setup configuration is incomplete.');
-      type ConfigurationValue = Exclude<Schema<'ConfigurationValueWrite'>['value'], undefined>;
+      type ConfigurationValue = Schema<'ConfigurationValueView'>['value'];
       const configurationValue = (value: object): ConfigurationValue => value as ConfigurationValue;
       const initialPaperCapital = Number(form.initial_paper_capital);
       if (!Number.isFinite(initialPaperCapital) || initialPaperCapital <= 0)

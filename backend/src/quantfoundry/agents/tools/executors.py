@@ -553,6 +553,7 @@ def execute_tool(
             or strategy.workspace_id != run.workspace_id
             or strategy.research_id != run.research_id
             or snapshot.workspace_id != run.workspace_id
+            or not snapshot.immutable
             or version.state != "CANDIDATE"
         ):
             raise ToolExecutionError("strategy or snapshot is unavailable")
@@ -613,6 +614,10 @@ def execute_tool(
             or row.workspace_id != run.workspace_id
             or research is None
             or row.research_id != research.id
+            or row.experiment_type not in {"FAST_BACKTEST", "PARAMETER_SENSITIVITY"}
+            or row.status != "COMPLETED"
+            or row.validity_state != "VALID"
+            or not row.immutable
             for row in experiments
         ):
             raise ToolExecutionError("experiment is unavailable")

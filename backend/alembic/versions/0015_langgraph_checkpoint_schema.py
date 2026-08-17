@@ -21,7 +21,7 @@ depends_on = None
 SCHEMA = "agent_checkpoint"
 
 _TABLES = {
-    "checkpoint_migrations": ({"v"}, {"v"}),
+    "checkpoint_migrations": ({"v"}, ("v",)),
     "checkpoints": (
         {
             "thread_id",
@@ -32,11 +32,11 @@ _TABLES = {
             "checkpoint",
             "metadata",
         },
-        {"thread_id", "checkpoint_ns", "checkpoint_id"},
+        ("thread_id", "checkpoint_ns", "checkpoint_id"),
     ),
     "checkpoint_blobs": (
         {"thread_id", "checkpoint_ns", "channel", "version", "type", "blob"},
-        {"thread_id", "checkpoint_ns", "channel", "version"},
+        ("thread_id", "checkpoint_ns", "channel", "version"),
     ),
     "checkpoint_writes": (
         {
@@ -50,7 +50,7 @@ _TABLES = {
             "blob",
             "task_path",
         },
-        {"thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"},
+        ("thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"),
     ),
 }
 

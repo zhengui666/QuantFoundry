@@ -5,7 +5,7 @@ import { decodeCanonicalSseFrame, splitCanonicalSseFrames } from './fullstack-ss
 const event = {
   schema_version: 1,
   event_id: PublicIdExamples.domain_event.ulid,
-  sequence: 12,
+  sequence: '12',
   event_type: 'research.updated',
   occurred_at: '2026-08-11T00:00:00Z',
   object_type: 'research',
@@ -22,7 +22,7 @@ const event = {
 describe('real full-stack SSE frame decoder', () => {
   it('uses the generated closed envelope and binds frame cursor to event sequence', () => {
     expect(decodeCanonicalSseFrame(`id: 12\ndata: ${JSON.stringify(event)}`)).toEqual({
-      cursor: 12,
+      cursor: '12',
       event,
     });
     expect(() => decodeCanonicalSseFrame(`id: 13\ndata: ${JSON.stringify(event)}`)).toThrow(
@@ -33,7 +33,7 @@ describe('real full-stack SSE frame decoder', () => {
   it('handles split network chunks while ignoring heartbeat-only frames', () => {
     const value = `: heartbeat\n\nid: 12\ndata: ${JSON.stringify(event)}\n\nid: 13`;
     const result = splitCanonicalSseFrames(value);
-    expect(result.decoded).toEqual([{ cursor: 12, event }]);
+    expect(result.decoded).toEqual([{ cursor: '12', event }]);
     expect(result.remainder).toBe('id: 13');
   });
 

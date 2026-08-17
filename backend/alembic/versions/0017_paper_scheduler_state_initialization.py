@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import MetaData, Table, Text, Uuid, create_engine, select, text
+from sqlalchemy import MetaData, Table, Text, Uuid, create_engine, func, select, text
 from sqlalchemy.engine import Connection
 
 from alembic import op
@@ -1031,9 +1031,76 @@ def downgrade() -> None:
         )
         if len(state_rows) != 1 or len(event_rows) != 1:
             raise RuntimeError("0017 downgrade found incomplete scheduler evidence")
+        state = state_rows[0]
+        expected_status = str(evidence["from_state"] or evidence["to_state"])
+        if expected_status == "STOPPED":
+            expected_status = "DISABLED"
+        if (
+            state["workspace_id"] != deployment_rows[0]["workspace_id"]
+            or state["paper_id"] != deployment_rows[0]["id"]
+            or state["scheduler_status"] != evidence["to_state"]
+            or int(state["revision"]) != int(evidence["revision"])
+            or int(deployment_rows[0]["revision"]) != int(evidence["revision"])
+            or deployment_rows[0]["status"] != expected_status
+            or state.get("last_eligible_trading_date") is not None
+            or _utc_timestamp(bind, state["resume_watermark_utc"], "state resume_watermark_utc")
+            != _utc_timestamp(bind, evidence["resume_watermark_utc"], "resume_watermark_utc")
+            or (
+                state["suppressed_since_utc"] is None
+                and evidence["suppressed_since_utc"] is not None
+            )
+            or (
+                state["suppressed_since_utc"] is not None
+                and evidence["suppressed_since_utc"] is None
+            )
+            or (
+                state["suppressed_since_utc"] is not None
+                and _utc_timestamp(
+                    bind, state["suppressed_since_utc"], "state suppressed_since_utc"
+                )
+                != _utc_timestamp(
+                    bind, evidence["suppressed_since_utc"], "suppressed_since_utc"
+                )
+            )
+            or _utc_timestamp(bind, state["created_at"], "state created_at")
+            != _utc_timestamp(bind, evidence["initialization_utc"], "initialization_utc")
+            or _utc_timestamp(bind, state["updated_at"], "state updated_at")
+            != _utc_timestamp(bind, evidence["initialization_utc"], "initialization_utc")
+        ):
+            raise RuntimeError("0017 downgrade found modified scheduler state")
+        if evidence["from_state"] == "STOPPED" and (
+            deployment_rows[0]["status"] != "DISABLED"
+            or int(deployment_rows[0]["revision"]) != int(evidence["revision"])
+        ):
+            raise RuntimeError("0017 downgrade found modified STOPPED deployment")
         owned.append((audit, evidence, deployment_rows[0]))
 
     workspaces = {str(evidence["workspace_id"]) for _, evidence, _ in owned}
+    for workspace_id in workspaces:
+        audit_rows = bind.execute(
+            select(audit_events.c.sequence)
+            .where(audit_events.c.workspace_id == workspace_id)
+            .order_by(audit_events.c.sequence.desc())
+        ).scalars().all()
+        owned_audit_sequences = {
+            int(audit["sequence"])
+            for audit, evidence, _ in owned
+            if str(evidence["workspace_id"]) == workspace_id
+        }
+        if not audit_rows or set(audit_rows[: len(owned_audit_sequences)]) != owned_audit_sequences:
+            raise RuntimeError("0017 downgrade requires migration audit events to be the tail")
+        event_rows = bind.execute(
+            select(domain_events.c.sequence)
+            .where(domain_events.c.workspace_id == workspace_id)
+            .order_by(domain_events.c.sequence.desc())
+        ).scalars().all()
+        owned_event_sequences = {
+            int(evidence["domain_event_sequence"])
+            for _, evidence, _ in owned
+            if str(evidence["workspace_id"]) == workspace_id
+        }
+        if not event_rows or set(event_rows[: len(owned_event_sequences)]) != owned_event_sequences:
+            raise RuntimeError("0017 downgrade requires migration domain events to be the tail")
     _drop_downgrade_guards(bind)
     try:
         for audit, evidence, deployment in owned:
@@ -1056,13 +1123,6 @@ def downgrade() -> None:
                 )
             )
             if evidence["from_state"] == "STOPPED":
-                if (
-                    deployment["status"] != "DISABLED"
-                    or int(deployment["revision"]) < 2
-                ):
-                    raise RuntimeError(
-                        "0017 downgrade found an unexpected STOPPED deployment"
-                    )
                 bind.execute(
                     deployments.update()
                     .where(deployments.c.id == deployment["id"])
@@ -1110,7 +1170,13 @@ def downgrade() -> None:
             bind.execute(
                 watermarks.update()
                 .where(watermarks.c.workspace_id == workspace_id)
-                .values(last_sequence=int(last_event or 0))
+                .values(
+                    last_sequence=int(last_event or 0),
+                    expired_through_sequence=func.min(
+                        watermarks.c.expired_through_sequence,
+                        int(last_event or 0),
+                    ),
+                )
             )
     finally:
         _restore_downgrade_guards(bind)

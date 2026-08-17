@@ -921,6 +921,7 @@ class PaperScheduler:
                 )
                 .where(
                     snapshots.c.workspace_id == deployment["workspace_id"],
+                    snapshots.c.coverage_start <= run["trading_date"],
                     snapshots.c.coverage_end >= run["trading_date"],
                     snapshots.c.as_of_time <= now,
                 )

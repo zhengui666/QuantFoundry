@@ -85,12 +85,12 @@ jobs:
       postgres:
         image: mirror.gcr.io/library/postgres:18.0-alpine3.22@sha256:48c8ad3a7284b82be4482a52076d47d879fd6fb084a1cbfccbd551f9331b0e40
         env:
-          POSTGRES_DB: "qf_ci_${{ github.run_id }}"
+          POSTGRES_DB: "qf_ci_${{ github.run_id }}_${{ github.run_attempt }}"
           POSTGRES_USER: quantfoundry
           POSTGRES_PASSWORD: ci-only-not-a-secret
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U quantfoundry -d qf_ci_${{ github.run_id }}"
+          --health-cmd "pg_isready -U quantfoundry -d qf_ci_${{ github.run_id }}_${{ github.run_attempt }}"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       QF_ENV: test
@@ -98,8 +98,8 @@ jobs:
       QF_GIT_COMMIT: ${{ needs.preflight.outputs.commit }}
       QF_BUILD_ID: rc-${{ github.run_id }}-${{ github.run_attempt }}
       QF_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
-      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}
-      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}
+      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}_${{ github.run_attempt }}
       QF_CI_DISPOSABLE_DATABASE: '1'
       QF_SKIP_AUTO_CREATE: '1'
       GITHUB_TOKEN: ${{ github.token }}

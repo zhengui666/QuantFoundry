@@ -60,7 +60,7 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     'const activeClientIds = new Set()\n',
-    `const activeClientIds = new Set()\nconst MESSAGE_TIMEOUT = 10_000\nconst SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])\nlet lifecycleGeneration = 0\n\nasync function reconcileActiveClients() {\n  const generation = ++lifecycleGeneration\n  const allClients = await self.clients.matchAll({\n    type: 'window',\n  })\n  const liveClientIds = new Set(allClients.map((client) => client.id))\n\n  for (const clientId of activeClientIds) {\n    if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)\n  }\n\n  if (activeClientIds.size === 0 && allClients.length === 0) {\n    await Promise.resolve()\n    if (generation === lifecycleGeneration) await self.registration.unregister()\n  }\n\n  return allClients\n}\n`,
+    `const activeClientIds = new Set()\nconst MESSAGE_TIMEOUT = 10_000\nconst SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])\nlet lifecycleGeneration = 0\n\nasync function reconcileActiveClients() {\n  const generation = ++lifecycleGeneration\n  const allClients = await self.clients.matchAll({\n    type: 'window',\n  })\n  const liveClientIds = new Set(allClients.map((client) => client.id))\n\n  for (const clientId of activeClientIds) {\n    if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)\n  }\n\n  if (activeClientIds.size === 0 && allClients.length === 0) {\n    await new Promise((resolve) => setTimeout(resolve, 0))\n    const remainingClients = await self.clients.matchAll({\n      type: 'window',\n      includeUncontrolled: true,\n    })\n    if (generation === lifecycleGeneration && activeClientIds.size === 0 && remainingClients.length === 0) {\n      await self.registration.unregister()\n    }\n  }\n\n  return allClients\n}\n`,
     'active client reconciliation helper',
   );
   patched = replaceOnce(
@@ -72,7 +72,7 @@ export const patchWorker = (source) => {
   })
   const liveClientIds = new Set(allClients.map((client) => client.id))
 `,
-    `async function reconcileActiveClients(sender) {
+    `async function reconcileActiveClients(sender, excludedClientId) {
   const generation = ++lifecycleGeneration
   const allClients = await self.clients.matchAll({
     type: 'window',
@@ -81,15 +81,28 @@ export const patchWorker = (source) => {
   if (sender?.id && !allClients.some((client) => client.id === sender.id)) {
     allClients.push(sender)
   }
-  const liveClientIds = new Set(allClients.map((client) => client.id))
+  const liveClientIds = new Set(allClients.map((client) => client.id).filter((id) => id !== excludedClientId))
+  const remainingClients = allClients.filter((client) => client.id !== excludedClientId)
 `,
     'uncontrolled active client reconciliation',
   );
   patched = replaceOnce(
     patched,
-    '  const liveClientIds = new Set(allClients.map((client) => client.id))\n\n  for (const clientId of activeClientIds) {',
-    '  const liveClientIds = new Set(allClients.map((client) => client.id))\n  if (generation !== lifecycleGeneration) return allClients\n\n  for (const clientId of activeClientIds) {',
+    '  const liveClientIds = new Set(allClients.map((client) => client.id).filter((id) => id !== excludedClientId))\n  const remainingClients = allClients.filter((client) => client.id !== excludedClientId)\n\n  for (const clientId of activeClientIds) {',
+    '  const liveClientIds = new Set(allClients.map((client) => client.id).filter((id) => id !== excludedClientId))\n  if (generation !== lifecycleGeneration) return allClients\n  const remainingClients = allClients.filter((client) => client.id !== excludedClientId)\n\n  for (const clientId of activeClientIds) {',
     'stale reconciliation guard',
+  );
+  patched = replaceOnce(
+    patched,
+    '  if (activeClientIds.size === 0 && allClients.length === 0) {',
+    '  if (activeClientIds.size === 0 && remainingClients.length === 0) {',
+    'closing client liveness exclusion',
+  );
+  patched = replaceOnce(
+    patched,
+    "  const clientId = Reflect.get(event.source || {}, 'id')\n\n  if (!clientId || !self.clients) {\n    return\n  }\n\n  const client = await self.clients.get(clientId)",
+    "  const clientId = Reflect.get(event.source || {}, 'id')\n\n  if (event.data === 'CLIENT_CLOSED' && clientId && self.clients) {\n    activeClientIds.delete(clientId)\n    await reconcileActiveClients(undefined, clientId)\n    return\n  }\n\n  if (!clientId || !self.clients) {\n    return\n  }\n\n  const client = await self.clients.get(clientId)",
+    'closed client before lookup',
   );
 
   patched = replaceOnce(
@@ -110,7 +123,7 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     responseCallStart,
-    responseCallStart.replace('sendToClient', 'await sendToClient'),
+    responseCallStart.replace('sendToClient', 'void sendToClient'),
     'response notification start',
   );
   patched = replaceOnce(
@@ -186,10 +199,7 @@ export const patchWorker = (source) => {
   const activeClients = allClients.filter((candidate) =>
     activeClientIds.has(candidate.id),
   )
-  return (
-    activeClients.find((candidate) => candidate.visibilityState === 'visible') ||
-    activeClients[0]
-  )`,
+  return activeClients.find((candidate) => candidate.id === event.clientId)`,
     'arbitrary active client fallback',
   );
 

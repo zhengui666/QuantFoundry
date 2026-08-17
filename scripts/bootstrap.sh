@@ -3,6 +3,25 @@ set -euo pipefail
 
 environment_file="${QF_ENV_FILE:-.env}"
 
+if [[ -L "$environment_file" ]]; then
+  printf '%s\n' 'Environment file must not be a symlink.' >&2
+  exit 1
+fi
+
+if [[ -f "$environment_file" ]]; then
+  python3 - "$environment_file" <<'PY'
+import os
+import pathlib
+import stat
+import sys
+
+path = pathlib.Path(sys.argv[1])
+metadata = path.lstat()
+if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+    raise SystemExit("environment file must be a regular, owner-owned file with mode 0600")
+PY
+fi
+
 environment_value() {
   local key="$1"
   local count
@@ -13,7 +32,12 @@ environment_value() {
     exit 1
   fi
   line="$(grep -E "^[[:space:]]*${key}=" "$environment_file")"
-  printf '%s' "${line#*=}"
+  value="${line#*=}"
+  if [[ "$line" == *$'\r'* || "$line" == *'export '* || "$value" =~ ^[[:space:]] || "$value" =~ [[:space:]]$ || "$value" == *'"'* || "$value" == *"'"* || "$value" == *'#'* ]]; then
+    printf 'Unsupported dotenv syntax for %s; use one unquoted KEY=value line.\n' "$key" >&2
+    exit 1
+  fi
+  printf '%s' "$value"
 }
 
 environment_value_optional() {
@@ -33,7 +57,23 @@ environment_value_optional() {
 }
 
 if [[ ! -f "$environment_file" ]]; then
-  cp .env.example "$environment_file"
+  python3 - "$environment_file" <<'PY'
+import os
+import pathlib
+import sys
+
+destination = pathlib.Path(sys.argv[1])
+payload = pathlib.Path('.env.example').read_bytes()
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+descriptor = os.open(destination, flags, 0o600)
+try:
+    with os.fdopen(descriptor, 'wb') as handle:
+        descriptor = -1
+        handle.write(payload)
+finally:
+    if descriptor != -1:
+        os.close(descriptor)
+PY
   printf 'Created %s from .env.example.\n' "$environment_file" >&2
   printf '%s\n' 'Set the database password and generated credential-encryption key, then run make bootstrap again.' >&2
   exit 1
@@ -57,10 +97,10 @@ if [[ -z "$git_commit" || -z "$build_id" ]]; then
   exit 1
 fi
 if [[ "$qf_env" == "production" ]] && {
-  [[ "$git_commit" == "unknown" || "$git_commit" == "local-worktree" ]] ||
-    [[ "$build_id" == "unknown" || "$build_id" == "local-dev" ]]
+  [[ ! "$git_commit" =~ ^[0-9a-f]{40}$ ]] ||
+    [[ ! "$build_id" =~ ^(main|nightly|agent|independent-test|pr|rc)-[1-9][0-9]*-[1-9][0-9]*$ ]]
 }; then
-  printf '%s\n' 'Production requires immutable non-placeholder build identity.' >&2
+  printf '%s\n' 'Production requires a full commit SHA and run-bound build identity.' >&2
   exit 1
 fi
 

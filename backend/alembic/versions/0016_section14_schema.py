@@ -1387,20 +1387,29 @@ def _drop_application_tables() -> None:
               END IF;
               IF NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (
                 SELECT 1 FROM approval_requests a
+                JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id
                 WHERE a.validation_id = OLD.id AND a.status = 'PENDING'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'holdout approval evidence is missing';
               END IF;
               IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (
                 SELECT 1 FROM approval_requests a
+                JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id
                 WHERE a.validation_id = OLD.id AND a.status = 'APPROVED'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'approved holdout evidence is missing';
               END IF;
               IF NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (
                 SELECT 1 FROM holdout_exposures e
+                JOIN approval_requests a ON a.id = e.approval_id
+                JOIN strategy_versions sv ON sv.id = e.strategy_version_id
                 WHERE e.validation_id = OLD.id
                   AND e.strategy_version_public_id = NEW.strategy_version_id
+                  AND a.validation_id = OLD.id
+                  AND a.status = 'APPROVED'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'holdout exposure evidence is missing';
               END IF;
@@ -1455,7 +1464,7 @@ def _drop_sqlite_guard_triggers() -> None:
         text(
             "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'"
         )
-    ).scalars()
+    ).scalars().all()
     preparer = bind.dialect.identifier_preparer
     for name in triggers:
         op.execute(text(f"DROP TRIGGER IF EXISTS {preparer.quote(name)}"))
@@ -1476,6 +1485,7 @@ def _install_guards() -> None:
                 RETURN OLD;
               END IF;
               IF (OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
                    NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
@@ -1541,6 +1551,75 @@ def _install_guards() -> None:
             "qf_validate_strategy_transition()"
         )
         op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_completed_experiment_change() RETURNS trigger AS $$
+            BEGIN
+              IF OLD.immutable THEN
+                RAISE EXCEPTION 'completed experiment cannot be changed';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NOT NEW.immutable
+                 AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
+                   NEW.research_id IS DISTINCT FROM OLD.research_id OR
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   NEW.revision IS DISTINCT FROM OLD.revision
+                 ) THEN
+                RAISE EXCEPTION 'experiment evidence cannot change while completing';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
+                 AND NOT (
+                   NEW.id IS NOT DISTINCT FROM OLD.id AND
+                   NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
+                   NEW.revision = OLD.revision + 1 AND
+                   (NEW.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') IS NOT DISTINCT FROM
+                   (OLD.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') AND
+                   COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED' AND
+                   EXISTS (
+                     SELECT 1 FROM jobs j
+                     WHERE j.job_id = NEW.detail::jsonb ->> 'job_id'
+                       AND j.job_type = 'EXPERIMENT'
+                       AND j.status IN ('RUNNING', 'COMPLETED')
+                       AND j.input_payload::jsonb ->> 'experiment_id' = NEW.experiment_id
+                   )
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion is not bound to a running job';
+              END IF;
+              IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_bound_experiment_job_change() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'UPDATE' AND (
+                   NEW.job_type IS DISTINCT FROM OLD.job_type OR
+                   NEW.input_payload IS DISTINCT FROM OLD.input_payload
+                 ) AND EXISTS (
+                   SELECT 1 FROM experiments e
+                   WHERE e.immutable AND e.detail::jsonb ->> 'job_id' = OLD.job_id
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion job binding cannot be changed';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_jobs_bound_experiment_immutable BEFORE UPDATE OF "
+            "job_type, input_payload ON jobs FOR EACH ROW EXECUTE FUNCTION "
+            "qf_reject_bound_experiment_job_change()"
+        )
+        op.execute(
             "CREATE TRIGGER qf_experiments_immutable BEFORE UPDATE OR DELETE ON "
             "experiments FOR EACH ROW EXECUTE FUNCTION "
             "qf_reject_completed_experiment_change()"
@@ -1549,6 +1628,11 @@ def _install_guards() -> None:
             "CREATE TRIGGER qf_approval_requests_immutable BEFORE UPDATE OR DELETE "
             "ON approval_requests FOR EACH ROW EXECUTE FUNCTION "
             "qf_reject_terminal_approval_change()"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+            "ON approval_requests FOR EACH ROW EXECUTE FUNCTION "
+            "qf_reject_pending_approval_evidence_change()"
         )
         op.execute(
             "CREATE TRIGGER qf_records_immutable BEFORE UPDATE OR DELETE ON records "
@@ -1594,9 +1678,11 @@ def _install_guards() -> None:
         "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN "
         "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND ("
+        "NEW.id IS NOT OLD.id OR "
         "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
         "(OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR "
+        "(OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND NEW.frozen_at IS NULL) OR "
         "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
         "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND json_remove(NEW.detail, "
         "'$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
@@ -1607,6 +1693,7 @@ def _install_guards() -> None:
         "'$.provenance', '$.frozen_at', '$.frozen_by', '$.revision', "
         "'$.action_capabilities')))) OR "
         "(OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
+        "NEW.id IS NOT OLD.id OR "
         "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
         "NEW.detail IS NOT OLD.detail)) OR NOT ("
@@ -1637,22 +1724,48 @@ def _install_guards() -> None:
                 f"'{message}'); END"
             )
     op.execute(
+        "DROP TRIGGER IF EXISTS qf_approval_requests_pending_evidence_immutable"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+        "ON approval_requests WHEN NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR NEW.subject_type IS NOT OLD.subject_type OR "
+        "NEW.subject_id IS NOT OLD.subject_id OR NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256 BEGIN SELECT "
+        "RAISE(ABORT, 'approval evidence cannot be changed'); END"
+    )
+    op.execute(
         "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE ON "
         "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
-        "NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
+        "NEW.id IS NOT OLD.id OR NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
         "NEW.revision IS NOT OLD.revision) BEGIN SELECT RAISE(ABORT, "
         "'experiment evidence cannot change while completing'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
         "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
-        "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "NEW.id IS OLD.id AND NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "json_remove(NEW.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') IS "
+        "json_remove(OLD.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') AND "
         "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
         "EXISTS (SELECT 1 FROM jobs j WHERE "
         "j.job_id = json_extract(NEW.detail, '$.job_id') AND "
         "j.job_type = 'EXPERIMENT' AND j.status IN ('RUNNING', 'COMPLETED') AND "
         "json_extract(j.input_payload, '$.experiment_id') = NEW.experiment_id)) "
         "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_jobs_bound_experiment_immutable BEFORE UPDATE OF job_type, input_payload "
+        "ON jobs WHEN (NEW.job_type IS NOT OLD.job_type OR NEW.input_payload IS NOT OLD.input_payload) "
+        "AND EXISTS (SELECT 1 FROM experiments e WHERE e.immutable = 1 AND "
+        "json_extract(e.detail, '$.job_id') IS OLD.job_id) BEGIN SELECT RAISE(ABORT, "
+        "'experiment completion job binding cannot be changed'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE ON "
@@ -1691,12 +1804,19 @@ def _install_guards() -> None:
         "(OLD.holdout_state != 'LOCKED' AND NEW.strategy_version_id IS NOT OLD.strategy_version_id) OR "
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'PENDING')) OR "
+        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id "
+        "WHERE a.validation_id = OLD.id AND a.status = 'PENDING' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'APPROVED')) OR "
+        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id "
+        "WHERE a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (SELECT 1 FROM "
-        "holdout_exposures e WHERE e.validation_id = OLD.id AND "
-        "e.strategy_version_public_id = NEW.strategy_version_id)) BEGIN SELECT RAISE(ABORT, "
+        "holdout_exposures e JOIN approval_requests a ON a.id = e.approval_id "
+        "JOIN strategy_versions sv ON sv.id = e.strategy_version_id WHERE "
+        "e.validation_id = OLD.id AND e.strategy_version_public_id = NEW.strategy_version_id AND "
+        "a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) BEGIN SELECT RAISE(ABORT, "
         "'holdout state lacks durable evidence'); END"
     )
 

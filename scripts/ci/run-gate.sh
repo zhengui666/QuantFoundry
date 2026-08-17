@@ -7,6 +7,7 @@ orchestrator_root="${QF_CI_TRUSTED_ROOT:-$script_repo_root}"
 gate="${1:-}"
 report_dir="${QF_CI_REPORT_DIR:-}"
 orchestrator_commit="$(git -C "$orchestrator_root" rev-parse HEAD 2>/dev/null || true)"
+trusted_commit="${QF_CI_TRUSTED_COMMIT:-}"
 
 usage() {
   printf '%s\n' 'usage: scripts/ci/run-gate.sh <pr-fast|main-full|nightly|agent-change|rc> [REPORT_DIR]' >&2
@@ -99,6 +100,7 @@ PY
   set -e
   if [[ "$report_status" != 0 ]]; then
     printf '%s\n' 'CI gate result reporting failed.' >&2
+    [[ "$status" != 0 ]] || exit "$report_status"
   fi
   exit "$status"
 }
@@ -138,7 +140,8 @@ import os, sys
 secrets = [value for name, value in os.environ.items() if name in {
     "GITHUB_TOKEN", "GH_TOKEN", "QF_CODEX_API_KEY", "QF_OPENAI_API_KEY",
     "QF_CREDENTIAL_ENCRYPTION_KEY", "QF_CREDENTIAL_FINGERPRINT_KEY",
-    "QF_POSTGRES_PASSWORD", "PGPASSWORD", "QF_LOCAL_PROVIDER_API_KEY",
+    "QF_POSTGRES_PASSWORD", "PGPASSWORD", "QF_DATABASE_URL", "QF_ALEMBIC_URL",
+    "QF_CONTROL_DB_URL", "QF_LOCAL_PROVIDER_API_KEY",
     "QF_LOCAL_DATA_CREDENTIAL",
 } and value]
 for line in sys.stdin:
@@ -147,18 +150,27 @@ for line in sys.stdin:
     sys.stdout.write(line)
 '
   }
-  local status=0
+  local status=0 redactor_status=0
   set +e
   (cd "$repo_root" && "$@") 2>&1 \
     | redact_ci_secrets >"$report_dir/logs/$name.log"
-  status=${PIPESTATUS[0]}
+  local -a pipeline_status=("${PIPESTATUS[@]}")
+  status=${pipeline_status[0]:-1}
+  redactor_status=${pipeline_status[1]:-1}
+  if [[ "$status" == 0 && "$redactor_status" != 0 ]]; then
+    status="$redactor_status"
+  fi
   set -e
   write_result "$name" "$command_text" "$status"
   [[ "$status" == 0 ]] || exit "$status"
 }
 
 require_trusted_orchestrator() {
-  [[ -n "$orchestrator_commit" ]] || {
+  [[ "$trusted_commit" =~ ^[0-9a-f]{40}$ && "$trusted_commit" != "0000000000000000000000000000000000000000" ]] || {
+    write_result trusted-orchestrator 'trusted orchestrator commit must be an explicit full SHA' 2 'missing trusted orchestrator commit anchor'
+    exit 2
+  }
+  [[ -n "$orchestrator_commit" && "$orchestrator_commit" == "$trusted_commit" ]] || {
     write_result trusted-orchestrator 'trusted orchestrator checkout is required' 2 'missing trusted orchestrator checkout'
     exit 2
   }
@@ -273,15 +285,8 @@ run_agent_change() {
   if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
     run_step independent-review-locator "$orchestrator_root/scripts/ci/fetch-independent-review-report.sh" "$commit" "$review_locator"
   fi
-  if [[ "${QF_INDEPENDENT_REVIEW_ALREADY_VERIFIED:-0}" == 1 ]]; then
-    [[ -s "$review_locator" ]] || {
-      write_result independent-review-report 'verified independent review locator exists' 2 'missing trusted-job review locator'
-      exit 2
-    }
-  else
-    require_trusted_orchestrator
-    run_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
-  fi
+  require_trusted_orchestrator
+  run_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
 }
 
 verify_remote_release_tag() {
@@ -315,7 +320,7 @@ run_rc() {
     exit 2
   }
   run_step remote-release-tag verify_remote_release_tag
-  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
+  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" "$orchestrator_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed-except-supply-chain
   run_step known-issues-review "$orchestrator_root/scripts/release-known-issues-check.sh"
   run_step rc-full-ci make ci

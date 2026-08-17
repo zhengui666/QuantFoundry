@@ -93,21 +93,8 @@ def _validate_section14_columns() -> None:
         )
 
 
-def _remove_legacy_defaults() -> None:
-    if op.get_bind().dialect.name == "sqlite":
-        for table, columns in RUNTIME_COLUMNS.items():
-            with op.batch_alter_table(table, recreate="always") as batch:
-                for column in columns:
-                    batch.alter_column(column, server_default=None)
-        return
-    for table, columns in RUNTIME_COLUMNS.items():
-        for column in columns:
-            op.alter_column(table, column, server_default=None)
-
-
 def upgrade() -> None:
     _validate_section14_columns()
-    _remove_legacy_defaults()
 
 
 def downgrade() -> None:

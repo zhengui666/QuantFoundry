@@ -196,6 +196,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_binding")
     op.drop_table("artifacts")
     op.drop_column("tool_calls", "input_payload")
     op.drop_index("uq_agent_runs_checkpoint_thread_id", table_name="agent_runs")
@@ -208,7 +211,6 @@ def downgrade() -> None:
     op.drop_column("jobs", "resume_token_hash")
     op.drop_index("uq_jobs_internal_id", table_name="jobs")
     op.drop_column("jobs", "internal_id")
-    bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         owns_marker = bool(
             bind.execute(
@@ -229,3 +231,18 @@ def downgrade() -> None:
             if table_count == 0:
                 op.execute("DROP TABLE agent_checkpoint._qf_owned_0014")
                 op.execute("DROP SCHEMA agent_checkpoint")
+    elif bind.dialect.name == "sqlite":
+        op.execute(
+            "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON "
+            "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
+            "NEW.research_id IS OLD.research_id AND "
+            "NEW.source_experiment_id IS OLD.source_experiment_id AND "
+            "NEW.revision = OLD.revision + 1 AND "
+            "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+            "EXISTS (SELECT 1 FROM jobs j WHERE "
+            "j.id = json_extract(NEW.detail, '$.job_id') AND "
+            "j.job_type = 'EXPERIMENT' AND "
+            "j.status IN ('RUNNING', 'COMPLETED') AND "
+            "json_extract(j.input_payload, '$.experiment_id') = NEW.id) ) "
+            "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
+        )

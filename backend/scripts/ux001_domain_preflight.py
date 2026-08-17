@@ -108,17 +108,12 @@ def main() -> int:
         with engine.connect() as connection:
             report = _report(connection)
             if migrate and report["status"] in {"READY", "EMPTY"}:
-                if connection.dialect.name != "sqlite":
-                    with connection.begin():
-                        _apply_migration(config, database_url, connection)
-                    report = {**report, "migration": "APPLIED"}
-        if (
-            migrate
-            and report["status"] in {"READY", "EMPTY"}
-            and database_url.startswith("sqlite")
-        ):
-            _apply_migration(config, database_url)
-            with engine.connect() as connection:
+                # _report() leaves an implicit read transaction open. End it
+                # before binding Alembic to this same connection; this keeps
+                # in-memory SQLite and migration state in one database.
+                connection.commit()
+                with connection.begin():
+                    _apply_migration(config, database_url, connection)
                 report = {**_report(connection), "migration": "APPLIED"}
     except Exception as error:
         reason = (

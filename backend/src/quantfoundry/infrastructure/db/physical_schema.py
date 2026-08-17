@@ -148,7 +148,7 @@ def load_physical_metadata(
                     ),
                     autoincrement=column["autoincrement"],
                     server_default=(
-                        text(column["server_default"])
+                        literal_column(column["server_default"])
                         if not schema_items
                         and include_server_defaults
                         and column["server_default"] is not None

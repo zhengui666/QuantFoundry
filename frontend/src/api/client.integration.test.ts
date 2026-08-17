@@ -838,7 +838,7 @@ describe('canonical P0 network behavior', () => {
       return `id: ${sequence}\ndata: ${JSON.stringify({
         schema_version: 1,
         event_id: 'EVT-7BSW7QFNPFN7FGSNW2WW07V82M',
-        sequence,
+        sequence: String(sequence),
         event_type: eventType,
         occurred_at: '2026-01-01T00:00:00Z',
         object_type: objectType,
@@ -867,21 +867,21 @@ describe('canonical P0 network behavior', () => {
               envelope(7) +
               envelope(6) +
               envelope(9) +
-              envelope(10, 'system.resync_required', '{"resync_from_sequence":7}') +
+              envelope(10, 'system.resync_required', '{"resync_from_sequence":"7"}') +
               envelope(11, 'validation.holdout.updated', '{"metrics":[{"secret":true}]}')
             : envelope(7, 'job.updated', '{}', workspaceBJob);
         return new HttpResponse(body, { headers: { 'Content-Type': 'text/event-stream' } });
       }),
     );
     const stop = streamEvents((event) => events.push(event), resync);
-    await vi.waitFor(() => expect(events.map((e) => e.sequence)).toEqual([7, 9]));
+    await vi.waitFor(() => expect(events.map((e) => e.sequence)).toEqual(['7', '9']));
     expect(resync.mock.calls.length).toBeGreaterThanOrEqual(3);
     expect(sessionStorage.getItem(`qf.sse.cursor:${workspaceAScope}`)).toBe('10');
     auth.establish(ownerSession('KEY-B', 'csrf-b'));
     const workspaceBScope = auth.scope();
     expect(workspaceBScope).not.toBe(workspaceAScope);
     expect(sessionStorage.getItem(`qf.sse.cursor:${workspaceAScope}`)).toBeNull();
-    await vi.waitFor(() => expect(events.map((event) => event.sequence)).toEqual([7, 9, 7]));
+    await vi.waitFor(() => expect(events.map((event) => event.sequence)).toEqual(['7', '9', '7']));
     expect(events.at(-1)?.object_id).toBe(workspaceBJob);
     expect(queryKeysForEvent(events.at(-1)!)).toContainEqual([
       workspaceBScope,
@@ -904,7 +904,7 @@ describe('canonical P0 network behavior', () => {
     const baseEnvelope = {
       schema_version: 1,
       event_id: 'EVT-7BSW7QFNPFN7FGSNW2WW07V82M',
-      sequence: 1,
+      sequence: '1',
       event_type: 'experiment.updated',
       occurred_at: '2026-08-10T00:00:00Z',
       object_type: 'experiment',
@@ -925,13 +925,13 @@ describe('canonical P0 network behavior', () => {
           {
             ...baseEnvelope,
             event_id: 'EVT-4V9MRDSPQPS3YCZXZ34PBT306X',
-            sequence: 2,
+            sequence: '2',
             schema_version: 2,
           },
           {
             ...baseEnvelope,
             event_id: 'EVT-2MVNBFRCR3VPGS5KQKF2F77FS7',
-            sequence: 3,
+            sequence: '3',
             event_type: 'validation.holdout.updated',
             payload: { metric: 'sharpe', value: '9.99' },
           },

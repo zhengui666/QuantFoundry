@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { api, workspaceQueryKey } from '../../api/client';
 import CanonicalChart from '../../CanonicalChart';
-import { ServerTime } from '../../format';
+import { formatCanonicalDecimal, formatCanonicalPercent, ServerTime } from '../../format';
 import { Badge, Capability, localizedErrorCopy, Panel, Problem, Provenance, State } from '../../ui';
 
 export function OverviewPage() {
@@ -17,6 +17,13 @@ export function OverviewPage() {
   if (query.error) return <Problem error={query.error} />;
   const data = query.data?.body;
   if (!data) return <State kind="empty" />;
+  const locale = i18n.resolvedLanguage === 'en' ? 'en' : 'zh-CN';
+  const money = (value: string | null) =>
+    value === null
+      ? '—'
+      : `${formatCanonicalDecimal(value, locale) ?? '—'} ${data.paper_summary.currency}`;
+  const percent = (value: string | null) =>
+    value === null ? '—' : `${formatCanonicalPercent(value, locale) ?? '—'}%`;
   return (
     <>
       <h1>{t('page.overview')}</h1>
@@ -46,17 +53,15 @@ export function OverviewPage() {
           <dt>{t('overview.activePortfolios')}</dt>
           <dd>{data.paper_summary.active_count}</dd>
           <dt>{t('overview.totalNav')}</dt>
-          <dd>
-            {data.paper_summary.total_nav ?? '—'} {data.paper_summary.currency}
-          </dd>
+          <dd>{money(data.paper_summary.total_nav)}</dd>
           <dt>{t('overview.dailyMtd')}</dt>
           <dd>
-            {data.paper_summary.daily_return ?? '—'} / {data.paper_summary.mtd_return ?? '—'}
+            {percent(data.paper_summary.daily_return)} / {percent(data.paper_summary.mtd_return)}
           </dd>
           <dt>{t('overview.sinceBenchmark')}</dt>
           <dd>
-            {data.paper_summary.since_start_return ?? '—'} /{' '}
-            {data.paper_summary.benchmark_since_start_return ?? '—'}
+            {percent(data.paper_summary.since_start_return)} /{' '}
+            {percent(data.paper_summary.benchmark_since_start_return)}
           </dd>
           <dt>{t('overview.asOf')}</dt>
           <dd>{data.paper_summary.as_of_date ?? '—'}</dd>

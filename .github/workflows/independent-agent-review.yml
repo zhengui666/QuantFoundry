@@ -82,15 +82,24 @@ jobs:
           reviewed_paths = [
               "AGENTS.md",
               "PROJECT_BACKGROUND.md",
+              "Makefile",
+              "backend/pyproject.toml",
+              "backend/uv.lock",
               "backend/src/quantfoundry",
               "backend/app/agent_runtime.py",
               "backend/workers",
+              "frontend/package.json",
+              "frontend/pnpm-lock.yaml",
+              "frontend/src",
               "docs/Agent技术方案",
               "docs/后端系统技术方案/contracts/tools",
               "docs/治理",
               ".github/workflows",
               "scripts/ci",
               "scripts/ci.sh",
+              "scripts/api_healthcheck.py",
+              "scripts/p0-check.sh",
+              "scripts/p0-check-test.sh",
               "scripts/tool_contract_check.py",
               "scripts/release-check.sh",
               "scripts/release-evidence.sh",
@@ -124,6 +133,7 @@ jobs:
           pathlib.Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           pathlib.Path(output).with_name("gate-result.json").write_text(
               json.dumps({
+                  "gate": "independent-review",
                   "commit": commit,
                   "result": "pass",
                   "exit_code": 0,
@@ -140,7 +150,8 @@ jobs:
           import json
           import pathlib
           import sys
-          pathlib.Path(sys.argv[2]).write_text(json.dumps({
+            pathlib.Path(sys.argv[2]).write_text(json.dumps({
+              "gate": "supply-chain-review",
               "commit": sys.argv[1],
               "result": "pass",
               "exit_code": 0,

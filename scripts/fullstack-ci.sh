@@ -39,6 +39,10 @@ actual_pnpm_version="$(pnpm --version)"
 fullstack_tmp="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-fullstack.XXXXXX")"
 project_suffix="${fullstack_tmp##*.}"
 project_suffix="${project_suffix,,}"
+[[ "$project_suffix" =~ ^[a-z0-9]+$ ]] || {
+  printf '%s\n' 'Full-stack temporary directory suffix is not Compose-name safe.' >&2
+  exit 1
+}
 project_name="qf-fullstack-${project_suffix}"
 environment_file="$fullstack_tmp/local.env"
 seed_output="$fullstack_tmp/seed.json"

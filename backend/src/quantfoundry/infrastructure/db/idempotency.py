@@ -102,6 +102,21 @@ def _database_now(session: Session) -> datetime:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
+def _require_isolated_session(session: Session) -> None:
+    if session.info.get("qf_idempotency_operation_active"):
+        raise RuntimeError("nested idempotency operations are not supported")
+    if (
+        session.in_transaction()
+        or session.in_nested_transaction()
+        or session.new
+        or session.dirty
+        or session.deleted
+    ):
+        raise RuntimeError(
+            "idempotency requires a fresh Session; it must not commit caller state"
+        )
+
+
 def _execute(
     session: Session,
     record_type: Any,
@@ -283,6 +298,7 @@ def execute(
     workspace_id: str,
     method: str,
 ) -> JSONResponse:
+    _require_isolated_session(session)
     sentinel = object()
     previous = {
         name: session.info.get(name, sentinel) for name in ("actor_id", "workspace_id")

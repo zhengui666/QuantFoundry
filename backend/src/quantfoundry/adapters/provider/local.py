@@ -24,6 +24,16 @@ class LocalProviderServer(ThreadingHTTPServer):
 
 class LocalProviderHandler(BaseHTTPRequestHandler):
     server: LocalProviderServer
+    _PRODUCERS = {
+        "factor": {"define_factor"},
+        "snapshot": {"create_data_snapshot"},
+        "experiment": {
+            "analyze_factor",
+            "calculate_factor",
+            "run_fast_backtest",
+            "run_parameter_sensitivity",
+        },
+    }
 
     def _json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         encoded = json.dumps(payload, separators=(",", ":")).encode()
@@ -57,7 +67,12 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
     def _result_object_id(
         tool_results: list[dict[str, Any]], object_type: str
     ) -> str | None:
+        producers = LocalProviderHandler._PRODUCERS.get(object_type, set())
         for result in reversed(tool_results):
+            if result.get("tool_name") not in producers:
+                continue
+            if result.get("status") not in {"SUCCESS", "COMPLETED"}:
+                return None
             result_ref = result.get("result_ref")
             if (
                 isinstance(result_ref, dict)
@@ -76,6 +91,7 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                     and isinstance(ref.get("id"), str)
                 ):
                     return ref["id"]
+            return None
         return None
 
     def _deterministic_action(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +122,7 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
         names = [
             str(item.get("tool_name"))
             for item in tool_results
-            if item.get("status") in {None, "SUCCESS", "COMPLETED"}
+            if item.get("status") in {"SUCCESS", "COMPLETED"}
             and (
                 isinstance(item.get("result_summary"), dict)
                 or isinstance(item.get("result_ref"), dict)

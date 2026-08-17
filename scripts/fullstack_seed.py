@@ -36,6 +36,7 @@ def ensure_fullstack_compat_setup() -> None:
         encrypt_credential,
     )
     from quantfoundry.infrastructure.db.schema import canonical_workspace_id
+    from quantfoundry.bootstrap.local import _workspace_seed_values
 
     workspace_id = canonical_workspace_id("system")
     owner_id = "system-owner"
@@ -43,39 +44,50 @@ def ensure_fullstack_compat_setup() -> None:
     credential = os.environ["QF_LOCAL_PROVIDER_API_KEY"]
     timestamp = datetime.now(UTC)
     with SessionLocal.begin() as db:
-        ai = db.scalar(
-            select(ModelProviderConnectionRow)
-            .where(
-                ModelProviderConnectionRow.workspace_id == workspace_id,
-                ModelProviderConnectionRow.owner_actor_id == owner_id,
-                ModelProviderConnectionRow.provider_id == "REMOTE_CODEX",
-                ModelProviderConnectionRow.kind == "AI",
-                ModelProviderConnectionRow.model_name == model_name,
-                ModelProviderConnectionRow.validation_state == "SUCCESS",
-                ModelProviderConnectionRow.status == "ACTIVE",
+        active_connections = list(
+            db.scalars(
+                select(ModelProviderConnectionRow)
+                .where(
+                    ModelProviderConnectionRow.workspace_id == workspace_id,
+                    ModelProviderConnectionRow.owner_actor_id == owner_id,
+                    ModelProviderConnectionRow.provider_id == "REMOTE_CODEX",
+                    ModelProviderConnectionRow.kind == "AI",
+                    ModelProviderConnectionRow.model_name == model_name,
+                    ModelProviderConnectionRow.validation_state == "SUCCESS",
+                    ModelProviderConnectionRow.status == "ACTIVE",
+                )
+                .order_by(ModelProviderConnectionRow.validated_at.desc())
             )
-            .order_by(ModelProviderConnectionRow.validated_at.desc())
         )
-        if ai is not None:
+        matching_connections = []
+        for candidate in active_connections:
             try:
                 stored_credential = decrypt_credential(
-                    ai.ciphertext,
-                    ai.nonce,
-                    ai.key_id,
+                    candidate.ciphertext,
+                    candidate.nonce,
+                    candidate.key_id,
                     aad=credential_aad(
-                        connection_id=ai.id,
+                        connection_id=candidate.id,
                         workspace_id=workspace_id,
                         actor_id=owner_id,
-                        provider_id=ai.provider_id,
-                        model_name=ai.model_name,
+                        provider_id=candidate.provider_id,
+                        model_name=candidate.model_name,
                     ),
                 )
             except CredentialConfigurationError:
                 stored_credential = None
-            if stored_credential is None or not compare_digest(
+            if stored_credential is not None and compare_digest(
                 stored_credential, credential
             ):
-                ai = None
+                matching_connections.append(candidate)
+            else:
+                candidate.status = "REVOKED"
+        if matching_connections:
+            ai = matching_connections[0]
+            for duplicate in matching_connections[1:]:
+                duplicate.status = "REVOKED"
+        else:
+            ai = None
         if ai is None:
             connection_id = str(uuid.uuid4())
             ciphertext, nonce, key_id = encrypt_credential(
@@ -105,26 +117,36 @@ def ensure_fullstack_compat_setup() -> None:
             )
             db.add(ai)
             db.flush()
+        seed_values = _workspace_seed_values(workspace_id)
+        research_id = seed_values["research_policy"]["policy_id"]
+        risk_id = seed_values["risk_policy"]["policy_id"]
+        cost_id = seed_values["cost_model"]["cost_model_id"]
         research = db.scalar(
             select(ResearchPolicyVersionRow).where(
                 ResearchPolicyVersionRow.workspace_id == workspace_id,
-                ResearchPolicyVersionRow.policy_family == "research",
-                ResearchPolicyVersionRow.status == "ACTIVE",
+                ResearchPolicyVersionRow.policy_id == research_id,
             )
         )
         risk = db.scalar(
             select(RiskPolicyVersionRow).where(
                 RiskPolicyVersionRow.workspace_id == workspace_id,
-                RiskPolicyVersionRow.status == "ACTIVE",
+                RiskPolicyVersionRow.policy_id == risk_id,
             )
         )
         cost = db.scalar(
             select(CostModelVersionRow).where(
                 CostModelVersionRow.workspace_id == workspace_id,
-                CostModelVersionRow.status == "ACTIVE",
+                CostModelVersionRow.cost_model_id == cost_id,
             )
         )
-        if research is None or risk is None or cost is None:
+        if (
+            research is None
+            or research.status != "ACTIVE"
+            or risk is None
+            or risk.status != "ACTIVE"
+            or cost is None
+            or cost.status != "ACTIVE"
+        ):
             raise RuntimeError("full-stack seed policy/cost rows are missing")
         settings = db.scalar(
             select(Record).where(
@@ -193,7 +215,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-url", default="http://127.0.0.1:8000/api/v1")
     parser.add_argument("--application-url", required=True)
     parser.add_argument("--prepare-only", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    parsed = urlsplit(args.api_url)
+    if not parsed.hostname or parsed.username or parsed.password:
+        parser.error("--api-url must be an origin without embedded credentials")
+    if parsed.scheme != "https" and not (
+        parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    ):
+        parser.error("--api-url must use HTTPS unless it targets loopback")
+    return args
 
 
 def request_json(

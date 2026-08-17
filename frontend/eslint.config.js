@@ -62,13 +62,10 @@ export default tseslint.config(
   ...nonProductionTyped,
   {
     files: typedSourceFiles,
+    ignores: nonProductionFiles,
     plugins: { 'react-hooks': reactHooks },
     languageOptions: {
       parser: tseslint.parser,
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
     },
     rules: {
       'react-hooks/exhaustive-deps': 'error',
@@ -139,6 +136,22 @@ export default tseslint.config(
             'MemberExpression[computed=true][property.value=/^(localStorage|sessionStorage|indexedDB)$/]',
           message:
             'Use the allowlisted transient-storage adapter; client storage is not server truth.',
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        { name: 'fetch', message: 'Use the canonical operation client instead of raw fetch.' },
+        {
+          name: 'localStorage',
+          message: 'Use the allowlisted transient-storage adapter instead of browser storage.',
+        },
+        {
+          name: 'sessionStorage',
+          message: 'Use the allowlisted transient-storage adapter instead of browser storage.',
+        },
+        {
+          name: 'indexedDB',
+          message: 'Use the allowlisted transient-storage adapter instead of browser storage.',
         },
       ],
     },

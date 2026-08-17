@@ -155,7 +155,7 @@ const eventEnvelope = (
   return {
     schema_version: 1,
     event_id: 'EVT-7BSW7QFNPFN7FGSNW2WW07V82M',
-    sequence: 1,
+    sequence: '1',
     occurred_at: '2026-08-10T00:00:00Z',
     object_type: objectType,
     ...EventObjectExamples[objectType],
@@ -262,11 +262,11 @@ describe('canonical transport', () => {
 
   it('uses the production generated decoder for the exact wire cursor and rejects drift', () => {
     const event = eventEnvelope('research.updated', {
-      sequence: 19,
+      sequence: '19',
       object_id: 'RSCH-5TVAJ93EJMXJXPPKEHE7YJGFVF',
     });
     expect(decodeCanonicalSseFrame(`id: 19\ndata: ${JSON.stringify(event)}`)).toEqual({
-      cursor: 19,
+      cursor: '19',
       event,
     });
     expect(() => decodeCanonicalSseFrame(`id: 20\ndata: ${JSON.stringify(event)}`)).toThrow(
