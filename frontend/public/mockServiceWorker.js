@@ -13,8 +13,10 @@ const IS_MOCKED_RESPONSE = Symbol('isMockedResponse')
 const activeClientIds = new Set()
 const MESSAGE_TIMEOUT = 10_000
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+let lifecycleGeneration = 0
 
 async function reconcileActiveClients(sender) {
+  const generation = ++lifecycleGeneration
   const allClients = await self.clients.matchAll({
     type: 'window',
     includeUncontrolled: true,
@@ -29,7 +31,8 @@ async function reconcileActiveClients(sender) {
   }
 
   if (activeClientIds.size === 0 && allClients.length === 0) {
-    await self.registration.unregister()
+    await Promise.resolve()
+    if (generation === lifecycleGeneration) await self.registration.unregister()
   }
 
   return allClients
@@ -82,6 +85,7 @@ async function handleMessage(event) {
     }
 
     case 'MOCK_ACTIVATE': {
+      lifecycleGeneration++
       activeClientIds.add(clientId)
 
       await sendToClient(client, {
@@ -210,7 +214,19 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
 async function resolveMainClient(event) {
   const client = await self.clients.get(event.clientId)
 
-  return activeClientIds.has(event.clientId) ? client : undefined
+  if (activeClientIds.has(event.clientId)) return client
+
+  const allClients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  })
+  const activeClients = allClients.filter((candidate) =>
+    activeClientIds.has(candidate.id),
+  )
+  return (
+    activeClients.find((candidate) => candidate.visibilityState === 'visible') ||
+    activeClients[0]
+  )
 }
 
 /**

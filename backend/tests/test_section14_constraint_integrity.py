@@ -101,7 +101,7 @@ def test_dataset_id_exact_check_accepts_only_canonical_dsset() -> None:
         [{"dataset_id": f"DSSET-{UUID_SUFFIX}"}],
         [
             {"dataset_id": f"DS-{UUID_SUFFIX}"},
-            {"dataset_id": "DSSET-local-seed"},  # reject_fixture: noncanonical
+            {"dataset_id": "DSSET-local-seed"},  # reject_fixture DSSET-local-seed
             {"dataset_id": f"DSSET-{UUID_SUFFIX[:-2]}"},
         ],
     )

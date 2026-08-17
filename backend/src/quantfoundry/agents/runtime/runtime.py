@@ -390,7 +390,7 @@ def _active_control_plane_connection() -> dict[str, str] | None:
         from app.control_plane import active_remote_codex_connection
 
         value = active_remote_codex_connection()
-    except ImportError, OSError, RuntimeError, ValueError:
+    except (ImportError, OSError, RuntimeError, ValueError):
         return None
     if not isinstance(value, dict):
         return None
@@ -415,7 +415,7 @@ def _control_plane_remote_mode() -> bool:
             "openai-compatible",
             "remote-codex",
         }
-    except ImportError, OSError, RuntimeError, ValueError, TypeError:
+    except (ImportError, OSError, RuntimeError, ValueError, TypeError):
         return False
 
 
@@ -863,22 +863,35 @@ class ToolRegistry:
             ).scalar_one_or_none()
             if version is None:
                 return set()
-            candidates = session.execute(
+            version_detail = json.loads(version.detail)
+            latest_backtest = version_detail.get("latest_backtest")
+            result = (
+                latest_backtest.get("result")
+                if isinstance(latest_backtest, dict)
+                else None
+            )
+            experiment = result.get("experiment") if isinstance(result, dict) else None
+            job_id = experiment.get("id") if isinstance(experiment, dict) else None
+            if not isinstance(job_id, str):
+                return set()
+            candidate = session.execute(
                 select(JobRow).where(
+                    JobRow.id == job_id,
                     JobRow.workspace_id == workspace_id,
                     JobRow.job_type == "FAST_BACKTEST",
                     JobRow.status == "COMPLETED",
                 )
-            ).scalars()
-            for candidate in candidates:
-                inputs = json.loads(candidate.input_payload)
-                snapshot_id = inputs.get("snapshot_id")
-                if (
-                    inputs.get("strategy_version_id") == version.id
-                    and inputs.get("strategy_spec_sha256") == version.spec_sha256
-                    and isinstance(snapshot_id, str)
-                ):
-                    return {snapshot_id}
+            ).scalar_one_or_none()
+            if candidate is None:
+                return set()
+            inputs = json.loads(candidate.input_payload)
+            snapshot_id = inputs.get("snapshot_id")
+            if (
+                inputs.get("strategy_version_id") == version.id
+                and inputs.get("strategy_spec_sha256") == version.spec_sha256
+                and isinstance(snapshot_id, str)
+            ):
+                return {snapshot_id}
         return set()
 
     def validate_output(
@@ -1871,7 +1884,7 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     if (
         row is None
         or row.workspace_id != job.workspace_id
-        or row.status in {"COMPLETED", "CANCELLED", "FAILED"}
+        or row.status in {"COMPLETED", "CANCELLED", "FAILED", "WAITING_USER"}
     ):
         return
     now = datetime.now(UTC)

@@ -52,6 +52,8 @@ def _type_spec(type_: Any) -> dict[str, Any]:
         or type_.__class__.__name__ == "JSONTextCompat"
     ):
         return {"name": "jsonb"}
+    if isinstance(effective, postgresql.JSON):
+        return {"name": "json"}
     if isinstance(effective, Uuid):
         return {"name": "uuid"}
     if isinstance(effective, postgresql.DATERANGE):
@@ -84,7 +86,7 @@ def _type_spec(type_: Any) -> dict[str, Any]:
         return {"name": "varchar", "length": effective.length}
     name = effective.__class__.__name__.lower()
     if name in {"jsonb", "json", "jsontextcompat"}:
-        return {"name": "jsonb"}
+        return {"name": "jsonb" if name != "json" else "json"}
     if name in {"uuid", "pguuid"}:
         return {"name": "uuid"}
     if name == "daterange":
@@ -206,9 +208,19 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
     )
 
     tables: list[dict[str, Any]] = []
-    for table in sorted(metadata.tables.values(), key=lambda item: item.name):
+    seen_tables: set[tuple[str, str]] = set()
+    for table in sorted(
+        metadata.tables.values(), key=lambda item: (item.schema or "public", item.name)
+    ):
         if table.name == "alembic_version" or table.schema not in {None, "public"}:
             continue
+        schema = table.schema or "public"
+        identity = (schema, table.name)
+        if identity in seen_tables:
+            raise ValueError(
+                f"duplicate physical table identity: {schema}.{table.name}"
+            )
+        seen_tables.add(identity)
         columns = []
         for column in table.columns:
             columns.append(
@@ -228,6 +240,8 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                 {
                     "name": constraint.name,
                     "columns": [column.name for column in constraint.columns],
+                    "deferrable": constraint.deferrable,
+                    "initially": constraint.initially,
                 }
                 for constraint in table.constraints
                 if isinstance(constraint, UniqueConstraint)
@@ -243,6 +257,10 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                         element.target_fullname for element in constraint.elements
                     ],
                     "ondelete": constraint.ondelete,
+                    "onupdate": constraint.onupdate,
+                    "deferrable": constraint.deferrable,
+                    "initially": constraint.initially,
+                    "match": constraint.match,
                 }
                 for constraint in table.foreign_key_constraints
             ],
@@ -261,6 +279,8 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
             where = index.dialect_options["postgresql"].get("where")
             include = index.dialect_options["postgresql"].get("include") or []
             method = index.dialect_options["postgresql"].get("using") or "btree"
+            postgres_options = index.dialect_options["postgresql"]
+            operator_classes = postgres_options.get("ops") or {}
             indexes.append(
                 {
                     "name": index.name,
@@ -271,10 +291,18 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                     ],
                     "include": list(include),
                     "where": str(where) if where is not None else None,
+                    "operator_classes": sorted(
+                        (str(key), str(value))
+                        for key, value in operator_classes.items()
+                    ),
+                    "nulls_not_distinct": postgres_options.get("nulls_not_distinct"),
+                    "with": postgres_options.get("with"),
+                    "tablespace": postgres_options.get("tablespace"),
                 }
             )
         tables.append(
             {
+                "schema": schema,
                 "name": table.name,
                 "primary_key": [column.name for column in table.primary_key.columns],
                 "columns": columns,

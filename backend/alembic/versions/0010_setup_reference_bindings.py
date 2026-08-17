@@ -131,7 +131,7 @@ def upgrade() -> None:
             name="fk_setup_bindings_ai_connection_record_records",
         ),
         sa.CheckConstraint(
-            "settings_record_id = 'SETTINGS-DEFAULT' AND settings_record_kind = 'settings'",
+            "settings_record_kind = 'settings'",
             name="setup_bindings_settings_exact",
         ),
         sa.CheckConstraint(

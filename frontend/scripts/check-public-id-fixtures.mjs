@@ -92,11 +92,7 @@ export const collectFormalPublicIdFiles = async (
   for (const source of sources) {
     const absolutePath = resolve(root, source.path);
     const relativePath = relative(root, absolutePath);
-    if (
-      isAbsolute(relativePath) ||
-      relativePath === '..' ||
-      relativePath.startsWith(`..${sep}`)
-    )
+    if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${sep}`))
       throw new Error(`Formal public-ID source escapes repository root: ${source.path}`);
     const metadata = await lstat(absolutePath).catch(() => null);
     if (!metadata) throw new Error(`Formal public-ID source is missing: ${source.path}`);
@@ -120,17 +116,24 @@ export const collectFormalPublicIdFiles = async (
 };
 
 const tokenPattern = /\b([A-Za-z][A-Za-z0-9]*)-([A-Za-z0-9_-]+)/g;
+const assignmentPattern =
+  /(?:^|[\s,{(])[A-Za-z_$][A-Za-z0-9_$.-]*\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s,;}\])]+))/g;
 const emptyFixturePattern =
   /(?:\b(?:fixture|example|value|id|token|input)\b|\b[A-Za-z_$][A-Za-z0-9_$]*(?:id|_id|Id|ID)\b)\s*[:=]\s*[`'"]([A-Za-z][A-Za-z0-9]*)-[`'"]/gi;
 const intentionalRejection = (token, context) => {
-  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(
-    `(?:reject_fixture|must\\s+reject|public-id-prose)[^\\n]*${escaped}|${escaped}[^\\n]*(?:reject_fixture|must\\s+reject|public-id-prose)`,
-    'i',
-  ).test(context);
+  const normalized = token.toUpperCase();
+  const directivePattern =
+    /(?:reject_fixture|must\s+reject|public-id-prose)\s*:?[ \t]+([A-Za-z][A-Za-z0-9]*-[A-Za-z0-9_-]*)/gi;
+  return [...context.matchAll(directivePattern)].some((match) => {
+    const marker = match[1].toUpperCase();
+    return marker.endsWith('-')
+      ? normalized.startsWith(marker)
+      : normalized === marker || normalized.startsWith(`${marker}-`);
+  });
 };
 
 const grammarNotation = (token, context, file, key = '') => {
+  if (/public-id-prose/i.test(context)) return true;
   const extension = extname(file).toLowerCase();
   const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(
     key,
@@ -156,13 +159,39 @@ const jsonIdKeys = /^(?:id|value|token|key|[a-z0-9]+_(?:id|ref|token|key))$/i;
 
 const invalidTokens = (text, context, location, matchers, key = '', file = location) => {
   const failures = [];
+  const reported = new Set();
+  const report = (token) => {
+    if (!reported.has(token) && !intentionalRejection(token, context)) {
+      reported.add(token);
+      failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
+    }
+  };
   if (jsonIdKeys.test(key)) {
     const fieldMatch = text.match(/^\s*([A-Za-z][A-Za-z0-9]*)-/);
     const canonical = fieldMatch && matchers.get(fieldMatch[1].toUpperCase());
     if (canonical && !canonical.some((matcher) => matcher.test(text))) {
-      failures.push(`${location}: unmarked invalid public-ID fixture ${text}`);
+      report(text);
       return failures;
     }
+  }
+  for (const match of text.matchAll(assignmentPattern)) {
+    const value = match.slice(1).find((candidate) => candidate !== undefined);
+    if (!value || !value.includes('-') || /[${}]/.test(value)) continue;
+    const rawPrefix = value.split('-', 1)[0];
+    const prefix = rawPrefix.toUpperCase();
+    const canonical = matchers.get(prefix);
+    const suffix = value.slice(rawPrefix.length + 1);
+    const looksLikeLowercaseId =
+      rawPrefix !== prefix &&
+      suffix.length >= 20 &&
+      /^[0-9a-f]/i.test(suffix) &&
+      /[0-9]/.test(suffix);
+    if (
+      canonical &&
+      (rawPrefix === prefix || looksLikeLowercaseId) &&
+      !canonical.some((matcher) => matcher.test(value))
+    )
+      report(value);
   }
   const matches = [
     ...text.matchAll(tokenPattern),
@@ -187,8 +216,7 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
       (prefix === 'MEM' && rawPrefix === prefix);
     if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
     if (match[2] !== '' && grammarNotation(token, context, file, key)) continue;
-    if (!intentionalRejection(token, context))
-      failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
+    report(token);
   }
   if (
     jsonIdKeys.test(key) &&
@@ -198,8 +226,7 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
     const token = text;
     const prefix = token.slice(0, -1).toUpperCase();
     const canonical = matchers.get(prefix);
-    if (canonical && !canonical.some((matcher) => matcher.test(token)))
-      failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
+    if (canonical && !canonical.some((matcher) => matcher.test(token))) report(token);
   }
   return failures;
 };
@@ -212,7 +239,11 @@ const scanLines = (file, content, matchers) => {
     failures.push(
       ...invalidTokens(line, marker ? `${marker} ${line}` : line, `${file}:${index + 1}`, matchers),
     );
-    marker = /(?:reject_fixture|must\s+reject|public-id-prose)/i.test(line) ? line : '';
+    marker = /(?:reject_fixture|must\s+reject|public-id-prose)\s*:?\s+[A-Za-z][A-Za-z0-9]*-/i.test(
+      line,
+    )
+      ? line
+      : '';
   }
   return failures;
 };
@@ -284,7 +315,15 @@ const main = async () => {
       examples.some((example) => !example.startsWith(`${prefix}-`))
     )
       throw new Error(`Public-ID schema ${name} must use a canonical uppercase prefix`);
-    const patterns = schema.oneOf.map((branch) => new RegExp(branch.pattern));
+    const patterns = schema.oneOf.map((branch) => {
+      if (
+        typeof branch.pattern !== 'string' ||
+        !branch.pattern.startsWith('^') ||
+        !branch.pattern.endsWith('$')
+      )
+        throw new Error(`Public-ID schema ${name} must use full-string patterns`);
+      return new RegExp(branch.pattern);
+    });
     const matches = patterns.map(
       (pattern) => examples.map((example) => pattern.test(example)).filter(Boolean).length,
     );

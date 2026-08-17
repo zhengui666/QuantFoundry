@@ -1418,23 +1418,29 @@ void i18n.use(initReactI18next).init({
 });
 
 const applyDocumentLocale = ({ language, timezone }: ServerLocaleSettings) => {
+  if (typeof document === 'undefined') return;
   document.documentElement.lang = language;
   document.documentElement.dataset.timezone = timezone;
 };
 
 applyDocumentLocale({ language: 'zh-CN', timezone: 'UTC' });
 i18n.on('languageChanged', (language) => {
-  document.documentElement.lang = language;
+  if (typeof document !== 'undefined') document.documentElement.lang = language;
 });
 
+let localeChange: Promise<void> = Promise.resolve();
 export const applyServerSettingsLocale = async (settings: ServerLocaleSettings) => {
   const canonical = {
     ...settings,
     timezone: canonicalTimeZone(settings.timezone),
   };
-  await i18n.changeLanguage(canonical.language);
-  activeLocale = canonical;
-  applyDocumentLocale(canonical);
+  const next = localeChange.then(async () => {
+    await i18n.changeLanguage(canonical.language);
+    activeLocale = canonical;
+    applyDocumentLocale(canonical);
+  });
+  localeChange = next.catch(() => undefined);
+  await next;
 };
 
 export const configurationLocale = (value: unknown): ServerLocaleSettings | undefined => {

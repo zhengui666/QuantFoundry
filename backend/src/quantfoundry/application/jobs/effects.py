@@ -49,7 +49,8 @@ from quantfoundry.engines.core import (
     holdout_policy_result,
     load_cost_model,
     load_dataset,
-    load_validation_policy,
+    load_validation_policy_bundle,
+    load_validation_policy_document,
     simulation_metrics,
     snapshot_content_sha256,
     snapshot_rows,
@@ -112,7 +113,7 @@ def _persist_section14_validation_run(
         .one_or_none()
     )
     if policy_row is None:
-        policy_content = dict(vars(policy))
+        policy_content = load_validation_policy_document(policy.policy_id)
         policy_row = ResearchPolicyVersionRow(
             id=f"{policy.policy_id}:{policy.version}:{uuid.uuid4()}",
             workspace_id=job.workspace_id,
@@ -206,14 +207,23 @@ def _persist_section14_snapshot(
     ).scalar_one_or_none()
     if source is None:
         raise InvalidJobState("workspace-owned snapshot data source is missing")
+    dataset_dates = [date.fromisoformat(row["date"]) for row in bundle.rows]
+    if not dataset_dates:
+        raise InvalidJobState("snapshot dataset contains no rows")
+    dataset_coverage_start = min(dataset_dates)
+    dataset_coverage_end = max(dataset_dates)
     provider_id = source.provider_id
-    provider_internal_id = session.execute(
-        select(providers.c.id).where(
-            providers.c.workspace_id == job.workspace_id,
-            providers.c.provider_id == provider_id,
+    provider_row = (
+        session.execute(
+            select(providers).where(
+                providers.c.workspace_id == job.workspace_id,
+                providers.c.provider_id == provider_id,
+            )
         )
-    ).scalar_one_or_none()
-    if provider_internal_id is None:
+        .mappings()
+        .one_or_none()
+    )
+    if provider_row is None:
         provider_internal_id = uuid.uuid4()
         session.execute(
             providers.insert().values(
@@ -234,13 +244,34 @@ def _persist_section14_snapshot(
                 updated_at=now,
             )
         )
-    dataset_internal_id = session.execute(
-        select(datasets.c.id).where(
-            datasets.c.workspace_id == job.workspace_id,
-            datasets.c.dataset_id == inputs["dataset_id"],
+    else:
+        provider_internal_id = provider_row["id"]
+        provider_config = provider_row["config"]
+        if isinstance(provider_config, str):
+            try:
+                provider_config = json.loads(provider_config)
+            except json.JSONDecodeError:
+                provider_config = None
+        if (
+            isinstance(provider_config, dict)
+            and "adapter_version" in provider_config
+            and (
+                provider_row["adapter_key"] != bundle.adapter_key
+                or provider_config != {"adapter_version": bundle.adapter_version}
+            )
+        ):
+            raise InvalidJobState("provider identity conflicts with snapshot request")
+    dataset_row = (
+        session.execute(
+            select(datasets).where(
+                datasets.c.workspace_id == job.workspace_id,
+                datasets.c.dataset_id == inputs["dataset_id"],
+            )
         )
-    ).scalar_one_or_none()
-    if dataset_internal_id is None:
+        .mappings()
+        .one_or_none()
+    )
+    if dataset_row is None:
         dataset_internal_id = uuid.uuid4()
         session.execute(
             datasets.insert().values(
@@ -253,8 +284,8 @@ def _persist_section14_snapshot(
                 asset_class="EQUITY",
                 frequency="DAILY",
                 schema_version=1,
-                coverage_start=date.fromisoformat(inputs["coverage_start"]),
-                coverage_end=date.fromisoformat(inputs["coverage_end"]),
+                coverage_start=dataset_coverage_start,
+                coverage_end=dataset_coverage_end,
                 pit_semantics="VERIFIED",
                 latest_partition_at=now,
                 quality_state="HEALTHY",
@@ -268,18 +299,36 @@ def _persist_section14_snapshot(
                 updated_at=now,
             )
         )
+    else:
+        dataset_internal_id = dataset_row["id"]
+        if (
+            dataset_row["provider_id"] != provider_internal_id
+            or dataset_row["coverage_start"] != dataset_coverage_start
+            or dataset_row["coverage_end"] != dataset_coverage_end
+            or dataset_row["metadata"]
+            != {
+                "timezone": bundle.timezone,
+                "calendar": bundle.calendar,
+                "schema_sha256": bundle.schema_sha256,
+            }
+        ):
+            raise InvalidJobState("dataset identity conflicts with snapshot request")
     manifest = session.execute(
         select(ArtifactRow).where(
             ArtifactRow.workspace_id == job.workspace_id,
             ArtifactRow.artifact_id == detail["manifest_artifact_id"],
         )
     ).scalar_one()
-    existing_snapshot = session.execute(
-        select(snapshots.c.id).where(
-            snapshots.c.workspace_id == job.workspace_id,
-            snapshots.c.snapshot_id == detail["snapshot_id"],
+    existing_snapshot = (
+        session.execute(
+            select(snapshots).where(
+                snapshots.c.workspace_id == job.workspace_id,
+                snapshots.c.snapshot_id == detail["snapshot_id"],
+            )
         )
-    ).scalar_one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if existing_snapshot is None:
         session.execute(
             snapshots.insert().values(
@@ -303,6 +352,28 @@ def _persist_section14_snapshot(
                 created_by_job_id=job.internal_id,
             )
         )
+    else:
+        expected_snapshot = {
+            "workspace_id": job.workspace_id,
+            "snapshot_id": detail["snapshot_id"],
+            "dataset_id": dataset_internal_id,
+            "snapshot_kind": detail["snapshot_kind"],
+            "as_of_time": datetime.fromisoformat(
+                detail["as_of_time"].replace("Z", "+00:00")
+            ),
+            "coverage_start": date.fromisoformat(detail["coverage_start"]),
+            "coverage_end": date.fromisoformat(detail["coverage_end"]),
+            "manifest_artifact_id": manifest.id,
+            "row_count": detail["row_count"],
+            "schema_sha256": detail["schema_sha256"],
+            "content_sha256": detail["content_sha256"],
+            "provider_metadata": detail["provider_metadata"],
+            "created_by_job_id": job.internal_id,
+        }
+        if any(
+            existing_snapshot[key] != value for key, value in expected_snapshot.items()
+        ):
+            raise InvalidJobState("snapshot identity conflicts with existing lineage")
 
 
 def _cost_ref(cost: Any) -> dict[str, Any]:
@@ -587,7 +658,7 @@ def dataset_validation_matches(
             continue
         try:
             evidence = read_json(artifact.storage_key, artifact.sha256)
-        except ArtifactStoreError, OSError, ValueError:
+        except (ArtifactStoreError, OSError, ValueError):
             continue
         if (
             evidence.get("dataset_id") == dataset_id
@@ -865,23 +936,28 @@ def _complete_experiment(
     ]
     if not market_rows:
         raise InvalidJobState("experiment snapshot has no RESEARCH partition rows")
+    canonical_market_rows = market_rows
     experiment_type = detail["experiment_type"]
     cost = load_cost_model(detail["cost_model_id"])
-    if "cost_model_version" in inputs or "cost_model_sha256" in inputs:
-        cost_row = session.execute(
-            select(CostModelVersionRow).where(
-                CostModelVersionRow.workspace_id == job.workspace_id,
-                CostModelVersionRow.cost_model_id == detail["cost_model_id"],
-                CostModelVersionRow.version == inputs.get("cost_model_version"),
-                CostModelVersionRow.status == "ACTIVE",
-            )
-        ).scalar_one_or_none()
-        if (
-            cost_row is None
-            or cost_row.content_sha256 != inputs.get("cost_model_sha256")
-            or cost.version != cost_row.version
-        ):
-            raise InvalidJobState("experiment cost model binding changed")
+    cost_version = inputs.get("cost_model_version")
+    cost_sha256 = inputs.get("cost_model_sha256")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == detail["cost_model_id"],
+            CostModelVersionRow.version == cost_version,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or not isinstance(cost_version, int)
+        or isinstance(cost_version, bool)
+        or cost_row.content_sha256 != cost_sha256
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_sha256
+    ):
+        raise InvalidJobState("experiment cost model binding changed")
     factor_binding = None
     factor_row = None
     if detail["factor_ref"]:
@@ -933,7 +1009,7 @@ def _complete_experiment(
             factor_detail["formula"]["expression"],
             factor_parameters,
         )
-        metrics = factor_metrics(calculated_rows, [1])
+        metrics = factor_metrics(calculated_rows, [1], market_rows=canonical_market_rows)
         factor_evidence = {
             "factor_id": factor_row.id,
             "factor_version": 1,
@@ -957,6 +1033,7 @@ def _complete_experiment(
             cost,
             strategy_spec,
             calendar=market_rows[0].get("calendar") if market_rows else None,
+            market_rows=canonical_market_rows,
         )
     elif experiment_type == "PARAMETER_SENSITIVITY":
         if strategy_row is None:
@@ -989,6 +1066,7 @@ def _complete_experiment(
                         },
                     },
                     calendar=market_rows[0].get("calendar") if market_rows else None,
+                    market_rows=canonical_market_rows,
                 ),
             }
             for selection_count in selection_counts
@@ -1718,14 +1796,15 @@ def _complete_validation(
     strategy_detail = json.loads(strategy.detail)
     backtest_job, backtest = _completed_backtest(session, strategy)
     backtest_inputs = json.loads(backtest_job.input_payload)
+    canonical_market_rows = _snapshot_market_rows(
+        session, backtest_inputs["snapshot_id"], job.workspace_id
+    )
     validation_signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=strategy_detail,
         snapshot_id=backtest_inputs["snapshot_id"],
         workspace_id=job.workspace_id,
-        market_rows=_snapshot_market_rows(
-            session, backtest_inputs["snapshot_id"], job.workspace_id
-        ),
+        market_rows=canonical_market_rows,
     )
     validation_rows = date_range_rows(
         validation_signal_rows,
@@ -1733,8 +1812,14 @@ def _complete_validation(
         strategy_detail["validation_period"]["end"],
         "VALIDATION",
     )
+    canonical_validation_rows = date_range_rows(
+        canonical_market_rows,
+        strategy_detail["validation_period"]["start"],
+        strategy_detail["validation_period"]["end"],
+        "VALIDATION",
+    )
     cost = load_cost_model(strategy_detail["cost_model_id"])
-    policy = load_validation_policy(inputs["policy_id"])
+    policy, policy_document = load_validation_policy_bundle(inputs["policy_id"])
     policy_version = inputs.get("policy_version")
     policy_sha256 = inputs.get("policy_sha256")
     if not isinstance(policy_version, int) or isinstance(policy_version, bool):
@@ -1752,7 +1837,7 @@ def _complete_validation(
         policy_row is None
         or policy.version != policy_version
         or policy_sha256 != policy_row.content_sha256
-        or content_hash(policy_row.rules) != policy_sha256
+        or content_hash(policy_document) != policy_sha256
     ):
         raise InvalidJobState("validation policy binding changed")
     cost_version = inputs.get("cost_model_version")
@@ -1781,6 +1866,7 @@ def _complete_validation(
         cost,
         strategy_detail,
         calendar=validation_rows[0].get("calendar") if validation_rows else None,
+        market_rows=canonical_validation_rows,
     )
     selection_count = int(strategy_detail["rules"]["selection_count"])
     robustness = {
@@ -1795,6 +1881,7 @@ def _complete_validation(
             ),
             strategy_detail,
             calendar=validation_rows[0].get("calendar") if validation_rows else None,
+            market_rows=canonical_validation_rows,
         ),
         "parameter_alternatives": [
             simulation_metrics(
@@ -1811,6 +1898,7 @@ def _complete_validation(
                 calendar=validation_rows[0].get("calendar")
                 if validation_rows
                 else None,
+                market_rows=canonical_validation_rows,
             )
             for alternative in sorted(
                 {max(1, selection_count - 1), selection_count + 1}
@@ -1972,6 +2060,82 @@ def _complete_validation(
     return _job_result_ref("validation", row.id, artifact_id)
 
 
+def _sync_holdout_strategy(
+    session: Session,
+    job: JobRow,
+    validation: ValidationRow,
+    *,
+    result: str,
+    status: str,
+) -> None:
+    strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
+    if strategy is None or strategy.workspace_id != job.workspace_id:
+        return
+    desired_state = (
+        "VALIDATED" if result == "PASS" and status == "COMPLETED" else "REJECTED"
+    )
+    if strategy.state in {"VALIDATED", "VALIDATING"}:
+        strategy.state = desired_state
+    strategy.revision += 1
+    detail = json.loads(strategy.detail)
+    summary = detail.get("validation_summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    detail["spec_sha256"] = strategy.spec_sha256
+    specification = detail.get("specification")
+    if isinstance(specification, dict):
+        specification["spec_sha256"] = strategy.spec_sha256
+    else:
+        detail["specification"] = {"spec_sha256": strategy.spec_sha256}
+    summary.setdefault(
+        "test_counts",
+        {
+            "pending": 0,
+            "running": 0,
+            "pass": 0,
+            "warn": 0,
+            "fail": 0,
+            "locked": 0,
+            "skipped": 0,
+        },
+    )
+    summary.setdefault("provenance", None)
+    summary.update(
+        {
+            "validation": {
+                "type": "validation",
+                "id": validation.id,
+                "version": None,
+                "revision": validation.revision,
+            },
+            "status": status,
+            "result": result,
+            "holdout_state": validation.holdout_state,
+            "revision": validation.revision,
+        }
+    )
+    detail.update(
+        {
+            "lifecycle_state": strategy.state,
+            "revision": strategy.revision,
+            "action_capabilities": strategy_action_capabilities(strategy.state),
+            "validation_summary": summary,
+        }
+    )
+    strategy.detail = json.dumps(validated_payload("StrategyVersionDetail", detail))
+    emit(
+        session,
+        "strategy_version",
+        strategy.strategy_id,
+        strategy.revision,
+        "strategy.updated",
+        payload={"state": strategy.state, "status": strategy.state},
+        object_version=strategy.version,
+        job_id=job.id,
+        correlation_id=job.correlation_id,
+    )
+
+
 def _expose_holdout(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2041,15 +2205,16 @@ def _expose_holdout(
     backtest_inputs = json.loads(backtest_job.input_payload)
     snapshot_id = backtest_inputs["snapshot_id"]
     period = strategy_detail["holdout_period"]
+    canonical_market_rows = [
+        *_snapshot_market_rows(session, snapshot_id, job.workspace_id),
+        *_snapshot_market_rows(session, snapshot_id, job.workspace_id, "HOLDOUT"),
+    ]
     signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=strategy_detail,
         snapshot_id=snapshot_id,
         workspace_id=job.workspace_id,
-        market_rows=[
-            *_snapshot_market_rows(session, snapshot_id, job.workspace_id),
-            *_snapshot_market_rows(session, snapshot_id, job.workspace_id, "HOLDOUT"),
-        ],
+        market_rows=canonical_market_rows,
     )
     market_rows = date_range_rows(
         signal_rows,
@@ -2057,19 +2222,41 @@ def _expose_holdout(
         period["end"],
         "HOLDOUT",
     )
+    canonical_holdout_rows = date_range_rows(
+        canonical_market_rows,
+        period["start"],
+        period["end"],
+        "HOLDOUT",
+    )
     cost = load_cost_model(strategy_detail["cost_model_id"])
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.internal_id == strategy.cost_model_ref_id,
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == strategy_detail["cost_model_id"],
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_row.content_sha256
+    ):
+        raise InvalidJobState("holdout cost model binding changed")
     calculated = simulation_metrics(
         market_rows,
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
         calendar=market_rows[0].get("calendar") if market_rows else None,
+        market_rows=canonical_holdout_rows,
     )
-    policy = load_validation_policy(validation_policy_row.policy_id)
+    policy, policy_document = load_validation_policy_bundle(
+        validation_policy_row.policy_id
+    )
     if (
         policy.version != validation_policy_row.version
-        or content_hash(validation_policy_row.rules)
-        != validation_policy_row.content_sha256
+        or content_hash(policy_document) != validation_policy_row.content_sha256
     ):
         raise InvalidJobState("holdout validation policy binding changed")
     holdout_result, holdout_failures = holdout_policy_result(calculated, policy)
@@ -2203,6 +2390,13 @@ def _expose_holdout(
         }
     )
     validation.detail = json.dumps(detail)
+    _sync_holdout_strategy(
+        session,
+        job,
+        validation,
+        result=holdout_result,
+        status=validation_status,
+    )
     emit(
         session,
         "validation",
@@ -2237,10 +2431,10 @@ def _validate_dataset(
     )
     if len(policy_rows) != 1:
         raise InvalidJobState("validation policy cannot be resolved unambiguously")
-    policy = load_validation_policy(policy_rows[0].policy_id)
+    policy, policy_document = load_validation_policy_bundle(policy_rows[0].policy_id)
     if (
         policy.version != policy_rows[0].version
-        or content_hash(policy_rows[0].rules) != policy_rows[0].content_sha256
+        or content_hash(policy_document) != policy_rows[0].content_sha256
     ):
         raise InvalidJobState("validation policy binding changed")
     profile = data_quality_profile(bundle, policy)
@@ -2358,14 +2552,15 @@ def _run_backtest(
     ):
         raise InvalidJobState("candidate strategy version is missing or changed")
     strategy_detail = json.loads(strategy.detail)
+    canonical_market_rows = _snapshot_market_rows(
+        session, inputs["snapshot_id"], job.workspace_id
+    )
     signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=strategy_detail,
         snapshot_id=inputs["snapshot_id"],
         workspace_id=job.workspace_id,
-        market_rows=_snapshot_market_rows(
-            session, inputs["snapshot_id"], job.workspace_id
-        ),
+        market_rows=canonical_market_rows,
     )
     market_rows = date_range_rows(
         signal_rows,
@@ -2374,27 +2569,32 @@ def _run_backtest(
         "RESEARCH",
     )
     cost = load_cost_model(inputs["cost_model_id"])
-    if "cost_model_version" in inputs or "cost_model_sha256" in inputs:
-        cost_row = session.execute(
-            select(CostModelVersionRow).where(
-                CostModelVersionRow.workspace_id == job.workspace_id,
-                CostModelVersionRow.cost_model_id == inputs["cost_model_id"],
-                CostModelVersionRow.version == inputs.get("cost_model_version"),
-                CostModelVersionRow.status == "ACTIVE",
-            )
-        ).scalar_one_or_none()
-        if (
-            cost_row is None
-            or cost_row.content_sha256 != inputs.get("cost_model_sha256")
-            or cost.version != cost_row.version
-        ):
-            raise InvalidJobState("strategy cost model binding changed")
+    cost_version = inputs.get("cost_model_version")
+    cost_sha256 = inputs.get("cost_model_sha256")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == inputs["cost_model_id"],
+            CostModelVersionRow.version == cost_version,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or not isinstance(cost_version, int)
+        or isinstance(cost_version, bool)
+        or cost_row.content_sha256 != cost_sha256
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_sha256
+    ):
+        raise InvalidJobState("strategy cost model binding changed")
     calculated = simulation_metrics(
         market_rows,
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
         calendar=market_rows[0].get("calendar") if market_rows else None,
+        market_rows=canonical_market_rows,
     )
     evidence = {
         "strategy_id": strategy.strategy_id,
@@ -2625,12 +2825,15 @@ def _run_parameter_sensitivity(
     ):
         raise InvalidJobState("parameter sensitivity subjects are unavailable")
     detail = json.loads(strategy.detail)
+    canonical_market_rows = _snapshot_market_rows(
+        session, snapshot.id, job.workspace_id
+    )
     signal_rows, _factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=detail,
         snapshot_id=snapshot.id,
         workspace_id=job.workspace_id,
-        market_rows=_snapshot_market_rows(session, snapshot.id, job.workspace_id),
+        market_rows=canonical_market_rows,
     )
     rows = date_range_rows(
         signal_rows,
@@ -2672,6 +2875,12 @@ def _run_parameter_sensitivity(
                     "rules": {**detail["rules"], "selection_count": count},
                 },
                 calendar=rows[0].get("calendar") if rows else None,
+                market_rows=date_range_rows(
+                    canonical_market_rows,
+                    detail["research_period"]["start"],
+                    detail["research_period"]["end"],
+                    "RESEARCH",
+                ),
             ),
         }
         for count in counts
@@ -2792,6 +3001,14 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
                 ),
             )
         )
+        if job.job_type == "HOLDOUT_RUN":
+            _sync_holdout_strategy(
+                session,
+                job,
+                validation,
+                result="FAIL",
+                status="FAILED",
+            )
         if job.job_type == "VALIDATION":
             strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
             if (
@@ -2950,6 +3167,14 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
                 ),
             )
         )
+        if job.job_type == "HOLDOUT_RUN":
+            _sync_holdout_strategy(
+                session,
+                job,
+                validation,
+                result="FAIL",
+                status="CANCELLED",
+            )
         if job.job_type == "VALIDATION":
             strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
             if (

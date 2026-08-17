@@ -14,13 +14,25 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, event, func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 LEASE_SECONDS = 60
 RETENTION_DAYS = 7
+
+
+@event.listens_for(Session, "before_commit")
+def _reject_operation_commit(session: Session) -> None:
+    if session.info.get("qf_idempotency_operation_active"):
+        raise RuntimeError("idempotency operation must not commit its session")
+
+
+@event.listens_for(Session, "after_rollback")
+def _reject_operation_rollback(session: Session) -> None:
+    if session.info.get("qf_idempotency_operation_active"):
+        raise RuntimeError("idempotency operation must not roll back its session")
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -209,7 +221,11 @@ def execute(
                 if replay is not None:
                     return replay
 
-        status, payload = operation()
+        session.info["qf_idempotency_operation_active"] = True
+        try:
+            status, payload = operation()
+        finally:
+            session.info.pop("qf_idempotency_operation_active", None)
         completed_at = _database_now(session)
         response = json.dumps(
             payload,

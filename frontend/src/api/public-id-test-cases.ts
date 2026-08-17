@@ -94,7 +94,7 @@ export const publicIdNegativeCases = (type: PublicIdType): readonly PublicIdNega
           {
             caseId: 'QF-PID-011' as const,
             mutation: 'legacy Memo prefix',
-            // reject_fixture: constructed from the generated MEMO fixture; no alias is accepted.
+            // reject_fixture MEM-
             value: ulid.replace(/^MEMO-/, 'MEM-'),
           },
         ]

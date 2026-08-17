@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -23,12 +24,16 @@ _SPEC: dict[str, Any] | None = None
 def canonical_openapi() -> dict[str, Any]:
     global _SPEC
     if _SPEC is None:
-        _SPEC = yaml.safe_load(
-            (
-                Path(__file__).parents[5]
-                / "docs/后端系统技术方案/contracts/openapi-v1.yaml"
-            ).read_text()
-        )
+        resource = files("quantfoundry.contracts.openapi").joinpath("openapi-v1.yaml")
+        if resource.is_file():
+            _SPEC = yaml.safe_load(resource.read_text(encoding="utf-8"))
+        else:
+            _SPEC = yaml.safe_load(
+                (
+                    Path(__file__).parents[5]
+                    / "docs/后端系统技术方案/contracts/openapi-v1.yaml"
+                ).read_text(encoding="utf-8")
+            )
     return deepcopy(_SPEC)
 
 

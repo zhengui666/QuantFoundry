@@ -230,6 +230,7 @@ def _seed_strategy_version(
             "known_failure_modes",
         )
     }
+    strategy_detail["specification"]["spec_sha256"] = strategy_detail["spec_sha256"]
     detail_json = json.dumps(strategy_detail)
     session.add(
         ResearchRow(

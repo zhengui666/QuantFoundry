@@ -6,6 +6,8 @@ Revises: 0014_agent_artifacts
 
 from __future__ import annotations
 
+from typing import Any
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -18,11 +20,91 @@ depends_on = None
 
 SCHEMA = "agent_checkpoint"
 
+_TABLES = {
+    "checkpoint_migrations": ({"v"}, {"v"}),
+    "checkpoints": (
+        {
+            "thread_id",
+            "checkpoint_ns",
+            "checkpoint_id",
+            "parent_checkpoint_id",
+            "type",
+            "checkpoint",
+            "metadata",
+        },
+        {"thread_id", "checkpoint_ns", "checkpoint_id"},
+    ),
+    "checkpoint_blobs": (
+        {"thread_id", "checkpoint_ns", "channel", "version", "type", "blob"},
+        {"thread_id", "checkpoint_ns", "channel", "version"},
+    ),
+    "checkpoint_writes": (
+        {
+            "thread_id",
+            "checkpoint_ns",
+            "checkpoint_id",
+            "task_id",
+            "idx",
+            "channel",
+            "type",
+            "blob",
+            "task_path",
+        },
+        {"thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"},
+    ),
+}
+
+
+def _validate_existing_schema(bind: Any) -> None:
+    inspector = sa.inspect(bind)
+    present = {
+        name: inspector.has_table(name, schema=SCHEMA) for name in _TABLES
+    }
+    if not all(present.values()):
+        raise RuntimeError(
+            "0015 found a partial LangGraph checkpoint schema; refusing adoption"
+        )
+    for name, (required_columns, primary_key) in _TABLES.items():
+        columns = {item["name"] for item in inspector.get_columns(name, schema=SCHEMA)}
+        if not required_columns <= columns:
+            raise RuntimeError(
+                f"0015 checkpoint table {SCHEMA}.{name} is missing required columns"
+            )
+        actual_key = set(
+            inspector.get_pk_constraint(name, schema=SCHEMA).get("constrained_columns")
+            or ()
+        )
+        if actual_key != primary_key:
+            raise RuntimeError(
+                f"0015 checkpoint table {SCHEMA}.{name} has an incompatible primary key"
+            )
+    try:
+        versions = {
+            int(value)
+            for (value,) in bind.execute(
+                sa.text(f"SELECT v FROM {SCHEMA}.checkpoint_migrations")
+            )
+        }
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(
+            "0015 existing LangGraph checkpoint migration versions are invalid"
+        ) from error
+    if not set(range(10)) <= versions:
+        raise RuntimeError(
+            "0015 existing LangGraph checkpoint schema has incompatible migration versions"
+        )
+
 
 def upgrade() -> None:
-    if op.get_bind().dialect.name != "postgresql":
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
         return
     op.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+    inspector = sa.inspect(bind)
+    existing = any(inspector.has_table(name, schema=SCHEMA) for name in _TABLES)
+    if existing:
+        _validate_existing_schema(bind)
+        return
     op.create_table(
         "checkpoint_migrations",
         sa.Column("v", sa.Integer(), primary_key=True),
@@ -94,9 +176,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if op.get_bind().dialect.name != "postgresql":
-        return
-    op.drop_table("checkpoint_writes", schema=SCHEMA)
-    op.drop_table("checkpoint_blobs", schema=SCHEMA)
-    op.drop_table("checkpoints", schema=SCHEMA)
-    op.drop_table("checkpoint_migrations", schema=SCHEMA)
+    # Existing LangGraph installations are adopted without ownership metadata;
+    # never destroy their checkpoint data during rollback.
+    return None

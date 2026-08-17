@@ -890,7 +890,7 @@ UUIDv4 550e8400-e29b-41d4-a716-446655440000
 | `QF-PID-008` | `reject_fixture`: non-v4 UUID | 将 version nibble 从 `4` 改为 `1/3/5`；全部 reject |
 | `QF-PID-009` | `reject_fixture`: wrong UUID variant | 将 variant nibble 改为 `0/7/c/f`；全部 reject，只允许 `8/9/a/b` |
 | `QF-PID-010` | `reject_fixture`: suffix/whitespace | 对 valid ID 添加任意字符、第二 suffix、前后空格/newline；全部 reject，不 trim、不截断 |
-| `QF-PID-011` | `reject_fixture`: legacy Memo prefix | `MEM-01ARZ3NDEKTSV4RRFFQ69G5FAV` 必须 reject；`MEMO-01ARZ3NDEKTSV4RRFFQ69G5FAV`/`MEMO-550e8400-e29b-41d4-a716-446655440000` 必须 accept，禁止 compatibility alias |
+| `QF-PID-011` | `reject_fixture MEM-01ARZ3NDEKTSV4RRFFQ69G5FAV`: legacy Memo prefix | `MEM-01ARZ3NDEKTSV4RRFFQ69G5FAV` 必须 reject；`MEMO-01ARZ3NDEKTSV4RRFFQ69G5FAV`/`MEMO-550e8400-e29b-41d4-a716-446655440000` 必须 accept，禁止 compatibility alias |
 | `QF-PID-012` | `reject_fixture`: ObjectRef mismatch | 对 34 个 `ObjectRef.type` 执行 own-prefix positive + 其余 33 prefix negative（34×33）；type-prefix mismatch/unknown type/prefix 全部 reject whole ref |
 | `QF-PID-013` | DSSET length-42 no truncation | `DSSET-550e8400-e29b-41d4-a716-446655440000` exact length=42；route → API → DB column → response/Tool/ObjectRef/client cache round-trip 完整相等；模拟旧 varchar(40) 必须迁移/测试失败，不得截断后成功 |
 | `QF-PID-014` | `reject_fixture` policy: all-formal-source/fixture scan | 扫描全部正式事实源：`PROJECT_BACKGROUND.md`、`AGENTS.md`、Backend、Agent、PRD、UI、Frontend、Test、canonical OpenAPI 与 Tool contract，并覆盖 contract/MSW/Tool fixtures；合法 token 100% canonical，非法 public-ID token 仅允许出现在带明确 `reject_fixture` 标记或“必须 reject/禁止”语境的负例；其他位置检测到 `MEM-`、短 ID、旧日期序号、可疑截断 suffix 即阻断 |

@@ -210,7 +210,7 @@ class PaperScheduler:
                 candidate, calendar_version = self._candidate(
                     session, deployment, state, schedule, timestamp
                 )
-            except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
+            except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
                 # Invalid configuration is fail-closed. No run/job/order is created.
                 continue
             if candidate is not None:
@@ -589,6 +589,7 @@ class PaperScheduler:
                 .where(
                     runs.c.workspace_id == job.workspace_id,
                     runs.c.paper_run_id == run_id,
+                    runs.c.job_id == job.internal_id,
                 )
                 .with_for_update()
             )
@@ -887,7 +888,13 @@ class PaperScheduler:
                     {"required_dataset_refs": required_refs},
                 )
         else:
-            dataset_ids = [None]
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "strategy has no explicit dataset binding",
+                {"required_dataset_refs": []},
+            )
 
         rows = []
         for dataset_id in dataset_ids:
@@ -1137,7 +1144,7 @@ class PaperScheduler:
                 "max_strategy_weight": Decimal(policy["max_strategy_weight"]),
                 "max_turnover": Decimal(policy["max_turnover"]),
             }
-        except InvalidOperation, KeyError, TypeError, ValueError:
+        except (InvalidOperation, KeyError, TypeError, ValueError):
             return GateDecision(
                 "RISK",
                 "UNKNOWN",
@@ -1233,7 +1240,7 @@ class PaperScheduler:
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
             _, calendar_version = self._is_trading_day(schedule, row["trading_date"])
-        except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
             self._finish_run(
                 session,
                 deployment,
@@ -1302,7 +1309,7 @@ class PaperScheduler:
                 calendar_version = self._is_trading_day(schedule, run["trading_date"])[
                     1
                 ]
-            except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
+            except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
                 schedule = _invalid_schedule()
                 calendar_version = "UNAVAILABLE"
         self._transition_evidence(
@@ -1385,7 +1392,7 @@ class PaperScheduler:
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
             _, calendar_version = self._is_trading_day(schedule, run["trading_date"])
-        except InvalidExecutionAssumption, PaperSchedulerError, ValueError:
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
             self._finish_run(
                 session,
                 deployment,

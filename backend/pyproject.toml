@@ -30,6 +30,9 @@ ignore = ["B008"]
 [tool.ruff.lint.isort]
 known-first-party = ["quantfoundry"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"../docs/后端系统技术方案/contracts/openapi-v1.yaml" = "quantfoundry/contracts/openapi/openapi-v1.yaml"
+
 [tool.pytest.ini_options]
 pythonpath = [".", "src"]
 markers = [

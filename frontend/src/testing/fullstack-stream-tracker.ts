@@ -69,6 +69,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
         (cookieMatches || authorization === `Bearer ${expected}`)
       ) {
         authenticatedRequest ??= request;
+        authenticatedTerminated = terminatedRequests.has(request);
         return;
       }
       if (status === 401 || status === 403) rejectedRequests.add(request);

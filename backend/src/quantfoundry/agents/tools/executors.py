@@ -45,7 +45,7 @@ from quantfoundry.engines.core import (
     EngineInputError,
     load_cost_model,
     load_dataset,
-    load_validation_policy,
+    load_validation_policy_bundle,
     snapshot_content_sha256,
     snapshot_rows,
 )
@@ -60,13 +60,16 @@ def _accepted_job(
     job_type: str,
     inputs: dict[str, Any],
     ref: dict[str, Any] | None = None,
+    *,
+    parent_job: JobRow,
 ) -> dict[str, Any]:
     return job(
         session,
         job_type,
         ref,
-        input_payload=inputs,
+        input_payload={**inputs, "parent_job_id": parent_job.id},
         queue_name="core",
+        correlation_id=parent_job.correlation_id,
     )
 
 
@@ -271,7 +274,10 @@ def _define_strategy(
 
 
 def _queue_factor_analysis_experiment(
-    session: Session, run: AgentRunRow, arguments: dict[str, Any]
+    session: Session,
+    run: AgentRunRow,
+    parent_job: JobRow,
+    arguments: dict[str, Any],
 ) -> dict[str, Any]:
     factor = session.get(FactorRow, arguments["factor_id"])
     snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
@@ -317,6 +323,7 @@ def _queue_factor_analysis_experiment(
             "version": None,
             "revision": 1,
         },
+        parent_job=parent_job,
     )
     created_at = now()
     detail = validated_payload(
@@ -401,7 +408,11 @@ def execute_tool(
     del context
     if name == "get_market_data":
         snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
-        if snapshot is None or snapshot.workspace_id != run.workspace_id:
+        if (
+            snapshot is None
+            or snapshot.workspace_id != run.workspace_id
+            or not snapshot.immutable
+        ):
             raise ToolExecutionError("snapshot is unavailable to this workspace")
         partition = session.execute(
             select(SnapshotPartitionRow).where(
@@ -432,6 +443,7 @@ def execute_tool(
             session,
             "DATASET_VALIDATE",
             {"dataset_id": source.id, "check_profile": "RESEARCH_BASELINE"},
+            parent_job=parent_job,
         )
         return {"job_id": accepted["job_id"]}
     if name == "create_data_snapshot":
@@ -448,6 +460,8 @@ def execute_tool(
 
         if not dataset_validation_matches(session, source_id, run.workspace_id, bundle):
             raise ToolExecutionError("dataset validation evidence is stale or missing")
+        if not bundle.rows:
+            raise ToolExecutionError("validated dataset contains no rows")
         dates = sorted({row["date"] for row in bundle.rows})
         as_of_time = max(row["available_at"] for row in bundle.rows)
         public, protected = snapshot_rows(bundle, dates[0], dates[-1], as_of_time)
@@ -476,12 +490,13 @@ def execute_tool(
                 ),
             },
             {"type": "snapshot", "id": snapshot_id, "version": None, "revision": 1},
+            parent_job=parent_job,
         )
         return {"job_id": accepted["job_id"]}
     if name == "define_factor":
         return _define_factor(session, run, arguments)
     if name in {"analyze_factor", "calculate_factor"}:
-        return _queue_factor_analysis_experiment(session, run, arguments)
+        return _queue_factor_analysis_experiment(session, run, parent_job, arguments)
     if name == "compare_factors":
         snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
         research = (
@@ -498,6 +513,7 @@ def execute_tool(
             or snapshot.workspace_id != run.workspace_id
             or research is None
             or research.workspace_id != run.workspace_id
+            or not snapshot.immutable
             or len(factors) != len(factor_refs)
             or any(
                 factor is None
@@ -511,7 +527,9 @@ def execute_tool(
             )
         ):
             raise ToolExecutionError("factor comparison subjects are unavailable")
-        accepted = _accepted_job(session, "FACTOR_COMPARE", arguments)
+        accepted = _accepted_job(
+            session, "FACTOR_COMPARE", arguments, parent_job=parent_job
+        )
         return {"job_id": accepted["job_id"]}
     if name == "define_strategy":
         return _define_strategy(session, run, arguments)
@@ -532,7 +550,6 @@ def execute_tool(
             or strategy.workspace_id != run.workspace_id
             or strategy.research_id != run.research_id
             or snapshot.workspace_id != run.workspace_id
-            or not snapshot.immutable
             or version.state != "CANDIDATE"
         ):
             raise ToolExecutionError("strategy or snapshot is unavailable")
@@ -563,6 +580,7 @@ def execute_tool(
             session,
             "FAST_BACKTEST" if name == "run_fast_backtest" else "PARAMETER_SENSITIVITY",
             inputs,
+            parent_job=parent_job,
         )
         return {"job_id": accepted["job_id"]}
     if name == "compare_backtests":
@@ -580,7 +598,9 @@ def execute_tool(
             for row in experiments
         ):
             raise ToolExecutionError("experiment is unavailable")
-        accepted = _accepted_job(session, "BACKTEST_COMPARE", arguments)
+        accepted = _accepted_job(
+            session, "BACKTEST_COMPARE", arguments, parent_job=parent_job
+        )
         return {"job_id": accepted["job_id"]}
     if name == "freeze_strategy":
         raise ToolExecutionError(
@@ -620,12 +640,14 @@ def execute_tool(
             raise ToolExecutionError("active validation policy is unavailable")
         policy_id = cast(str, policy.policy_id)
         try:
-            loaded_policy = load_validation_policy(policy_id)
+            loaded_policy, loaded_policy_document = load_validation_policy_bundle(
+                policy_id
+            )
         except EngineInputError as error:
             raise ToolExecutionError("validation policy is invalid") from error
         if (
             loaded_policy.version != policy.version
-            or content_hash(policy.rules) != policy.content_sha256
+            or content_hash(loaded_policy_document) != policy.content_sha256
         ):
             raise ToolExecutionError("validation policy version is inconsistent")
         version_detail = json.loads(cast(str, version.detail))
@@ -682,6 +704,7 @@ def execute_tool(
                 "strict_engine_version": "1.0.0",
                 "test_suite_version": "1.0.0",
             },
+            parent_job=parent_job,
         )
         version_row = cast(Any, version)
         next_revision = cast(int, version.revision) + 1

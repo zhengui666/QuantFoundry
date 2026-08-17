@@ -81,6 +81,13 @@ def _add_columns(table: str, columns: tuple[sa.Column, ...]) -> None:
 
 def _assert_integrity_backfill_is_mappable() -> None:
     bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        bind.execute(
+            sa.text(
+                "LOCK TABLE jobs, domain_events, audit_events, approval_requests, "
+                "tool_calls IN ACCESS EXCLUSIVE MODE"
+            )
+        )
     tables = (
         "jobs",
         "domain_events",
@@ -158,7 +165,14 @@ def _create_immutability_guards() -> None:
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   (NEW.state = OLD.state AND NEW.detail IS DISTINCT FROM OLD.detail)
+                   (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities') IS DISTINCT FROM
+                   (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities')
               ) THEN
                 RAISE EXCEPTION 'frozen strategy specification is immutable';
               END IF;
@@ -185,7 +199,7 @@ def _create_immutability_guards() -> None:
                    (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
                    (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
                    (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
-                   (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+                   (OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR
                    (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
               ) THEN
                 RAISE EXCEPTION 'illegal strategy lifecycle transition';
@@ -219,7 +233,15 @@ def _create_immutability_guards() -> None:
                  AND NOT (
                    NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
                    NEW.revision = OLD.revision + 1 AND
-                   (NEW.detail::jsonb ->> 'status') = 'COMPLETED'
+                   COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED' AND
+                   EXISTS (
+                     SELECT 1 FROM jobs j
+                     WHERE j.job_id = NEW.detail::jsonb ->> 'job_id'
+                       AND j.workspace_id = NEW.workspace_id
+                       AND j.job_type = 'EXPERIMENT'
+                       AND j.status IN ('RUNNING', 'COMPLETED')
+                       AND j.input_payload::jsonb ->> 'experiment_id' = NEW.id
+                   )
                  ) THEN
                 RAISE EXCEPTION 'experiment completion is not bound to a running job';
               END IF;
@@ -320,7 +342,12 @@ def _create_immutability_guards() -> None:
         "ON strategy_versions WHEN OLD.state != 'CANDIDATE' AND ("
         "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
         "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
-        "(NEW.state = OLD.state AND NEW.detail IS NOT OLD.detail)) BEGIN "
+        "json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', '$.provenance', "
+        "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
+        "json_remove(OLD.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', '$.provenance', "
+        "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities')) BEGIN "
         "SELECT RAISE(ABORT, 'frozen strategy specification is immutable'); END"
     )
     for action in ("UPDATE", "DELETE"):
@@ -342,7 +369,7 @@ def _create_immutability_guards() -> None:
         "NEW.state = OLD.state OR (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
         "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
         "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
-        "(OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR "
+        "(OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR "
         "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) "
         "BEGIN SELECT RAISE(ABORT, 'strategy evidence cannot change while freezing'); END"
     )
@@ -364,7 +391,12 @@ def _create_immutability_guards() -> None:
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
         "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
         "NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
-        "json_extract(NEW.detail, '$.status') = 'COMPLETED') "
+        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE "
+        "j.job_id = json_extract(NEW.detail, '$.job_id') AND "
+        "j.workspace_id IS NEW.workspace_id AND j.job_type = 'EXPERIMENT' AND "
+        "j.status IN ('RUNNING', 'COMPLETED') AND "
+        "json_extract(j.input_payload, '$.experiment_id') IS NEW.id)) "
         "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )
     op.execute(

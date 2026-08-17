@@ -109,7 +109,7 @@ def _create_sqlite_experiment_guards(*, include_source: bool = True) -> None:
         "NEW.research_id IS OLD.research_id AND "
         + source_binding_clause
         + "NEW.revision = OLD.revision + 1 AND "
-        "json_extract(NEW.detail, '$.status') = 'COMPLETED') "
+        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED') "
         "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
     )
 
@@ -150,7 +150,7 @@ def _create_postgres_experiment_guard(*, include_source: bool) -> None:
         + source_binding_clause
         + """
                NEW.revision = OLD.revision + 1 AND
-               (NEW.detail::jsonb ->> 'status') = 'COMPLETED'
+               COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED'
              ) THEN
             RAISE EXCEPTION 'experiment completion is not bound to a running job';
           END IF;

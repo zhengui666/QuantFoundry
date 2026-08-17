@@ -67,6 +67,7 @@ class CanonicalRoute(APIRoute):
                 return await original(request)
             try:
                 path_item = canonical_openapi().get("paths", {}).get(path, {})
+
                 def parameter_key(raw_parameter: dict[str, Any]) -> tuple[str, str]:
                     parameter = _resolve_parameter(raw_parameter)
                     return parameter["name"], parameter["in"]
@@ -93,7 +94,11 @@ class CanonicalRoute(APIRoute):
                         value = request.headers.get(name)
                     if value is None:
                         if parameter.get("required"):
-                            if request.method.upper() in {"GET", "HEAD", "OPTIONS"} and (
+                            if request.method.upper() in {
+                                "GET",
+                                "HEAD",
+                                "OPTIONS",
+                            } and (
                                 location == "header" and name.lower() == "x-csrf-token"
                             ):
                                 continue
@@ -127,15 +132,38 @@ class CanonicalRoute(APIRoute):
                                 f"{name} must be integer"
                             ) from error
                     validate_json_schema(schema, value)
-                body_schema = (
-                    operation.get("requestBody", {})
-                    .get("content", {})
-                    .get("application/json", {})
-                    .get("schema", {})
-                )
-                reference = body_schema.get("$ref")
-                if reference:
-                    validate_schema(reference.rsplit("/", 1)[-1], await request.json())
+                request_body = operation.get("requestBody")
+                if request_body is not None:
+                    content = request_body.get("content", {})
+                    content_type = (
+                        request.headers.get("content-type", "")
+                        .split(";", 1)[0]
+                        .strip()
+                        .lower()
+                    )
+                    media = content.get(content_type)
+                    body = await request.body()
+                    if not body:
+                        if request_body.get("required", False):
+                            raise jsonschema.ValidationError("request body is required")
+                    elif media is None:
+                        raise jsonschema.ValidationError(
+                            "request body content type is not declared"
+                        )
+                    else:
+                        schema = media.get("schema", {})
+                        if (
+                            content_type.endswith("+json")
+                            or content_type == "application/json"
+                        ):
+                            payload = json.loads(body)
+                        else:
+                            payload = body.decode("utf-8")
+                        reference = schema.get("$ref")
+                        if reference:
+                            validate_schema(reference.rsplit("/", 1)[-1], payload)
+                        else:
+                            validate_json_schema(schema, payload)
             except (
                 json.JSONDecodeError,
                 jsonschema.ValidationError,
@@ -195,13 +223,21 @@ class CanonicalRoute(APIRoute):
                 return _problem(
                     request, "handler returned an undeclared response content type"
                 )
-            if content_type == "text/markdown":
-                return response
-            reference = media.get("schema", {}).get("$ref")
-            if reference and hasattr(response, "body"):
+            schema = media.get("schema", {})
+            if schema and hasattr(response, "body"):
                 try:
-                    decoded_body = json.loads(response_body)
-                    validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
+                    if (
+                        content_type.endswith("+json")
+                        or content_type == "application/json"
+                    ):
+                        decoded_body = json.loads(response_body)
+                    else:
+                        decoded_body = response_body.decode("utf-8")
+                    reference = schema.get("$ref")
+                    if reference:
+                        validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
+                    else:
+                        validate_json_schema(schema, decoded_body)
                     if (
                         200 <= response.status_code < 300
                         and operation.get("operationId") == "completeSetup"

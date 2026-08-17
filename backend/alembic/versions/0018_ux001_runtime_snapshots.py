@@ -37,19 +37,57 @@ RUNTIME_COLUMNS = {
     ),
 }
 
+_RUNTIME_COLUMN_CONTRACT = {
+    "agent_runs": {
+        "ai_connection_id": ("varchar", None),
+        "ai_connection_revision": ("bigint", None),
+        "effective_configuration_revision": ("bigint", None),
+        "effective_configuration_sha256": ("varchar", 64),
+        "agent_configuration_revision": ("bigint", None),
+        "runtime_profile": ("varchar", None),
+        "tool_timeout_seconds": ("integer", None),
+        "max_steps": ("integer", None),
+        "max_tool_calls": ("integer", None),
+        "prompt_manifest_sha256": ("varchar", 64),
+        "tool_registry_sha256": ("varchar", 64),
+    },
+    "tool_calls": {
+        "effective_configuration_revision": ("bigint", None),
+        "configuration_sha256": ("varchar", 64),
+        "tool_registry_sha256": ("varchar", 64),
+    },
+}
+
+
+def _type_matches(column: dict[str, object], expected: str, length: int | None) -> bool:
+    actual = str(column["type"]).lower().replace(" ", "")
+    if expected == "bigint":
+        matches = "bigint" in actual
+    elif expected == "integer":
+        matches = "integer" in actual and "bigint" not in actual
+    else:
+        matches = actual.startswith(("varchar", "charactervarying", "string"))
+    if not matches:
+        return False
+    return length is None or getattr(column["type"], "length", None) == length
+
 
 def _validate_section14_columns() -> None:
     inspector = sa.inspect(op.get_bind())
-    missing = {
-        table: sorted(
-            set(columns) - {item["name"] for item in inspector.get_columns(table)}
-        )
-        for table, columns in RUNTIME_COLUMNS.items()
-    }
-    missing = {table: columns for table, columns in missing.items() if columns}
-    if missing:
+    invalid: dict[str, list[str]] = {}
+    for table, columns in _RUNTIME_COLUMN_CONTRACT.items():
+        reflected = {item["name"]: item for item in inspector.get_columns(table)}
+        for name, (expected_type, length) in columns.items():
+            column = reflected.get(name)
+            if (
+                column is None
+                or bool(column["nullable"])
+                or not _type_matches(column, expected_type, length)
+            ):
+                invalid.setdefault(table, []).append(name)
+    if invalid:
         raise RuntimeError(
-            f"0018 requires the section-14 runtime snapshot columns; missing={missing}"
+            f"0018 requires exact section-14 runtime snapshot columns; invalid={invalid}"
         )
 
 

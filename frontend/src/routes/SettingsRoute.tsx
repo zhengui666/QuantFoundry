@@ -48,9 +48,10 @@ export function SettingsPage() {
         catalog.data?.body.entries.flatMap<
           Schema<'ConfigurationCandidateRequest'>['values'][number]
         >((entry) => {
-          const raw = draftValues[entry.key]?.trim();
+          const input = draftValues[entry.key] ?? '';
+          const raw = input.trim();
           if (!raw) return [];
-          if (entry.sensitivity === 'SECRET') return [{ key: entry.key, secret: raw }];
+          if (entry.sensitivity === 'SECRET') return [{ key: entry.key, secret: input }];
           return [
             {
               key: entry.key,
@@ -89,6 +90,14 @@ export function SettingsPage() {
   const [dbDraftIdentity, setDbDraftIdentity] = useState<string>();
   const [dbCandidateRevision, setDbCandidateRevision] = useState<number>();
   const [dbValidatedRevision, setDbValidatedRevision] = useState<number>();
+  const serverCandidateRevision = database.data?.body.candidate?.revision;
+  const serverCandidateState = database.data?.body.candidate?.state;
+  useEffect(() => {
+    setDbCandidateRevision(serverCandidateRevision);
+    setDbValidatedRevision(
+      serverCandidateState === 'VALIDATED' ? serverCandidateRevision : undefined,
+    );
+  }, [serverCandidateRevision, serverCandidateState]);
   const persistedValidatedRevision =
     database.data?.body.candidate?.state === 'VALIDATED'
       ? database.data.body.candidate.revision
@@ -116,9 +125,11 @@ export function SettingsPage() {
     mutationFn: () => {
       const etag = database.data?.etag;
       if (!etag) throw new Error('Database connection ETag is unavailable.');
+      const baseRevision = database.data?.body.active_revision;
+      if (!baseRevision) throw new Error('Active database revision is unavailable.');
       return api.putDatabaseConnectionCandidate(
         {
-          base_revision: database.data?.body.active_revision ?? 1,
+          base_revision: baseRevision,
           connection: {
             host: dbForm.host.trim(),
             port: Number(dbForm.port),
@@ -168,7 +179,10 @@ export function SettingsPage() {
   const [keyForm, setKeyForm] = useState(initialSecret);
   const [issuedSecret, setIssuedSecret] = useState<string>();
   const issue = useMutation({
-    mutationFn: () => api.createAccessKey({ label: keyForm.label.trim() }),
+    mutationFn: () => {
+      setIssuedSecret(undefined);
+      return api.createAccessKey({ label: keyForm.label.trim() });
+    },
     onSuccess: ({ body }) => {
       setIssuedSecret(body.secret);
       setKeyForm(initialSecret);
@@ -185,6 +199,7 @@ export function SettingsPage() {
       action: 'rotate' | 'revoke';
       key: Schema<'GeneralAccessKeyMetadata'>;
     }) => {
+      setIssuedSecret(undefined);
       const etag = `W/"key:${key.revision}"`;
       if (action === 'rotate') return api.rotateAccessKey(key.key_id, etag);
       return api.revokeAccessKey(key.key_id, etag);
@@ -201,6 +216,7 @@ export function SettingsPage() {
         queryKey: workspaceQueryKey('settings', 'access-keys'),
       });
     },
+    onError: () => setIssuedSecret(undefined),
   });
   if (catalog.isLoading || active.isLoading || keys.isLoading || database.isLoading)
     return <State kind="loading" />;

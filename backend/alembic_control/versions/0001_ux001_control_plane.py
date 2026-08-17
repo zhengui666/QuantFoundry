@@ -1,5 +1,9 @@
 """Create the frozen UX-001 Bootstrap Control DB relations."""
 
+import hashlib
+import json
+from datetime import UTC, datetime
+
 import sqlalchemy as sa
 
 from alembic import op
@@ -8,6 +12,54 @@ revision = "ux001_control_v1"
 down_revision = None
 branch_labels = None
 depends_on = None
+
+
+def _sqlite_audit_hash(
+    sequence,
+    event_id,
+    event_type,
+    actor_principal,
+    access_key_id,
+    session_id_sha256,
+    configuration_revision,
+    database_connection_revision,
+    before_sha256,
+    after_sha256,
+    masked_summary,
+    previous_event_hash,
+    created_at,
+):
+    if isinstance(masked_summary, str):
+        try:
+            masked_summary = json.loads(masked_summary)
+        except json.JSONDecodeError:
+            pass
+    created_at = str(created_at)
+    try:
+        parsed = datetime.fromisoformat(created_at.replace(" ", "T"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        created_at = parsed.isoformat()
+    except ValueError:
+        pass
+    payload = {
+        "sequence": sequence,
+        "event_id": event_id,
+        "event_type": event_type,
+        "actor_principal": actor_principal,
+        "access_key_id": access_key_id,
+        "session_id_sha256": session_id_sha256,
+        "configuration_revision": configuration_revision,
+        "database_connection_revision": database_connection_revision,
+        "before_sha256": before_sha256,
+        "after_sha256": after_sha256,
+        "masked_summary": masked_summary,
+        "previous_event_hash": previous_event_hash,
+        "created_at": created_at,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
 
 
 def upgrade() -> None:
@@ -213,6 +265,11 @@ def upgrade() -> None:
     )
     bind = op.get_bind()
     if bind.dialect.name == "sqlite":
+        raw_connection = bind.connection.driver_connection
+        raw_connection.create_function("qf_bootstrap_audit_hash", 13, _sqlite_audit_hash)
+        op.execute(sa.text("PRAGMA foreign_keys=ON"))
+        if bind.execute(sa.text("PRAGMA foreign_keys")).scalar_one() != 1:
+            raise RuntimeError("SQLite control migration requires foreign_keys=ON")
         with op.batch_alter_table("bootstrap_state", recreate="always") as batch:
             batch.create_foreign_key(
                 "fk_bootstrap_state_active_configuration_revision",
@@ -292,6 +349,36 @@ def upgrade() -> None:
             """
         )
         op.execute(
+            """
+            CREATE FUNCTION qf_validate_configuration_catalog_sensitivity() RETURNS trigger AS $$
+            BEGIN
+              IF NEW.sensitivity = 'SECRET' AND EXISTS (
+                SELECT 1 FROM configuration_values
+                WHERE key = NEW.key AND (
+                  ciphertext IS NULL OR secret_key_id IS NULL OR typed_value IS NOT NULL
+                )
+              ) THEN
+                RAISE EXCEPTION 'catalog sensitivity change leaves plaintext configuration values';
+              END IF;
+              IF NEW.sensitivity <> 'SECRET' AND EXISTS (
+                SELECT 1 FROM configuration_values
+                WHERE key = NEW.key AND (
+                  ciphertext IS NOT NULL OR secret_key_id IS NOT NULL OR typed_value IS NULL
+                )
+              ) THEN
+                RAISE EXCEPTION 'catalog sensitivity change leaves encrypted configuration values';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_configuration_catalog_sensitivity BEFORE UPDATE OF sensitivity "
+            "ON configuration_catalog FOR EACH ROW EXECUTE FUNCTION "
+            "qf_validate_configuration_catalog_sensitivity()"
+        )
+        op.execute(
             "CREATE TRIGGER qf_configuration_values_sensitivity BEFORE INSERT OR UPDATE "
             "ON configuration_values FOR EACH ROW EXECUTE FUNCTION qf_validate_configuration_value()"
         )
@@ -360,6 +447,15 @@ def upgrade() -> None:
         "BEGIN SELECT RAISE(ABORT, 'configuration value sensitivity mismatch'); END"
     )
     op.execute(
+        "CREATE TRIGGER qf_configuration_catalog_sensitivity BEFORE UPDATE OF sensitivity "
+        "ON configuration_catalog WHEN NEW.sensitivity != OLD.sensitivity AND ("
+        "(NEW.sensitivity = 'SECRET' AND EXISTS (SELECT 1 FROM configuration_values v "
+        "WHERE v.key = NEW.key AND (v.ciphertext IS NULL OR v.secret_key_id IS NULL OR v.typed_value IS NOT NULL))) OR "
+        "(NEW.sensitivity != 'SECRET' AND EXISTS (SELECT 1 FROM configuration_values v "
+        "WHERE v.key = NEW.key AND (v.ciphertext IS NOT NULL OR v.secret_key_id IS NOT NULL OR v.typed_value IS NULL)))"
+        ") BEGIN SELECT RAISE(ABORT, 'catalog sensitivity change conflicts with values'); END"
+    )
+    op.execute(
         "CREATE TRIGGER qf_configuration_values_sensitivity_update BEFORE UPDATE ON configuration_values "
         "WHEN ((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) = 'SECRET' "
         "AND (NEW.ciphertext IS NULL OR NEW.secret_key_id IS NULL OR NEW.typed_value IS NOT NULL)) OR "
@@ -370,8 +466,12 @@ def upgrade() -> None:
     op.execute(
         "CREATE TRIGGER qf_bootstrap_audit_append_only BEFORE INSERT ON bootstrap_audit_events "
         "WHEN NEW.previous_event_hash IS NOT (SELECT event_hash FROM bootstrap_audit_events "
-        "ORDER BY sequence DESC LIMIT 1) BEGIN SELECT RAISE(ABORT, "
-        "'bootstrap audit hash chain is disconnected'); END"
+        "ORDER BY sequence DESC LIMIT 1) OR NEW.event_hash IS NOT qf_bootstrap_audit_hash("
+        "NEW.sequence, NEW.event_id, NEW.event_type, NEW.actor_principal, NEW.access_key_id, "
+        "NEW.session_id_sha256, NEW.configuration_revision, NEW.database_connection_revision, "
+        "NEW.before_sha256, NEW.after_sha256, NEW.masked_summary, NEW.previous_event_hash, "
+        "NEW.created_at) BEGIN SELECT RAISE(ABORT, "
+        "'bootstrap audit hash chain or event hash is invalid'); END"
     )
     for action in ("UPDATE", "DELETE"):
         op.execute(
@@ -387,6 +487,10 @@ def downgrade() -> None:
         op.execute(
             "DROP TRIGGER IF EXISTS qf_configuration_values_sensitivity "
             "ON configuration_values"
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_configuration_catalog_sensitivity "
+            "ON configuration_catalog"
         )
         op.execute(
             "DROP TRIGGER IF EXISTS qf_bootstrap_audit_append_only "
@@ -417,6 +521,7 @@ def downgrade() -> None:
     if bind.dialect.name == "postgresql":
         for function_name in (
             "qf_validate_configuration_value",
+            "qf_validate_configuration_catalog_sensitivity",
             "qf_validate_bootstrap_audit_insert",
             "qf_reject_bootstrap_audit_change",
         ):

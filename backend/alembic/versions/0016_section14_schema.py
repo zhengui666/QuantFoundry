@@ -203,7 +203,7 @@ def _deterministic_uuid4(namespace: str, value: Any) -> uuid.UUID:
 def _workspace_uuid(value: Any) -> uuid.UUID:
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-    except TypeError, ValueError, AttributeError:
+    except (TypeError, ValueError, AttributeError):
         return _deterministic_uuid4("workspace", value)
 
 
@@ -364,6 +364,45 @@ def _application_table_names(bind: Any) -> list[str]:
         for name in inspect(bind).get_table_names(schema=None)
         if name != "alembic_version" and not _is_backup_table(name)
     )
+
+
+def _lock_singleton_migration(bind: Any) -> None:
+    if bind.dialect.name != "postgresql":
+        return
+    bind.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended('qf-ux001-domain-migration', 0))"
+        )
+    )
+    for name in _application_table_names(bind):
+        bind.execute(
+            text(f"LOCK TABLE {_quoted(bind, name)} IN ACCESS EXCLUSIVE MODE")
+        )
+    tables = set(_application_table_names(bind))
+    if not {"users", "workspaces"}.issubset(tables):
+        return
+    row = bind.execute(
+        text(
+            "SELECT "
+            "(SELECT count(*) FROM users) AS users, "
+            "(SELECT count(*) FROM workspaces) AS workspaces, "
+            "(SELECT count(*) FROM users WHERE role = 'OWNER') AS owners, "
+            "(SELECT count(*) FROM workspaces w JOIN users u ON u.id = w.owner_id "
+            "WHERE u.role = 'OWNER') AS owner_workspaces"
+        )
+    ).one()
+    if (int(row.users), int(row.workspaces)) == (0, 0):
+        return
+    if not (
+        int(row.users) == 1
+        and int(row.workspaces) == 1
+        and int(row.owners) == 1
+        and int(row.owner_workspaces) == 1
+    ):
+        raise RuntimeError(
+            "0016 singleton domain migration requires one OWNER and one workspace"
+        )
 
 
 def _quoted(bind: Any, name: str) -> str:
@@ -574,7 +613,7 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
     if isinstance(column_type, Uuid):
         try:
             return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-        except TypeError, ValueError, AttributeError:
+        except (TypeError, ValueError, AttributeError):
             if column.table.name == "records" and column.name == "id":
                 # Python 3.14 provides uuid7; keep a deterministic compatible
                 # fallback for the migration's supported interpreter boundary.
@@ -826,8 +865,6 @@ def _resolve_locator(
     }
     if all(value is None for value in values.values()):
         return None if allow_null else "mandatory locator is absent"
-    if any(values[name] is None for name in ("object_type", "object_id")):
-        return "locator type/id is partially null"
     if expected_object_type == "event_stream":
         values = {
             "object_type": "event_stream",
@@ -839,6 +876,8 @@ def _resolve_locator(
         if values["object_type"] not in {None, expected_object_type}:
             return "event locator object_type disagrees with event type"
         values["object_type"] = expected_object_type
+    if any(values[name] is None for name in ("object_type", "object_id")):
+        return "locator type/id is partially null"
     object_type = values["object_type"]
     object_id = values["object_id"]
     workspace_id = row.get("workspace_id")
@@ -1442,7 +1481,15 @@ def _install_guards() -> None:
                    NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   (OLD.state <> 'CANDIDATE' AND
+                    (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                     'latest_backtest' - 'validation_summary' - 'artifacts' -
+                     'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                     'action_capabilities') IS DISTINCT FROM
+                    (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                     'latest_backtest' - 'validation_summary' - 'artifacts' -
+                     'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                     'action_capabilities')) OR
                    (OLD.state <> 'CANDIDATE' AND NEW.frozen_at IS DISTINCT FROM OLD.frozen_at) OR
                    NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
               ) THEN
@@ -1461,7 +1508,7 @@ def _install_guards() -> None:
                    (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
                    (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
                    (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
-                   (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+                   (OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR
                    (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
               ) THEN
                 RAISE EXCEPTION 'illegal strategy lifecycle transition';
@@ -1553,7 +1600,14 @@ def _install_guards() -> None:
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
         "(OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR "
         "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
-        "NEW.detail IS NOT OLD.detail)) OR "
+        "(OLD.state != 'CANDIDATE' AND json_remove(NEW.detail, "
+        "'$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
+        "'$.validation_summary', '$.artifacts', '$.provenance', '$.frozen_at', "
+        "'$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
+        "json_remove(OLD.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', "
+        "'$.provenance', '$.frozen_at', '$.frozen_by', '$.revision', "
+        "'$.action_capabilities')))) OR "
         "(OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
         "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
@@ -1562,7 +1616,7 @@ def _install_guards() -> None:
         "(OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
         "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
         "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
-        "(OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR "
+        "(OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR "
         "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) BEGIN SELECT RAISE(ABORT, "
         "'illegal or mutable strategy transition'); END"
     )
@@ -1643,6 +1697,8 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
     if bind.dialect.name == "sqlite":
         register_sqlite_functions(bind.connection.driver_connection)
     target_is_current = snapshot == CURRENT
+    if target_is_current:
+        _lock_singleton_migration(bind)
     # A downgrade snapshot is only a recovery aid.  The next upgrade must
     # read the live downgraded tables so writes made between revisions survive.
     roundtrip_preexisting = bool(_backup_names(bind, _ROUNDTRIP_BACKUP_PREFIX))

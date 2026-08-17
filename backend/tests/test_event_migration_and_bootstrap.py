@@ -1180,7 +1180,7 @@ def test_0017_blocks_restart_when_closed_baseline_event_is_missing() -> None:
     engine.dispose()
 
 
-def test_0017_accepts_only_retention_proven_expired_baseline_event() -> None:
+def test_0017_rejects_missing_baseline_event_even_after_retention() -> None:
     migration = _load_0017_migration()
     metadata, deployments, states, audit_events, domain_events, heads, watermarks = (
         _sqlite_0017_tables()
@@ -1200,11 +1200,10 @@ def test_0017_accepts_only_retention_proven_expired_baseline_event() -> None:
         connection.execute(domain_events.delete())
         connection.execute(watermarks.update().values(expired_through_sequence=1))
         connection.commit()
-        _invoke_0017(migration, connection)
-        assert not connection.in_transaction()
-        assert len(connection.execute(select(states)).all()) == 1
-        assert len(connection.execute(select(audit_events)).all()) == 1
-        assert connection.execute(select(domain_events)).all() == []
+        with pytest.raises(
+            migration["SchedulerInitializationError"], match="paper.updated event"
+        ):
+            _invoke_0017(migration, connection)
     engine.dispose()
 
 

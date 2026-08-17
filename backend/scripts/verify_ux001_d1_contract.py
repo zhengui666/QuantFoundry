@@ -10,6 +10,16 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_ROOT = ROOT / "docs/后端系统技术方案/contracts"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
+REGISTRY_DATA_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schema_version", "contract_stage", "tools"],
+    "properties": {
+        "schema_version": {"const": 1},
+        "contract_stage": {"const": "P0_P0_5_EXECUTABLE"},
+        "tools": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    },
+}
 
 
 def load(name: str) -> dict:
@@ -31,7 +41,12 @@ def main() -> int:
     matrix = load("ux001-d1-test-matrix.yaml")
     registry = load("tools/v1-p0.yaml")
     registry_errors = sorted(
-        Draft202012Validator(registry).iter_errors(registry),
+        Draft202012Validator(REGISTRY_DATA_SCHEMA).iter_errors(
+            {
+                key: registry[key]
+                for key in ("schema_version", "contract_stage", "tools")
+            }
+        ),
         key=lambda error: list(error.path),
     )
     require(
@@ -39,6 +54,18 @@ def main() -> int:
         "semantic tool registry schema validation failed: "
         + "; ".join(error.message for error in registry_errors[:3]),
     )
+    for name, schema in openapi["components"]["schemas"].items():
+        try:
+            Draft202012Validator.check_schema(schema)
+        except Exception as error:
+            raise AssertionError(f"invalid OpenAPI schema: {name}") from error
+    for entry in catalog["entries"]:
+        try:
+            Draft202012Validator.check_schema(entry["schema"])
+        except Exception as error:
+            raise AssertionError(
+                f"invalid configuration schema: {entry['key']}"
+            ) from error
 
     operations = sum(
         1
@@ -136,7 +163,9 @@ def main() -> int:
         for tool in tools
         if isinstance(tool, dict)
     }
-    require(len(tools) == len(tool_identities), "semantic tool identities are not unique")
+    require(
+        len(tools) == len(tool_identities), "semantic tool identities are not unique"
+    )
     require(
         matrix["counts"]
         == {
@@ -153,14 +182,18 @@ def main() -> int:
         for method, operation in path_item.items():
             if method not in HTTP_METHODS:
                 continue
-            require(isinstance(operation, dict), f"{method.upper()} {path} is not an object")
+            require(
+                isinstance(operation, dict), f"{method.upper()} {path} is not an object"
+            )
             operation_id = operation.get("operationId")
             require(
                 isinstance(operation_id, str) and operation_id.strip(),
                 f"{method.upper()} {path} has no operationId",
             )
             operation_ids.append(operation_id)
-    require(len(operation_ids) == len(set(operation_ids)), "operation IDs are not unique")
+    require(
+        len(operation_ids) == len(set(operation_ids)), "operation IDs are not unique"
+    )
     operation_ids = set(operation_ids)
     matrix_operation_ids = {
         operation_id
@@ -171,6 +204,14 @@ def main() -> int:
         matrix_operation_ids == operation_ids,
         "test matrix operation coverage does not exactly match OpenAPI",
     )
+    for tool in tools:
+        try:
+            Draft202012Validator.check_schema(tool["input_schema"])
+            Draft202012Validator.check_schema(tool["output_schema"])
+        except Exception as error:
+            raise AssertionError(
+                f"invalid semantic tool schema: {tool.get('name')}"
+            ) from error
     print("OK: UX-001 D1 machine contract bundle is internally consistent")
     return 0
 

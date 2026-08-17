@@ -188,27 +188,5 @@ def downgrade() -> None:
     op.drop_column("jobs", "resume_token_hash")
     op.drop_index("uq_jobs_internal_id", table_name="jobs")
     op.drop_column("jobs", "internal_id")
-    if op.get_bind().dialect.name == "postgresql":
-        marker = (
-            op.get_bind()
-            .execute(sa.text("SELECT to_regclass('agent_checkpoint._qf_owned_0014')"))
-            .scalar_one_or_none()
-        )
-        if marker is not None:
-            other_objects = (
-                op.get_bind()
-                .execute(
-                    sa.text(
-                        "SELECT count(*) FROM pg_class c "
-                        "JOIN pg_namespace n ON n.oid = c.relnamespace "
-                        "WHERE n.nspname = 'agent_checkpoint' "
-                        "AND c.relname <> '_qf_owned_0014'"
-                    )
-                )
-                .scalar_one()
-            )
-            if other_objects == 0:
-                op.execute("DROP TABLE agent_checkpoint._qf_owned_0014")
-                op.execute("DROP SCHEMA agent_checkpoint")
-            else:
-                op.execute("DROP TABLE agent_checkpoint._qf_owned_0014")
+    # A collidable marker cannot prove ownership of a pre-existing checkpoint
+    # schema. Leave it untouched on rollback rather than deleting user data.

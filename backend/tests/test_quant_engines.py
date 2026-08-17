@@ -376,6 +376,32 @@ def test_factor_oracle_changes_portfolio_returns() -> None:
     assert momentum_result["returns"] != mean_reversion_result["returns"]
 
 
+def test_enriched_rows_use_canonical_session_calendar() -> None:
+    rows = [
+        _market_row("2020-01-02", "AAA", 10, 100),
+        _market_row("2020-01-02", "BBB", 100, 100),
+        _market_row("2020-01-03", "AAA", 20, 101),
+        _market_row("2020-01-03", "BBB", 110, 101),
+        _market_row("2020-01-06", "AAA", 10, 102),
+        _market_row("2020-01-06", "BBB", 121, 102),
+    ]
+    scored = [
+        {**row, "strategy_score": row["factor_score"]}
+        for row in compute_factor_rows(rows, "momentum_1")
+    ]
+    result = simulation_metrics(
+        scored,
+        1,
+        CostModel("cost:zero", 1, 0, 0),
+        calendar="WEEKDAY",
+        market_rows=rows,
+    )
+    assert result["observations"] == 2
+    assert result["returns"] == pytest.approx([0.0, -0.5], abs=1e-12)
+    assert result["exposure"] == pytest.approx(0.5, abs=1e-12)
+    assert result["average_holding_period"] == pytest.approx(1.0, abs=1e-12)
+
+
 def test_factor_formula_strategy_spec_corporate_actions_and_policy() -> None:
     raw_rows = [
         {

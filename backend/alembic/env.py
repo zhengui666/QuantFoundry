@@ -11,8 +11,7 @@ database_url = os.getenv("QF_ALEMBIC_URL") or os.getenv("QF_DATABASE_URL")
 if not database_url:
     raise RuntimeError("QF_ALEMBIC_URL or QF_DATABASE_URL is required")
 _previous_database_url = os.environ.get("QF_DATABASE_URL")
-if _previous_database_url is None:
-    os.environ["QF_DATABASE_URL"] = database_url
+os.environ["QF_DATABASE_URL"] = database_url
 _previous_alembic_running = os.environ.get("QF_ALEMBIC_RUNNING")
 os.environ["QF_ALEMBIC_RUNNING"] = "1"
 
@@ -45,6 +44,12 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    injected_connection = config.attributes.get("connection")
+    if injected_connection is not None:
+        context.configure(connection=injected_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",

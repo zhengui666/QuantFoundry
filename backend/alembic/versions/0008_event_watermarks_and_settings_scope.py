@@ -59,7 +59,26 @@ def upgrade() -> None:
     # Materialize legacy system events before workspace_id becomes part of the key.
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable ON domain_events")
+        bind.execute(
+            sa.text("LOCK TABLE domain_events, records IN ACCESS EXCLUSIVE MODE")
+        )
+    collision = bind.execute(
+        sa.text(
+            "SELECT 1 FROM records source JOIN records target "
+            "ON target.id = 'settings:' || source.workspace_id "
+            "AND target.id <> source.id "
+            "WHERE source.id = 'settings' AND source.kind = 'settings' "
+            "AND source.workspace_id IS NOT NULL LIMIT 1"
+        )
+    ).first()
+    if collision is not None:
+        raise RuntimeError(
+            "settings record identity migration has a canonical ID collision"
+        )
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_domain_events_update_immutable ON domain_events"
+        )
     else:
         op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     op.execute(

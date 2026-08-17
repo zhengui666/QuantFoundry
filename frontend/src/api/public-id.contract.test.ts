@@ -117,7 +117,7 @@ describe('QF-PID generated public semantic ID contract', () => {
   });
 
   it('QF-PID-011 rejects legacy MEM while accepting both exact MEMO forms', () => {
-    // reject_fixture: the legacy MEM prefix is intentionally invalid.
+    // reject_fixture MEM-01ARZ3NDEKTSV4RRFFQ69G5FAV
     expect(AnyPublicSemanticIdSchema.safeParse('MEM-01ARZ3NDEKTSV4RRFFQ69G5FAV').success).toBe(
       false,
     );

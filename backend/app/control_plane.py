@@ -49,6 +49,7 @@ from sqlalchemy import (
     select,
     text,
     update,
+    event,
 )
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
@@ -106,6 +107,9 @@ PH = PasswordHasher()
 DUMMY_VERIFIER = PH.hash("quantfoundry-invalid-access-key")
 CONTROL_METADATA = MetaData()
 _DOMAIN_SWITCH_LOCK = RLock()
+_DOMAIN_SWITCH_FILE_LOCK_HELD: ContextVar[bool] = ContextVar(
+    "qf_domain_switch_file_lock_held", default=False
+)
 _IDEMPOTENCY_SESSION: ContextVar[Session | None] = ContextVar(
     "qf_idempotency_session", default=None
 )
@@ -121,6 +125,16 @@ def _serialize_domain_switch(function):
     @wraps(function)
     def wrapped(*args, **kwargs):
         with _DOMAIN_SWITCH_LOCK:
+            if (
+                CONTROL_ENGINE.dialect.name == "sqlite"
+                and not _DOMAIN_SWITCH_FILE_LOCK_HELD.get()
+            ):
+                with _control_file_lock("control.db.domain-switch.lock"):
+                    token = _DOMAIN_SWITCH_FILE_LOCK_HELD.set(True)
+                    try:
+                        return function(*args, **kwargs)
+                    finally:
+                        _DOMAIN_SWITCH_FILE_LOCK_HELD.reset(token)
             return function(*args, **kwargs)
 
     return wrapped
@@ -334,7 +348,15 @@ def _engine():
         return create_engine(configured_url)
     path = _control_path()
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-    return create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{path}", connect_args={"check_same_thread": False}
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    return engine
 
 
 CONTROL_ENGINE = _engine()
@@ -349,6 +371,14 @@ def _control_transaction():
         return
     with ControlSessionLocal.begin() as session:
         yield session
+
+
+def _lock_bootstrap_state(session: Session) -> BootstrapState | None:
+    return session.execute(
+        select(BootstrapState)
+        .where(BootstrapState.singleton_key == "BOOTSTRAP-DEFAULT")
+        .with_for_update()
+    ).scalar_one_or_none()
 
 
 def _now() -> datetime:
@@ -407,7 +437,7 @@ def _encode_idempotent_result(
             body = body.tobytes()
         try:
             return status, json.loads(body), headers
-        except TypeError, UnicodeDecodeError, json.JSONDecodeError:
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
             return status, body.decode("utf-8"), headers
     if hasattr(result, "model_dump"):
         return status, result.model_dump(mode="json", by_alias=True), headers
@@ -448,7 +478,7 @@ def _replay_idempotent(record: ControlIdempotencyRecord) -> Response:
                     key_id=body.get("key_id"),
                 )
             )
-        except ValueError, TypeError, KeyError, json.JSONDecodeError:
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
             return _problem(
                 409,
                 "IDEMPOTENCY_RESPONSE_UNAVAILABLE",
@@ -735,6 +765,10 @@ def init_control_db() -> None:
                 updated_at=now,
             )
             session.add(state)
+        elif state.schema_version != CONTROL_SCHEMA_VERSION:
+            raise RuntimeError(
+                "BOOTSTRAP_LOCKED: control schema version mismatch"
+            )
         if session.execute(select(ConfigurationCatalogRow)).first() is None:
             for entry in _load_catalog_seed():
                 session.add(
@@ -1430,7 +1464,7 @@ def active_runtime_snapshot() -> dict[str, Any]:
                         payload.get("provider")
                         or ("remote-codex" if model != "unconfigured" else provider)
                     )
-            except ValueError, TypeError, json.JSONDecodeError:
+            except (ValueError, TypeError, json.JSONDecodeError):
                 pass
         return {
             "effective_configuration_revision": revision,
@@ -1464,7 +1498,7 @@ def active_remote_codex_connection() -> dict[str, Any] | None:
                     key_id=row.secret_key_id,
                 )
             )
-        except ValueError, TypeError, json.JSONDecodeError:
+        except (ValueError, TypeError, json.JSONDecodeError):
             return None
         return payload if isinstance(payload, dict) else None
 
@@ -1648,7 +1682,7 @@ def _probe_database(
                 if privilege and alembic and migration_compatible
                 else "DATABASE_SCHEMA_INCOMPATIBLE"
             )
-    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
+    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         checks = [
             DatabaseConnectionCheck(
                 name=name,
@@ -1756,7 +1790,7 @@ def _rebind_domain_database(
         with candidate_engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1").scalar_one()
         return _publish_domain_database(candidate_engine), candidate_engine
-    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
+    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         _dispose_engine(candidate_engine)
         raise
 
@@ -1840,7 +1874,7 @@ def restore_active_domain_database() -> None:
     try:
         previous_engine, _candidate_engine = _rebind_domain_database(active)
         _dispose_engine(previous_engine)
-    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
+    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         domain_main.app.state.domain_database_available = False
         domain_main.app.state.domain_database_revision = None
         canonical_main.app.state.domain_database_available = False
@@ -1999,7 +2033,7 @@ def _sync_domain_compat_setup(workspace_id: str | None = None) -> None:
                 binding.cost_model_version_id = cost_model.id
                 binding.revision += 1
                 binding.updated_at = timestamp
-    except ImportError, OSError, SQLAlchemyError, RuntimeError, ValueError, TypeError:
+    except (ImportError, OSError, SQLAlchemyError, RuntimeError, ValueError, TypeError):
         return
 
 
@@ -2597,7 +2631,7 @@ def build_router() -> APIRouter:
                             value = json.loads(raw_secret)
                         except json.JSONDecodeError:
                             value = raw_secret
-                    except ValueError, TypeError, json.JSONDecodeError:
+                    except (ValueError, TypeError, json.JSONDecodeError):
                         errors.append(
                             {
                                 "field": row.key,
@@ -2799,9 +2833,15 @@ def build_router() -> APIRouter:
         )
         if not isinstance(result, JSONResponse):
             actor = getattr(request.state, "actor", None)
-            _sync_domain_compat_setup(
+            workspace_id = (
                 getattr(actor, "workspace_id", None) if actor is not None else None
             )
+            callback = lambda: _sync_domain_compat_setup(workspace_id)
+            post_commit = _IDEMPOTENCY_POST_COMMIT.get()
+            if post_commit is None:
+                callback()
+            else:
+                post_commit.append(callback)
         return result
 
     @router.post("/configuration/rollback", operation_id="rollbackConfiguration")
@@ -2859,7 +2899,7 @@ def build_router() -> APIRouter:
                         if catalog
                         else ""
                     )
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     return _problem(
                         409,
                         "CONFIGURATION_VALIDATION_FAILED",
@@ -3057,7 +3097,7 @@ def build_router() -> APIRouter:
             )
             try:
                 active_secret = _database_secret(active) if active else {}
-            except ValueError, TypeError, json.JSONDecodeError:
+            except (ValueError, TypeError, json.JSONDecodeError):
                 return _problem(
                     409,
                     "DATABASE_CONNECTION_FAILED",
@@ -3195,6 +3235,7 @@ def build_router() -> APIRouter:
             return error
         try:
             with _control_transaction() as db:
+                state = _lock_bootstrap_state(db)
                 active = db.scalar(
                     select(DomainDatabaseConnectionRevision)
                     .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
@@ -3207,6 +3248,17 @@ def build_router() -> APIRouter:
                     )
                 )
                 current_revision = active.revision if active else 0
+                if state is None:
+                    raise RuntimeError("control bootstrap state is missing")
+                if state.active_database_connection_revision not in {
+                    None,
+                    current_revision,
+                }:
+                    return _problem(
+                        409,
+                        "DATABASE_CONNECTION_FAILED",
+                        "active database revision is inconsistent",
+                    )
                 mismatch = _if_match(if_match, "database", max(current_revision, 0))
                 if mismatch is not None:
                     return mismatch
@@ -3252,14 +3304,31 @@ def build_router() -> APIRouter:
                     active.state = "SUPERSEDED"
                 candidate.state = "ACTIVE"
                 candidate.activated_at = now
-                state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
-                if state is not None:
-                    state.active_database_connection_revision = candidate.revision
-                    state.last_known_good_database_connection_revision = (
-                        active.revision if active else candidate.revision
+                active_revision_filter = (
+                    BootstrapState.active_database_connection_revision.is_(None)
+                    if current_revision == 0
+                    else BootstrapState.active_database_connection_revision
+                    == current_revision
+                )
+                state_update = db.execute(
+                    update(BootstrapState)
+                    .where(
+                        BootstrapState.singleton_key == "BOOTSTRAP-DEFAULT",
+                        active_revision_filter,
                     )
-                    state.readiness_state = "READY"
-                    state.updated_at = now
+                    .values(
+                        active_database_connection_revision=candidate.revision,
+                        last_known_good_database_connection_revision=(
+                            active.revision if active else candidate.revision
+                        ),
+                        readiness_state="READY",
+                        updated_at=now,
+                    )
+                )
+                if state_update.rowcount != 1:
+                    return _problem(
+                        412, "REVISION_MISMATCH", "database revision does not match"
+                    )
                 _audit(
                     db,
                     "DATABASE_ACTIVATED",
@@ -3312,12 +3381,14 @@ def build_router() -> APIRouter:
             return error
         try:
             with _control_transaction() as db:
+                state = _lock_bootstrap_state(db)
                 active = db.scalar(
                     select(DomainDatabaseConnectionRevision)
                     .where(DomainDatabaseConnectionRevision.state == "ACTIVE")
                     .order_by(desc(DomainDatabaseConnectionRevision.revision))
                 )
-                state = db.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+                if state is None:
+                    raise RuntimeError("control bootstrap state is missing")
                 lkg_revision = (
                     state.last_known_good_database_connection_revision
                     if state
@@ -3361,10 +3432,23 @@ def build_router() -> APIRouter:
                 active.state = "SUPERSEDED"
                 lkg.state = "ACTIVE"
                 now = _now()
-                if state is not None:
-                    state.active_database_connection_revision = lkg.revision
-                    state.last_known_good_database_connection_revision = lkg.revision
-                    state.updated_at = now
+                state_update = db.execute(
+                    update(BootstrapState)
+                    .where(
+                        BootstrapState.singleton_key == "BOOTSTRAP-DEFAULT",
+                        BootstrapState.active_database_connection_revision
+                        == active.revision,
+                    )
+                    .values(
+                        active_database_connection_revision=lkg.revision,
+                        last_known_good_database_connection_revision=lkg.revision,
+                        updated_at=now,
+                    )
+                )
+                if state_update.rowcount != 1:
+                    return _problem(
+                        412, "REVISION_MISMATCH", "database revision does not match"
+                    )
                 _audit(
                     db,
                     "DATABASE_REVERTED",

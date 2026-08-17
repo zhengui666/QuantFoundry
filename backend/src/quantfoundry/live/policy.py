@@ -95,6 +95,9 @@ class ActivationEvidence:
         deployment_switch: KillSwitch,
         capabilities: ConnectorCapabilities,
         submission_account_id: str,
+        current_approval_state: ApprovalState | None = None,
+        current_approval_revision: int | None = None,
+        current_connector_revision: int | None = None,
         order: OrderRequest | None = None,
     ) -> None:
         if confirmation != f"ENABLE LIVE {self.live_id}":
@@ -102,7 +105,13 @@ class ActivationEvidence:
         if self.approval_state != "APPROVED" or self.approval_revision < 1:
             raise LivePolicyError("live approval is not active")
         if (
+            current_approval_state != "APPROVED"
+            or current_approval_revision != self.approval_revision
+        ):
+            raise LivePolicyError("live approval is stale")
+        if (
             self.connector_revision < 1
+            or current_connector_revision != self.connector_revision
             or self.capabilities_hash != capabilities.content_hash()
         ):
             raise LivePolicyError("connector capabilities have changed")

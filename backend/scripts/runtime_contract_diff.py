@@ -32,21 +32,33 @@ def resolve(document: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
     return current
 
 
-def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
+def normalized_schema(
+    document: dict[str, Any], schema: Any, active_refs: frozenset[str] = frozenset()
+) -> Any:
     """Normalize equivalent OpenAPI/Pydantic JSON-Schema representations."""
 
     if isinstance(schema, list):
-        return [normalized_schema(document, item) for item in schema]
+        return [normalized_schema(document, item, active_refs) for item in schema]
     if not isinstance(schema, dict):
         return schema
     if "$ref" in schema:
+        reference = str(schema["$ref"])
+        if reference in active_refs:
+            return {"$recursive_ref": reference}
         target = resolve(document, schema)
         siblings = {key: value for key, value in schema.items() if key != "$ref"}
         if siblings:
-            return normalized_schema(document, {"allOf": [target, siblings]})
-        return normalized_schema(document, target)
+            return normalized_schema(
+                document,
+                {"allOf": [target, siblings]},
+                active_refs | {reference},
+            )
+        return normalized_schema(document, target, active_refs | {reference})
     result = deepcopy(schema)
-    if not any(key in result for key in ("type", "properties", "items", "$ref", "allOf", "oneOf", "anyOf")):
+    if not any(
+        key in result
+        for key in ("type", "properties", "items", "$ref", "allOf", "oneOf", "anyOf")
+    ):
         return result
     result.pop("title", None)
     result.pop("description", None)
@@ -100,7 +112,7 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
         ):
             result.pop("type")
     for key, value in list(result.items()):
-        result[key] = normalized_schema(document, value)
+        result[key] = normalized_schema(document, value, active_refs)
     branches = result.get("allOf")
     if isinstance(branches, list) and all(
         isinstance(branch, dict) for branch in branches
@@ -114,7 +126,12 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
         composition_only = all(
             set(branch) <= {"properties", "required"} for branch in branches
         )
-        if disjoint and composition_only:
+        outer_properties = set(result.get("properties", {}))
+        if (
+            disjoint
+            and not outer_properties.intersection(set().union(*branch_property_sets))
+            and composition_only
+        ):
             result.pop("allOf")
             properties = dict(result.pop("properties", {}))
             required = list(result.pop("required", []))
@@ -183,9 +200,6 @@ def normalized_schema(document: dict[str, Any], schema: Any) -> Any:
         result.pop("items")
     if "enum" in result:
         result["enum"] = sorted(result["enum"], key=str)
-        result.pop("type", None)
-    if "const" in result:
-        result.pop("type", None)
     if isinstance(result.get("required"), list):
         result["required"] = sorted(result["required"])
     if (
@@ -265,10 +279,7 @@ def normalized_security(value: Any) -> Any:
     if value is None:
         return None
     return sorted(
-        [
-            {key: sorted(scopes) for key, scopes in item.items()}
-            for item in value
-        ],
+        [{key: sorted(scopes) for key, scopes in item.items()} for item in value],
         key=lambda item: json.dumps(item, sort_keys=True),
     )
 
@@ -367,9 +378,7 @@ expected_error_count = canonical["info"]["x-quantfoundry-error-count"]
 expected_schema_count = canonical["info"]["x-quantfoundry-schema-count"]
 if expected_operation_count != len(canonical_operations):
     errors.append("canonical operation metadata differs from canonical paths")
-canonical_security_schemes = canonical.get("components", {}).get(
-    "securitySchemes", {}
-)
+canonical_security_schemes = canonical.get("components", {}).get("securitySchemes", {})
 runtime_security_schemes = runtime.get("components", {}).get("securitySchemes", {})
 if normalized_schema(canonical, canonical_security_schemes) != normalized_schema(
     runtime, runtime_security_schemes

@@ -124,19 +124,24 @@ export function Shell() {
       return;
     }
     setLocaleReady(false);
+    const scope = authScopeKey;
+    const controller = new AbortController();
     void api
-      .configurationActive()
+      .configurationActive(controller.signal)
       .then(({ body }) => {
+        if (auth.scope() !== scope) return;
         const locale = configurationLocale(
           body.values.find((entry) => entry.key === 'appearance.locale')?.value,
         );
         if (locale)
           return applyServerSettingsLocale(locale).then(() => {
+            if (auth.scope() !== scope) return;
             if (i18n.language !== locale.language) return i18n.changeLanguage(locale.language);
           });
       })
       .finally(() => setLocaleReady(true))
       .catch(() => undefined);
+    return () => controller.abort();
   }, [authScopeKey]);
   useEffect(() => {
     if (sessionReady && !auth.get() && !isLogin) {
@@ -436,6 +441,9 @@ export function SetupPage() {
         throw new ContractError('Active setup configuration is incomplete.');
       type ConfigurationValue = Exclude<Schema<'ConfigurationValueWrite'>['value'], undefined>;
       const configurationValue = (value: object): ConfigurationValue => value as ConfigurationValue;
+      const initialPaperCapital = Number(form.initial_paper_capital);
+      if (!Number.isFinite(initialPaperCapital) || initialPaperCapital <= 0)
+        throw new ContractError('Initial paper capital must be a finite positive number.');
       const candidate = await api.putConfigurationCandidate(
         {
           base_revision: active.data.body.active_revision,
@@ -455,7 +463,7 @@ export function SetupPage() {
                 ...(defaults as Record<string, unknown>),
                 benchmark: form.default_benchmark,
                 research_start: form.default_research_start || null,
-                initial_paper_capital: Number(form.initial_paper_capital),
+                initial_paper_capital: initialPaperCapital,
               }),
             },
           ],
@@ -829,7 +837,15 @@ export function SetupPage() {
                 {t(`setup.field.${key}`)}
                 <input
                   required={key !== 'default_research_start'}
-                  type={key === 'default_research_start' ? 'date' : 'text'}
+                  type={
+                    key === 'default_research_start'
+                      ? 'date'
+                      : key === 'initial_paper_capital'
+                        ? 'number'
+                        : 'text'
+                  }
+                  min={key === 'initial_paper_capital' ? '0.000000000000000001' : undefined}
+                  step={key === 'initial_paper_capital' ? 'any' : undefined}
                   value={form[key]}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, [key]: event.target.value }))
@@ -3182,7 +3198,19 @@ function DecisionDialog({
   }, [successSignal]);
   if (item.visibility === 'HIDE') return null;
   if (!item.requires_confirmation && !confirmDisabled)
-    return <Capability item={item} label={label} busy={busy} onClick={onConfirm} />;
+    return (
+      <Capability
+        item={item}
+        label={label}
+        busy={busy || refreshing}
+        onClick={() => {
+          setRefreshing(true);
+          void onBeforeOpen()
+            .then(onConfirm)
+            .finally(() => setRefreshing(false));
+        }}
+      />
+    );
   return (
     <>
       <Dialog.Root

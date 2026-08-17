@@ -403,6 +403,7 @@ def _validate_evidence(
         else None
     )
     audit_occurred = _utc_timestamp(bind, audit["occurred_at"], "audit occurred_at")
+    legacy_status = str(evidence["from_state"] or deployment["status"])
     audit_valid = (
         audit.get("actor_type") == "SYSTEM"
         and audit.get("actor_id") == "alembic:0017"
@@ -415,9 +416,7 @@ def _validate_evidence(
         and audit.get("detail_artifact_id") is None
         and audit.get("before_hash") is None
         and audit.get("input_hash")
-        == _hash(
-            {"paper_id": deployment["paper_id"], "status": str(deployment["status"])}
-        )
+        == _hash({"paper_id": deployment["paper_id"], "status": legacy_status})
         and audit.get("after_hash") == _hash(evidence)
     )
     if not audit_valid:
@@ -427,7 +426,7 @@ def _validate_evidence(
         and is_public_id("domain_event", evidence["state_transition_id"])
         and str(evidence["workspace_id"]) == str(deployment["workspace_id"])
         and evidence["paper_id"] == deployment["paper_id"]
-        and evidence["from_state"] is None
+        and evidence["from_state"] in {None, "STOPPED"}
         and evidence["to_state"] == baseline["scheduler_status"]
         and effective == initialization == evidence_watermark == baseline_watermark
         and (
@@ -498,26 +497,6 @@ def _validate_evidence(
         .mappings()
         .all()
     )
-    retention = (
-        bind.execute(
-            select(event_stream_watermarks).where(
-                event_stream_watermarks.c.workspace_id == deployment["workspace_id"]
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
-    expired_canonical_event = (
-        not events
-        and isinstance(evidence["domain_event_sequence"], int)
-        and not isinstance(evidence["domain_event_sequence"], bool)
-        and retention is not None
-        and isinstance(retention["expired_through_sequence"], int)
-        and not isinstance(retention["expired_through_sequence"], bool)
-        and retention["expired_through_sequence"] >= evidence["domain_event_sequence"]
-    )
-    if expired_canonical_event:
-        return
     if len(events) != 1:
         _block("ambiguous scheduler initialization paper.updated event", deployment)
     event = events[0]
@@ -749,6 +728,7 @@ def _insert_baseline(
     paper_id = deployment["paper_id"]
     deployment_id = deployment["id"]
     revision = int(deployment["revision"])
+    legacy_status = str(deployment.get("_legacy_status", deployment["status"]))
     suppressed = instant if target != "ACTIVE" else None
     if bind.dialect.name == "postgresql":
         bind.execute(
@@ -794,7 +774,7 @@ def _insert_baseline(
         "state_transition_id": state_transition_id,
         "workspace_id": str(workspace_id),
         "paper_id": paper_id,
-        "from_state": None,
+        "from_state": legacy_status if legacy_status != target else None,
         "to_state": target,
         "effective_at_utc": instant.isoformat(),
         "suppressed_since_utc": suppressed.isoformat() if suppressed else None,
@@ -829,9 +809,7 @@ def _insert_baseline(
         "detail_artifact_id": None,
         "prev_event_hash": _previous_audit_hash(audit_events, bind, workspace_id),
         "occurred_at": instant,
-        "input_hash": _hash(
-            {"paper_id": paper_id, "status": str(deployment["status"])}
-        ),
+        "input_hash": _hash({"paper_id": paper_id, "status": legacy_status}),
         "before_hash": None,
         "after_hash": _hash(evidence),
     }
@@ -944,6 +922,7 @@ def _initialize_missing_baselines(bind: Connection) -> None:
             deployment_mapping["workspace_id"],
         )
         if deployment_mapping["status"] == "STOPPED":
+            deployment_mapping["_legacy_status"] = "STOPPED"
             bind.execute(
                 deployments.update()
                 .where(deployments.c.id == deployment_mapping["id"])
@@ -951,6 +930,7 @@ def _initialize_missing_baselines(bind: Connection) -> None:
                 .values(status="DISABLED")
             )
             deployment_mapping["status"] = "DISABLED"
+            deployment_mapping["revision"] = int(deployment_mapping["revision"]) + 1
         _insert_baseline(
             bind,
             states,

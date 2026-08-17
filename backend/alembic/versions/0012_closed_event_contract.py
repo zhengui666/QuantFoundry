@@ -57,6 +57,44 @@ EVENT_TYPES = (
     "system.resync_required",
 )
 
+EVENT_OBJECT_TYPES = {
+    "job.updated": "job",
+    "research.created": "research",
+    "research.updated": "research",
+    "research.conclusion.created": "conclusion",
+    "experiment.created": "experiment",
+    "experiment.updated": "experiment",
+    "factor.updated": "factor",
+    "strategy.created": "strategy_version",
+    "strategy.updated": "strategy_version",
+    "validation.created": "validation",
+    "validation.updated": "validation",
+    "validation.holdout.updated": "validation",
+    "approval.created": "approval",
+    "approval.updated": "approval",
+    "paper.created": "paper",
+    "paper.updated": "paper",
+    "paper.run.updated": "paper_run",
+    "review.created": "review",
+    "review.updated": "review",
+    "data.provider.updated": "provider_connection",
+    "data.capability.updated": "capability",
+    "data.quality.updated": "snapshot",
+    "agent.run.updated": "agent_run",
+    "tool.call.updated": "tool_call",
+    "memo.created": "memo",
+    "memo.updated": "memo",
+    "setup.completed": "settings",
+    "configuration.updated": "settings",
+    "configuration.apply_failed": "settings",
+    "database.connection.updated": "provider_connection",
+    "database.connection.failed": "provider_connection",
+    "notification.created": "notification",
+    "notification.updated": "agent_config",
+    "system.health.updated": "event_stream",
+    "system.resync_required": "event_stream",
+}
+
 
 def _migrated_public_id(prefix: str, workspace_id: str, sequence: int) -> str:
     digest = hashlib.sha256(f"{prefix}:{workspace_id}:{sequence}".encode()).hexdigest()
@@ -64,6 +102,38 @@ def _migrated_public_id(prefix: str, workspace_id: str, sequence: int) -> str:
         f"{digest[:8]}-{digest[8:12]}-4{digest[13:16]}-8{digest[17:20]}-{digest[20:32]}"
     )
     return f"{prefix}-{uuid4}"
+
+
+def _fallback_object_id(object_type: str, workspace_id: str, sequence: int) -> str:
+    prefixes = {
+        "job": "JOB",
+        "research": "RSCH",
+        "conclusion": "CONC",
+        "experiment": "EXP",
+        "factor": "FAC",
+        "strategy_version": "STRAT",
+        "validation": "VAL",
+        "approval": "APR",
+        "paper": "PAPER",
+        "paper_run": "PRUN",
+        "review": "REV",
+        "capability": "CAP",
+        "snapshot": "DS",
+        "agent_run": "ARUN",
+        "tool_call": "TCALL",
+        "memo": "MEMO",
+        "notification": "NOTIF",
+        "event_stream": "EVT",
+    }
+    if object_type == "settings":
+        return "SETTINGS-DEFAULT"
+    if object_type == "agent_config":
+        return "RESEARCH_DIRECTOR"
+    if object_type == "provider_connection":
+        return _migrated_public_id("CONN", workspace_id, sequence).removeprefix(
+            "CONN-"
+        )
+    return _migrated_public_id(prefixes[object_type], workspace_id, sequence)
 
 
 def _canonical_event_type(value: str | None) -> str:
@@ -144,6 +214,10 @@ def upgrade() -> None:
     )
     for row in rows:
         event_type = _canonical_event_type(row["event_type"])
+        object_type = EVENT_OBJECT_TYPES[event_type]
+        object_id = row["event_id"] or _fallback_object_id(
+            object_type, row["workspace_id"], row["sequence"]
+        )
         payload = (
             json.dumps(
                 {"state": "RESYNC_REQUIRED", "status": None},
@@ -158,10 +232,8 @@ def upgrade() -> None:
                 UPDATE domain_events
                 SET event_id = :event_id,
                     event_type = :event_type,
-                    object_type = CASE WHEN :event_type = 'system.resync_required'
-                        THEN 'event_stream' ELSE COALESCE(object_type, 'event_stream') END,
-                    object_id = CASE WHEN :event_type = 'system.resync_required'
-                        THEN :event_id ELSE COALESCE(object_id, 'events') END,
+                    object_type = :object_type,
+                    object_id = COALESCE(object_id, :object_id),
                     payload = :payload,
                     request_id = COALESCE(request_id, :request_id),
                     occurred_at = COALESCE(occurred_at, :occurred_at),
@@ -177,6 +249,8 @@ def upgrade() -> None:
                     "EVT", row["workspace_id"], row["sequence"]
                 ),
                 "event_type": event_type,
+                "object_type": object_type,
+                "object_id": object_id,
                 "payload": payload,
                 "request_id": f"REQ-MIGRATED-{row['sequence']}",
                 "occurred_at": occurred_at_value,
@@ -199,6 +273,7 @@ def upgrade() -> None:
         batch.alter_column(
             "expires_at", existing_type=sa.DateTime(timezone=True), nullable=False
         )
+        batch.alter_column("request_id", existing_type=sa.String(), nullable=False)
         batch.create_check_constraint(
             "domain_events_event_type_check",
             f"event_type IN ({quoted})",

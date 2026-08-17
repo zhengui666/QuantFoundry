@@ -203,6 +203,9 @@ def test_activation_and_fill_rules_fail_closed() -> None:
         deployment_switch="ACTIVE",
         capabilities=capabilities,
         submission_account_id="acct-1",
+        current_approval_state="APPROVED",
+        current_approval_revision=evidence.approval_revision,
+        current_connector_revision=evidence.connector_revision,
     )
     with pytest.raises(LivePolicyError, match="confirmation"):
         evidence.validate(
@@ -213,6 +216,9 @@ def test_activation_and_fill_rules_fail_closed() -> None:
             deployment_switch="ACTIVE",
             capabilities=capabilities,
             submission_account_id="acct-1",
+            current_approval_state="APPROVED",
+            current_approval_revision=evidence.approval_revision,
+            current_connector_revision=evidence.connector_revision,
         )
     status, ids, changed = apply_fill(
         current="ACKNOWLEDGED",
@@ -265,4 +271,7 @@ def test_activation_and_fill_rules_fail_closed() -> None:
             deployment_switch="ACTIVE",
             capabilities=capabilities,
             submission_account_id="acct-1",
+            current_approval_state="APPROVED",
+            current_approval_revision=stale.approval_revision,
+            current_connector_revision=stale.connector_revision,
         )

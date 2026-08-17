@@ -8,8 +8,13 @@ export default defineConfig({
     {
       name: 'e2e-auth-session',
       configureServer(server) {
-        if (process.env.QF_E2E_MOCK_AUTH !== '1') return;
+        if (process.env.QF_E2E_MOCK_AUTH !== '1' || process.env.QF_E2E_MODE !== '1') return;
         server.middlewares.use((request, response, next) => {
+          const remoteAddress = request.socket.remoteAddress;
+          if (remoteAddress !== '127.0.0.1' && remoteAddress !== '::1') {
+            next();
+            return;
+          }
           if (request.url === '/api/v1/auth/session') {
             response.statusCode = 200;
             response.setHeader('content-type', 'application/json');

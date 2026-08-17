@@ -307,6 +307,11 @@ def seed_local(
             }
             if model is ResearchPolicyVersionRow:
                 expected["rules"] = value
+                expected["require_cost_test"] = True
+                expected["require_parameter_stability"] = True
+                expected["require_oos"] = True
+                expected["require_holdout"] = True
+                expected["require_red_team"] = True
                 expected["max_research_steps"] = 25
                 expected["max_tool_calls"] = 50
             elif model is RiskPolicyVersionRow:
@@ -318,7 +323,9 @@ def seed_local(
                         "max_strategy_weight": Decimal(
                             str(value["max_gross_exposure"])
                         ),
+                        "target_portfolio_vol": None,
                         "max_paper_drawdown": Decimal(str(value["max_drawdown"])),
+                        "max_turnover": None,
                         "rules": value,
                     }
                 )
@@ -327,8 +334,10 @@ def seed_local(
                     {
                         "commission_model": {"commission_bps": value["commission_bps"]},
                         "slippage_model": {"slippage_bps": value["slippage_bps"]},
+                        "spread_model": None,
                         "rebalance_timing": "NEXT_OPEN",
                         "fill_assumption": "NEXT_OPEN",
+                        "currency": "USD",
                     }
                 )
             if any(
@@ -381,6 +390,12 @@ def seed_local(
             raise RuntimeError(
                 "session token is revoked or expired; provide a new token"
             )
+        elif (
+            existing_token.expires_at.replace(tzinfo=UTC)
+            if existing_token.expires_at.tzinfo is None
+            else existing_token.expires_at
+        ) < timestamp + timedelta(hours=ttl_hours):
+            existing_token.expires_at = timestamp + timedelta(hours=ttl_hours)
         active_policy = session.execute(
             select(ResearchPolicyVersionRow).where(
                 ResearchPolicyVersionRow.workspace_id == workspace_id,

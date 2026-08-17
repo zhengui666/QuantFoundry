@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import secrets
+import socket
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -72,6 +74,31 @@ def _header_value(value: str, field_name: str) -> str:
     return value
 
 
+def _reject_private_connector_endpoint(
+    endpoint: str, *, resolve_hostname: bool = True
+) -> None:
+    parsed = urlsplit(endpoint)
+    hostname = parsed.hostname
+    if hostname is None:
+        raise ValueError("connector endpoint hostname is required")
+    try:
+        addresses = {ipaddress.ip_address(hostname)}
+    except ValueError:
+        if not resolve_hostname:
+            return
+        try:
+            addresses = {
+                ipaddress.ip_address(info[4][0])
+                for info in socket.getaddrinfo(
+                    hostname, parsed.port or 443, type=socket.SOCK_STREAM
+                )
+            }
+        except socket.gaierror:
+            addresses = set()
+    if any(not address.is_global for address in addresses):
+        raise ValueError("connector endpoint must resolve only to global addresses")
+
+
 def _idempotency_key(*parts: str) -> str:
     if not parts or any(not isinstance(part, str) for part in parts):
         raise ValueError("idempotency key parts are required")
@@ -92,7 +119,7 @@ def _order_fingerprint(account_id: str, order: OrderRequest) -> str:
 
 
 def _validate_order_response(
-    result: dict[str, Any], client_order_id: str
+    result: dict[str, Any], client_order_id: str | None
 ) -> dict[str, Any]:
     statuses = {
         "CREATED",
@@ -117,7 +144,11 @@ def _validate_order_response(
     }
     if (
         not required.issubset(result)
-        or result.get("client_order_id") != client_order_id
+        or not isinstance(result.get("client_order_id"), str)
+        or (
+            client_order_id is not None
+            and result.get("client_order_id") != client_order_id
+        )
         or not isinstance(result.get("broker_order_id"), str)
         or not result["broker_order_id"]
         or result.get("status") not in statuses
@@ -129,6 +160,25 @@ def _validate_order_response(
         or not all(isinstance(fill, dict) for fill in result["fills"])
     ):
         raise ConnectorProtocolError("order response is invalid")
+    return result
+
+
+def _validate_preview_response(result: dict[str, Any]) -> dict[str, Any]:
+    if result.get("approved") is not True:
+        raise ConnectorProtocolError("margin preview was not approved")
+    return result
+
+
+def _validate_orders_response(
+    result: dict[str, Any], client_order_id: str | None = None
+) -> dict[str, Any]:
+    orders = result.get("orders")
+    if not isinstance(orders, list) or not all(
+        isinstance(item, dict) for item in orders
+    ):
+        raise ConnectorProtocolError("orders response is invalid")
+    for item in orders:
+        _validate_order_response(item, client_order_id)
     return result
 
 
@@ -484,12 +534,18 @@ class ConnectorClient:
         ):
             raise ValueError("connector key_id and credential are required")
         _header_value(key_id, "key_id")
+        self._owns_client = http_client is None
+        _reject_private_connector_endpoint(
+            endpoint, resolve_hostname=self._owns_client
+        )
         self._base_url = endpoint.rstrip("/")
         self._key_id = key_id
         self._credential = credential.encode("utf-8")
         self._clock = clock
         self._nonce_factory = nonce_factory
-        self._preview_fingerprints: set[str] = set()
+        self._preview_fingerprints: dict[str, float] = {}
+        self._capabilities: ConnectorCapabilities | None = None
+        self._capabilities_fetched_at: float | None = None
         if timeout <= 0:
             raise ValueError("connector timeout must be positive")
         self._timeout = timeout
@@ -498,7 +554,6 @@ class ConnectorClient:
             timeout=timeout,
             follow_redirects=False,
         )
-        self._owns_client = http_client is None
 
     def close(self) -> None:
         if self._owns_client:
@@ -520,6 +575,9 @@ class ConnectorClient:
     ) -> dict[str, Any]:
         if not path.startswith("/") or "#" in path:
             raise ValueError("connector path is invalid")
+        _reject_private_connector_endpoint(
+            self._base_url, resolve_hostname=self._owns_client
+        )
         body = (
             b""
             if payload is None
@@ -582,7 +640,18 @@ class ConnectorClient:
         return result
 
     def capabilities(self) -> ConnectorCapabilities:
-        return ConnectorCapabilities.from_wire(self._request("GET", "/v1/capabilities"))
+        if (
+            self._capabilities is not None
+            and self._capabilities_fetched_at is not None
+            and self._clock() - self._capabilities_fetched_at <= 60
+        ):
+            return self._capabilities
+        value = ConnectorCapabilities.from_wire(
+            self._request("GET", "/v1/capabilities")
+        )
+        self._capabilities = value
+        self._capabilities_fetched_at = self._clock()
+        return value
 
     def accounts(self) -> list[dict[str, Any]]:
         value = self._request("GET", "/v1/accounts").get("accounts")
@@ -620,21 +689,28 @@ class ConnectorClient:
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/preview",
             payload=order.to_wire(),
         )
-        self._preview_fingerprints.add(_order_fingerprint(account_id, order))
-        return result
+        validated = _validate_preview_response(result)
+        self._preview_fingerprints[_order_fingerprint(account_id, order)] = (
+            self._clock() + 60
+        )
+        return validated
 
     def submit_order(
         self, account_id: str, order: OrderRequest, capabilities: ConnectorCapabilities
     ) -> dict[str, Any]:
+        capabilities.validate_order(order)
+        current_capabilities = self.capabilities()
+        if capabilities.content_hash() != current_capabilities.content_hash():
+            raise ConnectorProtocolError("caller capabilities are stale or untrusted")
+        capabilities = current_capabilities
         if account_id not in capabilities.account_ids:
             raise ConnectorProtocolError("account is not in connector capabilities")
         capabilities.validate_order(order)
         fingerprint = _order_fingerprint(account_id, order)
-        if (
-            order.instrument.asset_class in MARGIN_PREVIEW_ASSETS
-            and fingerprint not in self._preview_fingerprints
-        ):
-            raise ConnectorProtocolError("validated margin preview is required")
+        if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
+            expires_at = self._preview_fingerprints.pop(fingerprint, None)
+            if expires_at is None or expires_at <= self._clock():
+                raise ConnectorProtocolError("validated margin preview is required")
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
@@ -644,7 +720,6 @@ class ConnectorClient:
             ),
         )
         validated = _validate_order_response(result, order.client_order_id)
-        self._preview_fingerprints.discard(fingerprint)
         return validated
 
     def orders(
@@ -664,29 +739,41 @@ class ConnectorClient:
             )
         if query:
             path += "?" + "&".join(query)
-        return self._request("GET", path)
+        return _validate_orders_response(self._request("GET", path), client_order_id)
 
     def order(self, account_id: str, broker_order_id: str) -> dict[str, Any]:
-        return self._request(
-            "GET",
-            f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
-            f"{_segment(broker_order_id, 'broker_order_id')}",
+        return _validate_order_response(
+            self._request(
+                "GET",
+                f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
+                f"{_segment(broker_order_id, 'broker_order_id')}",
+            ),
+            None,
         )
 
     def cancel(self, account_id: str, broker_order_id: str) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
-            f"{_segment(broker_order_id, 'broker_order_id')}/cancel",
-            payload={},
-            idempotency_key=_idempotency_key("cancel", account_id, broker_order_id),
+        return _validate_order_response(
+            self._request(
+                "POST",
+                f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
+                f"{_segment(broker_order_id, 'broker_order_id')}/cancel",
+                payload={},
+                idempotency_key=_idempotency_key("cancel", account_id, broker_order_id),
+            ),
+            None,
         )
 
     def fills(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:
         path = f"/v1/accounts/{_segment(account_id, 'account_id')}/fills"
         if cursor:
             path += f"?cursor={_segment(cursor, 'cursor')}"
-        return self._request("GET", path)
+        result = self._request("GET", path)
+        fills = result.get("fills")
+        if not isinstance(fills, list) or not all(
+            isinstance(item, dict) for item in fills
+        ):
+            raise ConnectorProtocolError("fills response is invalid")
+        return result
 
     def market_clock(self, venue: str) -> dict[str, Any]:
         return self._request(

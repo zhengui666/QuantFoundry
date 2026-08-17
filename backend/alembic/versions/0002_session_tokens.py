@@ -31,9 +31,9 @@ def upgrade() -> None:
             ["actor_id"], ["users.id"], name="fk_session_tokens_actor_id_users"
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id"],
-            ["workspaces.id"],
-            name="fk_session_tokens_workspace_id_workspaces",
+            ["workspace_id", "actor_id"],
+            ["workspaces.id", "workspaces.owner_id"],
+            name="fk_session_tokens_workspace_actor_workspaces",
         ),
         sa.CheckConstraint(token_check, name="ck_session_tokens_sha256_valid"),
     )

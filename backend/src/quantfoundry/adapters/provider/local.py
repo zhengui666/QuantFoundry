@@ -253,10 +253,11 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                 index = min(self.server.action_index, len(self.server.actions) - 1)
                 action = self.server.actions[index]
             self.server.action_index += 1
+            action_id = self.server.action_index
         self._json(
             HTTPStatus.OK,
             {
-                "id": f"local-{self.server.action_index}",
+                "id": f"local-{action_id}",
                 "object": "chat.completion",
                 "choices": [
                     {
@@ -310,6 +311,13 @@ def create_server(
     server.api_key = effective_key
     server.model_name = model_name
     server.failure_statuses = list(failure_statuses or [])
+    for status in server.failure_statuses:
+        try:
+            HTTPStatus(status)
+        except ValueError as error:
+            raise ValueError(f"invalid provider failure status: {status}") from error
+        if not 400 <= status <= 599:
+            raise ValueError("provider failure statuses must be HTTP 4xx/5xx")
     server.request_log = []
     server.state_lock = Lock()
     return server

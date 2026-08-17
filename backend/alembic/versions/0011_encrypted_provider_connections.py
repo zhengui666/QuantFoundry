@@ -58,7 +58,7 @@ def upgrade() -> None:
         sa.Column("model_name", sa.String(128), nullable=False),
         sa.Column("ciphertext", sa.LargeBinary(), nullable=False),
         sa.Column("nonce", sa.LargeBinary(), nullable=False),
-        sa.Column("key_id", sa.String(64), nullable=False),
+        sa.Column("key_id", sa.String(160), nullable=False),
         sa.Column(
             "validation_state",
             sa.String(16),

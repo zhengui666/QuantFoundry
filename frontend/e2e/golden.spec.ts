@@ -873,6 +873,7 @@ test('P11 requests approval from Validation detail capability and converges both
   await page.getByLabel('Approval reason').fill('Controlled matrix holdout');
   await expect(requestAction).toBeEnabled();
   await requestAction.click();
+  // public-id-prose APR-
   await expect(page.getByText(/Holdout approval requested: APR-/)).toBeVisible();
   await expect(page.getByText('APPROVAL PENDING')).toBeVisible();
   await expect(requestAction).toHaveCount(0);

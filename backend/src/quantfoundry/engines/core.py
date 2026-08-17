@@ -306,7 +306,7 @@ def load_cost_model(cost_model_id: str) -> CostModel:
     return CostModel(cost_model_id, version, commission, slippage)
 
 
-def load_validation_policy(policy_id: str) -> ValidationPolicy:
+def _load_validation_policy_document(policy_id: str) -> dict[str, Any]:
     root_value = os.getenv("QF_POLICY_DIR")
     if not root_value:
         raise EngineInputError("QF_POLICY_DIR is not configured")
@@ -335,6 +335,13 @@ def load_validation_policy(policy_id: str) -> ValidationPolicy:
     data_quality = value["data_quality"]
     if not all(isinstance(item, dict) for item in (validation, holdout, data_quality)):
         raise EngineInputError("validation policy sections must be objects")
+    return value
+
+
+def _parse_validation_policy(policy_id: str, value: dict[str, Any]) -> ValidationPolicy:
+    validation = value["validation"]
+    holdout = value["holdout"]
+    data_quality = value["data_quality"]
     integer_values = (
         value.get("version"),
         validation.get("min_observations"),
@@ -391,6 +398,21 @@ def load_validation_policy(policy_id: str) -> ValidationPolicy:
     return policy
 
 
+def load_validation_policy_bundle(
+    policy_id: str,
+) -> tuple[ValidationPolicy, dict[str, Any]]:
+    document = _load_validation_policy_document(policy_id)
+    return _parse_validation_policy(policy_id, document), document
+
+
+def load_validation_policy(policy_id: str) -> ValidationPolicy:
+    return load_validation_policy_bundle(policy_id)[0]
+
+
+def load_validation_policy_document(policy_id: str) -> dict[str, Any]:
+    return load_validation_policy_bundle(policy_id)[1]
+
+
 def data_quality_profile(
     bundle: DatasetBundle, policy: ValidationPolicy
 ) -> dict[str, Any]:
@@ -427,14 +449,22 @@ def data_quality_profile(
 def holdout_policy_result(
     metrics: dict[str, Any], policy: ValidationPolicy
 ) -> tuple[str, list[str]]:
+    try:
+        observations = int(metrics["observations"])
+        total_return = float(metrics["total_return"])
+        sharpe = float(metrics["sharpe"])
+        maximum_drawdown = float(metrics["maximum_drawdown"])
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise EngineInputError("holdout metrics are invalid") from error
+    if not all(
+        math.isfinite(value) for value in (total_return, sharpe, maximum_drawdown)
+    ):
+        raise EngineInputError("holdout metrics must be finite")
     checks = {
-        "MIN_OBSERVATIONS": int(metrics["observations"])
-        >= policy.holdout_min_observations,
-        "MIN_TOTAL_RETURN": float(metrics["total_return"])
-        >= policy.holdout_min_total_return,
-        "MIN_SHARPE": float(metrics["sharpe"]) >= policy.holdout_min_sharpe,
-        "MAX_DRAWDOWN": float(metrics["maximum_drawdown"])
-        >= policy.holdout_max_drawdown_floor,
+        "MIN_OBSERVATIONS": observations >= policy.holdout_min_observations,
+        "MIN_TOTAL_RETURN": total_return >= policy.holdout_min_total_return,
+        "MIN_SHARPE": sharpe >= policy.holdout_min_sharpe,
+        "MAX_DRAWDOWN": maximum_drawdown >= policy.holdout_max_drawdown_floor,
     }
     failures = [key for key, passed in checks.items() if not passed]
     return ("PASS" if not failures else "FAIL", failures)
@@ -625,18 +655,24 @@ def compute_factor_rows(
     return sorted(calculated, key=lambda item: (item["date"], item["symbol"]))
 
 
-def factor_metrics(rows: list[dict[str, Any]], horizons: list[int]) -> dict[str, Any]:
+def factor_metrics(
+    rows: list[dict[str, Any]],
+    horizons: list[int],
+    *,
+    market_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     if not horizons or any(value < 1 for value in horizons):
         raise EngineInputError("factor horizons must be positive")
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
-    prices: dict[str, dict[str, float]] = defaultdict(dict)
     sectors: dict[str, dict[str, str]] = defaultdict(dict)
-    adjusted_prices = _adjusted_price_map(rows)
+    canonical_rows = rows if market_rows is None else market_rows
+    adjusted_prices = _adjusted_price_map(canonical_rows)
+    session_dates = sorted({row["date"] for row in canonical_rows})
+    session_indexes = {date: index for index, date in enumerate(session_dates)}
     for row in rows:
         by_date[row["date"]][row["symbol"]] = float(
             row.get("factor_score", row["close"])
         )
-        prices[row["date"]][row["symbol"]] = adjusted_prices[row["date"]][row["symbol"]]
         sectors[row["date"]][row["symbol"]] = str(row.get("sector", "__all__"))
     dates = sorted(by_date)
     result: dict[str, Any] = {"horizons": {}}
@@ -648,10 +684,21 @@ def factor_metrics(rows: list[dict[str, Any]], horizons: list[int]) -> dict[str,
             by_date[day], key=lambda symbol: (-by_date[day][symbol], symbol)
         )
         memberships.append(set(ranked[: max(1, len(ranked) // 2)]))
-    turnover_values = [
-        len(previous.symmetric_difference(current)) / (2 * max(1, len(previous)))
-        for previous, current in zip(memberships, memberships[1:], strict=False)
-    ]
+    turnover_values = []
+    for previous, current in zip(memberships, memberships[1:], strict=False):
+        previous_weight = 1.0 / len(previous) if previous else 0.0
+        current_weight = 1.0 / len(current) if current else 0.0
+        universe = previous | current
+        turnover_values.append(
+            0.5
+            * sum(
+                abs(
+                    (current_weight if symbol in current else 0.0)
+                    - (previous_weight if symbol in previous else 0.0)
+                )
+                for symbol in universe
+            )
+        )
     for horizon in horizons:
         ic_values: list[float] = []
         rank_ic_values: list[float] = []
@@ -659,15 +706,23 @@ def factor_metrics(rows: list[dict[str, Any]], horizons: list[int]) -> dict[str,
         quantile_spreads: list[float] = []
         pairs = 0
         possible = 0
-        for index, day in enumerate(dates[:-horizon]):
-            future = dates[index + horizon]
-            symbols = sorted(set(by_date[day]) & set(by_date[future]))
+        for day in dates:
+            session_index = session_indexes.get(day)
+            if session_index is None or session_index + horizon >= len(session_dates):
+                continue
+            future = session_dates[session_index + horizon]
+            symbols = sorted(
+                set(by_date[day])
+                & set(adjusted_prices.get(day, {}))
+                & set(adjusted_prices.get(future, {}))
+            )
             possible += len(by_date[day])
             if len(symbols) < 2:
                 continue
             scores = [by_date[day][symbol] for symbol in symbols]
             forward = [
-                prices[future][symbol] / prices[day][symbol] - 1.0 for symbol in symbols
+                adjusted_prices[future][symbol] / adjusted_prices[day][symbol] - 1.0
+                for symbol in symbols
             ]
             ic_values.append(_pearson(scores, forward))
             rank_ic_values.append(_pearson(_ranks(scores), _ranks(forward)))
@@ -731,7 +786,16 @@ def _portfolio_returns(
     selection_count: int,
     cost: CostModel,
     strategy_spec: dict[str, Any] | None = None,
-) -> tuple[list[float], list[float], list[float], int, dict[str, float]]:
+    market_rows: list[dict[str, Any]] | None = None,
+) -> tuple[
+    list[float],
+    list[float],
+    list[float],
+    int,
+    dict[str, float],
+    list[float],
+    list[int],
+]:
     if selection_count < 1:
         raise EngineInputError("selection_count must be positive")
     by_date: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
@@ -742,13 +806,25 @@ def _portfolio_returns(
                 f"{row['date']}/{row['symbol']}"
             )
         by_date[row["date"]][row["symbol"]] = row
-    dates = sorted(by_date)
+    canonical_rows = rows if market_rows is None else market_rows
+    market_by_date: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in canonical_rows:
+        if row["symbol"] in market_by_date[row["date"]]:
+            raise EngineInputError(
+                "duplicate market row for local date and symbol: "
+                f"{row['date']}/{row['symbol']}"
+            )
+        market_by_date[row["date"]][row["symbol"]] = row
+    dates = sorted(market_by_date)
     net_returns: list[float] = []
     benchmark_returns: list[float] = []
     turnovers: list[float] = []
     trade_count = 0
     previous_weights: dict[str, float] = {}
     final_weights: dict[str, float] = {}
+    exposures: list[float] = []
+    holding_periods: list[int] = []
+    holding_age: dict[str, int] = {}
     rules = (strategy_spec or {}).get("rules", {})
     universe_symbols = set((strategy_spec or {}).get("universe", {}).get("symbols", []))
     weighting = rules.get("weighting", "EQUAL")
@@ -810,6 +886,17 @@ def _portfolio_returns(
             raise EngineInputError("strategy weights must have a positive finite total")
         return raw
 
+    def constrain_weights(weights: dict[str, float]) -> dict[str, float]:
+        capped = {
+            symbol: max(-position_limit, min(position_limit, float(weight)))
+            for symbol, weight in weights.items()
+        }
+        gross_exposure = sum(abs(weight) for weight in capped.values())
+        if gross_exposure > leverage_limit and gross_exposure > 0:
+            scale = leverage_limit / gross_exposure
+            capped = {symbol: weight * scale for symbol, weight in capped.items()}
+        return capped
+
     def rebalance_due(index: int) -> bool:
         if index == 0 or rebalance_frequency == "DAILY":
             return True
@@ -827,24 +914,28 @@ def _portfolio_returns(
         raise EngineInputError("unsupported rebalance frequency")
 
     price_history: dict[str, list[float]] = defaultdict(list)
-    adjusted_prices = _adjusted_price_map(rows)
+    adjusted_prices = _adjusted_price_map(canonical_rows)
     for index in range(len(dates) - 1):
         today, tomorrow = dates[index], dates[index + 1]
         next_rows = {
             symbol: row
-            for symbol, row in by_date[tomorrow].items()
+            for symbol, row in market_by_date[tomorrow].items()
+            if _parse_timestamp(row["available_at"], "available_at")
+            <= _parse_timestamp(row["event_time"], "event_time")
+        }
+        today_market_rows = {
+            symbol: row
+            for symbol, row in market_by_date[today].items()
             if _parse_timestamp(row["available_at"], "available_at")
             <= _parse_timestamp(row["event_time"], "event_time")
         }
         today_rows = {
             symbol: row
-            for symbol, row in by_date[today].items()
+            for symbol, row in by_date.get(today, {}).items()
             if _parse_timestamp(row["available_at"], "available_at")
             <= _parse_timestamp(row["event_time"], "event_time")
         }
-        if not today_rows:
-            continue
-        for symbol in today_rows:
+        for symbol in today_market_rows:
             price_history[symbol].append(adjusted_prices[today][symbol])
         ranked = sorted(
             (
@@ -861,18 +952,26 @@ def _portfolio_returns(
             ),
         )
         selected = ranked[:selection_count]
-        if not selected:
-            continue
-        if long_short and len(ranked) < selection_count * 2:
+        if selected and long_short and len(ranked) < selection_count * 2:
             raise EngineInputError(
                 "long-short simulation requires disjoint long and short selections"
             )
-        if not rebalance_due(index) and previous_weights:
-            target = {
-                symbol: weight
-                for symbol, weight in previous_weights.items()
-                if symbol in today_rows
-            }
+        if not today_rows or not selected:
+            target = constrain_weights(
+                {
+                    symbol: weight
+                    for symbol, weight in previous_weights.items()
+                    if symbol in today_market_rows
+                }
+            )
+        elif not rebalance_due(index) and previous_weights:
+            target = constrain_weights(
+                {
+                    symbol: weight
+                    for symbol, weight in previous_weights.items()
+                    if symbol in today_market_rows
+                }
+            )
         else:
             if long_short:
                 shorted = ranked[-selection_count:]
@@ -937,7 +1036,7 @@ def _portfolio_returns(
         if not next_rows:
             raise EngineInputError("next-session benchmark data is unavailable")
         benchmark_today_values = {
-            float(value["benchmark_close"]) for value in today_rows.values()
+            float(value["benchmark_close"]) for value in today_market_rows.values()
         }
         benchmark_tomorrow_values = {
             float(value["benchmark_close"]) for value in next_rows.values()
@@ -948,6 +1047,12 @@ def _portfolio_returns(
         benchmark_tomorrow = benchmark_tomorrow_values.pop()
         benchmark_returns.append(benchmark_tomorrow / benchmark_today - 1.0)
         turnovers.append(turnover)
+        exposures.append(sum(abs(value) for value in target.values()))
+        for symbol in set(holding_age) | set(target):
+            if abs(target.get(symbol, 0.0)) > 1e-12:
+                holding_age[symbol] = holding_age.get(symbol, 0) + 1
+            elif symbol in holding_age:
+                holding_periods.append(holding_age.pop(symbol))
         trade_count += sum(
             1
             for symbol in universe
@@ -960,7 +1065,16 @@ def _portfolio_returns(
         final_weights = previous_weights.copy()
     if not net_returns:
         raise EngineInputError("simulation requires at least two comparable sessions")
-    return net_returns, benchmark_returns, turnovers, trade_count, final_weights
+    holding_periods.extend(holding_age.values())
+    return (
+        net_returns,
+        benchmark_returns,
+        turnovers,
+        trade_count,
+        final_weights,
+        exposures,
+        holding_periods,
+    )
 
 
 def _risk_contribution(
@@ -1012,10 +1126,17 @@ def simulation_metrics(
     cost: CostModel,
     strategy_spec: dict[str, Any] | None = None,
     calendar: str | None = None,
+    market_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    returns, benchmark, turnovers, trade_count, final_weights = _portfolio_returns(
-        rows, selection_count, cost, strategy_spec
-    )
+    (
+        returns,
+        benchmark,
+        turnovers,
+        trade_count,
+        final_weights,
+        exposures,
+        holding_periods,
+    ) = _portfolio_returns(rows, selection_count, cost, strategy_spec, market_rows)
     wealth = 1.0
     peak = 1.0
     maximum_drawdown = 0.0
@@ -1069,12 +1190,12 @@ def simulation_metrics(
         "maximum_drawdown": maximum_drawdown,
         "turnover": total_turnover,
         "trade_count": trade_count,
-        "average_holding_period": periods / max(1, trade_count),
+        "average_holding_period": (
+            statistics.fmean(holding_periods) if holding_periods else 0.0
+        ),
         "commission": total_turnover * cost.commission_bps / 10_000,
         "slippage": total_turnover * cost.slippage_bps / 10_000,
-        "exposure": statistics.fmean(
-            sum(abs(value) for value in final_weights.values()) for _ in returns
-        ),
+        "exposure": statistics.fmean(exposures),
         "cash_weight": 1.0 - sum(final_weights.values()),
         "final_weights": final_weights,
         "risk_contribution": _risk_contribution(rows, final_weights),

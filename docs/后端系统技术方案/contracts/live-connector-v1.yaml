@@ -68,6 +68,10 @@ order:
   required_fields: [schema_version, client_order_id, instrument, side, quantity, order_type, time_in_force, position_effect]
   limit_price_required_when: "order_type == LIMIT"
   response_fields: [broker_order_id, client_order_id, status, accepted_at, updated_at, fills]
+preview:
+  response_fields: [approved]
+  approval_required: true
+  local_authorization_ttl_seconds: 60
   prohibited: [withdrawal, transfer, liquidation, multi_leg_order]
 failure_semantics:
   timeout_after_submit: query_by_client_order_id_before_any_retry

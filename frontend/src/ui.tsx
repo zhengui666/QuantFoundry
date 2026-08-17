@@ -93,6 +93,7 @@ export function Capability({
   };
   const button = (
     <button
+      type="button"
       data-testid={`capability-action-${item.action}`}
       data-requires-confirmation={String(item.requires_confirmation)}
       onClick={item.requires_confirmation && !confirmationHandled ? undefined : runSafely}
@@ -143,14 +144,17 @@ export function Capability({
           </p>
           {confirmationError && <State kind="error">{confirmationError}</State>}
           <button
+            type="button"
             data-testid={`capability-confirm-${item.action}`}
             onClick={() => void confirm()}
-            disabled={confirmationPending}
+            disabled={confirmationPending || busy}
           >
             {t('capability.confirmAction')}
           </button>
           <Dialog.Close asChild>
-            <button className="secondary">{t('common.cancel')}</button>
+            <button type="button" className="secondary">
+              {t('common.cancel')}
+            </button>
           </Dialog.Close>
         </Dialog.Content>
       </Dialog.Portal>
@@ -226,7 +230,9 @@ export function Inspector({
           <Dialog.Title>{title}</Dialog.Title>
           {children}
           <Dialog.Close asChild>
-            <button className="secondary">{t('common.close')}</button>
+            <button type="button" className="secondary">
+              {t('common.close')}
+            </button>
           </Dialog.Close>
         </Dialog.Content>
       </Dialog.Portal>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from typing import Any, Literal, Protocol
 
@@ -15,7 +16,9 @@ from quantfoundry.live.connector import (
     _idempotency_key,
     _order_fingerprint,
     _segment,
+    _validate_preview_response,
     _validate_order_response,
+    _validate_orders_response,
 )
 
 NautilusMethod = Literal["GET", "POST"]
@@ -49,7 +52,9 @@ class NautilusTraderConnector:
         if not callable(getattr(port, "request", None)):
             raise ValueError("NautilusTrader port must expose request()")
         self._port = port
-        self._preview_fingerprints: set[str] = set()
+        self._preview_fingerprints: dict[str, float] = {}
+        self._capabilities: ConnectorCapabilities | None = None
+        self._capabilities_fetched_at: float | None = None
 
     def _request(
         self,
@@ -77,7 +82,18 @@ class NautilusTraderConnector:
         return dict(result)
 
     def capabilities(self) -> ConnectorCapabilities:
-        return ConnectorCapabilities.from_wire(self._request("GET", "/v1/capabilities"))
+        if (
+            self._capabilities is not None
+            and self._capabilities_fetched_at is not None
+            and time.monotonic() - self._capabilities_fetched_at <= 60
+        ):
+            return self._capabilities
+        value = ConnectorCapabilities.from_wire(
+            self._request("GET", "/v1/capabilities")
+        )
+        self._capabilities = value
+        self._capabilities_fetched_at = time.monotonic()
+        return value
 
     def accounts(self) -> list[dict[str, Any]]:
         value = self._request("GET", "/v1/accounts").get("accounts")
@@ -115,8 +131,11 @@ class NautilusTraderConnector:
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/preview",
             payload=order.to_wire(),
         )
-        self._preview_fingerprints.add(_order_fingerprint(account_id, order))
-        return result
+        validated = _validate_preview_response(result)
+        self._preview_fingerprints[_order_fingerprint(account_id, order)] = (
+            time.monotonic() + 60
+        )
+        return validated
 
     def submit_order(
         self,
@@ -124,15 +143,19 @@ class NautilusTraderConnector:
         order: OrderRequest,
         capabilities: ConnectorCapabilities,
     ) -> dict[str, Any]:
+        capabilities.validate_order(order)
+        current_capabilities = self.capabilities()
+        if capabilities.content_hash() != current_capabilities.content_hash():
+            raise ConnectorProtocolError("caller capabilities are stale or untrusted")
+        capabilities = current_capabilities
         if account_id not in capabilities.account_ids:
             raise ConnectorProtocolError("account is not in connector capabilities")
         capabilities.validate_order(order)
         fingerprint = _order_fingerprint(account_id, order)
-        if (
-            order.instrument.asset_class in MARGIN_PREVIEW_ASSETS
-            and fingerprint not in self._preview_fingerprints
-        ):
-            raise ConnectorProtocolError("validated margin preview is required")
+        if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
+            expires_at = self._preview_fingerprints.pop(fingerprint, None)
+            if expires_at is None or expires_at <= time.monotonic():
+                raise ConnectorProtocolError("validated margin preview is required")
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
@@ -142,7 +165,6 @@ class NautilusTraderConnector:
             ),
         )
         validated = _validate_order_response(result, order.client_order_id)
-        self._preview_fingerprints.discard(fingerprint)
         return validated
 
     def orders(
@@ -162,22 +184,28 @@ class NautilusTraderConnector:
             )
         if query:
             path += "?" + "&".join(query)
-        return self._request("GET", path)
+        return _validate_orders_response(self._request("GET", path), client_order_id)
 
     def order(self, account_id: str, broker_order_id: str) -> dict[str, Any]:
-        return self._request(
-            "GET",
-            f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
-            f"{_segment(broker_order_id, 'broker_order_id')}",
+        return _validate_order_response(
+            self._request(
+                "GET",
+                f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
+                f"{_segment(broker_order_id, 'broker_order_id')}",
+            ),
+            None,
         )
 
     def cancel(self, account_id: str, broker_order_id: str) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
-            f"{_segment(broker_order_id, 'broker_order_id')}/cancel",
-            payload={},
-            idempotency_key=_idempotency_key("cancel", account_id, broker_order_id),
+        return _validate_order_response(
+            self._request(
+                "POST",
+                f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/"
+                f"{_segment(broker_order_id, 'broker_order_id')}/cancel",
+                payload={},
+                idempotency_key=_idempotency_key("cancel", account_id, broker_order_id),
+            ),
+            None,
         )
 
     def fills(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
@@ -76,6 +77,12 @@ class LiveConnectorValidationRequest(BaseModel):
             _ = parsed.port
         except ValueError as error:
             raise ValueError("endpoint must contain a valid HTTPS port") from error
+        try:
+            address = ipaddress.ip_address(parsed.hostname)
+        except ValueError:
+            address = None
+        if address is not None and not address.is_global:
+            raise ValueError("endpoint must use a globally routable address")
         return value.rstrip("/")
 
 

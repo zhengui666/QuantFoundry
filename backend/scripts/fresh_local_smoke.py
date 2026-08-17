@@ -44,9 +44,13 @@ def _diagnostic_experiment_status(detail: str) -> str | None:
 
 def _expect(response: httpx.Response, status: int) -> dict[str, object]:
     if response.status_code != status:
+        try:
+            diagnostic: object = _redact_diagnostic(response.json())
+        except (ValueError, TypeError):
+            diagnostic = "[REDACTED_NON_JSON_BODY]"
         raise RuntimeError(
             f"{response.request.method} {response.request.url.path}: "
-            f"{response.status_code} {response.text}"
+            f"{response.status_code} {json.dumps(diagnostic, sort_keys=True)}"
         )
     value = response.json()
     if not isinstance(value, dict):

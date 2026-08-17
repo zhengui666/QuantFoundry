@@ -228,11 +228,32 @@ class DateRangeCompat(TypeDecorator[Any]):
         if value is None:
             return None
         if isinstance(value, str):
-            if not value:
-                return None
             if value.startswith("{"):
-                value = json.loads(value)
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError as error:
+                    raise ValueError("date range JSON is invalid") from error
+            else:
+                match = re.fullmatch(
+                    r"\[(\d{4}-\d{2}-\d{2}),(\d{4}-\d{2}-\d{2})\)",
+                    value,
+                )
+                if match is None:
+                    raise ValueError("date range must use canonical half-open syntax")
+                start = date.fromisoformat(match.group(1))
+                end = date.fromisoformat(match.group(2))
+                if start >= end:
+                    raise ValueError("date range start must precede end")
+                if dialect.name == "postgresql":
+                    return Range(start, end, bounds="[)")
+                return value
         if isinstance(value, dict):
+            if set(value) != {"start", "end"}:
+                raise ValueError("date range must contain only start and end")
+            if not isinstance(value.get("start"), str) or not isinstance(
+                value.get("end"), str
+            ):
+                raise ValueError("date range bounds must be ISO dates")
             start = (
                 date.fromisoformat(value["start"])
                 if value.get("start") is not None
@@ -243,6 +264,8 @@ class DateRangeCompat(TypeDecorator[Any]):
                 if value.get("end") is not None
                 else None
             )
+            if start is None or end is None or start >= end:
+                raise ValueError("date range bounds are invalid")
             if dialect.name == "postgresql":
                 return Range(
                     start,
@@ -404,9 +427,7 @@ def _lower_hex_sha256_check(name: str, nullable: bool) -> str:
     residue = name
     for character in "0123456789abcdef":
         residue = f"replace({residue}, '{character}', '')"
-    body = (
-        f"length({name}) = 64 AND lower({name}) = {name} AND {residue} = ''"
-    )
+    body = f"length({name}) = 64 AND lower({name}) = {name} AND {residue} = ''"
     return f"{name} IS NULL OR ({body})" if nullable else body
 
 
@@ -518,7 +539,9 @@ def _check_sql(column: dict[str, Any]) -> str | None:
     if "CHECK 0<=expired<=last_sequence" in text:
         return "expired_through_sequence >= 0 AND expired_through_sequence <= last_sequence"
     if "CHECK equals `object_revision`" in text:
-        return "revision IS NULL OR object_revision IS NULL OR revision = object_revision"
+        return (
+            "revision IS NULL OR object_revision IS NULL OR revision = object_revision"
+        )
     if "CHECK false→true monotonic" in text:
         return f"{name} IN (FALSE, TRUE)"
     if "CHECK parses canonical half-open date range" in text:

@@ -403,7 +403,7 @@ class Event(Base):
     object_revision = Column(BigInteger)
     revision = Column(Integer)
     payload = Column(Text, nullable=False, default="{}")
-    request_id = Column(String)
+    request_id = Column(String, nullable=False)
     correlation_id = Column(String, index=True)
     causation_id = Column(String)
     job_id = Column(String, index=True)
@@ -593,7 +593,7 @@ class ModelProviderConnectionRow(Base):
     model_name = Column(String(128), nullable=False)
     ciphertext = Column(LargeBinary, nullable=False)
     nonce = Column(LargeBinary, nullable=False)
-    key_id = Column(String(64), nullable=False)
+    key_id = Column(String(160), nullable=False)
     validation_state = Column(String(16), nullable=False, default="SUCCESS")
     status = Column(String(16), nullable=False, default="VALIDATED")
     validated_at = Column(DateTime(timezone=True), nullable=False)
@@ -1478,12 +1478,18 @@ def _install_sqlite_immutability_guards() -> None:
             "NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR "
             "NEW.spec_sha256 != OLD.spec_sha256 OR NEW.frozen_at != OLD.frozen_at OR "
             "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
-            "(NEW.state = OLD.state AND NEW.detail != OLD.detail))) OR NOT ("
+            "json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen', "
+            "'$.latest_backtest', '$.validation_summary', '$.artifacts', "
+            "'$.provenance', '$.frozen_at', '$.frozen_by', '$.revision', "
+            "'$.action_capabilities') IS NOT json_remove(OLD.detail, "
+            "'$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
+            "'$.validation_summary', '$.artifacts', '$.provenance', "
+            "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities'))) OR NOT ("
             "NEW.state = OLD.state OR "
             "(OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
             "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
             "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
-            "(OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR "
+            "(OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR "
             "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) BEGIN "
             "SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END"
         ).execute_if(dialect="sqlite"),
@@ -1997,7 +2003,7 @@ def remote_codex_mode() -> bool:
     try:
         snapshot = remote_codex_projection()
         return snapshot[0].lower() in {"openai-compatible", "remote-codex"}
-    except ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError:
+    except (ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError):
         return False
 
 
@@ -2010,7 +2016,7 @@ def remote_codex_projection() -> tuple[str, str]:
         provider = str(snapshot.get("model_provider") or "remote-codex")
         if model != "unconfigured":
             return provider, model
-    except ImportError, OSError, RuntimeError, SQLAlchemyError:
+    except (ImportError, OSError, RuntimeError, SQLAlchemyError):
         pass
     return ("remote-codex", os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL))
 
@@ -2027,6 +2033,35 @@ def require_cost_model(cost_model_id: str) -> None:
         load_cost_model(cost_model_id)
     except EngineInputError as error:
         raise problem(422, "INVALID_REQUEST", str(error)) from error
+
+
+def require_cost_model_binding(
+    session: Session, workspace_id: str, cost_model_id: str
+) -> CostModelVersionRow:
+    row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == workspace_id,
+            CostModelVersionRow.cost_model_id == cost_model_id,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise problem(409, "INVALID_REQUEST", "strategy cost model is unavailable")
+    try:
+        loaded = load_cost_model(cost_model_id)
+    except EngineInputError as error:
+        raise problem(422, "INVALID_REQUEST", str(error)) from error
+    loaded_hash = content_hash(
+        {
+            "cost_model_id": loaded.cost_model_id,
+            "version": loaded.version,
+            "commission_bps": loaded.commission_bps,
+            "slippage_bps": loaded.slippage_bps,
+        }
+    )
+    if loaded.version != row.version or loaded_hash != row.content_sha256:
+        raise problem(409, "INVALID_REQUEST", "strategy cost model binding changed")
+    return row
 
 
 def resolve_research_policy(
@@ -2896,6 +2931,7 @@ def job(
     priority: int = 100,
     retry_safe: bool = True,
     max_attempts: int = 3,
+    correlation_id: str | None = None,
 ) -> dict[str, Any]:
     job_id = new_id("JOB")
     queued_at = NOW()
@@ -2950,7 +2986,7 @@ def job(
             queued_at=queued_at_dt,
             created_by_type="USER" if actor_id else "SYSTEM",
             created_by_id=actor_id or "system",
-            correlation_id=job_id,
+            correlation_id=correlation_id or job_id,
             request_id=cast(str | None, s.info.get("request_id")),
         )
     )
@@ -3004,7 +3040,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3579,7 +3615,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except httpx.HTTPError, KeyError, TypeError, ValueError:
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
         return False
     return payload.get("model_name") in available_models
 
@@ -3619,7 +3655,7 @@ def validate_live_connector(
                 accounts = connector.accounts()
             finally:
                 connector.close()
-        except ConnectorError, ValueError:
+        except (ConnectorError, ValueError):
             return 200, {
                 "connection_id": data.connection_id,
                 "state": "FAILED",
@@ -4440,7 +4476,9 @@ def create_experiment(
         require_engine(
             payload["engine_key"], payload["engine_version"], expected_engine
         )
-        require_cost_model(payload["cost_model_id"])
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, payload["cost_model_id"]
+        )
         search_space = payload.get("search_space", [])
         search_configuration = payload.get("search_configuration")
         if payload["experiment_type"] == "PARAMETER_SENSITIVITY":
@@ -4482,7 +4520,12 @@ def create_experiment(
             s,
             "EXPERIMENT",
             {"type": "experiment", "id": experiment_id, "version": None, "revision": 1},
-            input_payload={"experiment_id": experiment_id, **payload},
+            input_payload={
+                "experiment_id": experiment_id,
+                "cost_model_version": cost_row.version,
+                "cost_model_sha256": cost_row.content_sha256,
+                **payload,
+            },
         )
         detail = validated_payload(
             "ExperimentDetail",
@@ -4644,7 +4687,9 @@ def create_strategy(
 
     def f():
         owned(s, ResearchRow, payload["research_id"], actor, "research")
-        require_cost_model(payload["cost_model_id"])
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, payload["cost_model_id"]
+        )
         for signal in payload["signals"]:
             factor = s.execute(
                 select(FactorRow).where(
@@ -4723,6 +4768,7 @@ def create_strategy(
                 id=new_id("SV"),
                 workspace_id=actor.workspace_id,
                 strategy_id=strategy_id,
+                cost_model_ref_id=cost_row.internal_id,
                 **strategy_storage_fields(
                     detail, lifecycle_state="CANDIDATE", is_frozen=False
                 ),
@@ -4947,6 +4993,9 @@ def reproduce_experiment(
         ).scalar_one_or_none()
         if snapshot is None:
             raise problem(422, "NON_REPRODUCIBLE", "source snapshot is unavailable")
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, _as_str(source_detail["cost_model_id"])
+        )
         snapshot_detail = json.loads(snapshot.detail)
         snapshot_adapter = snapshot_detail["provider_metadata"]
         if adapter is not None and (
@@ -4965,6 +5014,8 @@ def reproduce_experiment(
                 "source_experiment_id": source.id,
                 "source_provenance_id": source_provenance["provenance_id"],
                 "source_output_sha256": source_provenance["output_sha256"],
+                "cost_model_version": cost_row.version,
+                "cost_model_sha256": cost_row.content_sha256,
                 "reproduce_mode": mode,
                 "execution_overrides": payload.get("execution_overrides", {}),
                 "reason": payload.get("reason"),
@@ -5120,7 +5171,9 @@ def backtest(
         require_engine(
             payload["engine_key"], payload["engine_version"], "qf-simulation-v1"
         )
-        require_cost_model(payload["cost_model_id"])
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, payload["cost_model_id"]
+        )
         return 202, job(
             s,
             "FAST_BACKTEST",
@@ -5135,6 +5188,8 @@ def backtest(
                 "strategy_version": version,
                 "strategy_version_id": row.id,
                 "strategy_spec_sha256": row.spec_sha256,
+                "cost_model_version": cost_row.version,
+                "cost_model_sha256": cost_row.content_sha256,
                 **payload,
             },
         )
@@ -6185,7 +6240,7 @@ def agent_config_payload(row):
                 or snapshot.get("effective_configuration_revision")
                 or 1
             )
-        except ImportError, OSError, RuntimeError, ValueError, TypeError:
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
             ai_connection_id = "CODEX-DEFAULT"
     return {
         "role_key": row.role,
@@ -6335,7 +6390,7 @@ def agent_run(
             from app.control_plane import active_runtime_snapshot
 
             snapshot = active_runtime_snapshot()
-        except ImportError, OSError, RuntimeError, ValueError, TypeError:
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
             snapshot = {}
         ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
         ai_connection_revision = int(
@@ -6416,7 +6471,7 @@ def tool_call(
             configuration_sha256 = str(
                 snapshot.get("effective_configuration_sha256") or configuration_sha256
             )
-        except ImportError, OSError, RuntimeError, ValueError, TypeError:
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
             pass
     return {
         "tool_call_id": r.id,

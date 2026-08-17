@@ -137,9 +137,14 @@ export const auth = {
   csrf() {
     return csrfToken;
   },
-  establish(session: Schema<'OwnerSessionView'>) {
+  establish(
+    session: Schema<'OwnerSessionView'>,
+    options: { expectedScope?: string; rotate?: boolean } = {},
+  ) {
+    if (options.expectedScope !== undefined && authScopeKey !== options.expectedScope) return false;
     csrfToken = session.csrf_token;
-    auth.set();
+    if (options.rotate ?? true) auth.set();
+    return true;
   },
 };
 
@@ -212,11 +217,7 @@ async function readProblem(response: Response): Promise<ApiProblem> {
 
 async function throwProblem(response: Response, requestScope: string): Promise<never> {
   const problem = await readProblem(response);
-  if (
-    problem.status === 401 &&
-    problem.code === 'UNAUTHENTICATED' &&
-    auth.scope() === requestScope
-  )
+  if (problem.status === 401 && problem.code === 'UNAUTHENTICATED' && auth.scope() === requestScope)
     auth.clear();
   throw new ApiError(problem);
 }
@@ -374,6 +375,7 @@ function validateStrategyDetail(
 
 export const api = {
   login: async (key: string) => {
+    const requestScope = auth.scope();
     const body = validateInput<Schema<'GeneralAccessKeyLoginRequest'>>(
       { key },
       GeneralAccessKeyLoginRequestSchema,
@@ -384,21 +386,26 @@ export const api = {
       SessionBootstrapResponseSchema,
       'SessionBootstrapResponse',
     );
-    auth.establish(result.body.session);
+    auth.establish(result.body.session, { expectedScope: requestScope, rotate: true });
     return result;
   },
   session: async (signal?: AbortSignal) => {
+    const requestScope = auth.scope();
     const result = validateResult<Schema<'OwnerSessionView'>>(
       await request<unknown>('getCurrentOwnerSession', { signal: signal ?? null }),
       OwnerSessionViewSchema,
       'OwnerSessionView',
     );
-    auth.establish(result.body);
+    auth.establish(result.body, {
+      expectedScope: requestScope,
+      rotate: !auth.get(),
+    });
     return result;
   },
   logout: async () => {
+    const requestScope = auth.scope();
     const result = await request<undefined>('logoutOwnerSession');
-    auth.clear();
+    if (auth.scope() === requestScope) auth.clear();
     return result;
   },
   accessKeys: async (signal?: AbortSignal) =>
@@ -1450,10 +1457,16 @@ export function streamEvents(
               if (!(await safeResync())) break streamLoop;
               if (!current()) return;
             }
-            onEvent(event);
             connectionLast = event.sequence;
             last = connectionLast;
             transientStorage.set(connectionCursorKey, String(connectionLast));
+            try {
+              onEvent(event);
+            } catch {
+              contractBlocked = true;
+              onState?.('degraded');
+              return;
+            }
           }
         }
       } catch (error) {

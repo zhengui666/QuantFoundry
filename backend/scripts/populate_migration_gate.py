@@ -929,14 +929,24 @@ def populate(database_url: str) -> dict[str, int]:
                     .limit(1)
                 ).first()
                 if latest_audit is not None:
-                    connection.execute(
-                        heads.update()
-                        .where(heads.c.workspace_id == workspace_id)
-                        .values(
-                            event_sha256=latest_audit.event_hash,
-                            revision=latest_audit.sequence,
+                    if (
+                        connection.execute(
+                            heads.update()
+                            .where(heads.c.workspace_id == workspace_id)
+                            .values(
+                                event_sha256=latest_audit.event_hash,
+                                revision=latest_audit.sequence,
+                            )
+                        ).rowcount
+                        == 0
+                    ):
+                        connection.execute(
+                            heads.insert().values(
+                                workspace_id=workspace_id,
+                                event_sha256=latest_audit.event_hash,
+                                revision=latest_audit.sequence,
+                            )
                         )
-                    )
                 latest_event = connection.execute(
                     select(events.c.sequence)
                     .where(events.c.workspace_id == workspace_id)
@@ -944,11 +954,21 @@ def populate(database_url: str) -> dict[str, int]:
                     .limit(1)
                 ).scalar_one_or_none()
                 if latest_event is not None:
-                    connection.execute(
-                        watermarks.update()
-                        .where(watermarks.c.workspace_id == workspace_id)
-                        .values(last_sequence=latest_event)
-                    )
+                    if (
+                        connection.execute(
+                            watermarks.update()
+                            .where(watermarks.c.workspace_id == workspace_id)
+                            .values(last_sequence=latest_event)
+                        ).rowcount
+                        == 0
+                    ):
+                        connection.execute(
+                            watermarks.insert().values(
+                                workspace_id=workspace_id,
+                                last_sequence=latest_event,
+                                expired_through_sequence=0,
+                            )
+                        )
             return {name: _count(connection, reflected[name]) for name in TARGET_TABLES}
     finally:
         engine.dispose()

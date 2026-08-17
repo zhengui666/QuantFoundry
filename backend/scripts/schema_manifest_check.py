@@ -1074,12 +1074,21 @@ def _normalized_physical_snapshot(
 
     normalized = deepcopy(value)
     for table in normalized["tables"]:
+        table.setdefault("schema", "public")
         table_name = str(table["name"])
         for column in table.get("columns", []):
             column.setdefault("generation", None)
             column.setdefault("identity", None)
         for kind, prefix in (("unique_constraints", "uq"), ("foreign_keys", "fk")):
             for constraint in table[kind]:
+                if kind == "unique_constraints":
+                    constraint.setdefault("deferrable", None)
+                    constraint.setdefault("initially", None)
+                else:
+                    constraint.setdefault("onupdate", None)
+                    constraint.setdefault("deferrable", None)
+                    constraint.setdefault("initially", None)
+                    constraint.setdefault("match", None)
                 if constraint["name"] is None:
                     constraint["name"] = _postgres_generated_constraint_name(
                         prefix, table_name, tuple(constraint["columns"])
@@ -1092,6 +1101,10 @@ def _normalized_physical_snapshot(
                 )
             constraint["sql"] = parsed_checks.get((table_name, name), constraint["sql"])
         for index in table["indexes"]:
+            index.setdefault("operator_classes", [])
+            index.setdefault("nulls_not_distinct", None)
+            index.setdefault("with", None)
+            index.setdefault("tablespace", None)
             name = str(index["name"])
             index["method"] = str(index.get("method") or "btree").lower()
             index["include"] = list(index.get("include") or ())

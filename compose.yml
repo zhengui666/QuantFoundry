@@ -80,7 +80,7 @@ services:
         condition: service_healthy
       storage-init:
         condition: service_completed_successfully
-    command: ["sh", "-ec", "alembic upgrade head && alembic check && python scripts/ux001_domain_preflight.py && python scripts/migrate_control_db.py"]
+    command: ["sh", "-ec", "python scripts/ux001_domain_preflight.py --migrate && alembic check && python scripts/ux001_domain_preflight.py && python scripts/migrate_control_db.py"]
 
   storage-init:
     <<: *backend-common

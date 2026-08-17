@@ -86,16 +86,24 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'holdout exposure count is inconsistent';
               END IF;
               IF NEW.holdout_state = 'APPROVAL_PENDING' THEN
-                PERFORM 1 FROM approval_requests a
-                WHERE a.validation_id = OLD.id AND a.status = 'PENDING'
+                PERFORM 1
+                FROM approval_requests a
+                JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
+                WHERE a.validation_id = OLD.id
+                  AND a.status = 'PENDING'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
                 FOR UPDATE;
                 IF NOT FOUND THEN
                   RAISE EXCEPTION 'holdout approval evidence is missing';
                 END IF;
               END IF;
               IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING') THEN
-                PERFORM 1 FROM approval_requests a
-                WHERE a.validation_id = OLD.id AND a.status = 'APPROVED'
+                PERFORM 1
+                FROM approval_requests a
+                JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
+                WHERE a.validation_id = OLD.id
+                  AND a.status = 'APPROVED'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
                 FOR UPDATE;
                 IF NOT FOUND THEN
                   RAISE EXCEPTION 'approved holdout evidence is missing';
@@ -160,7 +168,7 @@ def upgrade() -> None:
                    )
                  )) THEN
                 IF EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id
-                  AND ((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING')
+                  AND ((v.holdout_state IN ('APPROVAL_PENDING', 'FAILED') AND OLD.status = 'PENDING')
                     OR (v.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED', 'FAILED')
                         AND OLD.status = 'APPROVED'))) THEN
                   RAISE EXCEPTION 'approval evidence is referenced by active validation';
@@ -238,9 +246,13 @@ def upgrade() -> None:
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
         "(OLD.holdout_state != 'LOCKED' AND NEW.strategy_version_id IS NOT OLD.strategy_version_id) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'PENDING')) OR "
+        "approval_requests a JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id "
+        "WHERE a.validation_id = OLD.id AND a.status = 'PENDING' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'APPROVED')) OR "
+        "approval_requests a JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id "
+        "WHERE a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (SELECT 1 FROM "
         "holdout_exposures e WHERE e.validation_id = OLD.id AND "
         "e.strategy_version_id = NEW.strategy_version_id)) BEGIN SELECT RAISE(ABORT, "
@@ -270,7 +282,7 @@ def upgrade() -> None:
     op.execute(
         "CREATE TRIGGER qf_approval_evidence_delete_immutable BEFORE DELETE ON approval_requests "
         "WHEN EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id AND "
-        "((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING') OR "
+        "((v.holdout_state IN ('APPROVAL_PENDING', 'FAILED') AND OLD.status = 'PENDING') OR "
         "(v.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED', 'FAILED') AND "
         "OLD.status = 'APPROVED'))) BEGIN SELECT "
         "RAISE(ABORT, 'approval evidence is referenced by active validation'); END"

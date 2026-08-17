@@ -33,6 +33,12 @@ def _event_object_types() -> dict[str, str]:
 
     result: dict[str, str] = {}
     schema = SseEnvelope.model_json_schema(mode="validation")
+    envelope_event_type = schema.get("properties", {}).get("event_type", {})
+    envelope_values = envelope_event_type.get("enum")
+    if not isinstance(envelope_values, list) or not all(
+        isinstance(value, str) for value in envelope_values
+    ):
+        raise RuntimeError("generated SSE event_type is not a closed string enum")
     for rule in schema.get("allOf", []):
         if not isinstance(rule, dict):
             continue
@@ -55,7 +61,7 @@ def _event_object_types() -> dict[str, str]:
                         f"event type {value} has conflicting object types"
                     )
                 result[value] = object_type
-    if set(result) != set(EVENT_TYPES):
+    if set(result) != set(envelope_values):
         raise RuntimeError("generated SSE event/object mapping is incomplete")
     return result
 

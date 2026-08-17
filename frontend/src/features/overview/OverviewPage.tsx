@@ -77,20 +77,21 @@ export function OverviewPage() {
                   key={capability.action}
                   item={capability}
                   onClick={
-                    ['open', 'view', 'review', 'review_approval'].includes(capability.action)
+                    ['open', 'view', 'review', 'review_approval'].includes(capability.action) &&
+                    ['approval', 'research', 'strategy'].includes(item.object.type)
                       ? () => {
                           const object = item.object;
-                          if (object.type.toLowerCase().includes('approval'))
+                          if (object.type === 'approval')
                             void navigate({
                               to: '/approvals/$approvalId',
                               params: { approvalId: object.id },
                             });
-                          else if (object.type.toLowerCase().includes('research'))
+                          else if (object.type === 'research')
                             void navigate({
                               to: '/research/$researchId',
                               params: { researchId: object.id },
                             });
-                          else if (object.type.toLowerCase().includes('strategy'))
+                          else if (object.type === 'strategy')
                             void navigate({
                               to: '/strategies/$strategyId',
                               params: { strategyId: object.id },

@@ -181,6 +181,15 @@ def _replace_strategy_guard() -> None:
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   (OLD.state <> 'CANDIDATE' AND
+                    (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                     'latest_backtest' - 'validation_summary' - 'artifacts' -
+                     'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                     'action_capabilities') IS DISTINCT FROM
+                    (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                     'latest_backtest' - 'validation_summary' - 'artifacts' -
+                     'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                     'action_capabilities')) OR
                    (OLD.state <> 'CANDIDATE' AND NEW.frozen_at IS DISTINCT FROM OLD.frozen_at) OR
                    NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
               ) THEN
@@ -200,13 +209,20 @@ def _replace_strategy_guard() -> None:
                    (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
                    (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
                    (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
-                   (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+                   (OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR
                    (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
               ) THEN
                 RAISE EXCEPTION 'illegal strategy lifecycle transition';
               END IF;
-              IF OLD.state <> 'CANDIDATE' AND NEW.state = OLD.state
-                 AND NEW.detail IS DISTINCT FROM OLD.detail THEN
+              IF OLD.state <> 'CANDIDATE' AND NEW.state = OLD.state AND
+                 (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                  'latest_backtest' - 'validation_summary' - 'artifacts' -
+                  'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                  'action_capabilities') IS DISTINCT FROM
+                 (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                  'latest_backtest' - 'validation_summary' - 'artifacts' -
+                  'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                  'action_capabilities') THEN
                 RAISE EXCEPTION 'frozen strategy detail cannot change without lifecycle transition';
               END IF;
               RETURN NEW;
@@ -236,6 +252,15 @@ def _replace_strategy_guard() -> None:
           ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
              NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
              NEW.spec_sha256 IS NOT OLD.spec_sha256 OR
+             (OLD.state != 'CANDIDATE' AND
+              json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen',
+                '$.latest_backtest', '$.validation_summary', '$.artifacts',
+                '$.provenance', '$.frozen_at', '$.frozen_by', '$.revision',
+                '$.action_capabilities') IS NOT
+              json_remove(OLD.detail, '$.lifecycle_state', '$.is_frozen',
+                '$.latest_backtest', '$.validation_summary', '$.artifacts',
+                '$.provenance', '$.frozen_at', '$.frozen_by', '$.revision',
+                '$.action_capabilities')) OR
              (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
              COALESCE(NEW.workspace_id, '') IS NOT COALESCE(OLD.workspace_id, '')
           )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
@@ -247,7 +272,7 @@ def _replace_strategy_guard() -> None:
              (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
              (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
              (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
-             (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+             (OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR
              (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
           )
         BEGIN SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END
@@ -326,7 +351,15 @@ def _scope_existing_foreign_keys() -> None:
                  NEW.spec_sha256 != OLD.spec_sha256 OR
                  (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
                  COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR
-                 (NEW.state = OLD.state AND NEW.detail IS NOT OLD.detail)
+                 (OLD.state != 'CANDIDATE' AND json_remove(NEW.detail,
+                  '$.lifecycle_state', '$.is_frozen', '$.latest_backtest',
+                  '$.validation_summary', '$.artifacts', '$.provenance',
+                  '$.frozen_at', '$.frozen_by', '$.revision',
+                  '$.action_capabilities') IS NOT json_remove(OLD.detail,
+                  '$.lifecycle_state', '$.is_frozen', '$.latest_backtest',
+                  '$.validation_summary', '$.artifacts', '$.provenance',
+                  '$.frozen_at', '$.frozen_by', '$.revision',
+                  '$.action_capabilities'))
               )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
                  NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
                  NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail
@@ -335,7 +368,7 @@ def _scope_existing_foreign_keys() -> None:
                  (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
                  (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
                  (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
-                 (OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR
+                 (OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR
                  (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
               )
             BEGIN SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END
