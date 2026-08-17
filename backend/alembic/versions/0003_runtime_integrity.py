@@ -151,10 +151,16 @@ def _create_immutability_guards() -> None:
             """
             CREATE FUNCTION qf_reject_frozen_strategy_change() RETURNS trigger AS $$
             BEGIN
-              IF OLD.state = 'FROZEN' AND NOT (
-                   TG_OP = 'UPDATE' AND NEW.state = 'VALIDATING'
-              ) THEN
+              IF TG_OP = 'DELETE' AND OLD.state <> 'CANDIDATE' THEN
                 RAISE EXCEPTION 'frozen strategy version cannot be changed';
+              END IF;
+              IF TG_OP = 'UPDATE' AND OLD.state <> 'CANDIDATE' AND (
+                   NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   (NEW.state = OLD.state AND NEW.detail IS DISTINCT FROM OLD.detail)
+              ) THEN
+                RAISE EXCEPTION 'frozen strategy specification is immutable';
               END IF;
               IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN'
                  AND (
@@ -306,13 +312,16 @@ def _create_immutability_guards() -> None:
     )
     op.execute(
         "CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE "
-        "ON strategy_versions WHEN OLD.state = 'FROZEN' BEGIN "
+        "ON strategy_versions WHEN OLD.state != 'CANDIDATE' BEGIN "
         "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
-        "ON strategy_versions WHEN OLD.state = 'FROZEN' AND NEW.state != 'VALIDATING' BEGIN "
-        "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
+        "ON strategy_versions WHEN OLD.state != 'CANDIDATE' AND ("
+        "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
+        "(NEW.state = OLD.state AND NEW.detail IS NOT OLD.detail)) BEGIN "
+        "SELECT RAISE(ABORT, 'frozen strategy specification is immutable'); END"
     )
     for action in ("UPDATE", "DELETE"):
         op.execute(
@@ -549,6 +558,7 @@ def _drop_immutability_guards() -> None:
     op.execute("DROP TRIGGER qf_strategy_versions_freeze_immutable")
     op.execute("DROP TRIGGER qf_strategy_versions_candidate_immutable")
     op.execute("DROP TRIGGER qf_experiments_complete_immutable")
+    op.execute("DROP TRIGGER qf_experiments_complete_binding")
     op.execute("DROP TRIGGER qf_approval_requests_pending_evidence_immutable")
     op.execute("DROP TRIGGER qf_approval_requests_resolve_immutable")
 

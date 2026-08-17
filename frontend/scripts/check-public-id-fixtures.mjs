@@ -1,5 +1,5 @@
 import { lstat, readFile, readdir } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { load } from 'js-yaml';
 
@@ -92,7 +92,11 @@ export const collectFormalPublicIdFiles = async (
   for (const source of sources) {
     const absolutePath = resolve(root, source.path);
     const relativePath = relative(root, absolutePath);
-    if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith('../'))
+    if (
+      isAbsolute(relativePath) ||
+      relativePath === '..' ||
+      relativePath.startsWith(`..${sep}`)
+    )
       throw new Error(`Formal public-ID source escapes repository root: ${source.path}`);
     const metadata = await lstat(absolutePath).catch(() => null);
     if (!metadata) throw new Error(`Formal public-ID source is missing: ${source.path}`);

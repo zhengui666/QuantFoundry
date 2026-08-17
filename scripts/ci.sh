@@ -69,6 +69,11 @@ require_runtime_identity() {
     printf '%s\n' 'QF_GIT_COMMIT and QF_BUILD_ID are required.' >&2
     exit 1
   }
+  checkout_commit="$(git -C "$repo_root" rev-parse HEAD)"
+  [[ "$QF_GIT_COMMIT" == "$checkout_commit" ]] || {
+    printf '%s\n' 'QF_GIT_COMMIT must equal checkout HEAD.' >&2
+    exit 1
+  }
 }
 
 backend_format() {

@@ -48,6 +48,20 @@ write_fixture() {
       exit 2
       ;;
   esac
+  python3 - "$directory/release-manifest.json" "$directory/attestations/backend.json" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+manifest_path, evidence_path = map(pathlib.Path, sys.argv[1:])
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+manifest["evidence_files"] = [{
+    "path": "attestations/backend.json",
+    "sha256": hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+}]
+manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+PY
 }
 
 write_fixture positive

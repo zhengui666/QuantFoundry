@@ -78,10 +78,17 @@ def _idempotency_key(*parts: str) -> str:
     operation, account_id, object_id = parts
     if operation not in {"submit", "cancel"}:
         raise ValueError("unsupported idempotency key operation")
-    return (
-        f"{operation}:{len(account_id)}:{account_id}:"
-        f"{len(object_id)}:{object_id}"
-    )
+    return f"{operation}:{len(account_id)}:{account_id}:{len(object_id)}:{object_id}"
+
+
+def _order_fingerprint(account_id: str, order: OrderRequest) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            {"account_id": account_id, "order": order.to_wire()},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _validate_order_response(
@@ -482,6 +489,7 @@ class ConnectorClient:
         self._credential = credential.encode("utf-8")
         self._clock = clock
         self._nonce_factory = nonce_factory
+        self._preview_fingerprints: set[str] = set()
         if timeout <= 0:
             raise ValueError("connector timeout must be positive")
         self._timeout = timeout
@@ -607,11 +615,13 @@ class ConnectorClient:
         return value
 
     def preview_order(self, account_id: str, order: OrderRequest) -> dict[str, Any]:
-        return self._request(
+        result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/preview",
             payload=order.to_wire(),
         )
+        self._preview_fingerprints.add(_order_fingerprint(account_id, order))
+        return result
 
     def submit_order(
         self, account_id: str, order: OrderRequest, capabilities: ConnectorCapabilities
@@ -619,18 +629,41 @@ class ConnectorClient:
         if account_id not in capabilities.account_ids:
             raise ConnectorProtocolError("account is not in connector capabilities")
         capabilities.validate_order(order)
+        fingerprint = _order_fingerprint(account_id, order)
+        if (
+            order.instrument.asset_class in MARGIN_PREVIEW_ASSETS
+            and fingerprint not in self._preview_fingerprints
+        ):
+            raise ConnectorProtocolError("validated margin preview is required")
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
             payload=order.to_wire(),
-            idempotency_key=_idempotency_key("submit", account_id, order.client_order_id),
+            idempotency_key=_idempotency_key(
+                "submit", account_id, order.client_order_id
+            ),
         )
-        return _validate_order_response(result, order.client_order_id)
+        validated = _validate_order_response(result, order.client_order_id)
+        self._preview_fingerprints.discard(fingerprint)
+        return validated
 
-    def orders(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:
+    def orders(
+        self,
+        account_id: str,
+        *,
+        cursor: str | None = None,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
         path = f"/v1/accounts/{_segment(account_id, 'account_id')}/orders"
-        if cursor:
-            path += f"?cursor={_segment(cursor, 'cursor')}"
+        query: list[str] = []
+        if cursor is not None:
+            query.append(f"cursor={_segment(cursor, 'cursor')}")
+        if client_order_id is not None:
+            query.append(
+                f"client_order_id={_segment(client_order_id, 'client_order_id')}"
+            )
+        if query:
+            path += "?" + "&".join(query)
         return self._request("GET", path)
 
     def order(self, account_id: str, broker_order_id: str) -> dict[str, Any]:

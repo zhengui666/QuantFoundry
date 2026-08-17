@@ -160,7 +160,7 @@ async def durable_event_stream(
                     .scalars()
                     .all()
                 )
-                if watermark_model is not None and cursor_value > 0:
+                if watermark_model is not None and has_cursor:
                     if stream_state is not None:
                         session.expire(stream_state)
                     current_state = session.get(watermark_model, workspace_id)
@@ -185,7 +185,7 @@ async def durable_event_stream(
             for event in events:
                 try:
                     wire = _wire(event, envelope)
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except json.JSONDecodeError, TypeError, ValueError:
                     yield _resync_wire(
                         envelope,
                         event.sequence,

@@ -162,7 +162,16 @@ def _define_strategy(
         loaded_cost = load_cost_model(payload["cost_model_id"])
     except EngineInputError as error:
         raise ToolExecutionError("strategy cost model is invalid") from error
-    if loaded_cost.version != cost.version:
+    loaded_cost_payload = {
+        "cost_model_id": loaded_cost.cost_model_id,
+        "version": loaded_cost.version,
+        "commission_bps": loaded_cost.commission_bps,
+        "slippage_bps": loaded_cost.slippage_bps,
+    }
+    if (
+        loaded_cost.version != cost.version
+        or content_hash(loaded_cost_payload) != cost.content_sha256
+    ):
         raise ToolExecutionError("strategy cost model version is inconsistent")
     strategy_id = new_id("STRAT")
     digest = content_hash(payload)
@@ -437,9 +446,7 @@ def execute_tool(
         bundle = load_dataset(source_id)
         from quantfoundry.application.jobs.effects import dataset_validation_matches
 
-        if not dataset_validation_matches(
-            session, source_id, run.workspace_id, bundle
-        ):
+        if not dataset_validation_matches(session, source_id, run.workspace_id, bundle):
             raise ToolExecutionError("dataset validation evidence is stale or missing")
         dates = sorted({row["date"] for row in bundle.rows})
         as_of_time = max(row["available_at"] for row in bundle.rows)
@@ -477,7 +484,9 @@ def execute_tool(
         return _queue_factor_analysis_experiment(session, run, arguments)
     if name == "compare_factors":
         snapshot = session.get(SnapshotRow, arguments["snapshot_id"])
-        research = session.get(ResearchRow, run.research_id) if run.research_id else None
+        research = (
+            session.get(ResearchRow, run.research_id) if run.research_id else None
+        )
         factor_refs = arguments["factor_refs"]
         factors = [
             session.get(FactorRow, item.get("id"))
@@ -560,7 +569,9 @@ def execute_tool(
         experiments = [
             session.get(ExperimentRow, item) for item in arguments["experiment_ids"]
         ]
-        research = session.get(ResearchRow, run.research_id) if run.research_id else None
+        research = (
+            session.get(ResearchRow, run.research_id) if run.research_id else None
+        )
         if any(
             row is None
             or row.workspace_id != run.workspace_id
@@ -618,6 +629,32 @@ def execute_tool(
         ):
             raise ToolExecutionError("validation policy version is inconsistent")
         version_detail = json.loads(cast(str, version.detail))
+        cost = session.execute(
+            select(CostModelVersionRow).where(
+                CostModelVersionRow.internal_id == version.cost_model_ref_id
+            )
+        ).scalar_one_or_none()
+        if (
+            cost is None
+            or cost.workspace_id != run.workspace_id
+            or cost.cost_model_id != version_detail.get("cost_model_id")
+        ):
+            raise ToolExecutionError("validation cost model binding is unavailable")
+        try:
+            loaded_cost = load_cost_model(cost.cost_model_id)
+        except EngineInputError as error:
+            raise ToolExecutionError("validation cost model is invalid") from error
+        loaded_cost_payload = {
+            "cost_model_id": loaded_cost.cost_model_id,
+            "version": loaded_cost.version,
+            "commission_bps": loaded_cost.commission_bps,
+            "slippage_bps": loaded_cost.slippage_bps,
+        }
+        if (
+            loaded_cost.version != cost.version
+            or content_hash(loaded_cost_payload) != cost.content_sha256
+        ):
+            raise ToolExecutionError("validation cost model version is inconsistent")
         latest_backtest = version_detail.get("latest_backtest")
         if (
             not isinstance(latest_backtest, dict)
@@ -638,6 +675,9 @@ def execute_tool(
                 "policy_id": policy_id,
                 "policy_version": policy.version,
                 "policy_sha256": policy.content_sha256,
+                "cost_model_id": cost.cost_model_id,
+                "cost_model_version": cost.version,
+                "cost_model_sha256": cost.content_sha256,
                 "strict_engine_key": "qf-validation-v1",
                 "strict_engine_version": "1.0.0",
                 "test_suite_version": "1.0.0",

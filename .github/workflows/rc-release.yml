@@ -191,6 +191,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.preflight.outputs.tag }}
           COMMIT: ${{ needs.preflight.outputs.commit }}
+          IMAGE_PREFIX: ${{ steps.image.outputs.prefix }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
         run: |
           set -euo pipefail
           scripts/release-evidence.sh create-or-validate-draft "$TAG" "$COMMIT"
@@ -207,8 +210,8 @@ jobs:
           file: deploy/Dockerfile.backend
           push: true
           tags: |
-            ${{ steps.image.outputs.prefix }}/backend:${{ needs.preflight.outputs.tag }}
-            ${{ steps.image.outputs.prefix }}/backend:${{ needs.preflight.outputs.commit }}
+            ${{ steps.image.outputs.prefix }}/backend:rc-${{ needs.preflight.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ steps.image.outputs.prefix }}/backend:commit-${{ needs.preflight.outputs.commit }}-${{ github.run_id }}-${{ github.run_attempt }}
           sbom: true
           provenance: mode=max
           labels: |
@@ -221,8 +224,8 @@ jobs:
           file: deploy/Dockerfile.frontend
           push: true
           tags: |
-            ${{ steps.image.outputs.prefix }}/frontend:${{ needs.preflight.outputs.tag }}
-            ${{ steps.image.outputs.prefix }}/frontend:${{ needs.preflight.outputs.commit }}
+            ${{ steps.image.outputs.prefix }}/frontend:rc-${{ needs.preflight.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ steps.image.outputs.prefix }}/frontend:commit-${{ needs.preflight.outputs.commit }}-${{ github.run_id }}-${{ github.run_attempt }}
           sbom: true
           provenance: mode=max
           labels: |
@@ -295,4 +298,29 @@ jobs:
           test -s evidence/release-assets/SHA256SUMS
           find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG" --clobber
           scripts/release-evidence.sh verify-remote-assets "$TAG" "$COMMIT" evidence
+          publish_immutable_tag() {
+            local image="$1" tag="$2" digest="$3" inspection existing
+            if inspection="$(docker buildx imagetools inspect "$image:$tag" 2>&1)"; then
+              existing="$(printf '%s\n' "$inspection" | awk '/^Digest:/ {print $2; exit}')"
+              [[ "$existing" == "$digest" ]] || {
+                printf 'refusing to replace existing %s:%s (%s != %s)\n' "$image" "$tag" "$existing" "$digest" >&2
+                exit 1
+              }
+              return 0
+            fi
+            if ! grep -Eqi 'manifest unknown|not found|404' <<<"$inspection"; then
+              printf 'cannot determine whether %s:%s exists: %s\n' "$image" "$tag" "$inspection" >&2
+              exit 1
+            fi
+            docker buildx imagetools create --tag "$image:$tag" "$image@$digest"
+            existing="$(docker buildx imagetools inspect "$image:$tag" | awk '/^Digest:/ {print $2; exit}')"
+            [[ "$existing" == "$digest" ]] || {
+              printf 'promoted %s:%s does not resolve to %s\n' "$image" "$tag" "$digest" >&2
+              exit 1
+            }
+          }
+          publish_immutable_tag "$IMAGE_PREFIX/backend" "$TAG" "$BACKEND_DIGEST"
+          publish_immutable_tag "$IMAGE_PREFIX/backend" "$COMMIT" "$BACKEND_DIGEST"
+          publish_immutable_tag "$IMAGE_PREFIX/frontend" "$TAG" "$FRONTEND_DIGEST"
+          publish_immutable_tag "$IMAGE_PREFIX/frontend" "$COMMIT" "$FRONTEND_DIGEST"
           gh release edit "$TAG" --draft=false --prerelease

@@ -111,20 +111,32 @@ def get(path, media_type=accept, expected_digest=None):
 def descriptors_for_referrers():
     image = json.loads(get(f"manifests/{subject_digest}", expected_digest=subject_digest).decode("utf-8"))
     descriptors = image.get("manifests", [])
-    if descriptors:
-        return descriptors
+    if isinstance(descriptors, list) and descriptors:
+        platform_digests = {
+            item.get("digest")
+            for item in descriptors
+            if isinstance(item, dict)
+            and isinstance(item.get("digest"), str)
+            and isinstance(item.get("platform"), dict)
+            and item["platform"].get("architecture") not in {None, "unknown"}
+        }
+        return descriptors, {subject_digest, *platform_digests}, True
     try:
         referrers = json.loads(get(f"referrers/{subject_digest}").decode("utf-8"))
     except Exception:
-        return []
-    return referrers.get("manifests", [])
+        return [], {subject_digest}, False
+    return referrers.get("manifests", []), {subject_digest}, False
 
-descriptors = descriptors_for_referrers()
+descriptors, valid_subject_digests, index_binding = descriptors_for_referrers()
 attestations = [
     item for item in descriptors
     if (
         item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
         or item.get("artifactType") == "application/vnd.in-toto+json"
+    )
+    and (
+        not index_binding
+        or item.get("annotations", {}).get("vnd.docker.reference.digest") in valid_subject_digests
     )
 ]
 if not attestations:
@@ -135,6 +147,7 @@ for descriptor in attestations:
     if not isinstance(descriptor_digest, str) or not descriptor_digest.startswith("sha256:"):
         raise SystemExit("attestation descriptor has no valid digest")
     manifest = json.loads(get(f"manifests/{descriptor_digest}", expected_digest=descriptor_digest).decode("utf-8"))
+    descriptor_subject_digest = descriptor.get("annotations", {}).get("vnd.docker.reference.digest")
     for layer in manifest.get("layers", []):
         predicate_type = layer.get("annotations", {}).get("in-toto.io/predicate-type")
         if predicate_type != "https://spdx.dev/Document":
@@ -155,8 +168,13 @@ for descriptor in attestations:
         subjects = envelope.get("subject")
         if not isinstance(subjects, list) or not any(
             isinstance(subject, dict)
+            and subject.get("name") == f"ghcr.io/{repository}"
             and isinstance(subject.get("digest"), dict)
-            and subject["digest"].get("sha256") == subject_digest.removeprefix("sha256:")
+            and f"sha256:{subject['digest'].get('sha256')}" in valid_subject_digests
+            and (
+                not descriptor_subject_digest
+                or f"sha256:{subject['digest'].get('sha256')}" == descriptor_subject_digest
+            )
             for subject in subjects
         ):
             raise SystemExit("SBOM attestation is not bound to the requested image digest")
@@ -237,14 +255,23 @@ def require_binding(path, value, subject_name, digest, expected_predicate):
         source_uri = source.get("uri") if isinstance(source, dict) else None
         source_repo = source.get("repository") if isinstance(source, dict) else None
         workflow_repo = workflow.get("repository") if isinstance(workflow, dict) else None
+        workflow_path = workflow.get("path") if isinstance(workflow, dict) else None
+        workflow_ref = workflow.get("ref") if isinstance(workflow, dict) else None
+        workflow_repo_ok = workflow_repo in {
+            repository,
+            f"https://github.com/{repository}",
+        }
+        workflow_ok = workflow_repo_ok and workflow_path == ".github/workflows/rc-release.yml" and workflow_ref in {
+            f"refs/tags/{tag}",
+            "refs/heads/main",
+        }
         source_commit_ok = (
             isinstance(source, dict)
             and isinstance(source.get("digest"), dict)
             and source["digest"].get("sha1") == commit
         )
-        source_pair_ok = source_commit_ok and (
+        source_pair_ok = workflow_ok and source_commit_ok and (
             source_repo == repository
-            or workflow_repo == repository
             or source_uri == f"git+https://github.com/{repository}@{commit}"
         )
         dependency_pair_ok = False
@@ -407,7 +434,7 @@ PY
 
 package_assets() {
   local output_dir="$1"
-  python3 - "$output_dir" <<'PY'
+  python3 - "$output_dir" "$repo_root" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -415,6 +442,7 @@ import shutil
 import sys
 
 output = pathlib.Path(sys.argv[1]).resolve()
+source_root = pathlib.Path(sys.argv[2]).resolve()
 manifest_path = output / "release-manifest.json"
 if not manifest_path.is_file():
     raise SystemExit("release-manifest.json is required before packaging release assets")
@@ -424,6 +452,44 @@ try:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 except (OSError, json.JSONDecodeError) as error:
     raise SystemExit(f"invalid release manifest: {error}") from error
+
+declared_hashes = {}
+
+def collect_records(value, prefix="manifest"):
+    if isinstance(value, dict):
+        if set(value) == {"path", "sha256"}:
+            path, digest = value["path"], value["sha256"]
+            if (
+                not isinstance(path, str)
+                or not path
+                or path.startswith("/")
+                or any(part in {"", ".", ".."} for part in pathlib.PurePosixPath(path).parts)
+                or not isinstance(digest, str)
+                or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest)
+            ):
+                raise SystemExit(f"{prefix} contains an invalid evidence hash record")
+            previous = declared_hashes.setdefault(path, digest)
+            if previous != digest:
+                raise SystemExit(f"{prefix} contains conflicting hashes for {path}")
+            candidates = [source_root / pathlib.PurePosixPath(path), output / pathlib.PurePosixPath(path)]
+            matching = []
+            for candidate in candidates:
+                if candidate.is_file() and not candidate.is_symlink() and hashlib.sha256(candidate.read_bytes()).hexdigest() == digest:
+                    matching.append(candidate)
+            if not matching:
+                raise SystemExit(f"{prefix} hash does not match an immutable source file: {path}")
+            return
+        for key, child in value.items():
+            collect_records(child, f"{prefix}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            collect_records(child, f"{prefix}[{index}]")
+
+for section in ("inputs", "reports", "evidence_files", "supply_chain"):
+    collect_records(manifest.get(section), f"manifest.{section}")
+if not declared_hashes:
+    raise SystemExit("release manifest contains no verifiable evidence hash records")
 
 inventory = manifest.get("release_assets")
 if not isinstance(inventory, list) or not inventory:
@@ -488,6 +554,9 @@ for item in inventory:
     source = output / item["source"]
     if not source.is_file() or source.is_symlink() or not source.resolve().is_relative_to(output):
         raise SystemExit(f"release asset source is missing or escapes output: {item['source']}")
+    declared_digest = declared_hashes.get(item["source"])
+    if declared_digest and hashlib.sha256(source.read_bytes()).hexdigest() != declared_digest:
+        raise SystemExit(f"release asset source changed after manifest creation: {item['source']}")
     shutil.copyfile(source, staging / item["name"])
 
 checksum_entries = []

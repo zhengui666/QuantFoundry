@@ -113,18 +113,30 @@ def _write_local_dataset(root: Path, dataset_id: str) -> str:
     root.mkdir(mode=0o750, parents=True, exist_ok=True)
     csv_path = root / f"{dataset_id}.csv"
     rows = [
-        "event_time,available_at,symbol,close,benchmark_close,partition,split_factor,dividend,in_universe,sector",
-        "2024-01-02T21:00:00Z,2024-01-02T21:00:00Z,AAA,100,100,RESEARCH,1,0,true,TECH",
-        "2024-01-02T21:00:00Z,2024-01-02T21:00:00Z,BBB,100,100,RESEARCH,1,0,true,FINANCE",
-        "2024-01-03T21:00:00Z,2024-01-03T21:00:00Z,AAA,102,101,RESEARCH,1,0,true,TECH",
-        "2024-01-03T21:00:00Z,2024-01-03T21:00:00Z,BBB,99,101,RESEARCH,1,0,true,FINANCE",
-        "2024-01-04T21:00:00Z,2024-01-04T21:00:00Z,AAA,103,102,RESEARCH,1,0,true,TECH",
-        "2024-01-04T21:00:00Z,2024-01-04T21:00:00Z,BBB,98,102,RESEARCH,1,0,true,FINANCE",
-        "2024-01-05T21:00:00Z,2024-01-05T21:00:00Z,AAA,104,103,VALIDATION,1,0,true,TECH",
-        "2024-01-05T21:00:00Z,2024-01-05T21:00:00Z,BBB,97,103,VALIDATION,1,0,true,FINANCE",
-        "2024-01-08T21:00:00Z,2024-01-08T21:00:00Z,AAA,105,104,HOLDOUT,1,0,true,TECH",
-        "2024-01-08T21:00:00Z,2024-01-08T21:00:00Z,BBB,96,104,HOLDOUT,1,0,true,FINANCE",
+        "event_time,available_at,symbol,close,benchmark_close,partition,split_factor,dividend,in_universe,sector"
     ]
+
+    def append_session(day: datetime, partition: str, offset: int) -> None:
+        stamp = day.strftime("%Y-%m-%dT21:00:00Z")
+        rows.extend(
+            [
+                f"{stamp},{stamp},AAA,{100 + offset},{100 + offset},{partition},1,0,true,TECH",
+                f"{stamp},{stamp},BBB,{100 - offset},{100 + offset},{partition},1,0,true,FINANCE",
+            ]
+        )
+
+    def append_weekday_sessions(start: datetime, count: int, partition: str) -> None:
+        day = start
+        offset = 0
+        while offset < count:
+            if day.weekday() < 5:
+                append_session(day, partition, offset)
+                offset += 1
+            day += timedelta(days=1)
+
+    append_weekday_sessions(datetime(2024, 1, 2, tzinfo=UTC), 3, "RESEARCH")
+    append_weekday_sessions(datetime(2024, 1, 8, tzinfo=UTC), 21, "VALIDATION")
+    append_weekday_sessions(datetime(2024, 2, 6, tzinfo=UTC), 11, "HOLDOUT")
     csv_value = "\n".join(rows) + "\n"
     if csv_path.exists() and csv_path.read_text(encoding="utf-8") != csv_value:
         raise RuntimeError(f"refusing to overwrite different local dataset: {csv_path}")

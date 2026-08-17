@@ -6,12 +6,14 @@ from collections.abc import Mapping
 from typing import Any, Literal, Protocol
 
 from quantfoundry.live.connector import (
+    MARGIN_PREVIEW_ASSETS,
     ConnectorCapabilities,
     ConnectorError,
     ConnectorProtocolError,
     ConnectorUnavailable,
     OrderRequest,
     _idempotency_key,
+    _order_fingerprint,
     _segment,
     _validate_order_response,
 )
@@ -47,6 +49,7 @@ class NautilusTraderConnector:
         if not callable(getattr(port, "request", None)):
             raise ValueError("NautilusTrader port must expose request()")
         self._port = port
+        self._preview_fingerprints: set[str] = set()
 
     def _request(
         self,
@@ -107,11 +110,13 @@ class NautilusTraderConnector:
         return value
 
     def preview_order(self, account_id: str, order: OrderRequest) -> dict[str, Any]:
-        return self._request(
+        result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders/preview",
             payload=order.to_wire(),
         )
+        self._preview_fingerprints.add(_order_fingerprint(account_id, order))
+        return result
 
     def submit_order(
         self,
@@ -122,18 +127,41 @@ class NautilusTraderConnector:
         if account_id not in capabilities.account_ids:
             raise ConnectorProtocolError("account is not in connector capabilities")
         capabilities.validate_order(order)
+        fingerprint = _order_fingerprint(account_id, order)
+        if (
+            order.instrument.asset_class in MARGIN_PREVIEW_ASSETS
+            and fingerprint not in self._preview_fingerprints
+        ):
+            raise ConnectorProtocolError("validated margin preview is required")
         result = self._request(
             "POST",
             f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
             payload=order.to_wire(),
-            idempotency_key=_idempotency_key("submit", account_id, order.client_order_id),
+            idempotency_key=_idempotency_key(
+                "submit", account_id, order.client_order_id
+            ),
         )
-        return _validate_order_response(result, order.client_order_id)
+        validated = _validate_order_response(result, order.client_order_id)
+        self._preview_fingerprints.discard(fingerprint)
+        return validated
 
-    def orders(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:
+    def orders(
+        self,
+        account_id: str,
+        *,
+        cursor: str | None = None,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
         path = f"/v1/accounts/{_segment(account_id, 'account_id')}/orders"
-        if cursor:
-            path += f"?cursor={_segment(cursor, 'cursor')}"
+        query: list[str] = []
+        if cursor is not None:
+            query.append(f"cursor={_segment(cursor, 'cursor')}")
+        if client_order_id is not None:
+            query.append(
+                f"client_order_id={_segment(client_order_id, 'client_order_id')}"
+            )
+        if query:
+            path += "?" + "&".join(query)
         return self._request("GET", path)
 
     def order(self, account_id: str, broker_order_id: str) -> dict[str, Any]:

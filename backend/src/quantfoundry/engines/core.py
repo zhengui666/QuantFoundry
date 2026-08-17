@@ -889,7 +889,8 @@ def _portfolio_returns(
                 target.update(
                     {
                         symbol: -min(
-                            position_limit, short_gross * value / sum(short_raw.values())
+                            position_limit,
+                            short_gross * value / sum(short_raw.values()),
                         )
                         for symbol, value in short_raw.items()
                         if symbol not in target
@@ -907,10 +908,10 @@ def _portfolio_returns(
             abs(target.get(symbol, 0.0) - previous_weights.get(symbol, 0.0))
             for symbol in universe
         )
-        missing_prices = set(target) - set(adjusted_prices[tomorrow])
+        missing_prices = set(target) - set(next_rows)
         if missing_prices:
             raise EngineInputError(
-                "next-session prices are unavailable for held symbols: "
+                "next-session PIT-visible prices are unavailable for held symbols: "
                 f"{sorted(missing_prices)}"
             )
         asset_returns = {
@@ -1029,11 +1030,19 @@ def simulation_metrics(
     downside_deviation = math.sqrt(
         statistics.fmean(value * value for value in downside)
     )
-    calendar = calendar or str(rows[0].get("calendar", "WEEKDAY"))
+    if calendar is None:
+        raise EngineInputError("simulation calendar is required")
     if calendar not in {"WEEKDAY", "24X7"}:
         raise EngineInputError("unsupported simulation calendar")
     periods_per_year = 365 if calendar == "24X7" else 252
-    cagr = wealth ** (periods_per_year / periods) - 1.0
+    if not math.isfinite(wealth):
+        raise EngineInputError("simulation produced non-finite aggregate metrics")
+    try:
+        cagr = wealth ** (periods_per_year / periods) - 1.0
+    except OverflowError as error:
+        raise EngineInputError(
+            "simulation produced non-finite aggregate metrics"
+        ) from error
     annualized_volatility = volatility_daily * math.sqrt(periods_per_year)
     sharpe = (
         mean / volatility_daily * math.sqrt(periods_per_year)
@@ -1048,7 +1057,7 @@ def simulation_metrics(
     calmar = cagr / abs(maximum_drawdown) if maximum_drawdown else 0.0
     benchmark_wealth = math.prod(1.0 + value for value in benchmark)
     total_turnover = sum(turnovers)
-    return {
+    metrics = {
         "observations": periods,
         "total_return": wealth - 1.0,
         "benchmark_total_return": benchmark_wealth - 1.0,
@@ -1071,6 +1080,12 @@ def simulation_metrics(
         "risk_contribution": _risk_contribution(rows, final_weights),
         "returns": returns,
     }
+    if not math.isfinite(benchmark_wealth) or any(
+        isinstance(value, float) and not math.isfinite(value)
+        for value in metrics.values()
+    ):
+        raise EngineInputError("simulation produced non-finite aggregate metrics")
+    return metrics
 
 
 def validation_checks(

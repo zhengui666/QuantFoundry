@@ -211,7 +211,12 @@ def execute(
 
         status, payload = operation()
         completed_at = _database_now(session)
-        response = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        response = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
         resource_ref = payload.get("resource_ref")
         terminal_write = cast(
             CursorResult[Any],

@@ -61,6 +61,8 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          QF_REVIEW_ACTOR: ${{ github.actor }}
+          QF_REVIEW_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
           if [[ -n "$RELEASE_TAG" ]]; then
@@ -68,7 +70,7 @@ jobs:
             test "$release_commit" = "$GITHUB_SHA"
           fi
           mkdir -p "$RUNNER_TEMP/qf-p0-review-evidence"
-          python3 - "$GITHUB_SHA" "$GITHUB_RUN_ID" "$RUNNER_TEMP/qf-p0-review-evidence/independent-review-report.json" <<'PY'
+          python3 - "$GITHUB_SHA" "$GITHUB_RUN_ID" "$RUNNER_TEMP/qf-p0-review-evidence/independent-review-report.json" "$QF_REVIEW_ACTOR" "$QF_REVIEW_TRIGGERING_ACTOR" <<'PY'
           import hashlib
           import json
           import os
@@ -76,7 +78,7 @@ jobs:
           import subprocess
           import sys
 
-          commit, run_id, output = sys.argv[1:]
+          commit, run_id, output, actor, triggering_actor = sys.argv[1:]
           reviewed_paths = [
               "AGENTS.md",
               "PROJECT_BACKGROUND.md",
@@ -103,6 +105,8 @@ jobs:
               "content_type": "application/vnd.quantfoundry.independent-review+json;version=1",
               "commit": commit,
               "github_run_id": int(run_id),
+              "actor": actor,
+              "triggering_actor": triggering_actor,
               "verifier_role": "Independent Review Agent",
               "result": "approved",
               "criteria": [

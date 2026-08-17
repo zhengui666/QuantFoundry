@@ -548,13 +548,17 @@ def dataset_validation_matches(
     session: Session, dataset_id: str, workspace_id: str, bundle: Any
 ) -> bool:
     expected_content = content_hash(bundle.rows)
-    active_policies = session.execute(
-        select(ResearchPolicyVersionRow).where(
-            ResearchPolicyVersionRow.workspace_id == workspace_id,
-            ResearchPolicyVersionRow.policy_family == "validation",
-            ResearchPolicyVersionRow.status == "ACTIVE",
+    active_policies = (
+        session.execute(
+            select(ResearchPolicyVersionRow).where(
+                ResearchPolicyVersionRow.workspace_id == workspace_id,
+                ResearchPolicyVersionRow.policy_family == "validation",
+                ResearchPolicyVersionRow.status == "ACTIVE",
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if len(active_policies) != 1:
         return False
     active_policy = active_policies[0]
@@ -583,7 +587,7 @@ def dataset_validation_matches(
             continue
         try:
             evidence = read_json(artifact.storage_key, artifact.sha256)
-        except (ArtifactStoreError, OSError, ValueError):
+        except ArtifactStoreError, OSError, ValueError:
             continue
         if (
             evidence.get("dataset_id") == dataset_id
@@ -627,7 +631,9 @@ def _snapshot_market_rows(
         raise InvalidJobState("snapshot manifest identity is missing")
     snapshot_manifest = _artifact_payload(session, manifest_id, workspace_id)
     source_context = snapshot_manifest.get("source_context")
-    calendar = source_context.get("calendar") if isinstance(source_context, dict) else None
+    calendar = (
+        source_context.get("calendar") if isinstance(source_context, dict) else None
+    )
     if calendar not in {"WEEKDAY", "24X7"}:
         raise InvalidJobState("snapshot calendar evidence is missing")
     return [{**row, "calendar": calendar} for row in rows]
@@ -761,7 +767,9 @@ def _parameter_sensitivity_selection_counts(
         raise InvalidJobState("parameter sensitivity search configuration is invalid")
     dimensions = detail.get("search_space") or []
     if not isinstance(dimensions, list) or len(dimensions) != 1:
-        raise InvalidJobState("parameter sensitivity requires one selection_count dimension")
+        raise InvalidJobState(
+            "parameter sensitivity requires one selection_count dimension"
+        )
     dimension = dimensions[0]
     if (
         not isinstance(dimension, dict)
@@ -948,6 +956,7 @@ def _complete_experiment(
             int(strategy_spec["rules"]["selection_count"]),
             cost,
             strategy_spec,
+            calendar=market_rows[0].get("calendar") if market_rows else None,
         )
     elif experiment_type == "PARAMETER_SENSITIVITY":
         if strategy_row is None:
@@ -979,6 +988,7 @@ def _complete_experiment(
                             "selection_count": selection_count,
                         },
                     },
+                    calendar=market_rows[0].get("calendar") if market_rows else None,
                 ),
             }
             for selection_count in selection_counts
@@ -994,7 +1004,9 @@ def _complete_experiment(
                 "parameter sensitivity objective metric is unavailable"
             )
         selected = (
-            max if sensitivity_configuration["objective_direction"] == "MAXIMIZE" else min
+            max
+            if sensitivity_configuration["objective_direction"] == "MAXIMIZE"
+            else min
         )(scored, key=lambda result: result["metrics"][objective_key])
         sensitivity_search_result = {
             "state": "COMPLETED",
@@ -1048,7 +1060,17 @@ def _complete_experiment(
     research = session.get(ResearchRow, detail["research_id"])
     if research is None or research.workspace_id != job.workspace_id:
         raise InvalidJobState("experiment research is missing")
-    research_detail = json.loads(research.detail)
+    research_policy = session.execute(
+        select(ResearchPolicyVersionRow).where(
+            ResearchPolicyVersionRow.internal_id == research.research_policy_ref_id
+        )
+    ).scalar_one_or_none()
+    if (
+        research_policy is None
+        or research_policy.workspace_id != job.workspace_id
+        or research_policy.policy_family != "research"
+    ):
+        raise InvalidJobState("experiment research policy is missing")
     adapter = {
         "name": provider["adapter_key"],
         "version": provider["adapter_version"],
@@ -1068,8 +1090,8 @@ def _complete_experiment(
         policies=[
             {
                 "type": "research_policy",
-                "id": research_detail["research_policy_id"],
-                "version": 1,
+                "id": research_policy.policy_id,
+                "version": research_policy.version,
             }
         ],
         factors=(
@@ -1145,7 +1167,9 @@ def _complete_experiment(
     row.adapter_version = adapter["version"]
     row.provenance_ref_id = provenance_ref_id
     row.started_at = datetime.fromisoformat(detail["started_at"].replace("Z", "+00:00"))
-    row.finished_at = datetime.fromisoformat(detail["finished_at"].replace("Z", "+00:00"))
+    row.finished_at = datetime.fromisoformat(
+        detail["finished_at"].replace("Z", "+00:00")
+    )
     row.revision += 1
     row.job_ref_id = job.internal_id
     # Commit final evidence and its immutable marker in one UPDATE.
@@ -1731,11 +1755,32 @@ def _complete_validation(
         or content_hash(policy_row.rules) != policy_sha256
     ):
         raise InvalidJobState("validation policy binding changed")
+    cost_version = inputs.get("cost_model_version")
+    cost_sha256 = inputs.get("cost_model_sha256")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.internal_id == strategy.cost_model_ref_id,
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == strategy_detail["cost_model_id"],
+            CostModelVersionRow.version == cost_version,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or not isinstance(cost_version, int)
+        or isinstance(cost_version, bool)
+        or cost_sha256 != cost_row.content_sha256
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_sha256
+    ):
+        raise InvalidJobState("validation cost model binding changed")
     metrics = simulation_metrics(
         validation_rows,
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
+        calendar=validation_rows[0].get("calendar") if validation_rows else None,
     )
     selection_count = int(strategy_detail["rules"]["selection_count"])
     robustness = {
@@ -1749,6 +1794,7 @@ def _complete_validation(
                 cost.slippage_bps * 2,
             ),
             strategy_detail,
+            calendar=validation_rows[0].get("calendar") if validation_rows else None,
         ),
         "parameter_alternatives": [
             simulation_metrics(
@@ -1762,6 +1808,9 @@ def _complete_validation(
                         "selection_count": alternative,
                     },
                 },
+                calendar=validation_rows[0].get("calendar")
+                if validation_rows
+                else None,
             )
             for alternative in sorted(
                 {max(1, selection_count - 1), selection_count + 1}
@@ -2014,6 +2063,7 @@ def _expose_holdout(
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
+        calendar=market_rows[0].get("calendar") if market_rows else None,
     )
     policy = load_validation_policy(validation_policy_row.policy_id)
     if (
@@ -2125,7 +2175,10 @@ def _expose_holdout(
     validation_status = "COMPLETED" if holdout_result == "PASS" else "FAILED"
     session.execute(
         validation_runs.update()
-        .where(validation_runs.c.validation_id == validation.id)
+        .where(
+            validation_runs.c.validation_id == validation.id,
+            validation_runs.c.workspace_id == job.workspace_id,
+        )
         .values(
             status=validation_status,
             result=holdout_result,
@@ -2341,6 +2394,7 @@ def _run_backtest(
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
+        calendar=market_rows[0].get("calendar") if market_rows else None,
     )
     evidence = {
         "strategy_id": strategy.strategy_id,
@@ -2617,6 +2671,7 @@ def _run_parameter_sensitivity(
                     **detail,
                     "rules": {**detail["rules"], "selection_count": count},
                 },
+                calendar=rows[0].get("calendar") if rows else None,
             ),
         }
         for count in counts
@@ -2811,7 +2866,9 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             }
         )
         experiment.detail = json.dumps(validated_payload("ExperimentDetail", detail))
-        finished_at = datetime.fromisoformat(detail["finished_at"].replace("Z", "+00:00"))
+        finished_at = datetime.fromisoformat(
+            detail["finished_at"].replace("Z", "+00:00")
+        )
         experiment.status = "FAILED"
         experiment.validity_state = "INVALID"
         experiment.finished_at = finished_at
@@ -2930,7 +2987,11 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
             validation.id,
             validation.revision,
             "validation.updated",
-            payload={"state": "CANCELLED", "status": "CANCELLED", "reason_code": "JOB_CANCELLED"},
+            payload={
+                "state": "CANCELLED",
+                "status": "CANCELLED",
+                "reason_code": "JOB_CANCELLED",
+            },
             job_id=job.id,
             correlation_id=job.correlation_id,
         )
@@ -2963,7 +3024,9 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
             }
         )
         experiment.detail = json.dumps(validated_payload("ExperimentDetail", detail))
-        finished_at = datetime.fromisoformat(detail["finished_at"].replace("Z", "+00:00"))
+        finished_at = datetime.fromisoformat(
+            detail["finished_at"].replace("Z", "+00:00")
+        )
         experiment.status = "CANCELLED"
         experiment.validity_state = "INVALID"
         experiment.finished_at = finished_at
@@ -2975,7 +3038,11 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
             experiment.id,
             experiment.revision,
             "experiment.updated",
-            payload={"state": "CANCELLED", "status": "CANCELLED", "reason_code": "JOB_CANCELLED"},
+            payload={
+                "state": "CANCELLED",
+                "status": "CANCELLED",
+                "reason_code": "JOB_CANCELLED",
+            },
             job_id=job.id,
             correlation_id=job.correlation_id,
         )

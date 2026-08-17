@@ -256,7 +256,7 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
 
   // Bypass mocking when the client is not active.
   if (!client) {
-    return passthrough()
+    return failClosed()
   }
 
   // Bypass initial page load requests (i.e. static assets).

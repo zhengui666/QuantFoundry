@@ -90,6 +90,10 @@ if [[ ! "$fingerprint_key" =~ ^[A-Za-z0-9_-]{43}=?$ ]]; then
   exit 1
 fi
 credential_keyring="$(environment_value_optional QF_CREDENTIAL_ENCRYPTION_KEYS)"
+if [[ "${QF_CREDENTIAL_ENCRYPTION_KEYS+x}" == x && ( -z "$credential_keyring" || "${QF_CREDENTIAL_ENCRYPTION_KEYS}" != "$credential_keyring" ) ]]; then
+  printf '%s\n' 'Exported QF_CREDENTIAL_ENCRYPTION_KEYS must exactly match the .env value.' >&2
+  exit 1
+fi
 if [[ -n "$credential_keyring" ]]; then
 if ! QF_BOOTSTRAP_KEYRING="$credential_keyring" python3 - "$credential_key_id" "$credential_key" <<'PY'
 import base64
@@ -149,17 +153,13 @@ for compose_key in QF_ENV QF_ENVIRONMENT QF_GIT_COMMIT QF_BUILD_ID \
       exit 1
     fi
 done
-if [[ -n "$credential_keyring" ]]; then
-  if [[ "$credential_keyring" == *'$'* ]]; then
-    printf '%s\n' 'Compose interpolation is forbidden in QF_CREDENTIAL_ENCRYPTION_KEYS.' >&2
-    exit 1
-  fi
-  if [[ "${QF_CREDENTIAL_ENCRYPTION_KEYS+x}" == x && "${QF_CREDENTIAL_ENCRYPTION_KEYS}" != "$credential_keyring" ]]; then
-    printf '%s\n' 'Exported QF_CREDENTIAL_ENCRYPTION_KEYS conflicts with .env.' >&2
-    exit 1
-  fi
+if [[ -n "$credential_keyring" && "$credential_keyring" == *'$'* ]]; then
+  printf '%s\n' 'Compose interpolation is forbidden in QF_CREDENTIAL_ENCRYPTION_KEYS.' >&2
+  exit 1
 fi
 if [[ "$qf_env" == "local" || "$qf_env" == "development" ]]; then
+  # shellcheck disable=SC2043
+  # Keep the same validation shape as the shared compose-key loop.
   for compose_key in QF_LOCAL_PROVIDER_API_KEY; do
     file_value="$(environment_value "$compose_key")"
     if [[ "$file_value" == *'$'* ]]; then

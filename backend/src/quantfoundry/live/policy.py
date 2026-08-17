@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import ClassVar, Literal
 
 from quantfoundry.live.connector import ConnectorCapabilities, OrderRequest
 
@@ -83,7 +83,7 @@ class ActivationEvidence:
     capabilities_hash: str
     account_id: str
     validated_at: datetime
-    max_validation_age: timedelta = timedelta(minutes=10)
+    max_validation_age: ClassVar[timedelta] = timedelta(minutes=10)
 
     def validate(
         self,
@@ -212,7 +212,7 @@ def apply_fill(
     )
     next_status = (
         current
-        if current == "CANCELLED" and cumulative < quantity
+        if current in {"CANCELLED", "EXPIRED"} and cumulative < quantity
         else transition_order(current, target)
     )
     return next_status, known_fill_ids | {fill_id}, True

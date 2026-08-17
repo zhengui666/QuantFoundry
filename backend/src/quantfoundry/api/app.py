@@ -233,6 +233,43 @@ def _as_json_objects(value: JsonValue) -> list[JsonObject]:
     return cast(list[JsonObject], value)
 
 
+def _tool_result_summary(value: object) -> dict[str, Any] | None:
+    if not value:
+        return None
+    try:
+        summary = json.loads(_as_str(value))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(summary, dict):
+        return None
+    object_refs = summary.get("object_refs")
+    if not isinstance(object_refs, list):
+        output = summary.get("output", summary)
+        object_refs = [
+            {
+                "type": key.removesuffix("_id"),
+                "id": item,
+                "version": output.get("version"),
+                "revision": output.get("revision", 1),
+            }
+            for key, item in output.items()
+            if isinstance(output, dict)
+            and key.endswith("_id")
+            and isinstance(item, str)
+        ]
+    metric_keys = summary.get("metric_keys")
+    if not isinstance(metric_keys, list):
+        output = summary.get("output", summary)
+        metric_keys = [
+            key
+            for key, item in output.items()
+            if isinstance(output, dict)
+            and isinstance(item, (int, float))
+            and not isinstance(item, bool)
+        ]
+    return {"object_refs": object_refs, "metric_keys": metric_keys}
+
+
 if DB_URL.startswith("sqlite"):
 
     @event.listens_for(engine, "connect")
@@ -1960,7 +1997,7 @@ def remote_codex_mode() -> bool:
     try:
         snapshot = remote_codex_projection()
         return snapshot[0].lower() in {"openai-compatible", "remote-codex"}
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError:
         return False
 
 
@@ -1973,7 +2010,7 @@ def remote_codex_projection() -> tuple[str, str]:
         provider = str(snapshot.get("model_provider") or "remote-codex")
         if model != "unconfigured":
             return provider, model
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError:
         pass
     return ("remote-codex", os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL))
 
@@ -2967,7 +3004,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3542,7 +3579,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+    except httpx.HTTPError, KeyError, TypeError, ValueError:
         return False
     return payload.get("model_name") in available_models
 
@@ -3582,7 +3619,7 @@ def validate_live_connector(
                 accounts = connector.accounts()
             finally:
                 connector.close()
-        except (ConnectorError, ValueError):
+        except ConnectorError, ValueError:
             return 200, {
                 "connection_id": data.connection_id,
                 "state": "FAILED",
@@ -4058,7 +4095,9 @@ def snapshot(
             if not dataset_validation_matches(
                 s, dataset_id, actor.workspace_id, bundle
             ):
-                raise EngineInputError("dataset validation evidence is stale or missing")
+                raise EngineInputError(
+                    "dataset validation evidence is stale or missing"
+                )
             public_rows, holdout_rows = snapshot_rows(
                 bundle,
                 payload["coverage_start"],
@@ -5273,6 +5312,37 @@ def validation(
             raise problem(409, "STRATEGY_NOT_FROZEN")
         if version.state != "FROZEN":
             raise problem(409, "STRATEGY_NOT_FROZEN")
+        strategy_detail = json.loads(version.detail)
+        cost = s.execute(
+            select(CostModelVersionRow).where(
+                CostModelVersionRow.internal_id == version.cost_model_ref_id
+            )
+        ).scalar_one_or_none()
+        if (
+            cost is None
+            or cost.workspace_id != actor.workspace_id
+            or cost.cost_model_id != strategy_detail.get("cost_model_id")
+        ):
+            raise problem(409, "INVALID_REQUEST", "strategy cost model is unavailable")
+        try:
+            loaded_cost = load_cost_model(cost.cost_model_id)
+        except EngineInputError as error:
+            raise problem(
+                422, "INVALID_REQUEST", "strategy cost model is invalid"
+            ) from error
+        if (
+            loaded_cost.version != cost.version
+            or content_hash(
+                {
+                    "cost_model_id": loaded_cost.cost_model_id,
+                    "version": loaded_cost.version,
+                    "commission_bps": loaded_cost.commission_bps,
+                    "slippage_bps": loaded_cost.slippage_bps,
+                }
+            )
+            != cost.content_sha256
+        ):
+            raise problem(409, "INVALID_REQUEST", "strategy cost model binding changed")
         require_engine(
             payload["strict_engine_key"],
             payload["strict_engine_version"],
@@ -5315,6 +5385,9 @@ def validation(
                 "validation_id": i,
                 "policy_version": policy.version,
                 "policy_sha256": policy.content_sha256,
+                "cost_model_id": cost.cost_model_id,
+                "cost_model_version": cost.version,
+                "cost_model_sha256": cost.content_sha256,
                 **payload,
             },
         )
@@ -6112,7 +6185,7 @@ def agent_config_payload(row):
                 or snapshot.get("effective_configuration_revision")
                 or 1
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             ai_connection_id = "CODEX-DEFAULT"
     return {
         "role_key": row.role,
@@ -6262,7 +6335,7 @@ def agent_run(
             from app.control_plane import active_runtime_snapshot
 
             snapshot = active_runtime_snapshot()
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             snapshot = {}
         ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
         ai_connection_revision = int(
@@ -6343,7 +6416,7 @@ def tool_call(
             configuration_sha256 = str(
                 snapshot.get("effective_configuration_sha256") or configuration_sha256
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             pass
     return {
         "tool_call_id": r.id,
@@ -6360,7 +6433,7 @@ def tool_call(
         "tool_registry_sha256": "d13e3c4b60b6dd7232bd6fd3bd96fedb964b07846e502b249beb16b95b840633",
         "policy_version_ref": r.policy_version_ref,
         "status": r.status,
-        "result_summary": json.loads(r.result_summary) if r.result_summary else None,
+        "result_summary": _tool_result_summary(r.result_summary),
         "output_artifact_id": r.output_artifact_id,
         "warnings": json.loads(r.warnings),
         "provenance": json.loads(r.provenance) if r.provenance else None,

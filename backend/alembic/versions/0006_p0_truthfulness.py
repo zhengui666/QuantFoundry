@@ -181,7 +181,6 @@ def _replace_strategy_guard() -> None:
                    NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
                    NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
-                   NEW.detail IS DISTINCT FROM OLD.detail OR
                    (OLD.state <> 'CANDIDATE' AND NEW.frozen_at IS DISTINCT FROM OLD.frozen_at) OR
                    NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
               ) THEN
@@ -236,7 +235,7 @@ def _replace_strategy_guard() -> None:
         ON strategy_versions WHEN
           ((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
              NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR
-             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.detail IS NOT OLD.detail OR
+             NEW.spec_sha256 IS NOT OLD.spec_sha256 OR
              (OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR
              COALESCE(NEW.workspace_id, '') IS NOT COALESCE(OLD.workspace_id, '')
           )) OR (OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
@@ -259,9 +258,7 @@ def _replace_strategy_guard() -> None:
 def _scope_existing_foreign_keys() -> None:
     """Make every pre-0016 ownership reference include its workspace key."""
     bind = op.get_bind()
-    naming = {
-        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"
-    }
+    naming = {"fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"}
     trigger_sql: list[tuple[str, str]] = []
     if bind.dialect.name == "sqlite":
         trigger_rows = bind.execute(

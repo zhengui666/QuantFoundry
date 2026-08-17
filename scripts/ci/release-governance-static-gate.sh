@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="${QF_RELEASE_GOVERNANCE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+repo_root="${QF_RELEASE_GOVERNANCE_ROOT:-${QF_CI_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 
 uv --directory "$repo_root/backend" run --frozen python - "$repo_root" <<'PY'
 import ast
@@ -93,6 +93,8 @@ if (
     or "verify-independent-review-report.sh" not in run_agent_body
 ):
     errors.append("agent-change gate does not require the bound independent review report")
+if "QF_CI_REPO_ROOT" not in run_gate or "orchestrator_root" not in run_gate:
+    errors.append("run-gate must separate the candidate repository from the trusted orchestrator")
 
 ci_script = read("scripts/ci.sh")
 if 'run_backend mypy --explicit-package-bases src/quantfoundry app workers scheduler' not in ci_script:
@@ -173,6 +175,12 @@ if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/
     errors.append("rc-release does not package and upload unique release assets safely")
 if "verify-remote-assets" not in rc:
     errors.append("rc-release does not remotely verify the draft release")
+if (
+    "backend:rc-${{ needs.preflight.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}" not in rc
+    or "frontend:rc-${{ needs.preflight.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}" not in rc
+    or "publish_immutable_tag" not in rc
+):
+    errors.append("rc-release must stage image tags and promote them only after evidence verification")
 if "Create commit-bound draft release" in rc or "gh release create" in rc.split("  rc:", 1)[1].split("  publish:", 1)[0]:
     errors.append("rc-release must not create a draft from the read-only rc job")
 draft_step = next(
@@ -203,6 +211,13 @@ if "docs/治理/independent-review-report.json" in agent:
     errors.append("agent-change-gate must not trust a repository-local review locator")
 if "actions/download-artifact" not in agent or "QF_INDEPENDENT_REVIEW_REPORT" not in agent or "needs: trusted-independent-review" not in agent:
     errors.append("agent-change-gate must depend on the bound independent review job")
+if (
+    "path: trusted-gate" not in agent
+    or "QF_CI_TRUSTED_ROOT" not in agent
+    or '"$QF_CI_TRUSTED_ROOT/scripts/ci/run-gate.sh" agent-change' not in agent
+    or "scripts/ci/run-gate.sh agent-change" in agent.replace('"$QF_CI_TRUSTED_ROOT/scripts/ci/run-gate.sh" agent-change', "")
+):
+    errors.append("agent-change-gate must execute the run-gate orchestrator from the trusted checkout")
 agent_jobs = agent_document.get("jobs", {}) if isinstance(agent_document, dict) else {}
 agent_contract_job = agent_jobs.get("agent-contract") if isinstance(agent_jobs, dict) else None
 if isinstance(agent_contract_job, dict) and "GITHUB_TOKEN" in agent_contract_job.get("env", {}):

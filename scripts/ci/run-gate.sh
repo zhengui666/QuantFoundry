@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+script_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="${QF_CI_REPO_ROOT:-$script_repo_root}"
+orchestrator_root="${QF_CI_TRUSTED_ROOT:-$script_repo_root}"
 gate="${1:-}"
 report_dir="${QF_CI_REPORT_DIR:-}"
 
@@ -78,12 +80,29 @@ run_step() {
   local name="$1"
   shift
   local command_text
-  command_text="$(printf '%q ' "$@")"
-  for secret in "${QF_DATABASE_URL:-}" "${QF_ALEMBIC_URL:-}" "${QF_POSTGRES_PASSWORD:-}"; do
-    if [[ -n "$secret" ]]; then
-      command_text="${command_text//$secret/[REDACTED]}"
-    fi
-  done
+  command_text="$(
+    QF_CI_REDACTION_DATABASE_URL="${QF_DATABASE_URL:-}" \
+    QF_CI_REDACTION_ALEMBIC_URL="${QF_ALEMBIC_URL:-}" \
+    QF_CI_REDACTION_POSTGRES_PASSWORD="${QF_POSTGRES_PASSWORD:-}" \
+    python3 - "$@" <<'PY'
+import os
+import shlex
+import sys
+
+secrets = [
+    os.environ.get("QF_CI_REDACTION_DATABASE_URL", ""),
+    os.environ.get("QF_CI_REDACTION_ALEMBIC_URL", ""),
+    os.environ.get("QF_CI_REDACTION_POSTGRES_PASSWORD", ""),
+]
+arguments = []
+for argument in sys.argv[1:]:
+    for secret in secrets:
+        if secret:
+            argument = argument.replace(secret, "[REDACTED]")
+    arguments.append(shlex.quote(argument))
+print(" ".join(arguments))
+PY
+  )"
   local status=0
   set +e
   (cd "$repo_root" && "$@") >"$report_dir/logs/$name.log" 2>&1
@@ -140,7 +159,7 @@ run_pr_fast() {
   require_ci_environment
   require_common_tooling
   run_step governance make governance
-  run_step release-governance-static scripts/ci/release-governance-static-gate.sh
+  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step platform make platform
   run_step hygiene make hygiene
   run_step migration scripts/ci.sh migration
@@ -187,9 +206,9 @@ run_agent_change() {
   run_step agent-contract-and-policy make backend-ci
   local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
   if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
-    run_step independent-review-locator scripts/ci/fetch-independent-review-report.sh "$commit" "$review_locator"
+    run_step independent-review-locator "$orchestrator_root/scripts/ci/fetch-independent-review-report.sh" "$commit" "$review_locator"
   fi
-  run_step independent-review-report scripts/ci/verify-independent-review-report.sh "$review_locator" "$commit"
+  run_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
 }
 
 verify_remote_release_tag() {

@@ -210,9 +210,14 @@ async function readProblem(response: Response): Promise<ApiProblem> {
   };
 }
 
-async function throwProblem(response: Response): Promise<never> {
+async function throwProblem(response: Response, requestScope: string): Promise<never> {
   const problem = await readProblem(response);
-  if (problem.status === 401 && problem.code === 'UNAUTHENTICATED') auth.clear();
+  if (
+    problem.status === 401 &&
+    problem.code === 'UNAUTHENTICATED' &&
+    auth.scope() === requestScope
+  )
+    auth.clear();
   throw new ApiError(problem);
 }
 
@@ -221,13 +226,14 @@ async function request<T>(
   init: RequestInit = {},
   pathParams: OperationPathParams = {},
 ): Promise<ApiResult<T>> {
+  const requestScope = auth.scope();
   const response = await fetch(pathFor(operationId, pathParams), {
     ...init,
     method: operationMap[operationId].method,
     headers: headersFor(operationId, init),
     credentials: 'include',
   });
-  if (!response.ok) return throwProblem(response);
+  if (!response.ok) return throwProblem(response, requestScope);
   return {
     body: (response.status === 204 ? undefined : await response.json()) as T,
     status: response.status,
@@ -242,6 +248,7 @@ async function requestText(
   pathParams: OperationPathParams,
   signal?: AbortSignal,
 ): Promise<ApiResult<string>> {
+  const requestScope = auth.scope();
   const init = { headers: { Accept: 'text/markdown' } };
   const response = await fetch(pathFor(operationId, pathParams), {
     method: operationMap[operationId].method,
@@ -249,7 +256,7 @@ async function requestText(
     credentials: 'include',
     signal: signal ?? null,
   });
-  if (!response.ok) return throwProblem(response);
+  if (!response.ok) return throwProblem(response, requestScope);
   return {
     body: await response.text(),
     status: response.status,
@@ -1369,6 +1376,7 @@ export function streamEvents(
           credentials: 'include',
           signal: controller.signal,
         });
+        if (!current()) return;
         if (!response.ok) {
           const error = new ApiError(await readProblem(response));
           if (
@@ -1379,7 +1387,7 @@ export function streamEvents(
             onProblem?.(error);
             if (error.problem.status === 401) {
               onState?.('reauthentication-required');
-              auth.clear();
+              if (auth.scope() === connectionScope) auth.clear();
             } else onState?.('permission-denied');
             return;
           }

@@ -1,7 +1,8 @@
 """Create the frozen UX-001 Bootstrap Control DB relations."""
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "ux001_control_v1"
 down_revision = None
@@ -267,6 +268,7 @@ def upgrade() -> None:
             ["revision"],
         )
     if bind.dialect.name == "postgresql":
+        op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
         op.execute(
             """
             CREATE FUNCTION qf_validate_configuration_value() RETURNS trigger AS $$
@@ -304,6 +306,24 @@ def upgrade() -> None:
               IF NEW.previous_event_hash IS DISTINCT FROM tail_hash THEN
                 RAISE EXCEPTION 'bootstrap audit hash chain is disconnected';
               END IF;
+              NEW.event_hash := encode(digest(convert_to(
+                jsonb_build_object(
+                  'sequence', NEW.sequence,
+                  'event_id', NEW.event_id,
+                  'event_type', NEW.event_type,
+                  'actor_principal', NEW.actor_principal,
+                  'access_key_id', NEW.access_key_id,
+                  'session_id_sha256', NEW.session_id_sha256,
+                  'configuration_revision', NEW.configuration_revision,
+                  'database_connection_revision', NEW.database_connection_revision,
+                  'before_sha256', NEW.before_sha256,
+                  'after_sha256', NEW.after_sha256,
+                  'masked_summary', NEW.masked_summary,
+                  'previous_event_hash', NEW.previous_event_hash,
+                  'created_at', NEW.created_at
+                )::text,
+                'UTF8'
+              ), 'sha256'), 'hex');
               RETURN NEW;
             END;
             $$ LANGUAGE plpgsql
@@ -325,6 +345,10 @@ def upgrade() -> None:
         op.execute(
             "CREATE TRIGGER qf_bootstrap_audit_immutable BEFORE UPDATE OR DELETE ON "
             "bootstrap_audit_events FOR EACH ROW EXECUTE FUNCTION qf_reject_bootstrap_audit_change()"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_bootstrap_audit_no_truncate BEFORE TRUNCATE ON "
+            "bootstrap_audit_events FOR EACH STATEMENT EXECUTE FUNCTION qf_reject_bootstrap_audit_change()"
         )
         return
     op.execute(
@@ -370,6 +394,10 @@ def downgrade() -> None:
         )
         op.execute(
             "DROP TRIGGER IF EXISTS qf_bootstrap_audit_immutable "
+            "ON bootstrap_audit_events"
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_bootstrap_audit_no_truncate "
             "ON bootstrap_audit_events"
         )
     for table_name in (

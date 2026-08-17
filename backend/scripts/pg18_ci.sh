@@ -153,15 +153,16 @@ export QF_PG18_CI_RUNTIME_ROOT="$runtime_root"
 export QF_MIGRATION_GATE_MARKER="$migration_gate_marker"
 export QF_ALLOW_EXTERNAL_TEST_DATABASE=1
 if [ -n "${PGHOST:-}" ]; then
-  pg_user="${PGUSER:-postgres}"
+  pg_user="${PGUSER:-}"
   pg_port="${PGPORT:-5432}"
-  export QF_DATABASE_URL="$(
+  database_url="$(
     .venv/bin/python - "$pg_user" "$PGHOST" "$pg_port" "$database_name" <<'PY'
 import sys
 
 from sqlalchemy.engine import URL
 
 user, host, port, database = sys.argv[1:]
+user = user or None
 if host.startswith('/'):
     url = URL.create(
         'postgresql+psycopg',
@@ -180,6 +181,7 @@ else:
 print(url)
 PY
   )"
+  export QF_DATABASE_URL="$database_url"
 else
   export QF_DATABASE_URL="postgresql+psycopg:///$database_name"
 fi

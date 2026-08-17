@@ -466,6 +466,24 @@ def _validate_evidence(
         "build_id": "alembic-0017",
     }:
         _block("ambiguous scheduler initialization build locator", deployment)
+    audit_sequence = audit.get("sequence")
+    if (
+        not isinstance(audit_sequence, int)
+        or isinstance(audit_sequence, bool)
+        or audit_sequence < 1
+    ):
+        _block("ambiguous scheduler initialization audit sequence", deployment)
+    previous_hash = bind.execute(
+        select(audit_events.c.event_hash)
+        .where(
+            audit_events.c.workspace_id == deployment["workspace_id"],
+            audit_events.c.sequence < audit_sequence,
+        )
+        .order_by(audit_events.c.sequence.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if audit.get("prev_event_hash") != previous_hash:
+        _block("ambiguous scheduler initialization audit chain", deployment)
     canonical_audit = _canonical_audit_hash_payload(audit_events, audit)
     canonical_audit["occurred_at"] = initialization
     if audit.get("event_hash") != _hash(canonical_audit):
@@ -519,6 +537,7 @@ def _validate_evidence(
         and event.get("object_version") is None
         and isinstance(event.get("object_revision"), int)
         and not isinstance(event.get("object_revision"), bool)
+        and event.get("object_revision") == evidence["revision"]
         and event.get("object_revision") >= 1
         and event.get("revision") == event.get("object_revision")
         and event.get("schema_version") == 1
@@ -830,9 +849,7 @@ def _insert_baseline(
         "object_version": None,
         "object_revision": revision,
         "revision": revision,
-        "payload": _json_column_value(
-            domain_events, "payload", {"status": target}
-        ),
+        "payload": _json_column_value(domain_events, "payload", {"status": target}),
         "request_id": None,
         "correlation_id": None,
         "causation_id": None,

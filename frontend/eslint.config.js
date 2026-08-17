@@ -33,11 +33,14 @@ const typeChecked = tseslint.configs.recommendedTypeChecked.map((config) =>
       }
     : { ...config, files: typedSourceFiles, ignores: nonProductionFiles },
 );
-const nonProductionTyped = {
+const nonProductionTyped = tseslint.configs.recommended.map((config) => ({
+  ...config,
   files: nonProductionSourceFiles,
   languageOptions: {
+    ...config.languageOptions,
     parser: tseslint.parser,
     globals: {
+      ...config.languageOptions?.globals,
       AbortController: 'readonly',
       crypto: 'readonly',
       document: 'readonly',
@@ -50,13 +53,13 @@ const nonProductionTyped = {
       window: 'readonly',
     },
   },
-  rules: { ...tseslint.configs.recommended.rules, 'no-unused-vars': 'off' },
-};
+  rules: { ...config.rules, 'no-unused-vars': 'off' },
+}));
 
 export default tseslint.config(
   js.configs.recommended,
   ...typeChecked,
-  nonProductionTyped,
+  ...nonProductionTyped,
   {
     files: typedSourceFiles,
     plugins: { 'react-hooks': reactHooks },

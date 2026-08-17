@@ -8,13 +8,74 @@ import json
 import os
 import secrets
 import sys
+from pathlib import Path
 
 import httpx
+from bootstrap_owner import EMAIL_PATTERN, provision
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from bootstrap_owner import EMAIL_PATTERN, provision
-
 from app.bootstrap import seed_local
+from quantfoundry.api.app import Base, SessionLocal, User, Workspace
+from quantfoundry.bootstrap.local import _workspace_seed_values
+
+
+def _identity_state(email: str, workspace_name: str) -> tuple[bool, bool]:
+    session = SessionLocal()
+    try:
+        owner = session.execute(
+            select(User).where(func.lower(User.email) == email)
+        ).scalar_one_or_none()
+        return (
+            owner is not None,
+            bool(
+                owner
+                and session.execute(
+                    select(Workspace).where(
+                        Workspace.owner_id == owner.id,
+                        Workspace.name == workspace_name,
+                    )
+                ).scalar_one_or_none()
+            ),
+        )
+    finally:
+        session.close()
+
+
+def _seed_paths(workspace_id: str) -> list[Path]:
+    values = _workspace_seed_values(workspace_id)
+    research = values["research_policy"]["policy_id"]
+    validation = values["validation_policy"]["policy_id"]
+    risk = values["risk_policy"]["policy_id"]
+    cost = values["cost_model"]["cost_model_id"]
+    dataset = values["dataset_id"]
+    return [
+        Path(os.environ["QF_COST_MODEL_DIR"]) / f"{cost}.json",
+        Path(os.environ["QF_POLICY_DIR"]) / f"{research}.json",
+        Path(os.environ["QF_POLICY_DIR"]) / f"{validation}.json",
+        Path(os.environ["QF_POLICY_DIR"]) / f"{risk}.json",
+        Path(os.environ["QF_DATASET_DIR"]) / f"{dataset}.csv",
+        Path(os.environ["QF_DATASET_DIR"]) / f"{dataset}.metadata.json",
+    ]
+
+
+def _compensate_workspace(workspace_id: str, owner_id: str, delete_owner: bool) -> None:
+    session = SessionLocal()
+    try:
+        for table in reversed(Base.metadata.sorted_tables):
+            if "workspace_id" in table.c:
+                session.execute(
+                    delete(table).where(table.c.workspace_id == workspace_id)
+                )
+        session.execute(delete(Workspace).where(Workspace.id == workspace_id))
+        if delete_owner:
+            session.execute(delete(User).where(User.id == owner_id))
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -74,10 +135,23 @@ def main() -> int:
     provider_id = "REMOTE_CODEX" if remote_codex else "OPENAI_COMPATIBLE"
     model_name = os.getenv("QF_CODEX_MODEL", "qf-local-v1")
 
+    owner_id = workspace_id = session_token = None
+    owner_existed = False
+    cleanup_paths: list[Path] = []
+    preserved_paths: set[Path] = set()
     try:
+        owner_existed, workspace_existed = _identity_state(
+            args.email, args.workspace_name
+        )
+        if workspace_existed:
+            raise RuntimeError(
+                "refusing to bootstrap an existing workspace; local bootstrap is fresh-only"
+            )
         owner_id, workspace_id, session_token = provision(
             args.email, args.workspace_name, args.ttl_hours
         )
+        cleanup_paths = _seed_paths(workspace_id)
+        preserved_paths = {path for path in cleanup_paths if path.exists()}
         seeded = seed_local(
             workspace_id=workspace_id,
             owner_id=owner_id,
@@ -142,8 +216,34 @@ def main() -> int:
             )
         if status.get("completed") is not True:
             raise RuntimeError("server Setup status is not completed")
-    except (httpx.HTTPError, KeyError, OSError, RuntimeError, SQLAlchemyError, TypeError, ValueError) as error:
+    except (
+        httpx.HTTPError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        SQLAlchemyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        compensation_error = None
+        if owner_id is not None and workspace_id is not None:
+            try:
+                _compensate_workspace(
+                    workspace_id,
+                    owner_id,
+                    delete_owner=not owner_existed,
+                )
+            except Exception as cleanup_error:  # noqa: BLE001 - preserve the original bootstrap failure
+                compensation_error = cleanup_error
+        for path in cleanup_paths:
+            if path not in preserved_paths and path.is_file() and not path.is_symlink():
+                path.unlink()
         print(f"Local Setup bootstrap failed: {error}", file=sys.stderr)
+        if compensation_error is not None:
+            print(
+                f"Local Setup compensation failed: {compensation_error}",
+                file=sys.stderr,
+            )
         return 1
 
     print(

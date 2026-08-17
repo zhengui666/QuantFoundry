@@ -12,13 +12,15 @@ import secrets
 import tempfile
 import uuid
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from threading import RLock
 from typing import Annotated, Any, cast
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 from argon2 import PasswordHasher
@@ -405,7 +407,7 @@ def _encode_idempotent_result(
             body = body.tobytes()
         try:
             return status, json.loads(body), headers
-        except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        except TypeError, UnicodeDecodeError, json.JSONDecodeError:
             return status, body.decode("utf-8"), headers
     if hasattr(result, "model_dump"):
         return status, result.model_dump(mode="json", by_alias=True), headers
@@ -446,7 +448,7 @@ def _replay_idempotent(record: ControlIdempotencyRecord) -> Response:
                     key_id=body.get("key_id"),
                 )
             )
-        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+        except ValueError, TypeError, KeyError, json.JSONDecodeError:
             return _problem(
                 409,
                 "IDEMPOTENCY_RESPONSE_UNAVAILABLE",
@@ -823,9 +825,8 @@ def _key_parts(raw: str) -> tuple[str, str]:
 
 
 @contextmanager
-def _initial_claim_lock():
-    """Serialize the trusted first-key ceremony across local processes."""
-    lock_path = _control_path().with_name("control.db.claim.lock")
+def _control_file_lock(name: str):
+    lock_path = _control_path().with_name(name)
     lock_path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
     with lock_path.open("a+") as handle:
         os.chmod(lock_path, 0o600)
@@ -836,6 +837,20 @@ def _initial_claim_lock():
         finally:
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _initial_claim_lock():
+    """Serialize the trusted first-key ceremony across local processes."""
+    with _control_file_lock("control.db.claim.lock"):
+        yield
+
+
+@contextmanager
+def _access_key_mutation_lock():
+    """Serialize SQLite access-key revocation across worker processes."""
+    with _control_file_lock("control.db.access-key.lock"):
+        yield
 
 
 def issue_access_key(label: str, expires_at: datetime | None = None) -> str:
@@ -1203,6 +1218,144 @@ def _catalog_view(session: Session) -> ConfigurationCatalog:
     )
 
 
+def _catalog_error(field: str, message: str) -> dict[str, str]:
+    return {"field": field, "code": "INVALID_REQUEST", "message": message}
+
+
+def _https_endpoint(
+    value: Any, *, origin_only: bool = False, allow_local_http: bool = False
+) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    local_http = (
+        allow_local_http
+        and parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    )
+    return bool(
+        (parsed.scheme == "https" or local_http)
+        and parsed.hostname
+        and not parsed.username
+        and not parsed.password
+        and not parsed.fragment
+        and (not origin_only or (parsed.path in ("", "/") and not parsed.query))
+    )
+
+
+def _run_catalog_validator(
+    validator: str, value: Any, effective_rows: dict[str, ConfigurationValue]
+) -> list[dict[str, str]]:
+    if not isinstance(value, dict):
+        return []
+    errors: list[dict[str, str]] = []
+
+    def invalid(message: str) -> None:
+        errors.append(_catalog_error(validator, message))
+
+    if validator == "access.session.safe_range_and_idle_le_absolute":
+        if value.get("idle_ttl_seconds", 0) > value.get("absolute_ttl_seconds", 0):
+            invalid("idle_ttl_seconds must not exceed absolute_ttl_seconds")
+    elif validator == "database.domain.candidate_probe_schema_and_write":
+        if value.get("tls_mode") in {"VERIFY_CA", "VERIFY_FULL"} and not value.get(
+            "ca_pem"
+        ):
+            invalid("TLS verification requires ca_pem")
+    elif validator == "ai.remote_codex.allowlisted_endpoint_and_budget":
+        endpoint = value.get("endpoint")
+        allow_local_http = os.getenv(
+            "QF_ENVIRONMENT", os.getenv("QF_ENV", "production")
+        ) in {"local", "development", "test"}
+        if not _https_endpoint(endpoint, allow_local_http=allow_local_http):
+            invalid("endpoint must be an HTTPS URL without credentials or fragments")
+        allowed_hosts = {
+            item.strip().lower()
+            for item in os.getenv("QF_CODEX_ALLOWED_HOSTS", "").split(",")
+            if item.strip()
+        }
+        if allowed_hosts and isinstance(endpoint, str):
+            hostname = urlsplit(endpoint).hostname
+            if hostname is None or hostname.lower() not in allowed_hosts:
+                invalid("endpoint host is not in the configured allowlist")
+    elif validator == "data.providers.adapter_capability_and_secret_validation":
+        allow_local_http = os.getenv(
+            "QF_ENVIRONMENT", os.getenv("QF_ENV", "production")
+        ) in {"local", "development", "test"}
+        providers = value.get("providers")
+        if isinstance(providers, list):
+            provider_ids = {
+                item.get("provider_id") for item in providers if isinstance(item, dict)
+            }
+            default_id = value.get("default_provider_id")
+            if default_id is not None and default_id not in provider_ids:
+                invalid("default_provider_id must reference a configured provider")
+            for item in providers:
+                if (
+                    isinstance(item, dict)
+                    and item.get("enabled")
+                    and not _https_endpoint(
+                        item.get("endpoint"), allow_local_http=allow_local_http
+                    )
+                ):
+                    invalid("enabled provider endpoints must use HTTPS")
+    elif validator == "agents.runtime.hard_policy_intersection":
+        if value.get("max_steps", 0) > 25:
+            invalid("max_steps exceeds the runtime hard policy")
+        if value.get("max_tool_calls", 0) > 50:
+            invalid("max_tool_calls exceeds the runtime hard policy")
+    elif validator == "jobs.scheduler.lease_retry_calendar_gate":
+        timezone = value.get("timezone")
+        if timezone:
+            try:
+                ZoneInfo(str(timezone))
+            except ZoneInfoNotFoundError:
+                invalid("timezone is not supported")
+        elif value.get("calendar") == "CUSTOM":
+            invalid("CUSTOM calendar requires timezone")
+    elif validator == "notifications.delivery.critical_category_preservation":
+        categories = value.get("in_app_categories")
+        if isinstance(categories, list) and "CRITICAL" not in categories:
+            invalid("in_app_categories must preserve CRITICAL")
+        if value.get("integration_endpoint") and not _https_endpoint(
+            value["integration_endpoint"]
+        ):
+            invalid("integration_endpoint must use HTTPS")
+    elif validator == "appearance.locale.supported_bcp47_timezone":
+        language = value.get("language")
+        if not isinstance(language, str) or not re.fullmatch(
+            r"[A-Za-z]{2,8}(?:-[A-Za-z0-9]{2,8})*", language
+        ):
+            invalid("language must be a BCP-47 tag")
+        try:
+            ZoneInfo(str(value.get("timezone")))
+        except ZoneInfoNotFoundError:
+            invalid("timezone is not supported")
+    elif validator == "observability.runtime.secret_redaction_and_payload_policy":
+        if value.get("metrics_endpoint") and not _https_endpoint(
+            value["metrics_endpoint"]
+        ):
+            invalid("metrics_endpoint must use HTTPS")
+    elif validator == "execution.live_connector.tls_signature_and_secret_redaction":
+        for item in value.get("connections", []):
+            if isinstance(item, dict) and not _https_endpoint(
+                item.get("endpoint"), origin_only=True
+            ):
+                invalid("live connector endpoints must be HTTPS origins")
+    elif validator not in {
+        "research.defaults.currency_date_frequency",
+        "research.policy.immutable_version_and_active_reference",
+        "risk.policy.hard_floor_and_immutable_version",
+        "cost.model.immutable_version_and_active_reference",
+        "storage.artifacts.protected_classification_and_quota",
+        "backup.retention.root_key_exclusion_and_schedule",
+    }:
+        invalid("unsupported configuration catalog validator")
+    return errors
+
+
 def _config_active(session: Session) -> dict[str, Any]:
     active = session.scalar(
         select(ActiveConfiguration).where(
@@ -1277,7 +1430,7 @@ def active_runtime_snapshot() -> dict[str, Any]:
                         payload.get("provider")
                         or ("remote-codex" if model != "unconfigured" else provider)
                     )
-            except (ValueError, TypeError, json.JSONDecodeError):
+            except ValueError, TypeError, json.JSONDecodeError:
                 pass
         return {
             "effective_configuration_revision": revision,
@@ -1311,7 +1464,7 @@ def active_remote_codex_connection() -> dict[str, Any] | None:
                     key_id=row.secret_key_id,
                 )
             )
-        except (ValueError, TypeError, json.JSONDecodeError):
+        except ValueError, TypeError, json.JSONDecodeError:
             return None
         return payload if isinstance(payload, dict) else None
 
@@ -1469,21 +1622,23 @@ def _probe_database(
                     detail="migration table present",
                 )
             )
-            migration_head = (
-                connection.exec_driver_sql(
-                    "SELECT version_num FROM public.alembic_version LIMIT 1"
-                ).scalar_one_or_none()
+            migration_heads = (
+                set(
+                    connection.exec_driver_sql(
+                        "SELECT version_num FROM public.alembic_version"
+                    ).scalars()
+                )
                 if alembic
-                else None
+                else set()
             )
-            migration_compatible = migration_head == DOMAIN_ALEMBIC_HEAD
+            migration_compatible = migration_heads == {DOMAIN_ALEMBIC_HEAD}
             checks.append(
                 DatabaseConnectionCheck(
                     name="MIGRATION_COMPATIBILITY",
                     status="PASS" if migration_compatible else "FAIL",
                     detail=(
-                        f"migration head {migration_head}"
-                        if migration_head
+                        f"migration heads {sorted(migration_heads)}"
+                        if migration_heads
                         else "migration head missing"
                     ),
                 )
@@ -1493,7 +1648,7 @@ def _probe_database(
                 if privilege and alembic and migration_compatible
                 else "DATABASE_SCHEMA_INCOMPATIBLE"
             )
-    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
+    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
         checks = [
             DatabaseConnectionCheck(
                 name=name,
@@ -1601,7 +1756,7 @@ def _rebind_domain_database(
         with candidate_engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1").scalar_one()
         return _publish_domain_database(candidate_engine), candidate_engine
-    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
+    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
         _dispose_engine(candidate_engine)
         raise
 
@@ -1634,16 +1789,16 @@ def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> Non
     _dispose_engine(candidate_engine)
 
 
-def _schedule_domain_switch_cleanup(previous_engine: Any, candidate_engine: Any) -> None:
+def _schedule_domain_switch_cleanup(
+    previous_engine: Any, candidate_engine: Any
+) -> None:
     post_commit = _IDEMPOTENCY_POST_COMMIT.get()
     rollback = _IDEMPOTENCY_ROLLBACK.get()
     if post_commit is None or rollback is None:
         _dispose_engine(previous_engine)
         return
     post_commit.append(lambda: _dispose_engine(previous_engine))
-    rollback.append(
-        lambda: _restore_domain_database(previous_engine, candidate_engine)
-    )
+    rollback.append(lambda: _restore_domain_database(previous_engine, candidate_engine))
 
 
 def restore_active_domain_database() -> None:
@@ -1685,7 +1840,7 @@ def restore_active_domain_database() -> None:
     try:
         previous_engine, _candidate_engine = _rebind_domain_database(active)
         _dispose_engine(previous_engine)
-    except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
+    except SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError:
         domain_main.app.state.domain_database_available = False
         domain_main.app.state.domain_database_revision = None
         canonical_main.app.state.domain_database_available = False
@@ -1844,7 +1999,7 @@ def _sync_domain_compat_setup(workspace_id: str | None = None) -> None:
                 binding.cost_model_version_id = cost_model.id
                 binding.revision += 1
                 binding.updated_at = timestamp
-    except (ImportError, OSError, SQLAlchemyError, RuntimeError, ValueError, TypeError):
+    except ImportError, OSError, SQLAlchemyError, RuntimeError, ValueError, TypeError:
         return
 
 
@@ -1877,9 +2032,7 @@ def build_router() -> APIRouter:
         valid = key is not None and _key_active(key, now)
         try:
             verifier = key.verifier_phc if key and key.verifier_phc else DUMMY_VERIFIER
-            legacy = key is not None and (
-                not key.per_key_salt or not key.pepper_key_id
-            )
+            legacy = key is not None and (not key.per_key_salt or not key.pepper_key_id)
             if legacy:
                 verified = PH.verify(verifier, secret)
             else:
@@ -1904,7 +2057,13 @@ def build_router() -> APIRouter:
             ):
                 key.verifier_phc = PH.hash(peppered)
                 key.hash_parameters_version = "argon2id-v1"
-        except (VerifyMismatchError, VerificationError, InvalidHash, RuntimeError, TypeError):
+        except (
+            VerifyMismatchError,
+            VerificationError,
+            InvalidHash,
+            RuntimeError,
+            TypeError,
+        ):
             valid = False
         if not valid:
             _record_login_failure(request, session)
@@ -2097,45 +2256,51 @@ def build_router() -> APIRouter:
         current, error = _csrf_session(request)
         if error is not None:
             return error
-        with ControlSessionLocal.begin() as db:
-            row = db.get(GeneralAccessKey, key_id)
-            if row is None:
-                return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
-            mismatch = _if_match(if_match, "key", row.revision)
-            if mismatch is not None:
-                return mismatch
-            now = _now()
-            active = list(
-                db.scalars(
-                    select(GeneralAccessKey)
-                    .where(
-                        GeneralAccessKey.status == "ACTIVE",
-                        (GeneralAccessKey.expires_at.is_(None))
-                        | (GeneralAccessKey.expires_at > now),
+        lock = (
+            _access_key_mutation_lock()
+            if CONTROL_ENGINE.dialect.name == "sqlite"
+            else nullcontext()
+        )
+        with lock:
+            with ControlSessionLocal.begin() as db:
+                row = db.get(GeneralAccessKey, key_id)
+                if row is None:
+                    return _problem(404, "RESOURCE_NOT_FOUND", "resource not found")
+                mismatch = _if_match(if_match, "key", row.revision)
+                if mismatch is not None:
+                    return mismatch
+                now = _now()
+                active = list(
+                    db.scalars(
+                        select(GeneralAccessKey)
+                        .where(
+                            GeneralAccessKey.status == "ACTIVE",
+                            (GeneralAccessKey.expires_at.is_(None))
+                            | (GeneralAccessKey.expires_at > now),
+                        )
+                        .with_for_update()
                     )
-                    .with_for_update()
                 )
-            )
-            if _key_active(row, now) and len(active) <= 1:
-                return _problem(
-                    409,
-                    "LAST_ACTIVE_KEY_REQUIRED",
-                    "at least one active key is required",
+                if _key_active(row, now) and len(active) <= 1:
+                    return _problem(
+                        409,
+                        "LAST_ACTIVE_KEY_REQUIRED",
+                        "at least one active key is required",
+                    )
+                row.status = status
+                row.revoked_at = now
+                row.revision += 1
+                db.query(OwnerSession).filter(
+                    OwnerSession.access_key_id == row.key_id,
+                    OwnerSession.revoked_at.is_(None),
+                ).update({"revoked_at": now, "revoke_reason": status})
+                _audit(
+                    db,
+                    "KEY_REVOKED" if status == "REVOKED" else "KEY_EXPIRED",
+                    current.access_key_id if current else None,
+                    {"key_id": key_id, "status": status},
+                    session_id=current.session_id if current else None,
                 )
-            row.status = status
-            row.revoked_at = now
-            row.revision += 1
-            db.query(OwnerSession).filter(
-                OwnerSession.access_key_id == row.key_id,
-                OwnerSession.revoked_at.is_(None),
-            ).update({"revoked_at": now, "revoke_reason": status})
-            _audit(
-                db,
-                "KEY_REVOKED" if status == "REVOKED" else "KEY_EXPIRED",
-                current.access_key_id if current else None,
-                {"key_id": key_id, "status": status},
-                session_id=current.session_id if current else None,
-            )
         return Response(status_code=204)
 
     @router.post(
@@ -2282,7 +2447,9 @@ def build_router() -> APIRouter:
                 for row in db.scalars(select(ConfigurationCatalogRow))
             }
             seen: set[str] = set()
-            validated_items: list[tuple[Any, ConfigurationCatalogRow, dict[str, Any]]] = []
+            validated_items: list[
+                tuple[Any, ConfigurationCatalogRow, dict[str, Any]]
+            ] = []
             for item in data.values:
                 if item.key in seen or item.key not in catalog:
                     return _problem(
@@ -2293,7 +2460,9 @@ def build_router() -> APIRouter:
                 seen.add(item.key)
                 entry = catalog[item.key]
                 value = item.model_dump(mode="json", by_alias=True)
-                if entry.sensitivity == "SECRET" and not isinstance(value.get("secret"), str):
+                if entry.sensitivity == "SECRET" and not isinstance(
+                    value.get("secret"), str
+                ):
                     return _problem(
                         422, "INVALID_REQUEST", "secret replacement is required"
                     )
@@ -2428,7 +2597,7 @@ def build_router() -> APIRouter:
                             value = json.loads(raw_secret)
                         except json.JSONDecodeError:
                             value = raw_secret
-                    except (ValueError, TypeError, json.JSONDecodeError):
+                    except ValueError, TypeError, json.JSONDecodeError:
                         errors.append(
                             {
                                 "field": row.key,
@@ -2439,7 +2608,10 @@ def build_router() -> APIRouter:
                         continue
                 else:
                     continue
-                validation = Draft202012Validator(entry.value_schema)
+                validation = Draft202012Validator(
+                    entry.value_schema,
+                    format_checker=Draft202012Validator.FORMAT_CHECKER,
+                )
                 errors.extend(
                     {
                         "field": row.key,
@@ -2447,6 +2619,9 @@ def build_router() -> APIRouter:
                         "message": item.message,
                     }
                     for item in validation.iter_errors(value)
+                )
+                errors.extend(
+                    _run_catalog_validator(entry.validator, value, effective_rows)
                 )
                 for dependency in entry.dependencies:
                     if dependency not in effective_rows:
@@ -2684,7 +2859,7 @@ def build_router() -> APIRouter:
                         if catalog
                         else ""
                     )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     return _problem(
                         409,
                         "CONFIGURATION_VALIDATION_FAILED",
@@ -2882,7 +3057,7 @@ def build_router() -> APIRouter:
             )
             try:
                 active_secret = _database_secret(active) if active else {}
-            except (ValueError, TypeError, json.JSONDecodeError):
+            except ValueError, TypeError, json.JSONDecodeError:
                 return _problem(
                     409,
                     "DATABASE_CONNECTION_FAILED",

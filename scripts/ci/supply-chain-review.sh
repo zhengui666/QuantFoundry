@@ -166,12 +166,22 @@ def bound_statement(value, subject_name, digest, repository, commit):
         source_uri = source.get("uri") if isinstance(source, dict) else None
         source_repo = source.get("repository") if isinstance(source, dict) else None
         workflow_repo = workflow.get("repository") if isinstance(workflow, dict) else None
+        workflow_path = workflow.get("path") if isinstance(workflow, dict) else None
+        workflow_ref = workflow.get("ref") if isinstance(workflow, dict) else None
+        workflow_repo_ok = workflow_repo in {
+            expected_repository,
+            f"https://github.com/{expected_repository}",
+        }
+        workflow_ok = workflow_repo_ok and workflow_path == ".github/workflows/rc-release.yml" and workflow_ref in {
+            f"refs/tags/{expected_tag}",
+            "refs/heads/main",
+        }
         source_commit_ok = (
             isinstance(source, dict)
             and isinstance(source.get("digest"), dict)
             and source["digest"].get("sha1") == commit
         )
-        source_pair_ok = source_commit_ok and (
+        source_pair_ok = workflow_ok and source_commit_ok and (
             source_repo == repository
             or source_uri == f"git+https://github.com/{repository}@{commit}"
         )

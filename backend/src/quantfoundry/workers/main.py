@@ -251,6 +251,30 @@ def _run_once(
                     raise LostLease("lease heartbeat failed during long-running work")
         if crash_after_effects:
             raise SimulatedWorkerCrash("crash before atomic job/effect commit")
+        fenced_job = lock_active_lease(session, lease)
+        if fenced_job.cancel_requested_at:
+            from quantfoundry.application.jobs.effects import apply_job_cancellation
+
+            session.rollback()
+            cancellation_session = SessionLocal()
+            try:
+                cancellation_job = lock_active_lease(cancellation_session, lease)
+                cancellation_session.info.update(
+                    {
+                        "actor_id": cancellation_job.created_by_id,
+                        "workspace_id": cancellation_job.workspace_id,
+                        "request_id": cancellation_job.request_id
+                        or cancellation_job.correlation_id,
+                    }
+                )
+                if agent_queue:
+                    cancel_agent_run(cancellation_session, cancellation_job)
+                apply_job_cancellation(cancellation_session, cancellation_job)
+                complete_job(cancellation_session, lease, None)
+                cancellation_session.commit()
+            finally:
+                cancellation_session.close()
+            return 1
         complete_job(session, lease, result_ref)
         session.commit()
         return 1

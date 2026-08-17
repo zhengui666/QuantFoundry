@@ -23,6 +23,8 @@ import zipfile
 commit, output_name = sys.argv[1:]
 repository = os.environ["GITHUB_REPOSITORY"]
 token = os.environ["GITHUB_TOKEN"]
+repo_root = pathlib.Path(os.environ.get("QF_CI_REPO_ROOT", ".")).resolve()
+os.chdir(repo_root)
 env = os.environ.copy()
 env["GH_TOKEN"] = token
 content_type = "application/vnd.quantfoundry.independent-review+json;version=1"
@@ -115,6 +117,12 @@ workflow_source = gh_json(
 if workflow_source.get("sha") != trusted_workflow_blob_sha:
     raise SystemExit("independent review workflow is not the trusted revision")
 run_id = run["id"]
+run_actor = run.get("actor", {}).get("login") if isinstance(run.get("actor"), dict) else None
+triggering_actor = (
+    run.get("triggering_actor", {}).get("login") if isinstance(run.get("triggering_actor"), dict) else None
+)
+if not isinstance(run_actor, str) or not isinstance(triggering_actor, str):
+    raise SystemExit("independent review run has no actor identity")
 artifacts = gh_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts").get("artifacts", [])
 artifact = next(
     (
@@ -154,6 +162,8 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         raise SystemExit("independent review artifact report schema or content_type is invalid")
     if report.get("commit") != commit or report.get("github_run_id") != run_id:
         raise SystemExit("independent review artifact report is not bound to the selected run and commit")
+    if report.get("actor") != run_actor or report.get("triggering_actor") != triggering_actor:
+        raise SystemExit("independent review artifact report actor identity is not bound to the selected run")
     if report.get("verifier_role") != "Independent Review Agent" or report.get("result") != "approved":
         raise SystemExit("independent review artifact report is not an approved independent review")
     if report.get("criteria") != criteria or report.get("reviewed_paths") != scope_paths:
@@ -185,6 +195,8 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         "verifier_role": "Independent Review Agent",
         "result": report["result"],
         "github_run_id": run_id,
+        "actor": run_actor,
+        "triggering_actor": triggering_actor,
         "artifact_uri": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}",
         "artifact_sha256": archive_digest.hexdigest(),
         "artifact_report": {"path": "independent-review-report.json", "sha256": hashlib.sha256(payload).hexdigest()},

@@ -2751,6 +2751,14 @@ export function ValidationPage() {
       void client.invalidateQueries({ queryKey: workspaceQueryKey('holdout', validationId) });
     },
   });
+  const resetAction = action.reset;
+  useEffect(() => {
+    setSelected(undefined);
+    setReason('');
+    setActionError(undefined);
+    actionInFlight.current = false;
+    resetAction();
+  }, [resetAction, validationId]);
   const runAction = (actionName: string) => {
     if (actionInFlight.current) return;
     actionInFlight.current = true;

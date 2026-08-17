@@ -203,7 +203,7 @@ def _deterministic_uuid4(namespace: str, value: Any) -> uuid.UUID:
 def _workspace_uuid(value: Any) -> uuid.UUID:
     try:
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-    except (TypeError, ValueError, AttributeError):
+    except TypeError, ValueError, AttributeError:
         return _deterministic_uuid4("workspace", value)
 
 
@@ -574,7 +574,7 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
     if isinstance(column_type, Uuid):
         try:
             return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
-        except (TypeError, ValueError, AttributeError):
+        except TypeError, ValueError, AttributeError:
             if column.table.name == "records" and column.name == "id":
                 # Python 3.14 provides uuid7; keep a deterministic compatible
                 # fallback for the migration's supported interpreter boundary.
@@ -1339,6 +1339,10 @@ def _drop_application_tables() -> None:
               ) THEN
                 RAISE EXCEPTION 'invalid holdout state transition';
               END IF;
+              IF OLD.holdout_state <> 'LOCKED'
+                 AND NEW.strategy_version_id IS DISTINCT FROM OLD.strategy_version_id THEN
+                RAISE EXCEPTION 'holdout strategy binding is immutable after locking';
+              END IF;
               IF NEW.exposure_count <> (
                 CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END
               ) THEN
@@ -1359,7 +1363,7 @@ def _drop_application_tables() -> None:
               IF NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (
                 SELECT 1 FROM holdout_exposures e
                 WHERE e.validation_id = OLD.id
-                  AND e.strategy_version_public_id = OLD.strategy_version_id
+                  AND e.strategy_version_public_id = NEW.strategy_version_id
               ) THEN
                 RAISE EXCEPTION 'holdout exposure evidence is missing';
               END IF;
@@ -1507,7 +1511,7 @@ def _install_guards() -> None:
         )
         op.execute(
             "CREATE TRIGGER qf_validations_holdout_transition BEFORE UPDATE OF "
-            "holdout_state, exposure_count ON validations FOR EACH ROW EXECUTE "
+            "holdout_state, exposure_count, strategy_version_id ON validations FOR EACH ROW EXECUTE "
             "FUNCTION qf_validate_holdout_transition()"
         )
         return
@@ -1549,7 +1553,7 @@ def _install_guards() -> None:
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
         "(OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR "
         "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
-        "(NEW.state = OLD.state AND NEW.detail != OLD.detail))) OR "
+        "NEW.detail IS NOT OLD.detail)) OR "
         "(OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
         "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
         "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
@@ -1608,7 +1612,7 @@ def _install_guards() -> None:
     op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_transition")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_transition BEFORE UPDATE OF "
-        "holdout_state, exposure_count ON validations WHEN NOT ("
+        "holdout_state, exposure_count, strategy_version_id ON validations WHEN NOT ("
         "NEW.holdout_state = OLD.holdout_state OR "
         "(OLD.holdout_state = 'LOCKED' AND NEW.holdout_state = 'APPROVAL_PENDING') OR "
         "(OLD.holdout_state = 'APPROVAL_PENDING' AND NEW.holdout_state IN ('LOCKED', 'UNLOCKED')) OR "
@@ -1620,7 +1624,8 @@ def _install_guards() -> None:
     op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_binding")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_binding BEFORE UPDATE OF "
-        "holdout_state, exposure_count ON validations WHEN "
+        "holdout_state, exposure_count, strategy_version_id ON validations WHEN "
+        "(OLD.holdout_state != 'LOCKED' AND NEW.strategy_version_id IS NOT OLD.strategy_version_id) OR "
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
         "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'PENDING')) OR "
@@ -1628,7 +1633,7 @@ def _install_guards() -> None:
         "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'APPROVED')) OR "
         "(NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (SELECT 1 FROM "
         "holdout_exposures e WHERE e.validation_id = OLD.id AND "
-        "e.strategy_version_public_id = OLD.strategy_version_id)) BEGIN SELECT RAISE(ABORT, "
+        "e.strategy_version_public_id = NEW.strategy_version_id)) BEGIN SELECT RAISE(ABORT, "
         "'holdout state lacks durable evidence'); END"
     )
 
@@ -1645,10 +1650,7 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)
     source_schema = _sqlite_source_schema(bind) if bind.dialect.name == "sqlite" else []
     source_foreign_key_violations = (
-        {
-            tuple(row)
-            for row in bind.execute(text("PRAGMA foreign_key_check"))
-        }
+        {tuple(row) for row in bind.execute(text("PRAGMA foreign_key_check"))}
         if bind.dialect.name == "sqlite"
         else set()
     )

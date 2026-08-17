@@ -127,6 +127,12 @@ export const patchWorker = (source) => {
   );
   patched = replaceOnce(
     patched,
+    '  if (!client) {\n    return passthrough()\n  }',
+    '  if (!client) {\n    return failClosed()\n  }',
+    'inactive client fail-closed behavior',
+  );
+  patched = replaceOnce(
+    patched,
     '  return passthrough()\n}\n\n/**\n * @param {Client} client',
     '  return failClosed()\n}\n\n/**\n * @param {Client} client',
     'unknown request message fail-closed',

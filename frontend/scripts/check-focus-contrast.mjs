@@ -31,6 +31,10 @@ function contrastRatio(first, second) {
 
 const checks = [
   ['qf-color-focus', 'qf-color-sidebar', 3],
+  ['qf-color-focus-on-dark', 'qf-color-sidebar', 3],
+  ['qf-color-focus-on-dark', 'qf-color-sidebar-active', 3],
+  ['qf-color-focus-on-dark', 'qf-color-action', 3],
+  ['qf-color-focus-on-dark', 'qf-color-action-hover', 3],
   ['qf-color-focus', 'qf-color-surface-canvas', 3],
   ['qf-color-focus', 'qf-color-surface-panel', 3],
   ['qf-color-on-accent', 'qf-color-sidebar-active', 4.5],

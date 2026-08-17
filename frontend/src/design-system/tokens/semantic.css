@@ -15,6 +15,7 @@
   --qf-color-brand: var(--qf-color-action);
   --qf-color-brand-hover: var(--qf-color-action-hover);
   --qf-color-focus: #2f74e8;
+  --qf-color-focus-on-dark: #ffffff;
   --qf-color-success: #15803d;
   --qf-color-danger: #b42318;
   --qf-color-warning: #8a4b08;
@@ -24,6 +25,7 @@
   --qf-color-sidebar-border: #234747;
   --qf-color-sidebar-text: #d7e6e4;
   --qf-color-sidebar-active: #1d7d75;
+  --qf-color-sidebar-active-text: #ffffff;
   --qf-color-on-accent: #ffffff;
   --qf-color-danger-border: #f2b8b5;
   --qf-color-danger-surface: #fff6f5;

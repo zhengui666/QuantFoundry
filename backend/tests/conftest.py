@@ -122,8 +122,8 @@ for cost_model_id in (COST_MODEL_ID, MATRIX_COST_MODEL_ID):
             {
                 "cost_model_id": cost_model_id,
                 "version": 1,
-                "commission_bps": 1,
-                "slippage_bps": 2,
+                "commission_bps": 1.0,
+                "slippage_bps": 2.0,
             }
         ),
         encoding="utf-8",
@@ -328,7 +328,12 @@ def configured_test_principals() -> None:
                         rebalance_timing="NEXT_OPEN",
                         fill_assumption="NEXT_OPEN",
                         content_sha256=content_hash(
-                            {"kind": "cost_model", "version": 1}
+                            {
+                                "cost_model_id": cost_model_id,
+                                "version": 1,
+                                "commission_bps": 1.0,
+                                "slippage_bps": 2.0,
+                            }
                         ),
                         created_at=now,
                         activated_at=now,

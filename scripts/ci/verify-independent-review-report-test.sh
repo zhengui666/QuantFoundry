@@ -41,6 +41,8 @@ def make_artifact(name, report_commit, report_scope_digest=scope_digest):
         "content_type": content_type,
         "commit": report_commit,
         "github_run_id": 100,
+        "actor": "review-bot",
+        "triggering_actor": "review-bot",
         "verifier_role": "Independent Review Agent",
         "result": "approved",
         "criteria": criteria,
@@ -59,6 +61,8 @@ def make_artifact(name, report_commit, report_scope_digest=scope_digest):
         "verifier_role": "Independent Review Agent",
         "result": "approved",
         "github_run_id": 100,
+        "actor": "review-bot",
+        "triggering_actor": "review-bot",
         "artifact_uri": "https://github.com/acme/quantfoundry/actions/runs/100/artifacts/200",
         "artifact_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "artifact_report": {"path": "independent-review-report.json", "sha256": hashlib.sha256(payload).hexdigest()},
@@ -81,7 +85,7 @@ printf '%s\n' \
   'for ((index = 1; index <= $#; index++)); do' \
   '  if [[ "${!index}" == --output ]]; then next=$((index + 1)); output="${!next}"; fi' \
   'done' \
-  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300,\"actor\":{\"login\":\"review-bot\"},\"triggering_actor\":{\"login\":\"review-bot\"}}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"9c42061823b49952e28d66434de97b98e61f7b06\"}\n"; exit 0; fi' \

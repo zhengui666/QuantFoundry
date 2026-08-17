@@ -36,5 +36,5 @@ if [[ "${QF_BOOTSTRAP_DEFER_WORKERS:-1}" != 1 ]]; then
     up --build --detach --wait \
     worker agent-worker scheduler
 else
-  printf '%s\n' 'Workers remain stopped until the domain binding is activated; set QF_BOOTSTRAP_DEFER_WORKERS=0 to start them.'
+  printf '%s\n' 'Workers remain stopped until the domain binding is activated; set QF_BOOTSTRAP_DEFER_WORKERS=0 to start them.' >&2
 fi

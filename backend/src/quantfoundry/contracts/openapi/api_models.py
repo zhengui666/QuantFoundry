@@ -63,6 +63,9 @@ class LiveConnectorValidationRequest(BaseModel):
             parsed.scheme != "https"
             or not parsed.netloc
             or not parsed.hostname
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
             or parsed.username
             or parsed.password
         ):
@@ -127,34 +130,34 @@ for _model in SCHEMA_MODELS.values():
 from app import generated_api_models as _ux_models  # noqa: E402
 
 for _name in (
-        "GeneralAccessKeyLoginRequest",
-        "GeneralAccessKeyMetadata",
-        "GeneralAccessKeyList",
-        "GeneralAccessKeyCreateRequest",
-        "GeneralAccessKeyRenameRequest",
-        "GeneralAccessKeyIssued",
-        "OwnerSessionView",
-        "SessionBootstrapResponse",
-        "ConfigurationCatalog",
-        "ConfigurationCatalogEntry",
-        "ConfigurationValueWrite",
-        "ConfigurationValueView",
-        "ConfigurationCandidateRequest",
-        "ConfigurationCandidate",
-        "ConfigurationConsumerState",
-        "ConfigurationActive",
-        "ConfigurationValidationResult",
-        "ConfigurationActivateRequest",
-        "ConfigurationRollbackRequest",
-        "DatabaseConnectionCandidate",
-        "DatabaseConnectionCandidateRequest",
-        "DatabaseConnectionStatus",
-        "DatabaseConnectionCheck",
-        "DatabaseConnectionValidationResult",
-        "ApiProblem",
-        "CanonicalErrorCode",
-        "FieldError",
-        "ProblemContext",
+    "GeneralAccessKeyLoginRequest",
+    "GeneralAccessKeyMetadata",
+    "GeneralAccessKeyList",
+    "GeneralAccessKeyCreateRequest",
+    "GeneralAccessKeyRenameRequest",
+    "GeneralAccessKeyIssued",
+    "OwnerSessionView",
+    "SessionBootstrapResponse",
+    "ConfigurationCatalog",
+    "ConfigurationCatalogEntry",
+    "ConfigurationValueWrite",
+    "ConfigurationValueView",
+    "ConfigurationCandidateRequest",
+    "ConfigurationCandidate",
+    "ConfigurationConsumerState",
+    "ConfigurationActive",
+    "ConfigurationValidationResult",
+    "ConfigurationActivateRequest",
+    "ConfigurationRollbackRequest",
+    "DatabaseConnectionCandidate",
+    "DatabaseConnectionCandidateRequest",
+    "DatabaseConnectionStatus",
+    "DatabaseConnectionCheck",
+    "DatabaseConnectionValidationResult",
+    "ApiProblem",
+    "CanonicalErrorCode",
+    "FieldError",
+    "ProblemContext",
 ):
     SCHEMA_MODELS[_name] = cast(type[BaseModel], getattr(_ux_models, _name))
 

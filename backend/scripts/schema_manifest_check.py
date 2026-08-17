@@ -18,6 +18,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import CheckConstraint, MetaData, create_engine, text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import SQLAlchemyError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -1228,18 +1229,22 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
             database_internal_tables
         )
         missing_expected_tables = set(physical_contract) - set(database_metadata.tables)
-        parsed_expected_checks = (
-            _postgres_parsed_expected_checks(database_url, physical_contract)
-            if dialect == "postgresql" and not missing_expected_tables
-            else None
-        )
+        parsed_expected_checks = None
+        parsed_expected_indexes = None
+        if dialect == "postgresql" and not missing_expected_tables:
+            try:
+                parsed_expected_checks = _postgres_parsed_expected_checks(
+                    database_url, physical_contract
+                )
+                parsed_expected_indexes = _postgres_parsed_expected_indexes(
+                    database_url, physical_contract
+                )
+            except SQLAlchemyError as exc:
+                errors.append(
+                    f"database:expected-expression-parse:{type(exc).__name__}:{exc}"
+                )
         parsed_actual_checks = (
             _postgres_actual_checks(database_url) if dialect == "postgresql" else None
-        )
-        parsed_expected_indexes = (
-            _postgres_parsed_expected_indexes(database_url, physical_contract)
-            if dialect == "postgresql" and not missing_expected_tables
-            else None
         )
         parsed_actual_indexes = (
             _postgres_actual_indexes(database_url) if dialect == "postgresql" else None

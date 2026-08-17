@@ -83,7 +83,9 @@ def _rechain_audit_events(connection: Any, table: Table) -> None:
     if disable_triggers:
         connection.exec_driver_sql("ALTER TABLE audit_events DISABLE TRIGGER USER")
     try:
-        workspaces = connection.execute(select(table.c.workspace_id).distinct()).scalars()
+        workspaces = connection.execute(
+            select(table.c.workspace_id).distinct()
+        ).scalars()
         for workspace_id in workspaces:
             previous: str | None = None
             rows = connection.execute(
@@ -346,8 +348,7 @@ def _ensure_rows(connection: Any, metadata: MetaData, name: str, floor: int) -> 
                         metadata.tables["audit_events"].c.sequence,
                     )
                     .where(
-                        metadata.tables["audit_events"].c.workspace_id
-                        == workspace_id
+                        metadata.tables["audit_events"].c.workspace_id == workspace_id
                     )
                     .order_by(metadata.tables["audit_events"].c.sequence.desc())
                     .limit(1)
@@ -775,7 +776,21 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             instant = datetime.fromisoformat(
                 str(evidence["initialization_utc"]).replace("Z", "+00:00")
             ).astimezone(UTC)
-            sequence = migration["_next_sequence"](events, connection, pair[0])
+            sequence = int(evidence["domain_event_sequence"])
+            if sequence < 1 or isinstance(evidence["domain_event_sequence"], bool):
+                raise RuntimeError(
+                    f"invalid scheduler fixture event sequence: {pair!r}"
+                )
+            occupied = connection.execute(
+                select(events.c.event_id).where(
+                    events.c.workspace_id == pair[0],
+                    events.c.sequence == sequence,
+                )
+            ).scalar_one_or_none()
+            if occupied is not None:
+                raise RuntimeError(
+                    f"scheduler fixture event sequence is already occupied: {pair!r}"
+                )
             connection.execute(
                 events.insert().values(
                     sequence=sequence,
@@ -800,18 +815,24 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
                     schema_version=1,
                 )
             )
-            result = connection.execute(
-                watermarks.update()
-                .where(watermarks.c.workspace_id == pair[0])
-                .values(last_sequence=sequence)
-            )
-            if result.rowcount == 0:
+            watermark = connection.execute(
+                select(watermarks.c.last_sequence).where(
+                    watermarks.c.workspace_id == pair[0]
+                )
+            ).scalar_one_or_none()
+            if watermark is None:
                 connection.execute(
                     watermarks.insert().values(
                         workspace_id=pair[0],
                         last_sequence=sequence,
                         expired_through_sequence=0,
                     )
+                )
+            elif sequence > watermark:
+                connection.execute(
+                    watermarks.update()
+                    .where(watermarks.c.workspace_id == pair[0])
+                    .values(last_sequence=sequence)
                 )
         # Negative tests may deliberately desynchronize the deployment status;
         # preserve the proven state/evidence and restore the authoritative

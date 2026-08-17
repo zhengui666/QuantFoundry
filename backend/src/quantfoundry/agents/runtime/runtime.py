@@ -390,7 +390,7 @@ def _active_control_plane_connection() -> dict[str, str] | None:
         from app.control_plane import active_remote_codex_connection
 
         value = active_remote_codex_connection()
-    except (ImportError, OSError, RuntimeError, ValueError):
+    except ImportError, OSError, RuntimeError, ValueError:
         return None
     if not isinstance(value, dict):
         return None
@@ -415,7 +415,7 @@ def _control_plane_remote_mode() -> bool:
             "openai-compatible",
             "remote-codex",
         }
-    except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+    except ImportError, OSError, RuntimeError, ValueError, TypeError:
         return False
 
 
@@ -799,7 +799,10 @@ class ToolRegistry:
         definition = self.definition(name)
         if role not in definition["allowed_agent_roles"]:
             raise ToolPolicyDenied(f"{role} is not allowed to call {name}")
-        Draft202012Validator(definition["input_schema"]).validate(arguments)
+        Draft202012Validator(
+            definition["input_schema"],
+            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        ).validate(arguments)
         missing = set(definition["requires_policy_checks"]) - passed_policy_checks
         if missing:
             raise ToolPolicyDenied(f"missing policy checks: {sorted(missing)}")
@@ -881,7 +884,10 @@ class ToolRegistry:
     def validate_output(
         self, definition: dict[str, Any], output: dict[str, Any]
     ) -> None:
-        Draft202012Validator(definition["output_schema"]).validate(output)
+        Draft202012Validator(
+            definition["output_schema"],
+            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        ).validate(output)
 
 
 REGISTRY = ToolRegistry.load()
@@ -1772,8 +1778,8 @@ def advance_agent_run(
             {
                 "type": key.removesuffix("_id"),
                 "id": value,
-                "version": None,
-                "revision": 1,
+                "version": output.get("version"),
+                "revision": output.get("revision", 1),
             }
             for key, value in output.items()
             if key.endswith("_id") and isinstance(value, str)
@@ -1783,7 +1789,11 @@ def advance_agent_run(
             for key, value in output.items()
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         ]
-        result_summary = {"object_refs": object_refs, "metric_keys": metric_keys}
+        result_summary = {
+            "output": output,
+            "object_refs": object_refs,
+            "metric_keys": metric_keys,
+        }
         provenance = create_provenance(
             session,
             input_value={"tool_name": name, "arguments": arguments},
@@ -1971,7 +1981,11 @@ def cancel_agent_run(session: Session, job: JobRow) -> None:
         row.id,
         row.revision,
         "agent.run.updated",
-        payload={"state": "CANCELLED", "status": "CANCELLED", "reason_code": "JOB_CANCELLED"},
+        payload={
+            "state": "CANCELLED",
+            "status": "CANCELLED",
+            "reason_code": "JOB_CANCELLED",
+        },
         job_id=job.id,
         agent_run_id=row.id,
         correlation_id=job.correlation_id,

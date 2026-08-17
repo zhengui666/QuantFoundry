@@ -3,7 +3,7 @@ set -euo pipefail
 
 report_path="${1:-}"
 expected_commit="${2:-}"
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="${QF_CI_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 [[ -n "$report_path" && -f "$report_path" ]] || { printf '%s\n' 'Independent review report is required and must be an existing file.' >&2; exit 2; }
 [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'Expected commit must be a full lowercase SHA.' >&2; exit 2; }
@@ -122,6 +122,14 @@ if run.get("head_sha") != expected_commit:
     raise SystemExit("independent review report run is not bound to the current commit")
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review report run did not complete successfully as workflow_dispatch")
+run_actor = run.get("actor", {}).get("login") if isinstance(run.get("actor"), dict) else None
+triggering_actor = (
+    run.get("triggering_actor", {}).get("login") if isinstance(run.get("triggering_actor"), dict) else None
+)
+if not isinstance(run_actor, str) or not isinstance(triggering_actor, str):
+    raise SystemExit("independent review report run has no actor identity")
+if report.get("actor") != run_actor or report.get("triggering_actor") != triggering_actor:
+    raise SystemExit("independent review report actor identity is not bound to the GitHub run")
 workflow_path = run.get("path", "")
 if workflow_path != ".github/workflows/independent-agent-review.yml":
     raise SystemExit("independent review report run used an unauthorized workflow")
@@ -187,6 +195,8 @@ if embedded.get("schema_version") != "1.0.0" or embedded.get("content_type") != 
     raise SystemExit("independent review artifact report schema or content_type is invalid")
 if embedded.get("commit") != expected_commit or embedded.get("github_run_id") != run_id:
     raise SystemExit("independent review artifact report is not bound to the current commit and run")
+if embedded.get("actor") != run_actor or embedded.get("triggering_actor") != triggering_actor:
+    raise SystemExit("independent review artifact report actor identity is not bound to the GitHub run")
 if embedded.get("verifier_role") != "Independent Review Agent" or embedded.get("result") != "approved":
     raise SystemExit("independent review artifact report is not an approved independent review")
 if embedded.get("criteria") != criteria:

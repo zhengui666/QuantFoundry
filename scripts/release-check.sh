@@ -43,7 +43,11 @@ checkout_head="$(git -C "$repo_root" rev-parse HEAD)"
   printf '{"result":"invalid","reason":"checkout HEAD does not equal tag target","tag":"%s"}\n' "$tag" >&2
   exit 1
 }
-trusted_branch="${QF_RELEASE_BRANCH:-origin/main}"
+trusted_branch="origin/main"
+[[ -z "${QF_RELEASE_BRANCH+x}" || "$QF_RELEASE_BRANCH" == "$trusted_branch" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"release branch override is not allowed"}' >&2
+  exit 1
+}
 git -C "$repo_root" rev-parse --verify "${trusted_branch}^{commit}" >/dev/null 2>&1 || {
   printf '{"result":"invalid","reason":"trusted release branch is unavailable","branch":"%s"}\n' "$trusted_branch" >&2
   exit 1
@@ -91,11 +95,24 @@ final_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)
   exit 1
 }
 
+pre_p0_verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
+pre_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
+[[ "$pre_p0_verifier_head" == "$tag_target" && -z "$pre_p0_verifier_status" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"verifier code changed immediately before P0 verification"}' >&2
+  exit 1
+}
+
 QF_RELEASE_COMMIT="$tag_target" "$verifier_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
 post_p0_head="$(git -C "$repo_root" rev-parse HEAD)"
 post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ "$post_p0_head" == "$tag_target" && -z "$post_p0_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"worktree or HEAD changed during P0 verification"}' >&2
+  exit 1
+}
+post_p0_verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
+post_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
+[[ "$post_p0_verifier_head" == "$tag_target" && -z "$post_p0_verifier_status" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"verifier code changed during P0 verification"}' >&2
   exit 1
 }
 post_p0_tag_object="$(git -C "$repo_root" ls-remote --exit-code --refs origin "refs/tags/$tag" | awk 'NR == 1 {print $1}')" || exit 1

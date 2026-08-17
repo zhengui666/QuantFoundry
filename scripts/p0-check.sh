@@ -31,7 +31,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, urlparse
 
 import yaml
 
@@ -105,11 +105,8 @@ def parse_artifact_uri(value):
     if parsed.scheme != "https" or parsed.netloc != "github.com" or parsed.username or parsed.password:
         return None
     action_match = re.fullmatch(r"/([^/]+/[^/]+)/actions/runs/([1-9][0-9]*)/artifacts/([1-9][0-9]*)", parsed.path)
-    release_match = re.fullmatch(r"/([^/]+/[^/]+)/releases/download/([^/]+)/([^/]+)", parsed.path)
     if action_match:
         return ("actions", action_match.group(1), action_match.group(2), action_match.group(3))
-    if release_match:
-        return ("release", release_match.group(1), unquote(release_match.group(2)), unquote(release_match.group(3)))
     return None
 
 
@@ -194,30 +191,25 @@ class RemoteVerifier:
     def gh_download(self, endpoint):
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
-            process = subprocess.Popen(
-                [
-                    "gh",
-                    "api",
-                    endpoint,
-                    "--method",
-                    "GET",
-                    *(["--header", "Accept: application/octet-stream"] if "/releases/assets/" in endpoint else []),
-                ],
-                env=self.env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            size = 0
-            with destination.open("wb") as archive_file:
-                for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
-                    size += len(chunk)
-                    if size > MAX_EVIDENCE_BYTES:
-                        process.kill()
-                        process.wait()
-                        raise RuntimeError("downloaded evidence exceeds the size limit")
-                    archive_file.write(chunk)
-            stderr = process.stderr.read().decode(errors="replace").strip()
-            return_code = process.wait()
+            with tempfile.TemporaryFile() as stderr_file, destination.open("wb") as archive_file:
+                process = subprocess.Popen(
+                    [
+                        "gh",
+                        "api",
+                        endpoint,
+                        "--method",
+                        "GET",
+                        *(["--header", "Accept: application/octet-stream"] if "/actions/artifacts/" in endpoint else []),
+                    ],
+                    env=self.env,
+                    stdout=archive_file,
+                    stderr=stderr_file,
+                )
+                return_code = process.wait()
+                stderr_file.seek(0)
+                stderr = stderr_file.read(64 * 1024).decode(errors="replace").strip()
+            if destination.stat().st_size > MAX_EVIDENCE_BYTES:
+                raise RuntimeError("downloaded evidence exceeds the size limit")
             if return_code:
                 raise RuntimeError(f"gh api download failed for {endpoint}: {stderr or return_code}")
             if destination.stat().st_size > MAX_EVIDENCE_BYTES:
@@ -259,8 +251,8 @@ class RemoteVerifier:
         transport, repository, first, second = parsed
         if repository != self.repository:
             raise RuntimeError("remote evidence URI repository does not match GITHUB_REPOSITORY")
-        if transport not in {"actions", "release"}:
-            raise RuntimeError("unsupported remote evidence transport")
+        if transport != "actions":
+            raise RuntimeError("P0 closure evidence must use a GitHub Actions artifact")
         self.require_run(run_id, commit, role)
         if transport == "actions":
             artifact_run_id, artifact_id = first, second
@@ -275,20 +267,6 @@ class RemoteVerifier:
             ):
                 raise RuntimeError(f"Actions artifact {artifact_id} is missing, expired, or not bound to run {run_id}")
             blob = self.gh_download(f"/repos/{self.repository}/actions/artifacts/{artifact_id}/zip")
-        else:
-            tag, asset_name = first, second
-            if self.resolve_tag_commit(tag) != commit:
-                raise RuntimeError(f"release tag {tag} is not bound to commit {commit}")
-            release = self.gh_json(f"/repos/{self.repository}/releases/tags/{quote(tag, safe='')}")
-            asset = next((item for item in release.get("assets", []) if item.get("name") == asset_name), None)
-            if (
-                not asset
-                or not isinstance(asset.get("id"), int)
-                or not isinstance(asset.get("size"), int)
-                or asset["size"] > MAX_EVIDENCE_BYTES
-            ):
-                raise RuntimeError(f"release asset {asset_name} is not present on release {tag}")
-            blob = self.gh_download(f"/repos/{self.repository}/releases/assets/{asset['id']}")
         self.require_sha256(blob, expected_sha256)
         return blob
 
@@ -411,7 +389,7 @@ def validate_closed_evidence(blocker_id, item, remote):
         uri = record.get("artifact_uri")
         parsed_uri = parse_artifact_uri(uri)
         if not parsed_uri:
-            errors.append(f"{prefix}.artifact_uri must be a GitHub Actions artifact or GitHub Release asset URI")
+            errors.append(f"{prefix}.artifact_uri must be a GitHub Actions artifact URI")
         artifact_sha256 = record.get("artifact_sha256")
         if not isinstance(artifact_sha256, str) or not sha256_pattern.fullmatch(artifact_sha256):
             errors.append(f"{prefix}.artifact_sha256 must be a lowercase SHA-256")
