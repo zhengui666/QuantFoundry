@@ -355,6 +355,8 @@ export function SetupPage() {
   const [modelName, setModelName] = useState('');
   const [aiCredential, setAiCredential] = useState('');
   const [dataCredential, setDataCredential] = useState('');
+  const aiCredentialInFlight = useRef('');
+  const dataCredentialInFlight = useRef('');
   const [dataSkipped, setDataSkipped] = useState(false);
   const [aiValidationSelection, setAiValidationSelection] = useState<
     { providerId: string; modelName: string } | null | undefined
@@ -377,12 +379,12 @@ export function SetupPage() {
     initial_paper_capital: '100000',
   });
   const validateAi = useMutation({
-    mutationFn: (variables: { providerId: string; modelName: string; credential: string }) =>
+    mutationFn: (variables: { providerId: string; modelName: string }) =>
       api.validateSetupConnection({
         provider_id: variables.providerId,
         kind: 'AI',
         model_name: variables.modelName || null,
-        credential: variables.credential,
+        credential: aiCredentialInFlight.current,
       }),
     onSuccess: async ({ body }, variables) => {
       if (providerId !== variables.providerId || modelName !== variables.modelName) return;
@@ -399,20 +401,26 @@ export function SetupPage() {
       setAiValidationSelection(variables);
       setAiConnection(body);
     },
+    onSettled: () => {
+      aiCredentialInFlight.current = '';
+    },
   });
   const validateData = useMutation({
-    mutationFn: (variables: { providerId: string; credential: string }) =>
+    mutationFn: (variables: { providerId: string }) =>
       api.validateSetupConnection({
         provider_id: variables.providerId,
         kind: 'DATA',
         model_name: null,
-        credential: variables.credential,
+        credential: dataCredentialInFlight.current,
       }),
     onSuccess: ({ body }, variables) => {
       if (dataProviderId !== variables.providerId) return;
       setDataConnection(body);
       setDataCredential('');
       void status.refetch();
+    },
+    onSettled: () => {
+      dataCredentialInFlight.current = '';
     },
   });
   const complete = useMutation({
@@ -721,7 +729,10 @@ export function SetupPage() {
             <button
               type="button"
               disabled={!providerId || !aiCredential || validateAi.isPending}
-              onClick={() => validateAi.mutate({ providerId, modelName, credential: aiCredential })}
+              onClick={() => {
+                aiCredentialInFlight.current = aiCredential;
+                validateAi.mutate({ providerId, modelName });
+              }}
             >
               {validateAi.isPending ? t('setup.testing') : t('setup.testAi')}
             </button>
@@ -775,9 +786,10 @@ export function SetupPage() {
             <button
               type="button"
               disabled={!dataProviderId || !dataCredential || validateData.isPending}
-              onClick={() =>
-                validateData.mutate({ providerId: dataProviderId, credential: dataCredential })
-              }
+              onClick={() => {
+                dataCredentialInFlight.current = dataCredential;
+                validateData.mutate({ providerId: dataProviderId });
+              }}
             >
               {validateData.isPending ? t('setup.testing') : t('setup.testData')}
             </button>

@@ -193,8 +193,9 @@ function headersFor(operationId: CanonicalOperationId, init: RequestInit) {
     if (headers.has(header) && !canonicalHeaders.includes(header))
       throw new ContractError(`${header} is not defined by canonical operation ${operationId}.`);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
-  const e2eMockToken = (import.meta.env as { VITE_E2E_MOCK_TOKEN?: unknown }).VITE_E2E_MOCK_TOKEN;
-  if (typeof e2eMockToken === 'string' && e2eMockToken)
+  const env = import.meta.env as { DEV?: boolean; VITE_E2E_MOCK_TOKEN?: unknown };
+  const e2eMockToken = env.VITE_E2E_MOCK_TOKEN;
+  if (env.DEV && typeof e2eMockToken === 'string' && e2eMockToken)
     headers.set('X-QF-E2E-Mock-Token', e2eMockToken);
   if (init.body) headers.set('Content-Type', 'application/json');
   if (
@@ -386,13 +387,20 @@ function validateStrategyDetail(
       strategy_id: body.strategy_id,
       version: body.version,
     });
-    let locationPath: string | null = canonical.contentLocation;
-    if (locationPath?.startsWith('http://') || locationPath?.startsWith('https://'))
-      locationPath = new URL(locationPath).pathname;
+    const locationPath = sameOriginPath(canonical.contentLocation);
     if (locationPath !== expectedPath)
       throw new ContractError('Strategy Content-Location does not match the resolved version.');
   }
   return canonical;
+}
+
+function sameOriginPath(value: string | null): string | null {
+  if (value === null) return null;
+  const origin = globalThis.location?.origin ?? 'http://localhost';
+  const normalized = new URL(value, origin);
+  if (normalized.origin !== origin)
+    throw new ContractError('Canonical resource location must be same-origin.');
+  return `${normalized.pathname}${normalized.search}`;
 }
 
 export const api = {
@@ -409,7 +417,8 @@ export const api = {
         SessionBootstrapResponseSchema,
         'SessionBootstrapResponse',
       );
-      auth.establish(result.body.session, { expectedScope: requestScope, rotate: true });
+      if (!auth.establish(result.body.session, { expectedScope: requestScope, rotate: true }))
+        throw new ContractError('Login response was superseded by an authorization change.');
       return result;
     }),
   session: (signal?: AbortSignal) =>
@@ -420,10 +429,13 @@ export const api = {
         OwnerSessionViewSchema,
         'OwnerSessionView',
       );
-      auth.establish(result.body, {
-        expectedScope: requestScope,
-        rotate: !auth.get(),
-      });
+      if (
+        !auth.establish(result.body, {
+          expectedScope: requestScope,
+          rotate: !auth.get(),
+        })
+      )
+        throw new ContractError('Session response was superseded by an authorization change.');
       return result;
     }),
   logout: () =>
@@ -795,11 +807,7 @@ export const api = {
       throw new ContractError('Invalid canonical ExperimentReproduceAccepted response.');
     const accepted = parsed.data;
     const expectedLocation = pathFor('getExperiment', { experiment_id: accepted.resource_ref.id });
-    const locationPath = result.location
-      ? result.location.startsWith('http://') || result.location.startsWith('https://')
-        ? new URL(result.location).pathname
-        : result.location
-      : null;
+    const locationPath = sameOriginPath(result.location);
     if (
       locationPath !== expectedLocation ||
       accepted.resource_ref.type !== 'experiment' ||
@@ -1425,7 +1433,6 @@ export function streamEvents(
           throw error;
         }
         if (!response.body) throw new Error('event stream unavailable');
-        attempts = 0;
         onState?.('connected');
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = '';
@@ -1492,6 +1499,7 @@ export function streamEvents(
             connectionLast = eventCursor;
             last = connectionLast;
             transientStorage.set(connectionCursorKey, String(connectionLast));
+            attempts = 0;
           }
         }
       } catch (error) {

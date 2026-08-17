@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
@@ -78,10 +78,13 @@ export function Capability({
   const [confirmationPending, setConfirmationPending] = useState(false);
   const [pending, setPending] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string>();
+  const inFlight = useRef(false);
   if (item.visibility === 'HIDE') return null;
   const executable = item.allowed && onClick !== undefined;
   const actionLabel = label ?? t(`action.${item.action}`, { defaultValue: item.action });
   const run = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setPending(true);
     setConfirmationError(undefined);
     try {
@@ -90,6 +93,7 @@ export function Capability({
       setConfirmationError(error instanceof Error ? error.message : t('error.connection'));
     } finally {
       setPending(false);
+      inFlight.current = false;
     }
   };
   const runSafely = () => {
@@ -122,7 +126,8 @@ export function Capability({
       </>
     );
   const confirm = async () => {
-    if (!onClick) return;
+    if (!onClick || inFlight.current) return;
+    inFlight.current = true;
     setConfirmationPending(true);
     setConfirmationError(undefined);
     try {
@@ -132,6 +137,7 @@ export function Capability({
       setConfirmationError(error instanceof Error ? error.message : t('error.connection'));
     } finally {
       setConfirmationPending(false);
+      inFlight.current = false;
     }
   };
   return (
