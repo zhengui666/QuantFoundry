@@ -146,7 +146,7 @@ def main() -> int:
             "status": "QUARANTINE",
             "reason": reason,
         }
-        print(f"domain preflight failed: {type(error).__name__}", file=sys.stderr)
+        print(f"domain preflight failed: {type(error).__name__}: {error}", file=sys.stderr)
     finally:
         if engine is not None:
             engine.dispose()
