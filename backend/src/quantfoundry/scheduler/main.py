@@ -76,9 +76,7 @@ def run_once() -> int:
         ),
         0,
     )
-    retried, failed = domain_stage(
-        "job reaping", reap_expired_jobs, (0, 0)
-    )
+    retried, failed = domain_stage("job reaping", reap_expired_jobs, (0, 0))
     if artifact_store_ready:
         artifact_session = None
         try:

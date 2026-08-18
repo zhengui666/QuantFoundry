@@ -29,6 +29,7 @@ def ensure_fullstack_compat_setup() -> None:
         SessionLocal,
         SetupBindingRow,
     )
+    from quantfoundry.bootstrap.local import _workspace_seed_values
     from quantfoundry.infrastructure.crypto.provider_credentials import (
         CredentialConfigurationError,
         credential_aad,
@@ -36,7 +37,6 @@ def ensure_fullstack_compat_setup() -> None:
         encrypt_credential,
     )
     from quantfoundry.infrastructure.db.schema import canonical_workspace_id
-    from quantfoundry.bootstrap.local import _workspace_seed_values
 
     workspace_id = canonical_workspace_id("system")
     owner_id = "system-owner"
@@ -223,8 +223,7 @@ def parse_args() -> argparse.Namespace:
     if not parsed.hostname or parsed.username or parsed.password:
         parser.error("--api-url must be an origin without embedded credentials")
     if parsed.scheme != "https" and not (
-        parsed.scheme == "http"
-        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
     ):
         parser.error("--api-url must use HTTPS unless it targets loopback")
     return args
@@ -330,17 +329,23 @@ def activate_fullstack_database(
     loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1", "postgres"}
     if sslmode == "disable":
         if not loopback or os.environ.get("QF_FULLSTACK_ALLOW_INSECURE_DB") != "1":
-            raise RuntimeError("non-loopback full-stack database connections require TLS")
+            raise RuntimeError(
+                "non-loopback full-stack database connections require TLS"
+            )
         tls_mode = "DISABLED"
     elif sslmode == "verify-ca":
         tls_mode = "VERIFY_CA"
     elif sslmode == "verify-full":
         tls_mode = "VERIFY_FULL"
     else:
-        raise RuntimeError("full-stack database sslmode must be disable, verify-ca, or verify-full")
+        raise RuntimeError(
+            "full-stack database sslmode must be disable, verify-ca, or verify-full"
+        )
     ca_certificate_pem = os.environ.get("QF_FULLSTACK_CA_CERTIFICATE_PEM")
     if tls_mode != "DISABLED" and not ca_certificate_pem:
-        raise RuntimeError("TLS full-stack database connections require QF_FULLSTACK_CA_CERTIFICATE_PEM")
+        raise RuntimeError(
+            "TLS full-stack database connections require QF_FULLSTACK_CA_CERTIFICATE_PEM"
+        )
     status = client.get("/database/connection", headers=auth)
     if status.status_code != 200:
         raise RuntimeError(
@@ -378,12 +383,16 @@ def activate_fullstack_database(
                 "username": unquote(parsed.username),
                 "password": unquote(parsed.password or ""),
                 "pool_profile": "fullstack-ci",
-                **({"ca_certificate_pem": ca_certificate_pem} if ca_certificate_pem else {}),
+                **(
+                    {"ca_certificate_pem": ca_certificate_pem}
+                    if ca_certificate_pem
+                    else {}
+                ),
             },
         },
     )
     if not isinstance(candidate.get("revision"), int):
-        raise RuntimeError("database candidate is missing revision")
+        raise TypeError("database candidate is missing revision")
     request_json(
         client,
         "POST",
@@ -426,7 +435,7 @@ def main() -> int:
         )
         session = login.get("session")
         if not isinstance(session, dict):
-            raise RuntimeError("login response is missing session")
+            raise TypeError("login response is missing session")
         csrf = session.get("csrf_token")
         if not isinstance(csrf, str) or len(csrf) < 32:
             raise RuntimeError("login response is missing CSRF token")
@@ -508,7 +517,7 @@ def main() -> int:
             )
         candidate_revision = candidate.json().get("revision")
         if not isinstance(candidate_revision, int):
-            raise RuntimeError("configuration candidate is missing revision")
+            raise TypeError("configuration candidate is missing revision")
         request_json(
             client,
             "POST",

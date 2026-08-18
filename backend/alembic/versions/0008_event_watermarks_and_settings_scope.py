@@ -82,7 +82,9 @@ def upgrade() -> None:
         )
     else:
         if bind.in_transaction():
-            bind.execute(sa.text("UPDATE domain_events SET sequence = sequence WHERE 0"))
+            bind.execute(
+                sa.text("UPDATE domain_events SET sequence = sequence WHERE 0")
+            )
         else:
             bind.exec_driver_sql("BEGIN IMMEDIATE")
     collision = bind.execute(

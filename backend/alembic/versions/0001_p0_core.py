@@ -34,9 +34,7 @@ def upgrade() -> None:
         sa.Column("response", sa.Text()),
         sa.Column("state", sa.String(), nullable=False),
         sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
-        sa.PrimaryKeyConstraint(
-            "method", "path", "key", name="pk_idempotency_records"
-        ),
+        sa.PrimaryKeyConstraint("method", "path", "key", name="pk_idempotency_records"),
     )
     op.create_table(
         "domain_events",

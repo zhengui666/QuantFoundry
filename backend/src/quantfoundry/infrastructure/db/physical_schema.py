@@ -184,7 +184,7 @@ def load_physical_metadata(
                     initially=primary_key_spec.get("initially"),
                 )
             )
-    for table_name, table_spec in specs.items():
+    for _table_name, table_spec in specs.items():
         table = metadata.tables[table_key(table_spec)]
         for constraint in table_spec["unique_constraints"]:
             name = constraint["name"]

@@ -19,7 +19,9 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name not in {"postgresql", "sqlite"}:
-        raise RuntimeError("0004 evidence migration supports PostgreSQL and SQLite only")
+        raise RuntimeError(
+            "0004 evidence migration supports PostgreSQL and SQLite only"
+        )
     if bind.dialect.name == "postgresql":
         bind.execute(
             sa.text(
@@ -29,9 +31,7 @@ def upgrade() -> None:
         )
     elif bind.dialect.name == "sqlite":
         if bind.in_transaction():
-            bind.execute(
-                sa.text("UPDATE validations SET revision = revision WHERE 0")
-            )
+            bind.execute(sa.text("UPDATE validations SET revision = revision WHERE 0"))
         else:
             bind.exec_driver_sql("BEGIN IMMEDIATE")
     invalid_legacy_row = bind.execute(

@@ -17,7 +17,10 @@ from typing import Any
 import jsonschema
 import yaml
 
-from quantfoundry.contracts.openapi.api_models import application_schemas, validate_schema
+from quantfoundry.contracts.openapi.api_models import (
+    application_schemas,
+    validate_schema,
+)
 
 _SPEC: dict[str, Any] | None = None
 

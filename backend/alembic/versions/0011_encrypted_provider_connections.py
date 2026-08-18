@@ -19,7 +19,9 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name not in {"postgresql", "sqlite"}:
-        raise RuntimeError("0011 provider connections supports PostgreSQL and SQLite only")
+        raise RuntimeError(
+            "0011 provider connections supports PostgreSQL and SQLite only"
+        )
     if bind.dialect.name == "postgresql":
         bind.execute(sa.text("LOCK TABLE setup_bindings IN ACCESS EXCLUSIVE MODE"))
     elif bind.dialect.name == "sqlite":
@@ -186,7 +188,10 @@ def upgrade() -> None:
             ["records.workspace_id", "records.id", "records.kind"],
             name="fk_setup_bindings_settings_record_records",
         ),
-        sa.CheckConstraint("settings_record_kind = 'settings'", name="setup_bindings_settings_record_kind"),
+        sa.CheckConstraint(
+            "settings_record_kind = 'settings'",
+            name="setup_bindings_settings_record_kind",
+        ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "ai_connection_id", "ai_connection_kind"],
             [

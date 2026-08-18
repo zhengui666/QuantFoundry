@@ -357,10 +357,11 @@ def create_server(
         try:
             validated_actions = json.loads(json.dumps(actions, separators=(",", ":")))
         except (TypeError, ValueError, RecursionError) as error:
-            raise ValueError("actions must be JSON-serializable dictionaries") from error
-        if (
-            not isinstance(validated_actions, list)
-            or not all(isinstance(item, dict) for item in validated_actions)
+            raise ValueError(
+                "actions must be JSON-serializable dictionaries"
+            ) from error
+        if not isinstance(validated_actions, list) or not all(
+            isinstance(item, dict) for item in validated_actions
         ):
             raise ValueError("actions must be a list of JSON objects")
     server = LocalProviderServer((host, port), LocalProviderHandler)

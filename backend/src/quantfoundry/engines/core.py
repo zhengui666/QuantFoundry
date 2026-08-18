@@ -481,7 +481,9 @@ def holdout_policy_result(
     except (KeyError, TypeError, ValueError, OverflowError) as error:
         raise EngineInputError("holdout metrics are invalid") from error
     if (
-        not all(math.isfinite(value) for value in (total_return, sharpe, maximum_drawdown))
+        not all(
+            math.isfinite(value) for value in (total_return, sharpe, maximum_drawdown)
+        )
         or not -1.0 <= maximum_drawdown <= 0.0
     ):
         raise EngineInputError("holdout metrics are invalid")
@@ -1292,14 +1294,17 @@ def validation_checks(
     split_ok = (
         bounds_ok
         and parsed_periods is not None
-        and parsed_periods[0][1] < parsed_periods[1][0]
+        and parsed_periods[0][1]
+        < parsed_periods[1][0]
         <= parsed_periods[1][1]
         < parsed_periods[2][0]
     )
     try:
         validation_start, validation_end = parsed_periods[1]
         row_bounds_ok = all(
-            validation_start <= _parse_date(row.get("date"), "row.date") <= validation_end
+            validation_start
+            <= _parse_date(row.get("date"), "row.date")
+            <= validation_end
             for row in rows
         )
     except (TypeError, IndexError, EngineInputError):

@@ -43,10 +43,7 @@ def main() -> int:
     try:
         with engine.connect() as connection:
             actual, user, port = connection.execute(
-                text(
-                    "SELECT current_database(), current_user, "
-                    "inet_server_port()"
-                )
+                text("SELECT current_database(), current_user, inet_server_port()")
             ).one()
     finally:
         engine.dispose()

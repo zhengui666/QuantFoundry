@@ -222,13 +222,13 @@ def _validate_order_response(
         or not result["broker_order_id"]
         or result.get("status") not in statuses
         or not _valid_timestamp(result.get("accepted_at"))
-            or not _valid_timestamp(result.get("updated_at"))
-            or not isinstance(result.get("fills"), list)
-            or not all(_validate_fill_entry(fill) for fill in result["fills"])
-            or any(
-                fill.get("broker_order_id") != result.get("broker_order_id")
-                for fill in result.get("fills", [])
-            )
+        or not _valid_timestamp(result.get("updated_at"))
+        or not isinstance(result.get("fills"), list)
+        or not all(_validate_fill_entry(fill) for fill in result["fills"])
+        or any(
+            fill.get("broker_order_id") != result.get("broker_order_id")
+            for fill in result.get("fills", [])
+        )
     ):
         raise ConnectorProtocolError("order response is invalid")
     return result
@@ -296,10 +296,7 @@ def _valid_response_decimal(value: Any) -> bool:
 
 
 def _valid_positive_response_decimal(value: Any) -> bool:
-    return (
-        _valid_response_decimal(value)
-        and Decimal(value) > 0
-    )
+    return _valid_response_decimal(value) and Decimal(value) > 0
 
 
 def _decimal_is_valid(value: str) -> bool:
@@ -961,7 +958,9 @@ class ConnectorClient:
                 "client_order_id was reused with a different order payload"
             )
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
-            _purge_expired_fingerprints(self._preview_fingerprints, self._monotonic_clock())
+            _purge_expired_fingerprints(
+                self._preview_fingerprints, self._monotonic_clock()
+            )
             preview = self._preview_fingerprints.get(fingerprint)
             if (
                 preview is None

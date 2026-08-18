@@ -93,7 +93,13 @@ def read_commands(options: argparse.Namespace) -> list[dict[str, Any]]:
             command = step.get("command")
             if not isinstance(command, str) or not command.strip() or "\n" in command:
                 raise SystemExit("P0 evidence requires single-line command records")
-            commands.append({"command": command, "result": step["result"], "exit_code": step["exit_code"]})
+            commands.append(
+                {
+                    "command": command,
+                    "result": step["result"],
+                    "exit_code": step["exit_code"],
+                }
+            )
         return commands
     raise SystemExit("P0 evidence must be built from a structured gate result file")
 
@@ -114,7 +120,10 @@ def main() -> None:
     registry_path = pathlib.Path(
         os.environ.get(
             "QF_P0_REGISTRY_PATH",
-            str(pathlib.Path(__file__).resolve().parents[2] / "docs/治理/p0-blockers.yaml"),
+            str(
+                pathlib.Path(__file__).resolve().parents[2]
+                / "docs/治理/p0-blockers.yaml"
+            ),
         )
     )
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
@@ -129,7 +138,9 @@ def main() -> None:
             or not isinstance(item.get("closure_criteria"), (str, list, dict))
             or item["id"] in by_id
         ):
-            raise SystemExit("P0 blocker registry contains malformed or duplicate entries")
+            raise SystemExit(
+                "P0 blocker registry contains malformed or duplicate entries"
+            )
         by_id[item["id"]] = item
     blocker_ids = options.blocker or list(
         TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS
@@ -140,12 +151,18 @@ def main() -> None:
     if not blocker_ids or any(value not in allowed for value in blocker_ids):
         raise SystemExit("requested blocker is not assigned to this evidence role")
     if SUPPLY_BLOCKER in blocker_ids and blocker_ids != [SUPPLY_BLOCKER]:
-        raise SystemExit("supply-chain evidence cannot be mixed with ordinary P0 blockers")
+        raise SystemExit(
+            "supply-chain evidence cannot be mixed with ordinary P0 blockers"
+        )
     if len(set(blocker_ids)) != len(blocker_ids):
         raise SystemExit("requested blockers must be unique")
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if os.environ.get("GITHUB_ACTIONS") != "true" or not token or not shutil.which("gh"):
+    if (
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        or not token
+        or not shutil.which("gh")
+    ):
         raise SystemExit("P0 evidence requires an authenticated GitHub Actions runner")
     gh_env = os.environ.copy()
     gh_env["GH_TOKEN"] = token
@@ -154,8 +171,7 @@ def main() -> None:
         env=gh_env,
         check=True,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
     try:
         run = json.loads(run_payload.stdout)
@@ -173,7 +189,9 @@ def main() -> None:
         or run.get("status") not in {"queued", "in_progress", "completed"}
         or (run.get("status") == "completed" and run.get("conclusion") != "success")
     ):
-        raise SystemExit("P0 evidence is not bound to the authenticated current workflow run")
+        raise SystemExit(
+            "P0 evidence is not bound to the authenticated current workflow run"
+        )
     commands = read_commands(options)
     timestamp = (
         dt.datetime.now(dt.UTC)

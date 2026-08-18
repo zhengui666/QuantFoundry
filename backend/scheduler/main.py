@@ -6,6 +6,7 @@ from quantfoundry.scheduler import main as _canonical
 
 sys.modules[__name__] = _canonical
 
+
 def main() -> None:
     _canonical.run_forever()
 

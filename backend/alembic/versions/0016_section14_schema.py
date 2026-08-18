@@ -1492,11 +1492,15 @@ def _drop_sqlite_guard_triggers() -> None:
     bind = op.get_bind()
     if bind.dialect.name != "sqlite":
         return
-    triggers = bind.execute(
-        text(
-            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'"
+    triggers = (
+        bind.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'"
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     preparer = bind.dialect.identifier_preparer
     for name in triggers:
         op.execute(text(f"DROP TRIGGER IF EXISTS {preparer.quote(name)}"))
@@ -1518,7 +1522,9 @@ def _install_guards() -> None:
             $$ LANGUAGE plpgsql
             """
         )
-        op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_insert ON validations")
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_validations_holdout_insert ON validations"
+        )
         op.execute(
             "CREATE TRIGGER qf_validations_holdout_insert BEFORE INSERT ON validations "
             "FOR EACH ROW EXECUTE FUNCTION qf_validate_holdout_insert()"
@@ -1771,7 +1777,9 @@ def _install_guards() -> None:
             $$ LANGUAGE plpgsql
             """
         )
-        op.execute("DROP TRIGGER IF EXISTS qf_holdout_contamination_monotonic ON holdout_exposures")
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_holdout_contamination_monotonic ON holdout_exposures"
+        )
         op.execute(
             "CREATE TRIGGER qf_holdout_contamination_monotonic BEFORE UPDATE OF contamination "
             "ON holdout_exposures FOR EACH ROW EXECUTE FUNCTION qf_holdout_contamination_monotonic()"
@@ -1870,9 +1878,7 @@ def _install_guards() -> None:
         "v.holdout_state IN ('APPROVAL_PENDING', 'FAILED')) BEGIN SELECT RAISE(ABORT, "
         "'active holdout approval evidence cannot be deleted'); END"
     )
-    op.execute(
-        "DROP TRIGGER IF EXISTS qf_approval_requests_pending_evidence_immutable"
-    )
+    op.execute("DROP TRIGGER IF EXISTS qf_approval_requests_pending_evidence_immutable")
     op.execute(
         "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
         "ON approval_requests WHEN NEW.validation_id IS NOT OLD.validation_id OR "
@@ -2069,9 +2075,7 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
                 domain_events = metadata.tables.get("domain_events")
                 if domain_events is None:
                     domain_events = metadata.tables["public.domain_events"]
-                domain_events.constraints.add(
-                    deferred_domain_locator_check
-                )
+                domain_events.constraints.add(deferred_domain_locator_check)
         _restore_all_tables(
             bind,
             metadata,

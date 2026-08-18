@@ -1591,7 +1591,6 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         )
     ).scalar_one_or_none()
     assert public_record is not None and holdout_record is not None
-    public_metadata = json.loads(public_record.body)
     holdout_metadata = json.loads(holdout_record.body)
     public_artifact = json.dumps(
         {
@@ -1602,7 +1601,9 @@ def test_45_canonical_operation_ids_execute_real_handlers(
                             Record.workspace_id == "matrix-workspace",
                             Record.record_key == bindings[partition].artifact_id,
                         )
-                    ).scalar_one().body
+                    )
+                    .scalar_one()
+                    .body
                 )["storage_key"],
                 json.loads(
                     session.execute(
@@ -1610,7 +1611,9 @@ def test_45_canonical_operation_ids_execute_real_handlers(
                             Record.workspace_id == "matrix-workspace",
                             Record.record_key == bindings[partition].artifact_id,
                         )
-                    ).scalar_one().body
+                    )
+                    .scalar_one()
+                    .body
                 )["content_sha256"],
             )
             for partition in bindings

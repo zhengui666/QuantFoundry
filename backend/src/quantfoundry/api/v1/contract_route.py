@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import inspect
-import os
+import json
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 

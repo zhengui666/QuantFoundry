@@ -114,10 +114,13 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
 def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
     temporary = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
     )
     temporary_path = Path(temporary.name)
-    commit_attempted = False
     try:
         with temporary:
             temporary.write(content)

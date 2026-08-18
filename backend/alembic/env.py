@@ -83,9 +83,12 @@ def run_migrations_online():
                     if injected_connection.in_transaction():
                         injected_connection.rollback()
                     injected_connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-                    if injected_connection.exec_driver_sql(
-                        "PRAGMA foreign_keys"
-                    ).scalar_one() != 1:
+                    if (
+                        injected_connection.exec_driver_sql(
+                            "PRAGMA foreign_keys"
+                        ).scalar_one()
+                        != 1
+                    ):
                         raise RuntimeError(
                             "SQLite migration failed to restore foreign keys"
                         )
@@ -141,7 +144,9 @@ def run_migrations_online():
                     connection.rollback()
                 connection.exec_driver_sql("PRAGMA foreign_keys=ON")
                 if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 1:
-                    raise RuntimeError("SQLite migration failed to restore foreign keys")
+                    raise RuntimeError(
+                        "SQLite migration failed to restore foreign keys"
+                    )
 
 
 try:

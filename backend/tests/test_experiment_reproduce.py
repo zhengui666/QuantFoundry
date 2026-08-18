@@ -21,8 +21,8 @@ from quantfoundry.api.app import (
     SessionLocal,
     app,
 )
-from quantfoundry.infrastructure.artifacts.store import read_bytes
 from quantfoundry.application.jobs.effects import _memo_experiment_evidence
+from quantfoundry.infrastructure.artifacts.store import read_bytes
 from quantfoundry.workers.main import run_once
 
 OWNER = {"Authorization": "Bearer test"}

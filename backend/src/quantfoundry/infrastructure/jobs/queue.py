@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import and_, exists, or_, select, update
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from quantfoundry.api.app import JobDependencyRow, JobRow, RuntimeHeartbeat, emit
@@ -176,7 +176,6 @@ def record_heartbeat(
     now: datetime | None = None,
 ) -> None:
     timestamp = now or datetime.now(UTC)
-    key = {"component": component, "instance_id": instance_id}
     updated = session.execute(
         update(RuntimeHeartbeat)
         .where(
@@ -260,7 +259,9 @@ def claim_job(
         if blocked_ids:
             statement = statement.where(~JobRow.id.in_(blocked_ids))
         row = session.execute(
-            statement.order_by(JobRow.priority.asc(), JobRow.queued_at.asc(), JobRow.id.asc())
+            statement.order_by(
+                JobRow.priority.asc(), JobRow.queued_at.asc(), JobRow.id.asc()
+            )
             .limit(1)
             .with_for_update(skip_locked=True)
         ).scalar_one_or_none()
@@ -286,7 +287,9 @@ def claim_job(
                     ),
                     (
                         (dependency.dependency_type == "TERMINAL")
-                        & prerequisite.status.not_in({"COMPLETED", "FAILED", "CANCELLED"})
+                        & prerequisite.status.not_in(
+                            {"COMPLETED", "FAILED", "CANCELLED"}
+                        )
                     ),
                 ),
             )

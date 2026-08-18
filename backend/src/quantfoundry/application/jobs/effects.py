@@ -1188,9 +1188,7 @@ def _complete_experiment(
         and output_sha256 != source_output_sha256
     ):
         raise InvalidJobState("exact reproduction output hash differs from source")
-    artifact_id = _artifact(
-        session, job, "experiment_result", calculation_output
-    )
+    artifact_id = _artifact(session, job, "experiment_result", calculation_output)
     if sensitivity_search_result is not None:
         sensitivity_search_result["result_ref"] = _job_result_ref(
             "experiment", experiment_id, artifact_id

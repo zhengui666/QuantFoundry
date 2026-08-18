@@ -55,7 +55,9 @@ from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from quantfoundry.infrastructure.crypto.provider_credentials import credential_fingerprint
+from quantfoundry.infrastructure.crypto.provider_credentials import (
+    credential_fingerprint,
+)
 
 try:
     import fcntl
@@ -410,10 +412,14 @@ def _canonical_json(value: Any) -> str:
             value.items(),
             key=lambda item: (len(str(item[0]).encode()), str(item[0]).encode()),
         )
-        return "{" + ",".join(
-            f"{json.dumps(str(key), ensure_ascii=False)}:{_canonical_json(item)}"
-            for key, item in items
-        ) + "}"
+        return (
+            "{"
+            + ",".join(
+                f"{json.dumps(str(key), ensure_ascii=False)}:{_canonical_json(item)}"
+                for key, item in items
+            )
+            + "}"
+        )
     if isinstance(value, list):
         return "[" + ",".join(_canonical_json(item) for item in value) + "]"
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
@@ -850,10 +856,7 @@ def _init_control_db(connection=None) -> None:
                 _init_control_db(locked_connection)
             return
         bind.execute(
-            text(
-                "SELECT pg_advisory_xact_lock("
-                "hashtext('quantfoundry.control.init'))"
-            )
+            text("SELECT pg_advisory_xact_lock(hashtext('quantfoundry.control.init'))")
         )
     try:
         existing_tables = set(inspect(bind).get_table_names())
@@ -1153,7 +1156,9 @@ _SENSITIVE_AUDIT_KEY = re.compile(
 def _redact_audit_summary(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: "<redacted>" if _SENSITIVE_AUDIT_KEY.search(str(key)) else _redact_audit_summary(item)
+            key: "<redacted>"
+            if _SENSITIVE_AUDIT_KEY.search(str(key))
+            else _redact_audit_summary(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -1351,7 +1356,9 @@ def _value_view(
     session: Session, row: ConfigurationValue, catalog: ConfigurationCatalogRow
 ) -> ConfigurationValueView:
     configured = row.ciphertext is not None or row.typed_value is not None
-    is_protected = catalog.sensitivity in {"SECRET", "MASKED"} or row.ciphertext is not None
+    is_protected = (
+        catalog.sensitivity in {"SECRET", "MASKED"} or row.ciphertext is not None
+    )
     return ConfigurationValueView.model_validate(
         {
             "key": row.key,
@@ -1869,7 +1876,11 @@ def _probe_database(
                     ),
                 )
             )
-            failure = None if supported_version and privilege and alembic and migration_compatible else "DATABASE_SCHEMA_INCOMPATIBLE"
+            failure = (
+                None
+                if supported_version and privilege and alembic and migration_compatible
+                else "DATABASE_SCHEMA_INCOMPATIBLE"
+            )
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         checks = [
             DatabaseConnectionCheck(
@@ -2029,7 +2040,9 @@ def _schedule_domain_switch_cleanup(
         return
     if candidate_published:
         post_commit.append(lambda: _dispose_engine(previous_engine))
-        rollback.append(lambda: _restore_domain_database(previous_engine, candidate_engine))
+        rollback.append(
+            lambda: _restore_domain_database(previous_engine, candidate_engine)
+        )
         return
 
     def publish_after_commit() -> None:

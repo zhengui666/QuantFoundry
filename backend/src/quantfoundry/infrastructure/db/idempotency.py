@@ -91,15 +91,21 @@ def _json_response(status: int, path: str, payload: dict[str, Any]) -> JSONRespo
 
 def _request_hashes(request: dict[str, Any]) -> list[str]:
     candidates = request.get("__qf_fingerprint_candidates__")
-    if not isinstance(candidates, list) or not candidates or not isinstance(
-        request.get("credential_fingerprint"), str
+    if (
+        not isinstance(candidates, list)
+        or not candidates
+        or not isinstance(request.get("credential_fingerprint"), str)
     ):
         return [
             hashlib.sha256(
                 json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest()
         ]
-    base = {key: value for key, value in request.items() if key != "__qf_fingerprint_candidates__"}
+    base = {
+        key: value
+        for key, value in request.items()
+        if key != "__qf_fingerprint_candidates__"
+    }
     hashes: list[str] = []
     for candidate in candidates:
         if not isinstance(candidate, str):

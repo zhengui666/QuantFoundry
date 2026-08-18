@@ -1452,7 +1452,7 @@ class PaperScheduler:
                 "RETRY_SCHEDULED",
                 run["status"],
                 run["status"],
-            "JOB_CANCELLED" if cancellation_requested else "JOB_LEASE_LOST",
+                "JOB_CANCELLED" if cancellation_requested else "JOB_LEASE_LOST",
                 "SAFE_PRE_ORDER",
                 False,
                 "SAFE_RETRY_SAME_RUN",

@@ -12,13 +12,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from bootstrap_owner import EMAIL_PATTERN, provision
-from sqlalchemy import delete, func, select
-from sqlalchemy.exc import SQLAlchemyError
-
 from app.bootstrap import seed_local
+from bootstrap_owner import EMAIL_PATTERN, provision
 from quantfoundry.api.app import Base, SessionLocal, User, Workspace
 from quantfoundry.bootstrap.local import _workspace_seed_values
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 
 def _identity_state(email: str, workspace_name: str) -> tuple[bool, bool]:
@@ -149,8 +148,8 @@ def main() -> int:
             raise RuntimeError(
                 "refusing to bootstrap an existing workspace; local bootstrap is fresh-only"
             )
-        owner_id, workspace_id, session_token, workspace_created, owner_created = provision(
-            args.email, args.workspace_name, args.ttl_hours
+        owner_id, workspace_id, session_token, workspace_created, owner_created = (
+            provision(args.email, args.workspace_name, args.ttl_hours)
         )
         if not workspace_created:
             raise RuntimeError(
@@ -172,8 +171,7 @@ def main() -> int:
             parsed_base_url.scheme != "https"
             and not (
                 parsed_base_url.scheme == "http"
-                and parsed_base_url.hostname
-                in {"api", "localhost", "127.0.0.1", "::1"}
+                and parsed_base_url.hostname in {"api", "localhost", "127.0.0.1", "::1"}
             )
             or not parsed_base_url.netloc
             or parsed_base_url.username

@@ -11,14 +11,13 @@ import argparse
 import sys
 from datetime import UTC, datetime
 
-from sqlalchemy import select
-
 from app.control_plane import (
     ControlSessionLocal,
     GeneralAccessKey,
     init_control_db,
     issue_access_key,
 )
+from sqlalchemy import select
 
 
 def main() -> int:
@@ -57,7 +56,7 @@ def main() -> int:
                         row.status = "REVOKED"
                         row.revoked_at = datetime.now(UTC)
                         row.revision += 1
-            except BaseException as revoke_error:  # noqa: BLE001 - recovery must report residual credential state
+            except BaseException as revoke_error:
                 print(
                     f"access-key bootstrap delivery failed; revocation also failed for {key_id}; key may remain active: {revoke_error}",
                     file=sys.stderr,

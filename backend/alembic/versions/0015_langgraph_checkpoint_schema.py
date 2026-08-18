@@ -115,12 +115,17 @@ def _validate_existing_schema(bind: Any) -> None:
                 continue
             expected_type, nullable, requires_default = expected
             actual_type = str(column["type"]).upper().replace(" ", "")
-            if actual_type != expected_type.replace(" ", "") or column["nullable"] is not nullable:
+            if (
+                actual_type != expected_type.replace(" ", "")
+                or column["nullable"] is not nullable
+            ):
                 raise RuntimeError(
                     f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} has an incompatible type/nullability"
                 )
             if requires_default:
-                actual_default = str(column.get("default") or "").replace(" ", "").lower()
+                actual_default = (
+                    str(column.get("default") or "").replace(" ", "").lower()
+                )
                 expected_defaults = (
                     {"''", "''::text", "''::character varying"}
                     if column["name"] != "metadata"

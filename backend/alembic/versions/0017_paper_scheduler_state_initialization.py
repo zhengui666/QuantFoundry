@@ -1008,7 +1008,7 @@ def _run_upgrade(bind: Connection) -> None:
             bind.rollback()
         try:
             _persist_quarantine(bind, error)
-        except BaseException as quarantine_error:
+        except BaseException as quarantine_error:  # noqa: BLE001 - quarantine failure must not hide the original migration failure
             error.add_note(f"quarantine persistence failed: {quarantine_error!r}")
         raise
     except Exception:
@@ -1055,7 +1055,9 @@ def downgrade() -> None:
                 deployments, "workspace_id", uuid.UUID(str(evidence["workspace_id"]))
             )
         except (ValueError, TypeError, AttributeError) as error:
-            raise RuntimeError("0017 downgrade found invalid workspace evidence") from error
+            raise RuntimeError(
+                "0017 downgrade found invalid workspace evidence"
+            ) from error
         deployment_rows = (
             bind.execute(
                 select(deployments).where(
@@ -1107,8 +1109,12 @@ def downgrade() -> None:
             or int(deployment_rows[0]["revision"]) != int(evidence["revision"])
             or deployment_rows[0]["status"] != expected_status
             or state.get("last_eligible_trading_date") is not None
-            or _utc_timestamp(bind, state["resume_watermark_utc"], "state resume_watermark_utc")
-            != _utc_timestamp(bind, evidence["resume_watermark_utc"], "resume_watermark_utc")
+            or _utc_timestamp(
+                bind, state["resume_watermark_utc"], "state resume_watermark_utc"
+            )
+            != _utc_timestamp(
+                bind, evidence["resume_watermark_utc"], "resume_watermark_utc"
+            )
             or (
                 state["suppressed_since_utc"] is None
                 and evidence["suppressed_since_utc"] is not None
@@ -1127,9 +1133,13 @@ def downgrade() -> None:
                 )
             )
             or _utc_timestamp(bind, state["created_at"], "state created_at")
-            != _utc_timestamp(bind, evidence["initialization_utc"], "initialization_utc")
+            != _utc_timestamp(
+                bind, evidence["initialization_utc"], "initialization_utc"
+            )
             or _utc_timestamp(bind, state["updated_at"], "state updated_at")
-            != _utc_timestamp(bind, evidence["initialization_utc"], "initialization_utc")
+            != _utc_timestamp(
+                bind, evidence["initialization_utc"], "initialization_utc"
+            )
         ):
             raise RuntimeError("0017 downgrade found modified scheduler state")
         if evidence["from_state"] == "STOPPED" and (
@@ -1144,33 +1154,51 @@ def downgrade() -> None:
         typed_audit_workspace = _uuid_column_value(
             audit_events, "workspace_id", uuid.UUID(workspace_id)
         )
-        audit_rows = bind.execute(
-            select(audit_events.c.sequence)
-            .where(audit_events.c.workspace_id == typed_audit_workspace)
-            .order_by(audit_events.c.sequence.desc())
-        ).scalars().all()
+        audit_rows = (
+            bind.execute(
+                select(audit_events.c.sequence)
+                .where(audit_events.c.workspace_id == typed_audit_workspace)
+                .order_by(audit_events.c.sequence.desc())
+            )
+            .scalars()
+            .all()
+        )
         owned_audit_sequences = {
             int(audit["sequence"])
             for audit, evidence, _ in owned
             if str(evidence["workspace_id"]) == workspace_id
         }
-        if not audit_rows or set(audit_rows[: len(owned_audit_sequences)]) != owned_audit_sequences:
-            raise RuntimeError("0017 downgrade requires migration audit events to be the tail")
+        if (
+            not audit_rows
+            or set(audit_rows[: len(owned_audit_sequences)]) != owned_audit_sequences
+        ):
+            raise RuntimeError(
+                "0017 downgrade requires migration audit events to be the tail"
+            )
         typed_event_workspace = _uuid_column_value(
             domain_events, "workspace_id", uuid.UUID(workspace_id)
         )
-        event_rows = bind.execute(
-            select(domain_events.c.sequence)
-            .where(domain_events.c.workspace_id == typed_event_workspace)
-            .order_by(domain_events.c.sequence.desc())
-        ).scalars().all()
+        event_rows = (
+            bind.execute(
+                select(domain_events.c.sequence)
+                .where(domain_events.c.workspace_id == typed_event_workspace)
+                .order_by(domain_events.c.sequence.desc())
+            )
+            .scalars()
+            .all()
+        )
         owned_event_sequences = {
             int(evidence["domain_event_sequence"])
             for _, evidence, _ in owned
             if str(evidence["workspace_id"]) == workspace_id
         }
-        if not event_rows or set(event_rows[: len(owned_event_sequences)]) != owned_event_sequences:
-            raise RuntimeError("0017 downgrade requires migration domain events to be the tail")
+        if (
+            not event_rows
+            or set(event_rows[: len(owned_event_sequences)]) != owned_event_sequences
+        ):
+            raise RuntimeError(
+                "0017 downgrade requires migration domain events to be the tail"
+            )
     _drop_downgrade_guards(bind)
     completed = False
     try:
@@ -1220,7 +1248,9 @@ def downgrade() -> None:
                 bind.execute(
                     select(heads).where(
                         heads.c.workspace_id
-                        == _uuid_column_value(heads, "workspace_id", uuid.UUID(workspace_id))
+                        == _uuid_column_value(
+                            heads, "workspace_id", uuid.UUID(workspace_id)
+                        )
                     )
                 )
                 .mappings()

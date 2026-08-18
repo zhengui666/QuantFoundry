@@ -153,7 +153,9 @@ def upgrade() -> None:
         try:
             for job_id in bind.execute(sa.text("SELECT id FROM jobs")).scalars():
                 bind.execute(
-                    sa.text("UPDATE jobs SET internal_id = :internal_id WHERE id = :id"),
+                    sa.text(
+                        "UPDATE jobs SET internal_id = :internal_id WHERE id = :id"
+                    ),
                     {"id": job_id, "internal_id": uuid.uuid4().hex},
                 )
             with op.batch_alter_table("jobs") as batch:

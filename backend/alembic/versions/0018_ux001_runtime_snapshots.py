@@ -77,10 +77,7 @@ def _sha256_check(column: str) -> str:
     expression = column
     for character in "0123456789abcdef":
         expression = f"replace({expression}, '{character}', '')"
-    return (
-        f"length({column}) = 64 AND lower({column}) = {column} AND "
-        f"{expression} = ''"
-    )
+    return f"length({column}) = 64 AND lower({column}) = {column} AND {expression} = ''"
 
 
 _RUNTIME_CHECK_EXPRESSIONS = {
@@ -121,7 +118,9 @@ def _default_matches(actual: object, expected: str) -> bool:
     if actual is None:
         return False
     normalized = str(actual).strip().replace(" ", "")
-    normalized = re.sub(r"::(?:pg_catalog\.)?[a-z_][a-z0-9_]*(?:\[\])?$", "", normalized)
+    normalized = re.sub(
+        r"::(?:pg_catalog\.)?[a-z_][a-z0-9_]*(?:\[\])?$", "", normalized
+    )
     while normalized.startswith("(") and normalized.endswith(")"):
         normalized = normalized[1:-1]
     return normalized.lower() == expected.replace(" ", "").lower()
@@ -129,9 +128,7 @@ def _default_matches(actual: object, expected: str) -> bool:
 
 def _normalize_sql(expression: object) -> str:
     normalized = re.sub(r"\s+", " ", str(expression)).lower().strip()
-    normalized = re.sub(
-        r"::(?:pg_catalog\.)?[a-z_][a-z0-9_]*(?:\[\])?", "", normalized
-    )
+    normalized = re.sub(r"::(?:pg_catalog\.)?[a-z_][a-z0-9_]*(?:\[\])?", "", normalized)
 
     def strip_groups(value: str) -> str:
         result: list[str] = []
@@ -161,7 +158,10 @@ def _normalize_sql(expression: object) -> str:
                     quote_end = end + 1
                     while quote_end < len(value):
                         if value[quote_end] == "'":
-                            if quote_end + 1 < len(value) and value[quote_end + 1] == "'":
+                            if (
+                                quote_end + 1 < len(value)
+                                and value[quote_end + 1] == "'"
+                            ):
                                 quote_end += 2
                                 continue
                             quote_end += 1
@@ -180,13 +180,18 @@ def _normalize_sql(expression: object) -> str:
             previous = value[index - 1] if index else ""
             token_match = re.search(r"[a-z_][a-z0-9_]*$", value[:index])
             token = token_match.group(0) if token_match else ""
-            if previous and (previous.isalnum() or previous == "_") and token not in {
-                "and",
-                "or",
-                "not",
-                "in",
-                "is",
-            }:
+            if (
+                previous
+                and (previous.isalnum() or previous == "_")
+                and token
+                not in {
+                    "and",
+                    "or",
+                    "not",
+                    "in",
+                    "is",
+                }
+            ):
                 result.append(f"({inner})")
             else:
                 result.append(inner)
@@ -209,7 +214,10 @@ def _validate_section14_columns() -> None:
                 column is None
                 or bool(column["nullable"])
                 or not _type_matches(column, expected_type, length)
-                or (postgres and not _default_matches(column.get("default"), expected_default))
+                or (
+                    postgres
+                    and not _default_matches(column.get("default"), expected_default)
+                )
             ):
                 invalid.setdefault(table, []).append(name)
         if postgres:

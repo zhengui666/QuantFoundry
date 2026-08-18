@@ -78,27 +78,25 @@ if os.getenv("QF_CONTROL_DB_URL"):
     raise RuntimeError(
         "QF_CONTROL_DB_URL is forbidden for tests because control-plane teardown is destructive"
     )
-os.environ[
-    "QF_TEST_AUTH_TOKENS"
-] = json.dumps(
-        {
-            "test": {
-                "actor_id": "test-owner",
-                "workspace_id": "test-workspace",
-                "role": "OWNER",
-            },
-            "matrix": {
-                "actor_id": "matrix-owner",
-                "workspace_id": "matrix-workspace",
-                "role": "OWNER",
-            },
-            "viewer": {
-                "actor_id": "test-viewer",
-                "workspace_id": "test-workspace",
-                "role": "VIEWER",
-            },
-        }
-    )
+os.environ["QF_TEST_AUTH_TOKENS"] = json.dumps(
+    {
+        "test": {
+            "actor_id": "test-owner",
+            "workspace_id": "test-workspace",
+            "role": "OWNER",
+        },
+        "matrix": {
+            "actor_id": "matrix-owner",
+            "workspace_id": "matrix-workspace",
+            "role": "OWNER",
+        },
+        "viewer": {
+            "actor_id": "test-viewer",
+            "workspace_id": "test-workspace",
+            "role": "VIEWER",
+        },
+    }
+)
 os.environ["QF_SSE_TEST_CLOSE"] = "1"
 os.environ["QF_AGENT_PROVIDER"] = "local-deterministic"
 os.environ["QF_AGENT_MODEL"] = "local-test-v1"
