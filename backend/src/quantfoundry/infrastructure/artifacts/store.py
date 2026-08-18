@@ -218,10 +218,13 @@ def _finalize_staged_artifacts(session: Session) -> None:
         published_at = datetime.now(UTC)
         for storage_key, digest in publications:
             target = (_root().resolve() / storage_key).resolve()
-            if not target.is_file() or hashlib.sha256(
-                target.read_bytes()
-            ).hexdigest() != digest:
-                raise ArtifactStoreError("committed artifact is missing or hash-invalid")
+            if (
+                not target.is_file()
+                or hashlib.sha256(target.read_bytes()).hexdigest() != digest
+            ):
+                raise ArtifactStoreError(
+                    "committed artifact is missing or hash-invalid"
+                )
             result = cast(
                 CursorResult[Any],
                 session.execute(
@@ -240,7 +243,15 @@ def _finalize_staged_artifacts(session: Session) -> None:
                 ),
             )
             if result.rowcount != 1:
-                raise ArtifactStoreError("staged artifact metadata is missing")
+                state = session.execute(
+                    text(
+                        "SELECT publication_state FROM artifacts "
+                        "WHERE storage_key=:storage_key AND sha256=:digest"
+                    ),
+                    {"storage_key": storage_key, "digest": digest},
+                ).scalar_one_or_none()
+                if state != "PUBLISHED":
+                    raise ArtifactStoreError("staged artifact metadata is missing")
         for artifact in session.identity_map.values():
             artifact = cast(Any, artifact)
             if (
@@ -264,7 +275,10 @@ def _discard_staged_artifacts(session: Session) -> None:
     session.info.pop("qf_artifact_publications", None)
     for temporary, target, digest in stages:
         temporary.unlink(missing_ok=True)
-        if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() == digest:
+        if (
+            target.exists()
+            and hashlib.sha256(target.read_bytes()).hexdigest() == digest
+        ):
             target.unlink(missing_ok=True)
 
 
