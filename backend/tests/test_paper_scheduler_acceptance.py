@@ -430,6 +430,17 @@ def _seed_gate_inputs(
                 updated_at=now,
             )
         )
+        session.execute(
+            text(
+                "UPDATE strategy_versions SET required_dataset_refs=CAST(:refs AS jsonb) "
+                "WHERE id=:strategy AND workspace_id=:workspace"
+            ),
+            {
+                "refs": json.dumps([str(dataset_id)]),
+                "strategy": deployment["strategy_version_id"],
+                "workspace": deployment["workspace_id"],
+            },
+        )
         manifest_job = JobRow(
             id=new_id("JOB"),
             workspace_id=deployment["workspace_id"],
