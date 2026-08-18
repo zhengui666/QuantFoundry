@@ -31,7 +31,7 @@ release = json.loads(pathlib.Path(release_path).read_text(encoding="utf-8"))
 tag = json.loads(pathlib.Path(tag_path).read_text(encoding="utf-8"))
 if release.get("draft") is not False or release.get("prerelease") is not True:
     raise SystemExit("release must be a published prerelease")
-if release.get("tag_name") != expected_tag or not isinstance(release.get("target_commitish"), str):
+if release.get("tag_name") != expected_tag or release.get("target_commitish") != expected_commit:
     raise SystemExit("release tag or target commit is not bound to the reviewed commit")
 if tag.get("object", {}).get("type") != "commit" or tag.get("object", {}).get("sha") != expected_commit:
     raise SystemExit("tag ref is not a lightweight ref bound to the reviewed commit")
@@ -40,6 +40,23 @@ assets = release.get("assets")
 if not isinstance(assets, list) or not assets:
     raise SystemExit("release has no evidence assets")
 names = []
+MAX_ASSET_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_ASSET_BYTES = 512 * 1024 * 1024
+downloaded_total = [0]
+
+def save_response(response, output, name):
+    content_length = response.headers.get("Content-Length")
+    if content_length is not None and int(content_length) > MAX_ASSET_BYTES:
+        raise SystemExit(f"release asset {name} exceeds the size limit")
+    copied = 0
+    with output.open("wb") as destination:
+        while chunk := response.read(1024 * 1024):
+            copied += len(chunk)
+            downloaded_total[0] += len(chunk)
+            if copied > MAX_ASSET_BYTES or downloaded_total[0] > MAX_TOTAL_ASSET_BYTES:
+                raise SystemExit(f"release asset {name} exceeds the size limit")
+            destination.write(chunk)
+
 for asset in assets:
     name = asset.get("name") if isinstance(asset, dict) else None
     asset_id = asset.get("id") if isinstance(asset, dict) else None
@@ -47,6 +64,9 @@ for asset in assets:
         not isinstance(name, str)
         or not name
         or "/" in name
+        or "\\" in name
+        or name in {".", ".."}
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
         or name in {"release.json", "tag.json"}
         or not isinstance(asset_id, int)
     ):
@@ -71,7 +91,7 @@ for asset in assets:
     opener = urllib.request.build_opener(NoRedirect)
     try:
         with opener.open(request) as response:
-            output.write_bytes(response.read())
+            save_response(response, output, name)
     except urllib.error.HTTPError as error:
         if error.code not in {301, 302, 303, 307, 308}:
             raise
@@ -95,7 +115,7 @@ for asset in assets:
             redirect_url, headers={"Accept": "application/octet-stream"}
         )
         with opener.open(redirect_request) as response:
-            output.write_bytes(response.read())
+            save_response(response, output, name)
     except Exception as error:
         raise SystemExit(f"cannot download release asset {name}: {error}") from error
 if len(names) != len(set(names)):
@@ -207,7 +227,7 @@ def bound_statement(value, subject_name, digest, repository, commit):
                     and isinstance(dependency_digest, dict)
                     and dependency_digest.get("sha1") == commit
                 )
-        if subject_ok and (source_pair_ok or dependency_pair_ok):
+        if subject_ok and workflow_ok and (source_pair_ok or dependency_pair_ok):
             return
     raise SystemExit(f"attestation is not structurally bound to {subject_name}, {repository}, and {commit}")
 
@@ -242,6 +262,43 @@ asset_path = {
     for item in inventory
     if isinstance(item, dict) and isinstance(item.get("source"), str) and isinstance(item.get("name"), str)
 }
+trusted_verifier_root = pathlib.Path(os.environ.get("QF_RELEASE_TRUSTED_VERIFIER_ROOT", ""))
+trusted_verifier_commit = os.environ.get("QF_RELEASE_TRUSTED_VERIFIER_COMMIT", "")
+if (
+    not trusted_verifier_root.is_dir()
+    or not re.fullmatch(r"[0-9a-f]{40}", trusted_verifier_commit)
+    or subprocess.run(
+        ["git", "-C", str(trusted_verifier_root), "rev-parse", "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    != trusted_verifier_commit
+):
+    raise SystemExit("trusted verifier checkout is required for release snapshot validation")
+trusted_env = os.environ.copy()
+trusted_env.update(
+    {
+        "QF_RELEASE_REPO_ROOT": os.environ.get("QF_RELEASE_REPO_ROOT", str(trusted_verifier_root)),
+        "QF_RELEASE_COMMIT": commit,
+        "QF_RELEASE_TRUSTED_VERIFIER_ROOT": str(trusted_verifier_root),
+        "QF_RELEASE_TRUSTED_VERIFIER_COMMIT": trusted_verifier_commit,
+    }
+)
+subprocess.run(
+    [
+        str(trusted_verifier_root / "scripts/p0-check.sh"),
+        str(asset_path["p0-blockers.yaml"]),
+        "--require-closed",
+    ],
+    check=True,
+    env=trusted_env,
+)
+subprocess.run(
+    [str(trusted_verifier_root / "scripts/release-known-issues-check.sh"), str(asset_path["release-known-issues.json"])],
+    check=True,
+    env=trusted_env,
+)
 images = manifest.get("images")
 compose = manifest.get("compose_images")
 if not isinstance(images, list) or len(images) != 2 or not isinstance(compose, dict):
@@ -291,8 +348,40 @@ for image, expected_name in zip(images, expected_images, strict=True):
             raise SystemExit(f"archived {kind} evidence differs from live cryptographic verification for {name}")
     sbom_name = 'backend' if image is images[0] else 'frontend'
     sbom = json.loads(asset_path[f"sbom/{sbom_name}.spdx.json"].read_text(encoding="utf-8"))
-    if not isinstance(sbom.get("spdxVersion"), str) or not isinstance(sbom.get("packages"), list) or not sbom["packages"]:
+    if (
+        not isinstance(sbom.get("spdxVersion"), str)
+        or not sbom["spdxVersion"].startswith("SPDX-")
+        or sbom.get("SPDXID") != "SPDXRef-DOCUMENT"
+        or not isinstance(sbom.get("documentNamespace"), str)
+        or not sbom["documentNamespace"].startswith("https://")
+        or not isinstance(sbom.get("creationInfo"), dict)
+        or not isinstance(sbom["creationInfo"].get("created"), str)
+        or not isinstance(sbom["creationInfo"].get("creators"), list)
+        or not sbom["creationInfo"]["creators"]
+        or not isinstance(sbom.get("packages"), list)
+        or not sbom["packages"]
+    ):
         raise SystemExit(f"{sbom_name} SBOM is not a valid SPDX document")
+    package_ids = set()
+    for package in sbom["packages"]:
+        if (
+            not isinstance(package, dict)
+            or not isinstance(package.get("SPDXID"), str)
+            or not isinstance(package.get("name"), str)
+            or not package["name"]
+            or not isinstance(package.get("downloadLocation"), str)
+        ):
+            raise SystemExit(f"{sbom_name} SBOM contains an incomplete package")
+        package_ids.add(package["SPDXID"])
+    relationships = sbom.get("relationships")
+    if not isinstance(relationships, list) or not any(
+        isinstance(relationship, dict)
+        and relationship.get("spdxElementId") == "SPDXRef-DOCUMENT"
+        and relationship.get("relationshipType") == "DESCRIBES"
+        and relationship.get("relatedSpdxElement") in package_ids
+        for relationship in relationships
+    ):
+        raise SystemExit(f"{sbom_name} SBOM has no standard document-to-package relationship")
     if sbom.get("x-quantfoundry-subject") != {"name": name, "digest": digest}:
         raise SystemExit(f"{sbom_name} SBOM is not bound to the image digest")
     if image is images[0] and compose.get("api") != f"{name}@{digest}":

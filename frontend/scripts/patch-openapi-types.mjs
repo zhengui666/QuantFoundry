@@ -1,4 +1,4 @@
-import { unlink, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,14 +22,14 @@ const objectRefBranches = [
   ['evidence', 'EVID'],
   ['conclusion', 'CONC'],
   ['experiment', 'EXP'],
-  ['factor', 'FCTR'],
+  ['factor', 'FAC'],
   ['strategy', 'STRAT'],
   ['validation', 'VAL'],
-  ['exposure', 'EXPO'],
+  ['exposure', 'HOLD'],
   ['red_team_run', 'RTRUN'],
   ['portfolio', 'PORT'],
   ['memo', 'MEMO'],
-  ['approval', 'APPR'],
+  ['approval', 'APR'],
   ['paper', 'PAPER'],
   ['paper_run', 'PRUN'],
   ['paper_order', 'PORD'],
@@ -87,15 +87,15 @@ patched = replaceBlock(
   'VersionedHashRef',
   '        ObjectRef: StrictObjectRef;',
 );
+const sseEnvelopeType = '"text/event-stream": components["schemas"]["SseEnvelope"];';
+const sseStreamType = '"text/event-stream": string;';
+if (patched.split(sseEnvelopeType).length - 1 !== 1)
+  throw new Error('Generated SSE response type not found exactly once');
+patched = patched.replace(sseEnvelopeType, sseStreamType);
 
-try {
-  if (check) {
-    const expected = await readFile(targetPath, 'utf8');
-    if (expected !== patched)
-      throw new Error('Generated OpenAPI types are stale; run pnpm codegen');
-  } else {
-    await writeFile(targetPath, patched, 'utf8');
-  }
-} finally {
-  if (explicitInput) await unlink(inputPath).catch(() => {});
+if (check) {
+  const expected = await readFile(targetPath, 'utf8');
+  if (expected !== patched) throw new Error('Generated OpenAPI types are stale; run pnpm codegen');
+} else {
+  await writeFile(targetPath, patched, 'utf8');
 }

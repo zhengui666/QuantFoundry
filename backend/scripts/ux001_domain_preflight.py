@@ -94,6 +94,7 @@ def main() -> int:
         print(json.dumps({"status": "QUARANTINE", "reason": "DATABASE_URL_MISSING"}))
         return 2
     engine = None
+    migration_started = False
     report: dict[str, object] = {
         "users": None,
         "workspaces": None,
@@ -112,12 +113,18 @@ def main() -> int:
                 # before binding Alembic to this same connection; this keeps
                 # in-memory SQLite and migration state in one database.
                 connection.commit()
-                with connection.begin():
+                migration_started = True
+                if connection.dialect.name == "sqlite":
                     _apply_migration(config, database_url, connection)
+                else:
+                    with connection.begin():
+                        _apply_migration(config, database_url, connection)
                 report = {**_report(connection), "migration": "APPLIED"}
     except Exception as error:
         reason = (
-            "DATABASE_UNAVAILABLE"
+            "MIGRATION_FAILED"
+            if migration_started
+            else "DATABASE_UNAVAILABLE"
             if isinstance(error, SQLAlchemyError)
             else "INVALID_DATABASE"
             if isinstance(error, ValueError)

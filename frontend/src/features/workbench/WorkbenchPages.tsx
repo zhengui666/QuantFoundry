@@ -387,12 +387,14 @@ export function SetupPage() {
         credential: aiCredentialInFlight.current,
       }),
     onSuccess: async ({ body }, variables) => {
-      if (providerId !== variables.providerId || modelName !== variables.modelName) return;
+      const selectionIsCurrent =
+        providerId === variables.providerId && modelName === variables.modelName;
+      const refreshed = await status.refetch();
+      if (!selectionIsCurrent) return;
       if (body.state === 'FAILED') {
         setAiConnection(body);
         return;
       }
-      const refreshed = await status.refetch();
       if (refreshed.data?.body.ai_connection_id !== body.connection_id) {
         setAiConnection(undefined);
         return;
@@ -413,11 +415,12 @@ export function SetupPage() {
         model_name: null,
         credential: dataCredentialInFlight.current,
       }),
-    onSuccess: ({ body }, variables) => {
-      if (dataProviderId !== variables.providerId) return;
+    onSuccess: async ({ body }, variables) => {
+      const providerIsCurrent = dataProviderId === variables.providerId;
+      await status.refetch();
+      if (!providerIsCurrent) return;
       setDataConnection(body);
       setDataCredential('');
-      void status.refetch();
     },
     onSettled: () => {
       dataCredentialInFlight.current = '';
@@ -3229,17 +3232,22 @@ function DecisionDialog({
   if (item.visibility === 'HIDE') return null;
   if (!item.requires_confirmation && !confirmDisabled)
     return (
-      <Capability
-        item={item}
-        label={label}
-        busy={busy || refreshing}
-        onClick={() => {
-          setRefreshing(true);
-          void onBeforeOpen()
-            .then(onConfirm)
-            .finally(() => setRefreshing(false));
-        }}
-      />
+      <>
+        <Capability
+          item={item}
+          label={label}
+          busy={busy || refreshing}
+          onClick={() => {
+            setOpenError(undefined);
+            setRefreshing(true);
+            void onBeforeOpen()
+              .then(onConfirm)
+              .catch(setOpenError)
+              .finally(() => setRefreshing(false));
+          }}
+        />
+        {openError !== undefined && <Problem error={openError} />}
+      </>
     );
   return (
     <>

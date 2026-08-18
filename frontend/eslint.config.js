@@ -61,6 +61,15 @@ export default tseslint.config(
   ...typeChecked,
   ...nonProductionTyped,
   {
+    files: nonProductionSourceFiles,
+    ignores: ['src/api/generated/**', 'src/api/generated.ts'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/exhaustive-deps': 'error',
+      'react-hooks/rules-of-hooks': 'error',
+    },
+  },
+  {
     files: typedSourceFiles,
     ignores: nonProductionFiles,
     plugins: { 'react-hooks': reactHooks },
@@ -74,7 +83,12 @@ export default tseslint.config(
   },
   {
     files: typedSourceFiles,
-    ignores: [...nonProductionFiles, 'src/api/**', 'src/shared/transient-storage.ts'],
+    ignores: [
+      ...nonProductionFiles,
+      'src/api/generated/**',
+      'src/api/generated.ts',
+      'src/shared/transient-storage.ts',
+    ],
     rules: {
       'no-console': 'error',
       '@typescript-eslint/no-base-to-string': 'off',

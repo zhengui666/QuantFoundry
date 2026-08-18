@@ -97,9 +97,9 @@ def _validate_existing_schema(bind: Any) -> None:
     for name, (required_columns, primary_key) in _TABLES.items():
         inspected_columns = inspector.get_columns(name, schema=SCHEMA)
         columns = {item["name"] for item in inspected_columns}
-        if not required_columns <= columns:
+        if columns != required_columns:
             raise RuntimeError(
-                f"0015 checkpoint table {SCHEMA}.{name} is missing required columns"
+                f"0015 checkpoint table {SCHEMA}.{name} has an incompatible column set"
             )
         actual_key = (
             inspector.get_pk_constraint(name, schema=SCHEMA).get("constrained_columns")
@@ -114,8 +114,8 @@ def _validate_existing_schema(bind: Any) -> None:
             if expected is None:
                 continue
             expected_type, nullable, requires_default = expected
-            actual_type = str(column["type"]).upper()
-            if expected_type not in actual_type or column["nullable"] is not nullable:
+            actual_type = str(column["type"]).upper().replace(" ", "")
+            if actual_type != expected_type.replace(" ", "") or column["nullable"] is not nullable:
                 raise RuntimeError(
                     f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} has an incompatible type/nullability"
                 )

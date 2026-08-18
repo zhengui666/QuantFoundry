@@ -3042,6 +3042,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
         ):
             return
         detail = json.loads(validation.detail)
+        terminal_result = "FAIL"
         validation.status = "FAILED"
         validation.holdout_state = "FAILED"
         validation.revision += 1
@@ -3050,9 +3051,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
         detail.update(
             {
                 "status": "FAILED",
-                "result": (
-                    "FAIL" if job.job_type == "VALIDATION" else detail.get("result")
-                ),
+                "result": terminal_result,
                 "failures": failures,
                 "holdout_state": "FAILED",
                 "revision": validation.revision,
@@ -3072,7 +3071,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             )
             .values(
                 status="FAILED",
-                result="FAIL" if job.job_type == "VALIDATION" else detail.get("result"),
+                result=terminal_result,
                 failures=failures,
                 holdout_state="FAILED",
                 revision=validation.revision,
@@ -3218,12 +3217,14 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
         ):
             return
         detail = json.loads(validation.detail)
+        terminal_result = "FAIL"
         validation.status = "CANCELLED"
         validation.holdout_state = "FAILED"
         validation.revision += 1
         detail.update(
             {
                 "status": "CANCELLED",
+                "result": terminal_result,
                 "holdout_state": "FAILED",
                 "revision": validation.revision,
                 "finished_at": wire_now(),
@@ -3240,6 +3241,7 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
             )
             .values(
                 status="CANCELLED",
+                result=terminal_result,
                 holdout_state="FAILED",
                 revision=validation.revision,
                 finished_at=datetime.fromisoformat(
@@ -3301,7 +3303,7 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
             correlation_id=job.correlation_id,
         )
         return
-    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE"}:
+    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE", "FACTOR_ANALYSIS"}:
         experiment_id = inputs.get("experiment_id")
         if not isinstance(experiment_id, str):
             return

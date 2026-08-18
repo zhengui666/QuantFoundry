@@ -18,6 +18,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import CheckConstraint, MetaData, create_engine, text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -290,15 +291,11 @@ def _constraint_shapes(
                 if index.dialect_options["sqlite"].get("where") is not None
                 else None
             ),
-            tuple(
-                str(item)
-                for item in index.dialect_options["postgresql"].get("operator_classes")
-                or ()
+            _operator_class_signature(
+                index.dialect_options["postgresql"].get("ops") or {}
             ),
             index.dialect_options["postgresql"].get("nulls_not_distinct"),
-            str(index.dialect_options["postgresql"].get("with"))
-            if index.dialect_options["postgresql"].get("with") is not None
-            else None,
+            _index_with_signature(index.dialect_options["postgresql"].get("with")),
             cast(str | None, index.dialect_options["postgresql"].get("tablespace")),
         )
         for index in table.indexes
@@ -367,6 +364,17 @@ def _index_with_signature(value: Any) -> tuple[tuple[str, str], ...]:
     if not isinstance(value, Mapping):
         raise RuntimeError(f"index storage parameters are not a mapping: {value!r}")
     return tuple(sorted((str(key), str(item)) for key, item in value.items()))
+
+
+def _operator_class_signature(value: Any) -> tuple[tuple[str, str], ...]:
+    if not value:
+        return ()
+    if isinstance(value, Mapping):
+        return tuple(sorted((str(key), str(item)) for key, item in value.items()))
+    try:
+        return tuple(sorted((str(item[0]), str(item[1])) for item in value))
+    except (IndexError, TypeError) as error:
+        raise RuntimeError(f"invalid PostgreSQL operator-class mapping: {value!r}") from error
 
 
 def _legacy_index_key(value: str) -> dict[str, str]:
@@ -438,9 +446,9 @@ def _physical_contract(
     if (
         value.get("table_count") != 63
         or value.get("column_count") != 967
-        or sum(len(table["checks"]) for table in value["tables"]) != 218
+        or sum(len(table["checks"]) for table in value["tables"]) != 220
     ):
-        raise RuntimeError("physical schema is not canonical 63/967/218")
+        raise RuntimeError("physical schema is not canonical 63/967/220")
     documented = _manifest_named_checks(manifest)
     if documented != _DOCUMENTED_NAMED_CHECKS:
         raise RuntimeError(
@@ -822,7 +830,7 @@ def _check_metadata(
                 (parsed_expected_indexes or {}).get(
                     (table_name, index["name"]), index["where"]
                 ),
-                tuple(index.get("operator_classes") or ()),
+                _operator_class_signature(index.get("operator_classes")),
                 index.get("nulls_not_distinct"),
                 _index_with_signature(index.get("with")),
                 index.get("tablespace"),
@@ -858,21 +866,21 @@ def _check_metadata(
                 tablespace,
             ) in actual_indexes
         }
-        for unique_shape in sorted(expected_unique - actual_unique):
+        for unique_shape in sorted(expected_unique - actual_unique, key=repr):
             errors.append(f"{label}:missing-unique:{table_name}:{unique_shape}")
-        for unique_shape in sorted(actual_unique - expected_unique):
+        for unique_shape in sorted(actual_unique - expected_unique, key=repr):
             errors.append(f"{label}:unexpected-unique:{table_name}:{unique_shape}")
-        for foreign_key_shape in sorted(expected_foreign_keys - actual_foreign_keys):
+        for foreign_key_shape in sorted(expected_foreign_keys - actual_foreign_keys, key=repr):
             errors.append(
                 f"{label}:missing-foreign-key:{table_name}:{foreign_key_shape}"
             )
-        for foreign_key_shape in sorted(actual_foreign_keys - expected_foreign_keys):
+        for foreign_key_shape in sorted(actual_foreign_keys - expected_foreign_keys, key=repr):
             errors.append(
                 f"{label}:unexpected-foreign-key:{table_name}:{foreign_key_shape}"
             )
-        for index_shape in sorted(expected_indexes - actual_indexes):
+        for index_shape in sorted(expected_indexes - actual_indexes, key=repr):
             errors.append(f"{label}:missing-index:{table_name}:{index_shape}")
-        for index_shape in sorted(actual_indexes - expected_indexes):
+        for index_shape in sorted(actual_indexes - expected_indexes, key=repr):
             errors.append(f"{label}:unexpected-index:{table_name}:{index_shape}")
         expected_checks = {
             str(constraint["name"]): str(constraint["sql"])
@@ -1248,7 +1256,9 @@ def _check_impl(database_url: str | None, *, orm: bool = True) -> dict[str, Any]
 
         orm_table_count = len(Base.metadata.tables)
         orm_dialect = (
-            "postgresql" if database_url and "postgresql" in database_url else "sqlite"
+            make_url(database_url).get_backend_name()
+            if database_url
+            else "sqlite"
         )
         errors.extend(
             _check_metadata(

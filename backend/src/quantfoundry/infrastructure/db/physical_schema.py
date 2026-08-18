@@ -158,10 +158,13 @@ def load_physical_metadata(
             )
         table = Table(table_spec["name"], metadata, *columns)
         if table_spec.get("primary_key"):
+            primary_key_spec = table_spec.get("primary_key_constraint") or {}
             table.append_constraint(
                 PrimaryKeyConstraint(
                     *(table.c[name] for name in primary_key),
-                    name=f"pk_{table_spec['name']}",
+                    name=primary_key_spec.get("name"),
+                    deferrable=primary_key_spec.get("deferrable"),
+                    initially=primary_key_spec.get("initially"),
                 )
             )
     for table_name, table_spec in specs.items():
@@ -170,7 +173,10 @@ def load_physical_metadata(
             name = constraint["name"]
             table.append_constraint(
                 UniqueConstraint(
-                    *constraint["columns"], name=name[:63] if name is not None else None
+                    *constraint["columns"],
+                    name=name[:63] if name is not None else None,
+                    deferrable=constraint.get("deferrable"),
+                    initially=constraint.get("initially"),
                 )
             )
         if include_checks:
@@ -200,7 +206,11 @@ def load_physical_metadata(
                     constraint["columns"],
                     constraint["targets"],
                     name=name[:63] if name is not None else None,
-                    ondelete=constraint["ondelete"],
+                    ondelete=constraint.get("ondelete"),
+                    onupdate=constraint.get("onupdate"),
+                    deferrable=constraint.get("deferrable"),
+                    initially=constraint.get("initially"),
+                    match=constraint.get("match"),
                     use_alter=True,
                 )
             )
@@ -244,6 +254,10 @@ def load_physical_metadata(
                 postgresql_using=index.get("method"),
                 postgresql_include=index.get("include"),
                 postgresql_where=text(index["where"]) if index["where"] else None,
+                postgresql_ops=dict(index.get("operator_classes") or []),
+                postgresql_nulls_not_distinct=index.get("nulls_not_distinct"),
+                postgresql_with=index.get("with") or {},
+                postgresql_tablespace=index.get("tablespace"),
                 sqlite_where=(text(index["where"]) if index["where"] else None),
             )
     return metadata

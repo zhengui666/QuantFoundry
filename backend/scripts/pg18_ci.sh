@@ -6,6 +6,36 @@ database_created=0
 active_child_pid=""
 active_child_group_pid=""
 runtime_root="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-pg18-ci.XXXXXX")"
+base_database_url="${QF_PG18_CI_BASE_DATABASE_URL:-}"
+[ -n "$base_database_url" ] || {
+  echo "QF_PG18_CI_BASE_DATABASE_URL must identify the disposable CI PostgreSQL instance" >&2
+  exit 1
+}
+unset PGHOST PGHOSTADDR PGPORT PGUSER PGPASSWORD PGDATABASE PGSERVICE PGSERVICEFILE PGSSLMODE PGOPTIONS PGPASSFILE PGCHANNELBINDING PGREQUIRESSL
+eval "$(.venv/bin/python - "$base_database_url" <<'PY'
+import shlex
+import sys
+
+from sqlalchemy.engine import make_url
+
+url = make_url(sys.argv[1])
+if url.get_backend_name() != "postgresql":
+    raise SystemExit("QF_PG18_CI_BASE_DATABASE_URL must use PostgreSQL")
+query = dict(url.query)
+host = query.pop("host", None) or url.host
+port = query.pop("port", None) or url.port or 5432
+user = url.username
+password = url.password
+if host:
+    print(f"PGHOST={shlex.quote(host)}")
+if port:
+    print(f"PGPORT={shlex.quote(str(port))}")
+if user:
+    print(f"PGUSER={shlex.quote(user)}")
+if password:
+    print(f"PGPASSWORD={shlex.quote(password)}")
+PY
+)"
 mkdir -m 0750 \
   "$runtime_root/artifacts" \
   "$runtime_root/datasets" \
@@ -15,6 +45,14 @@ mkdir -m 0750 \
 
 start_managed_child() {
   launcher_ready="$runtime_root/launcher-ready"
+  readiness_timeout="${QF_PG18_CI_READINESS_TIMEOUT_SECONDS:-60}"
+  case "$readiness_timeout" in
+    ''|*[!0-9]*)
+      echo "QF_PG18_CI_READINESS_TIMEOUT_SECONDS must be an integer" >&2
+      return 2
+      ;;
+  esac
+  readiness_deadline=$(( $(date +%s) + readiness_timeout ))
   rm -f "$launcher_ready"
   QF_PROCESS_GROUP_READY="$launcher_ready" \
     .venv/bin/python scripts/process_group_launcher.py "$@" &
@@ -29,6 +67,11 @@ start_managed_child() {
       active_child_pid=""
       return "$child_status"
     fi
+    if [ "$(date +%s)" -ge "$readiness_deadline" ]; then
+      echo "managed child did not become ready before ${readiness_timeout}s" >&2
+      stop_active_child_group TERM
+      return 124
+    fi
     sleep 0.01
   done
 }
@@ -39,6 +82,9 @@ wait_managed_child() {
   child_status=$?
   set -e
   active_child_pid=""
+  if [ -n "$active_child_group_pid" ]; then
+    stop_active_child_group TERM
+  fi
   return "$child_status"
 }
 

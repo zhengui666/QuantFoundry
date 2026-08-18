@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from hmac import compare_digest
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -81,7 +81,10 @@ def ensure_fullstack_compat_setup() -> None:
             ):
                 matching_connections.append(candidate)
             else:
-                candidate.status = "REVOKED"
+                # A different configured credential is not proof that this
+                # harness owns the connection. Leave unrelated active rows
+                # untouched.
+                continue
         if matching_connections:
             ai = matching_connections[0]
             for duplicate in matching_connections[1:]:
@@ -322,6 +325,22 @@ def activate_fullstack_database(
         or not parsed.path.strip("/")
     ):
         raise RuntimeError("QF_FULLSTACK_DATABASE_URL is invalid")
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    sslmode = query.get("sslmode", ["disable"])[-1].lower()
+    loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1", "postgres"}
+    if sslmode == "disable":
+        if not loopback or os.environ.get("QF_FULLSTACK_ALLOW_INSECURE_DB") != "1":
+            raise RuntimeError("non-loopback full-stack database connections require TLS")
+        tls_mode = "DISABLED"
+    elif sslmode == "verify-ca":
+        tls_mode = "VERIFY_CA"
+    elif sslmode == "verify-full":
+        tls_mode = "VERIFY_FULL"
+    else:
+        raise RuntimeError("full-stack database sslmode must be disable, verify-ca, or verify-full")
+    ca_certificate_pem = os.environ.get("QF_FULLSTACK_CA_CERTIFICATE_PEM")
+    if tls_mode != "DISABLED" and not ca_certificate_pem:
+        raise RuntimeError("TLS full-stack database connections require QF_FULLSTACK_CA_CERTIFICATE_PEM")
     status = client.get("/database/connection", headers=auth)
     if status.status_code != 200:
         raise RuntimeError(
@@ -333,7 +352,7 @@ def activate_fullstack_database(
         "host": parsed.hostname,
         "port": parsed.port or 5432,
         "database": database_name,
-        "tls_mode": "DISABLED",
+        "tls_mode": tls_mode,
         "pool_profile": "fullstack-ci",
     }
     etag = status.headers.get("etag")
@@ -359,6 +378,7 @@ def activate_fullstack_database(
                 "username": unquote(parsed.username),
                 "password": unquote(parsed.password or ""),
                 "pool_profile": "fullstack-ci",
+                **({"ca_certificate_pem": ca_certificate_pem} if ca_certificate_pem else {}),
             },
         },
     )

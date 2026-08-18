@@ -229,17 +229,7 @@ async function resolveMainClient(event) {
   const client = await self.clients.get(event.clientId)
 
   if (activeClientIds.has(event.clientId)) return client
-
-  const allClients = await self.clients.matchAll({
-    type: 'window',
-    includeUncontrolled: true,
-  })
-  const activeClients = allClients.filter((candidate) =>
-    activeClientIds.has(candidate.id),
-  )
-  return activeClients.find((candidate) =>
-    candidate.frameType === 'top-level' && candidate.visibilityState === 'visible',
-  ) ?? activeClients.find((candidate) => candidate.visibilityState === 'visible') ?? activeClients[0]
+  return undefined
 }
 
 /**
@@ -285,7 +275,7 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
 
   // Bypass mocking when the client is not active.
   if (!client) {
-    return failClosed()
+    return passthrough()
   }
 
   // Bypass initial page load requests (i.e. static assets).

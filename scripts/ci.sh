@@ -182,6 +182,7 @@ backend_pg18_full() {
       -u QF_CREDENTIAL_FINGERPRINT_KEY \
       -u QF_GIT_COMMIT \
       -u QF_BUILD_ID \
+      QF_PG18_CI_BASE_DATABASE_URL="$QF_DATABASE_URL" \
       sh scripts/pg18_ci.sh
   )
 }

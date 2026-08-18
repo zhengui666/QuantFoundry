@@ -164,8 +164,8 @@ SCHEMA_MODELS.update(
 )
 for _model in SCHEMA_MODELS.values():
     _model.model_rebuild()
-# Compatibility bridge: UX-001 models are not part of the OpenAPI-generated module yet.
-from app import generated_api_models as _ux_models  # noqa: E402
+# Compatibility bridge: UX-001 models share the package-owned generated module.
+from quantfoundry.contracts.openapi import generated_api_models as _ux_models  # noqa: E402
 
 for _name in (
     "GeneralAccessKeyLoginRequest",

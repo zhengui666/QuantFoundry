@@ -47,7 +47,6 @@ a:focus-visible {
   outline-offset: 2px;
 }
 .sidebar a:focus-visible,
-button:not(.secondary):not(.text-button):focus-visible,
 .workspace-tabs a[aria-current='page']:focus-visible {
   outline-color: var(--qf-color-focus-on-dark);
 }

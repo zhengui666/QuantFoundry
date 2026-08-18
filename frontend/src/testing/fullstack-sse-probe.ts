@@ -28,6 +28,13 @@ export async function startCanonicalSseProbe(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
   const abortExternal = () => controller.abort(options.signal?.reason);
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortExternal);
+  };
   if (options.signal) {
     if (options.signal.aborted) abortExternal();
     else options.signal.addEventListener('abort', abortExternal, { once: true });
@@ -39,13 +46,14 @@ export async function startCanonicalSseProbe(
       redirect: 'error',
       signal: controller.signal,
     });
-  } finally {
-    clearTimeout(timeout);
-    options.signal?.removeEventListener('abort', abortExternal);
+  } catch (error) {
+    cleanup();
+    throw error;
   }
   const responseBody = response.body;
   const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
   if (response.status !== 200 || mediaType !== 'text/event-stream' || !responseBody) {
+    cleanup();
     controller.abort();
     throw new Error(
       `Authenticated SSE probe expected HTTP 200 text/event-stream, received ${response.status} ${mediaType ?? 'missing content type'}.`,
@@ -105,6 +113,7 @@ export async function startCanonicalSseProbe(
             ? failure
             : new Error('Authenticated SSE probe stream closed before the expected frame.'),
         );
+      cleanup();
     }
   })();
 
@@ -126,6 +135,7 @@ export async function startCanonicalSseProbe(
     async stop() {
       controller.abort();
       await reading;
+      cleanup();
     },
   };
 }

@@ -7,6 +7,25 @@ verifier_root="${QF_RELEASE_CHECK_VERIFIER_ROOT:-$repo_root}"
 trusted_verifier_root="${QF_RELEASE_CHECK_TRUSTED_VERIFIER_ROOT:-}"
 trusted_verifier_expected_commit="${QF_RELEASE_CHECK_TRUSTED_VERIFIER_COMMIT:-}"
 tag="${1:-}"
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_TERMINAL_PROMPT=0
+unset GIT_SSH_COMMAND GIT_SSH GIT_PROXY_COMMAND GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+unset HTTPS_PROXY HTTP_PROXY ALL_PROXY https_proxy http_proxy all_proxy
+
+reject_transport_overrides() {
+  local root="$1"
+  if git -C "$root" config --local --get-regexp \
+    '^(core\.(sshCommand|gitProxy)|url\..*\.(insteadOf|pushInsteadOf)|remote\..*\.(proxy|proxyurl)|http\.(proxy|ssl|extraheader))' \
+    >/dev/null 2>&1; then
+    printf '%s\n' '{"result":"invalid","reason":"transport-affecting Git configuration is not allowed"}' >&2
+    exit 1
+  fi
+}
+
+tracked_state() {
+  git -C "$1" ls-files -v | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }'
+}
 
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]] || {
   printf '{"result":"invalid","reason":"tag must match vMAJOR.MINOR.PATCH-alpha","tag":"%s"}\n' "$tag" >&2
@@ -17,6 +36,7 @@ git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   printf '%s\n' '{"result":"invalid","reason":"release check requires a Git worktree"}' >&2
   exit 2
 }
+reject_transport_overrides "$repo_root"
 
 remote_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
 canonical_repository="zhengui666/QuantFoundry"
@@ -25,7 +45,7 @@ canonical_repository="zhengui666/QuantFoundry"
   exit 1
 }
 case "$remote_url" in
-  "https://github.com/${canonical_repository}.git"|"https://github.com/${canonical_repository}"|"git@github.com:${canonical_repository}.git"|"git@github.com:${canonical_repository}") ;;
+  "https://github.com/${canonical_repository}.git"|"https://github.com/${canonical_repository}") ;;
   *)
     printf '%s\n' '{"result":"invalid","reason":"origin is not the canonical GitHub repository"}' >&2
     exit 1
@@ -78,9 +98,22 @@ if [[ -n "$trusted_verifier_root" ]]; then
     printf '%s\n' '{"result":"invalid","reason":"trusted verifier code is not clean"}' >&2
     exit 1
   }
+  repo_worktree="$(git -C "$repo_root" rev-parse --show-toplevel)"
+  verifier_worktree="$(git -C "$verifier_root" rev-parse --show-toplevel)"
+  repo_common_dir="$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)"
+  verifier_common_dir="$(git -C "$verifier_root" rev-parse --path-format=absolute --git-common-dir)"
+  [[ "$verifier_worktree" != "$repo_worktree" && "$verifier_common_dir" != "$repo_common_dir" ]] || {
+    printf '%s\n' '{"result":"invalid","reason":"trusted verifier must be an independent checkout"}' >&2
+    exit 1
+  }
+  if tracked_state "$verifier_root"; then
+    printf '%s\n' '{"result":"invalid","reason":"trusted verifier has hidden tracked changes"}' >&2
+    exit 1
+  fi
   trusted_verifier_remote="$(git -C "$verifier_root" remote get-url origin 2>/dev/null || true)"
+  reject_transport_overrides "$verifier_root"
   case "$trusted_verifier_remote" in
-    "https://github.com/${canonical_repository}.git"|"https://github.com/${canonical_repository}"|"git@github.com:${canonical_repository}.git"|"git@github.com:${canonical_repository}") ;;
+    "https://github.com/${canonical_repository}.git"|"https://github.com/${canonical_repository}") ;;
     *)
       printf '%s\n' '{"result":"invalid","reason":"trusted verifier origin is not canonical"}' >&2
       exit 1
@@ -115,6 +148,10 @@ if [[ -n "$trusted_verifier_root" && ! -x "$verifier_root/scripts/p0-check.sh" ]
   exit 1
 fi
 
+if tracked_state "$repo_root"; then
+  printf '%s\n' '{"result":"invalid","reason":"release worktree has hidden tracked changes"}' >&2
+  exit 1
+fi
 worktree_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ -z "$worktree_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"release check requires a clean worktree"}' >&2
@@ -144,22 +181,49 @@ final_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)
 
 pre_p0_verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
 pre_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
+[[ ! -L "$verifier_root/scripts/p0-check.sh" && ! -L "$repo_root/docs/治理/p0-blockers.yaml" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"release verification inputs must not be symlinks"}' >&2
+  exit 1
+}
 [[ "$pre_p0_verifier_head" == "$trusted_verifier_head" && -z "$pre_p0_verifier_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"verifier code changed immediately before P0 verification"}' >&2
   exit 1
 }
 
+snapshot_parent="$(mktemp -d "${TMPDIR:-/tmp}/qf-release-verifier.XXXXXX")"
+snapshot_root="$snapshot_parent/verifier"
+trap 'rm -rf "$snapshot_parent"' EXIT
+git clone --no-local --no-checkout -- "$verifier_root" "$snapshot_root" >/dev/null 2>&1
+git -C "$snapshot_root" checkout --detach "$trusted_verifier_head" >/dev/null 2>&1
+[[ "$(git -C "$snapshot_root" rev-parse HEAD)" == "$trusted_verifier_head" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"trusted verifier snapshot is not pinned"}' >&2
+  exit 1
+}
+[[ -z "$(git -C "$snapshot_root" status --porcelain=v1 --untracked-files=all)" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"trusted verifier snapshot is not clean"}' >&2
+  exit 1
+}
+chmod -R a-w "$snapshot_root"
+uv_bin="$(command -v uv)"
+gh_bin="$(command -v gh)"
+export PATH="$(dirname "$uv_bin"):$(dirname "$gh_bin"):/usr/bin:/bin"
+export HOME="$snapshot_parent/home"
+export UV_CACHE_DIR="$snapshot_parent/uv-cache"
+export UV_PROJECT_ENVIRONMENT="$snapshot_parent/venv"
+export PYTHONDONTWRITEBYTECODE=1
+mkdir -p "$HOME" "$UV_CACHE_DIR"
+
 QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="$tag_target" \
-QF_RELEASE_TRUSTED_VERIFIER_ROOT="$verifier_root" QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_verifier_head" \
-  "$verifier_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
+QF_RELEASE_TRUSTED_VERIFIER_ROOT="$snapshot_root" QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_verifier_head" \
+  "$snapshot_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
 post_p0_head="$(git -C "$repo_root" rev-parse HEAD)"
 post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ "$post_p0_head" == "$tag_target" && -z "$post_p0_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"worktree or HEAD changed during P0 verification"}' >&2
   exit 1
 }
-post_p0_verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
-post_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
+post_p0_verifier_head="$(git -C "$snapshot_root" rev-parse HEAD)"
+post_p0_verifier_status="$(git -C "$snapshot_root" status --porcelain=v1 --untracked-files=all)"
 [[ "$post_p0_verifier_head" == "$trusted_verifier_head" && -z "$post_p0_verifier_status" ]] || {
   printf '%s\n' '{"result":"invalid","reason":"verifier code changed during P0 verification"}' >&2
   exit 1

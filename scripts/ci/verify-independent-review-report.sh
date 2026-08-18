@@ -97,10 +97,22 @@ if report.get("content_type") != content_type:
     raise SystemExit("independent review report content_type is invalid")
 if report.get("verifier_role") != "Independent Review Agent" or report.get("result") != "approved":
     raise SystemExit("independent review report is not an approved Independent Review Agent result")
-run_id, artifact_uri, artifact_sha256 = report.get("github_run_id"), report.get("artifact_uri"), report.get("artifact_sha256")
+run_id, run_attempt, artifact_uri, artifact_sha256 = (
+    report.get("github_run_id"),
+    report.get("github_run_attempt"),
+    report.get("artifact_uri"),
+    report.get("artifact_sha256"),
+)
 artifact_report = report.get("artifact_report")
-if not isinstance(run_id, int) or run_id < 1 or not isinstance(artifact_sha256, str) or not sha256_pattern.fullmatch(artifact_sha256):
-    raise SystemExit("independent review report requires github_run_id and artifact_sha256")
+if (
+    not isinstance(run_id, int)
+    or run_id < 1
+    or not isinstance(run_attempt, int)
+    or run_attempt < 1
+    or not isinstance(artifact_sha256, str)
+    or not sha256_pattern.fullmatch(artifact_sha256)
+):
+    raise SystemExit("independent review report requires github_run_id, github_run_attempt, and artifact_sha256")
 if not isinstance(artifact_report, dict) or set(artifact_report) != {"path", "sha256"}:
     raise SystemExit("independent review report requires artifact_report path and sha256")
 artifact_report_path, artifact_report_sha256 = artifact_report["path"], artifact_report["sha256"]
@@ -127,7 +139,7 @@ def gh_json(endpoint):
         raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
 
 run = gh_json(f"/repos/{repository}/actions/runs/{run_id}")
-if run.get("head_sha") != expected_commit:
+if run.get("head_sha") != expected_commit or run.get("run_attempt") != run_attempt:
     raise SystemExit("independent review report run is not bound to the current commit")
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review report run did not complete successfully as workflow_dispatch")
@@ -138,13 +150,13 @@ triggering_actor = (
 if not isinstance(run_actor, str) or not isinstance(triggering_actor, str):
     raise SystemExit("independent review report run has no actor identity")
 commit_payload = gh_json(f"/repos/{repository}/commits/{expected_commit}")
-commit_authors = {
-    item.get("login")
-    for field in ("author", "committer")
-    for item in (commit_payload.get(field),)
-    if isinstance(item, dict) and isinstance(item.get("login"), str)
-}
-if run_actor in commit_authors or triggering_actor in commit_authors:
+commit_authors = set()
+for field in ("author", "committer"):
+    item = commit_payload.get(field)
+    if not isinstance(item, dict) or not isinstance(item.get("login"), str) or not item["login"].strip():
+        raise SystemExit(f"independent review commit {field} identity is unresolved")
+    commit_authors.add(item["login"].casefold())
+if run_actor.casefold() in commit_authors or triggering_actor.casefold() in commit_authors:
     raise SystemExit("independent review actor must be independent from the reviewed commit")
 if report.get("actor") != run_actor or report.get("triggering_actor") != triggering_actor:
     raise SystemExit("independent review report actor identity is not bound to the GitHub run")
@@ -169,6 +181,7 @@ if (
     artifact.get("name") != f"independent-agent-review-{run_id}"
     or artifact.get("expired")
     or artifact.get("workflow_run", {}).get("id") != run_id
+    or artifact.get("workflow_run", {}).get("run_attempt", run_attempt) != run_attempt
 ):
     raise SystemExit("independent review report artifact is missing, expired, or not bound to its run")
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-") as directory:
@@ -211,7 +224,11 @@ if not isinstance(embedded, dict):
     raise SystemExit("independent review artifact report must be a JSON object")
 if embedded.get("schema_version") != "1.0.0" or embedded.get("content_type") != content_type:
     raise SystemExit("independent review artifact report schema or content_type is invalid")
-if embedded.get("commit") != expected_commit or embedded.get("github_run_id") != run_id:
+if (
+    embedded.get("commit") != expected_commit
+    or embedded.get("github_run_id") != run_id
+    or embedded.get("github_run_attempt") != run_attempt
+):
     raise SystemExit("independent review artifact report is not bound to the current commit and run")
 if embedded.get("actor") != run_actor or embedded.get("triggering_actor") != triggering_actor:
     raise SystemExit("independent review artifact report actor identity is not bound to the GitHub run")

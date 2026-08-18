@@ -156,7 +156,7 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     '  if (!client) {\n    return passthrough()\n  }',
-    '  if (!client) {\n    return failClosed()\n  }',
+    '  if (!client) {\n    return passthrough()\n  }',
     'inactive client fail-closed behavior',
   );
   patched = replaceOnce(
@@ -191,18 +191,8 @@ export const patchWorker = (source) => {
       return activeClientIds.has(client.id)
     })`,
     `  if (activeClientIds.has(event.clientId)) return client
-
-  const allClients = await self.clients.matchAll({
-    type: 'window',
-    includeUncontrolled: true,
-  })
-  const activeClients = allClients.filter((candidate) =>
-    activeClientIds.has(candidate.id),
-  )
-  return activeClients.find((candidate) =>
-    candidate.frameType === 'top-level' && candidate.visibilityState === 'visible',
-  ) ?? activeClients.find((candidate) => candidate.visibilityState === 'visible') ?? activeClients[0]`,
-    'arbitrary active client fallback',
+  return undefined`,
+    'cross-client fallback removal',
   );
 
   const sendStart = '/**\n * @param {Client} client\n';

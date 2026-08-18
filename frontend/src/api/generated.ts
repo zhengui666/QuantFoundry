@@ -14,7 +14,7 @@ type ObjectRefFor<Type extends string, Prefix extends string> = {
   version: number | null;
   revision: number;
 };
-type StrictObjectRef = ObjectRefFor<"research_policy", "RP"> | ObjectRefFor<"risk_policy", "RISK"> | ObjectRefFor<"cost_model", "COST"> | ObjectRefFor<"credential", "CRED"> | ObjectRefFor<"capability", "CAP"> | ObjectRefFor<"dataset", "DSSET"> | ObjectRefFor<"snapshot", "DS"> | ObjectRefFor<"data_quality_run", "DQ"> | ObjectRefFor<"data_quality_issue", "DQI"> | ObjectRefFor<"research", "RSCH"> | ObjectRefFor<"evidence", "EVID"> | ObjectRefFor<"conclusion", "CONC"> | ObjectRefFor<"experiment", "EXP"> | ObjectRefFor<"factor", "FCTR"> | ObjectRefFor<"strategy", "STRAT"> | ObjectRefFor<"validation", "VAL"> | ObjectRefFor<"exposure", "EXPO"> | ObjectRefFor<"red_team_run", "RTRUN"> | ObjectRefFor<"portfolio", "PORT"> | ObjectRefFor<"memo", "MEMO"> | ObjectRefFor<"approval", "APPR"> | ObjectRefFor<"paper", "PAPER"> | ObjectRefFor<"paper_run", "PRUN"> | ObjectRefFor<"paper_order", "PORD"> | ObjectRefFor<"paper_fill", "PFILL"> | ObjectRefFor<"review", "REV"> | ObjectRefFor<"agent_run", "ARUN"> | ObjectRefFor<"tool_call", "TCALL"> | ObjectRefFor<"job", "JOB"> | ObjectRefFor<"domain_event", "EVT"> | ObjectRefFor<"audit_event", "AUD"> | ObjectRefFor<"artifact", "ART"> | ObjectRefFor<"notification", "NOTIF"> | ObjectRefFor<"provenance", "PROV">;
+type StrictObjectRef = ObjectRefFor<"research_policy", "RP"> | ObjectRefFor<"risk_policy", "RISK"> | ObjectRefFor<"cost_model", "COST"> | ObjectRefFor<"credential", "CRED"> | ObjectRefFor<"capability", "CAP"> | ObjectRefFor<"dataset", "DSSET"> | ObjectRefFor<"snapshot", "DS"> | ObjectRefFor<"data_quality_run", "DQ"> | ObjectRefFor<"data_quality_issue", "DQI"> | ObjectRefFor<"research", "RSCH"> | ObjectRefFor<"evidence", "EVID"> | ObjectRefFor<"conclusion", "CONC"> | ObjectRefFor<"experiment", "EXP"> | ObjectRefFor<"factor", "FAC"> | ObjectRefFor<"strategy", "STRAT"> | ObjectRefFor<"validation", "VAL"> | ObjectRefFor<"exposure", "HOLD"> | ObjectRefFor<"red_team_run", "RTRUN"> | ObjectRefFor<"portfolio", "PORT"> | ObjectRefFor<"memo", "MEMO"> | ObjectRefFor<"approval", "APR"> | ObjectRefFor<"paper", "PAPER"> | ObjectRefFor<"paper_run", "PRUN"> | ObjectRefFor<"paper_order", "PORD"> | ObjectRefFor<"paper_fill", "PFILL"> | ObjectRefFor<"review", "REV"> | ObjectRefFor<"agent_run", "ARUN"> | ObjectRefFor<"tool_call", "TCALL"> | ObjectRefFor<"job", "JOB"> | ObjectRefFor<"domain_event", "EVT"> | ObjectRefFor<"audit_event", "AUD"> | ObjectRefFor<"artifact", "ART"> | ObjectRefFor<"notification", "NOTIF"> | ObjectRefFor<"provenance", "PROV">;
 
 export interface paths {
     "/system/health": {
@@ -5267,7 +5267,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["SseEnvelope"];
+                    "text/event-stream": string;
                 };
             };
             401: components["responses"]["Problem401"];

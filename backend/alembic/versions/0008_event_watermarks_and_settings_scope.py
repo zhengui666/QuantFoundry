@@ -72,6 +72,10 @@ def _restore_domain_events_update_guard(bind) -> None:
 def upgrade() -> None:
     # Materialize legacy system events before workspace_id becomes part of the key.
     bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError(
+            f"0008 event watermark migration does not support dialect {bind.dialect.name}"
+        )
     if bind.dialect.name == "postgresql":
         bind.execute(
             sa.text("LOCK TABLE domain_events, records IN ACCESS EXCLUSIVE MODE")

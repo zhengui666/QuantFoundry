@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
-from app.generated_api_models import (
+from quantfoundry.contracts.openapi.generated_api_models import (
     EventPayload,
     EventType,
     SseEnvelope,

@@ -42,6 +42,7 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
         {
             "PARTIALLY_FILLED",
             "FILLED",
+            "CANCELLED",
             "CANCEL_PENDING",
             "REJECTED",
             "EXPIRED",
@@ -49,7 +50,14 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
         }
     ),
     "PARTIALLY_FILLED": frozenset(
-        {"PARTIALLY_FILLED", "FILLED", "CANCEL_PENDING", "EXPIRED", "UNKNOWN"}
+        {
+            "PARTIALLY_FILLED",
+            "FILLED",
+            "CANCEL_PENDING",
+            "CANCELLED",
+            "EXPIRED",
+            "UNKNOWN",
+        }
     ),
     "FILLED": frozenset(),
     "CANCEL_PENDING": frozenset({"CANCELLED", "FILLED", "PARTIALLY_FILLED", "UNKNOWN"}),
@@ -184,7 +192,7 @@ def apply_fill(
     try:
         cumulative = Decimal(cumulative_quantity)
         quantity = Decimal(order_quantity)
-    except InvalidOperation as error:
+    except (InvalidOperation, TypeError, ValueError) as error:
         raise LivePolicyError("fill quantities are invalid") from error
     if (
         not cumulative.is_finite()
@@ -200,12 +208,23 @@ def apply_fill(
         or not known_fill_ids <= known_fill_quantities.keys()
     ):
         raise LivePolicyError("retained fill IDs lack quantity evidence")
+    retained_max: Decimal | None = None
+    if known_fill_ids:
+        assert known_fill_quantities is not None
+        for retained_id in known_fill_ids:
+            try:
+                retained = Decimal(known_fill_quantities[retained_id])
+            except (InvalidOperation, TypeError, ValueError) as error:
+                raise LivePolicyError("recorded fill quantity is invalid") from error
+            if not retained.is_finite() or retained <= 0 or retained > quantity:
+                raise LivePolicyError("recorded fill quantity is invalid")
+            retained_max = max(retained_max or retained, retained)
     if fill_id in known_fill_ids:
         if known_fill_quantities is None or fill_id not in known_fill_quantities:
             raise LivePolicyError("duplicate fill has no retained quantity evidence")
         try:
             known_cumulative = Decimal(known_fill_quantities[fill_id])
-        except (InvalidOperation, TypeError) as error:
+        except (InvalidOperation, TypeError, ValueError) as error:
             raise LivePolicyError("recorded fill quantity is invalid") from error
         if known_cumulative != cumulative:
             raise LivePolicyError("duplicate fill id has conflicting quantity")
@@ -213,9 +232,14 @@ def apply_fill(
     if previous_cumulative_quantity is not None:
         try:
             previous = Decimal(previous_cumulative_quantity)
-        except InvalidOperation as error:
+        except (InvalidOperation, TypeError, ValueError) as error:
             raise LivePolicyError("previous cumulative quantity is invalid") from error
-        if not previous.is_finite() or previous < 0 or cumulative <= previous:
+        if (
+            not previous.is_finite()
+            or previous < 0
+            or cumulative <= previous
+            or (retained_max is not None and previous != retained_max)
+        ):
             raise LivePolicyError("cumulative fill is not increasing")
     if known_fill_ids and previous_cumulative_quantity is None:
         raise LivePolicyError(

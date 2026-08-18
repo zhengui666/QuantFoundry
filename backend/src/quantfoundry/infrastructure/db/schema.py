@@ -585,7 +585,9 @@ def _check_sql(column: dict[str, Any]) -> str | None:
         return "expired_through_sequence >= 0 AND expired_through_sequence <= last_sequence"
     if "CHECK equals `object_revision`" in text:
         return (
-            "revision IS NULL OR object_revision IS NULL OR revision = object_revision"
+            "(revision IS NULL AND object_revision IS NULL) OR "
+            "(revision IS NOT NULL AND object_revision IS NOT NULL AND "
+            "revision = object_revision)"
         )
     if "CHECK false→true monotonic" in text:
         return None

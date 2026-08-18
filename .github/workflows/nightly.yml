@@ -54,6 +54,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 4ca07ed0232104a3feddc427a2632d4646ece5a9
+          path: trusted-gate
+          fetch-depth: 1
+          persist-credentials: false
       - name: Fresh clone from the checked-out commit
         shell: bash
         run: |
@@ -90,7 +96,10 @@ jobs:
         run: |
           set -euo pipefail
           export QF_TOOL_CONTRACT_PATH="$RUNNER_TEMP/qf-fresh-clone/docs/后端系统技术方案/contracts/tools/v1-p0.yaml"
-          "$RUNNER_TEMP/qf-fresh-clone/scripts/ci/run-gate.sh" nightly "$QF_CI_REPORT_DIR"
+          trusted_root="$GITHUB_WORKSPACE/trusted-gate"
+          trusted_commit="$(git -C "$trusted_root" rev-parse HEAD)"
+          QF_CI_TRUSTED_ROOT="$trusted_root" QF_CI_TRUSTED_COMMIT="$trusted_commit" \
+            "$RUNNER_TEMP/qf-fresh-clone/scripts/ci/run-gate.sh" nightly "$QF_CI_REPORT_DIR"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

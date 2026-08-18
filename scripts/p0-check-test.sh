@@ -4,12 +4,15 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture_dir="$(mktemp -d)"
 mock_dir="$fixture_dir/mock-bin"
+trusted_root="$fixture_dir/trusted-verifier"
 trap 'rm -rf "$fixture_dir"' EXIT
 mkdir -p "$mock_dir"
 
 commit_sha="$(git -C "$repo_root" rev-parse HEAD)"
 criterion='Independent criterion is satisfied.'
-export QF_RELEASE_TRUSTED_VERIFIER_ROOT="$repo_root"
+git clone --no-local --quiet --no-checkout "$repo_root" "$trusted_root"
+git -C "$trusted_root" checkout --detach "$commit_sha" >/dev/null
+export QF_RELEASE_TRUSTED_VERIFIER_ROOT="$trusted_root"
 export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$commit_sha"
 export QF_MOCK_COMMIT="$commit_sha"
 export QF_MOCK_ARTIFACT_DIR="$fixture_dir"
@@ -223,8 +226,9 @@ run_fixture() {
     PATH="$mock_dir:$PATH" \
     GITHUB_REPOSITORY='acme/quantfoundry' \
     GITHUB_TOKEN='fixture-token' \
+    QF_RELEASE_REPO_ROOT="$repo_root" \
     QF_RELEASE_COMMIT="$commit_sha" \
-    "$repo_root/scripts/p0-check.sh" "$fixture_dir/$name.yaml" --require-closed
+    "$trusted_root/scripts/p0-check.sh" "$fixture_dir/$name.yaml" --require-closed
 }
 
 write_fixture positive
@@ -245,10 +249,34 @@ if env PATH="$mock_dir:$PATH" QF_RELEASE_COMMIT="$commit_sha" \
   exit 1
 fi
 
+expected_failure_pattern() {
+  case "$1" in
+    empty-evidence) printf '%s' 'evidence' ;;
+    missing-reviewer) printf '%s' 'reviewer' ;;
+    wrong-commit) printf '%s' 'commit' ;;
+    missing-artifact) printf '%s' 'artifact' ;;
+    status-bypass) printf '%s' 'status|state' ;;
+    hash-mismatch) printf '%s' 'hash|sha' ;;
+    report-identity) printf '%s' 'report|identity' ;;
+    run-collision) printf '%s' 'run' ;;
+    release-asset-positive) printf '%s' 'release|asset' ;;
+    missing-id) printf '%s' 'id' ;;
+    duplicate-id) printf '%s' 'duplicate|id' ;;
+    release-flag) printf '%s' 'release' ;;
+    empty-registry) printf '%s' 'registry|blocker' ;;
+    unknown-id) printf '%s' 'unknown|id' ;;
+  esac
+}
 for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact status-bypass hash-mismatch report-identity run-collision release-asset-positive missing-id duplicate-id release-flag empty-registry unknown-id; do
   write_fixture "$case_name"
-  if run_fixture "$case_name" >/dev/null 2>&1; then
+  diagnostic="$fixture_dir/$case_name.stderr"
+  if run_fixture "$case_name" >"$diagnostic" 2>&1; then
     printf 'Expected fixture to fail: %s\n' "$case_name" >&2
+    exit 1
+  fi
+  if ! /usr/bin/grep -Eiq "$(expected_failure_pattern "$case_name")" "$diagnostic"; then
+    printf 'Fixture failed for an unexpected reason: %s\n' "$case_name" >&2
+    /bin/cat "$diagnostic" >&2
     exit 1
   fi
 done

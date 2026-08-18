@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from app import control_plane as _control_plane
-from app import generated_api_models as _control_models
+from quantfoundry.contracts.openapi import generated_api_models as _control_models
 from quantfoundry.api import app as _canonical
 from quantfoundry.contracts.openapi import api_models as _canonical_models
 

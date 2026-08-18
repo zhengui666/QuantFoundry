@@ -27,7 +27,7 @@ describe('SSE→REST causal reconciliation witness mutation-test seam', () => {
   it('passes only after the generated mapping event and a new exact REST read', () => {
     const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
     witness.observeEvent(frame);
-    witness.observeRest(path);
+    witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).not.toThrow();
     expect(witness.snapshot().restReadsAfterBaseline).toBe(1);
   });
@@ -35,14 +35,14 @@ describe('SSE→REST causal reconciliation witness mutation-test seam', () => {
   it('negative control fails if queryKeysForEvent is replaced with no invalidation', () => {
     const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
     witness.observeEvent(frame, () => []);
-    witness.observeRest(path);
+    witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).toThrow('No generated event-to-query mapping');
     expect(witness.snapshot().restReadsAfterBaseline).toBe(0);
   });
 
   it('negative control keeps the frozen baseline when no event is delivered', () => {
     const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
-    witness.observeRest(path);
+    witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).toThrow('No generated event-to-query mapping');
     expect(witness.snapshot()).toMatchObject({ baseline: 2, restReadsAfterBaseline: 0 });
   });
@@ -54,7 +54,14 @@ describe('SSE→REST causal reconciliation witness mutation-test seam', () => {
       event: { ...event, object_id: 'EXP-1M49GS2TJYQ2JPYV54YDGY7R59' },
     };
     witness.observeEvent(relatedFrame, () => [['workspace', 'research', event.object_id]]);
-    witness.observeRest(path);
+    witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).not.toThrow();
+  });
+
+  it('does not count a REST read that was already present when the event arrived', () => {
+    const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
+    witness.observeEvent(frame, undefined, 3);
+    witness.observeRest(path, 3);
+    expect(() => witness.assertReconciled()).toThrow('No exact REST refetch');
   });
 });

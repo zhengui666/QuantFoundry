@@ -119,7 +119,7 @@ def _terminalize_success_dependents(
             dependent.id,
             dependent.revision,
             "job.updated",
-            payload={"state": status, "status": status, "error_code": error_code},
+            payload={"state": status, "status": status},
             job_id=dependent.id,
             correlation_id=dependent.correlation_id,
             request_id=dependent.request_id,
@@ -127,6 +127,44 @@ def _terminalize_success_dependents(
             workspace_id=dependent.workspace_id,
         )
         _terminalize_success_dependents(session, dependent, now)
+
+
+def _reconcile_failed_success_dependencies(session: Session, now: datetime) -> None:
+    """Close queued dependents created after their prerequisite already failed."""
+
+    prerequisite = aliased(JobRow)
+    dependent = aliased(JobRow)
+    candidate_ids = (
+        select(prerequisite.id)
+        .join(
+            JobDependencyRow,
+            and_(
+                JobDependencyRow.depends_on_job_id == prerequisite.id,
+                JobDependencyRow.workspace_id == prerequisite.workspace_id,
+            ),
+        )
+        .join(
+            dependent,
+            and_(
+                dependent.id == JobDependencyRow.job_id,
+                dependent.workspace_id == JobDependencyRow.workspace_id,
+            ),
+        )
+        .where(
+            prerequisite.status.in_({"FAILED", "CANCELLED"}),
+            JobDependencyRow.dependency_type == "SUCCESS",
+            dependent.status == "QUEUED",
+        )
+        .distinct()
+        .subquery()
+    )
+    failed_prerequisites = session.execute(
+        select(JobRow)
+        .where(JobRow.id.in_(select(candidate_ids.c.id)))
+        .with_for_update()
+    ).scalars()
+    for row in failed_prerequisites:
+        _terminalize_success_dependents(session, row, now)
 
 
 def record_heartbeat(
@@ -162,6 +200,7 @@ def claim_job(
     lease_seconds: int = LEASE_SECONDS,
 ) -> JobLease | None:
     timestamp = now or datetime.now(UTC)
+    _reconcile_failed_success_dependencies(session, timestamp)
     dependency = aliased(JobDependencyRow)
     prerequisite = aliased(JobRow)
     unsatisfied_dependency = (
@@ -667,6 +706,7 @@ def reap_expired_jobs(
                 row,
                 now=timestamp,
                 safe_retry=safe_retry,
+                cancellation_requested=cancellation_requested,
                 lease_snapshot=LeaseSnapshot(
                     owner=expired_owner,
                     expires_at=expired_at,
@@ -685,7 +725,13 @@ def reap_expired_jobs(
             payload={
                 "state": row.status,
                 "status": row.status,
-                "reason_code": None if safe_retry else "JOB_LEASE_LOST",
+                "reason_code": (
+                    None
+                    if safe_retry
+                    else "JOB_CANCELLED"
+                    if cancellation_requested
+                    else "JOB_LEASE_LOST"
+                ),
             },
             job_id=row.id,
             correlation_id=row.correlation_id,

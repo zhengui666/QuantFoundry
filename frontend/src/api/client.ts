@@ -1535,6 +1535,8 @@ export function streamEvents(
     active?.abort();
     streamScope = auth.scope();
     last = readEventCursor(streamScope);
+    contractBlocked = false;
+    consecutiveContractSkews = 0;
     if (!auth.get()) return;
     authorizationBlocked = false;
     reconnect();

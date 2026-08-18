@@ -12,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 from app.control_plane import CONTROL_METADATA, _control_path  # noqa: E402
 
 config = context.config
-database_url = os.getenv("QF_CONTROL_DB_URL") or f"sqlite:///{_control_path()}"
-if database_url.startswith("sqlite"):
-    database = make_url(database_url).database
+database_url = make_url(os.getenv("QF_CONTROL_DB_URL") or f"sqlite:///{_control_path()}")
+if database_url.drivername.startswith("sqlite"):
+    database = database_url.database
     if not database or database == ":memory:":
         database_path = None
     else:
@@ -24,20 +24,23 @@ if database_url.startswith("sqlite"):
     elif database_path.startswith("file:"):
         raise RuntimeError("SQLite URI filenames are not supported for control migrations")
     else:
-        Path(database_path).expanduser().parent.mkdir(
+        expanded_database_path = Path(database_path).expanduser()
+        database_url = database_url.set(database=str(expanded_database_path))
+        expanded_database_path.parent.mkdir(
             mode=0o750, parents=True, exist_ok=True
         )
-config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+database_url_text = database_url.render_as_string(hide_password=False)
+config.set_main_option("sqlalchemy.url", database_url_text.replace("%", "%%"))
 target_metadata = CONTROL_METADATA
 
 
 def run_migrations_offline() -> None:
-    if database_url.startswith("sqlite"):
+    if database_url.drivername.startswith("sqlite"):
         raise RuntimeError(
             "Offline SQL generation is not supported for control-plane SQLite migrations"
         )
     context.configure(
-        url=database_url, target_metadata=target_metadata, literal_binds=True
+        url=database_url_text, target_metadata=target_metadata, literal_binds=True
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -55,7 +58,7 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    if database_url.startswith("sqlite"):
+    if database_url.drivername.startswith("sqlite"):
 
         @event.listens_for(connectable, "connect")
         def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):

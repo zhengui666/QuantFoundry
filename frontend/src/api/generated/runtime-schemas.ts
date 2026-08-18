@@ -5,7 +5,14 @@ const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
   if (value && typeof value === 'object') {
     const object = value as Record<string, unknown>;
-    return '{' + Object.keys(object).sort().map((key) => JSON.stringify(key) + ':' + canonicalJson(object[key])).join(',') + '}';
+    return (
+      '{' +
+      Object.keys(object)
+        .sort()
+        .map((key) => JSON.stringify(key) + ':' + canonicalJson(object[key]))
+        .join(',') +
+      '}'
+    );
   }
   return JSON.stringify(value);
 };
@@ -1406,13 +1413,9 @@ export const EventObjectLocatorSchemas = {
             });
         }),
       object_version: z.number().int().min(1),
-      object_revision: z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   validation: z
@@ -1804,13 +1807,9 @@ export const EventObjectLocatorSchemas = {
     .object({
       object_id: z.literal('SETTINGS-DEFAULT'),
       object_version: z.null().nullable(),
-      object_revision: z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   provider_connection: z
@@ -1819,13 +1818,9 @@ export const EventObjectLocatorSchemas = {
         .string()
         .regex(new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')),
       object_version: z.null().nullable(),
-      object_revision: z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   agent_config: z
@@ -1839,13 +1834,9 @@ export const EventObjectLocatorSchemas = {
         z.literal('PERFORMANCE_ANALYST'),
       ]),
       object_version: z.null().nullable(),
-      object_revision: z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
   event_stream: z
@@ -1880,13 +1871,9 @@ export const EventObjectLocatorSchemas = {
             });
         }),
       object_version: z.null().nullable(),
-      object_revision: z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
     })
     .passthrough(),
 } as const;
@@ -2677,13 +2664,9 @@ export const ProblemContextSchema = z
     object_version: z.union([z.number().int().min(1), z.null()]).optional(),
     object_revision: z
       .union([
-        z
-          .number()
-          .int()
-          .min(1)
-          .refine(Number.isSafeInteger, {
-            message: 'Integer must be exactly representable in JavaScript',
-          }),
+        z.number().int().min(1).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
         z.null(),
       ])
       .optional(),
@@ -3116,13 +3099,9 @@ export const ProblemContextSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_version'), {
@@ -3799,13 +3778,9 @@ export const ProblemContextSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -3847,13 +3822,9 @@ export const ProblemContextSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -3897,13 +3868,9 @@ export const ProblemContextSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -3967,13 +3934,9 @@ export const ProblemContextSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -4790,13 +4753,9 @@ export const GeneralAccessKeyMetadataSchema = z
     status: z.union([z.literal('ACTIVE'), z.literal('REVOKED'), z.literal('EXPIRED')]),
     expires_at: z.union([z.iso.datetime({ offset: true }), z.null()]),
     last_used_at: z.union([z.iso.datetime({ offset: true }), z.null()]),
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     created_at: z.iso.datetime({ offset: true }),
   })
   .strict()
@@ -5065,13 +5024,9 @@ export const ConfigurationValueWriteSchema = z
   });
 export const ConfigurationCandidateRequestSchema = z
   .object({
-    base_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     values: z.array(ConfigurationValueWriteSchema).min(1),
   })
   .strict()
@@ -5128,13 +5083,9 @@ export const ConfigurationValueViewSchema = z
   });
 export const ConfigurationCandidateSchema = z
   .object({
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     state: z.union([
       z.literal('CANDIDATE'),
       z.literal('VALIDATED'),
@@ -5143,13 +5094,9 @@ export const ConfigurationCandidateSchema = z
       z.literal('ACTIVE'),
       z.literal('SUPERSEDED'),
     ]),
-    base_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     catalog_version: z.string(),
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -5186,13 +5133,9 @@ export const ConfigurationCandidateSchema = z
   });
 export const ConfigurationValidationResultSchema = z
   .object({
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     errors: z.array(FieldErrorSchema),
     warnings: z.array(FieldErrorSchema),
@@ -5221,13 +5164,9 @@ export const ConfigurationValidationResultSchema = z
   });
 export const ConfigurationActivateRequestSchema = z
   .object({
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
   })
   .strict()
   .refine((value) => Object.hasOwn(value, 'revision'), {
@@ -5236,13 +5175,9 @@ export const ConfigurationActivateRequestSchema = z
   });
 export const ConfigurationRollbackRequestSchema = z
   .object({
-    source_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    source_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
   })
   .strict()
   .refine((value) => Object.hasOwn(value, 'source_revision'), {
@@ -5251,13 +5186,9 @@ export const ConfigurationRollbackRequestSchema = z
   });
 export const DatabaseConnectionCandidateSchema = z
   .object({
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     state: z.union([
       z.literal('CANDIDATE'),
       z.literal('VALIDATED'),
@@ -5265,13 +5196,9 @@ export const DatabaseConnectionCandidateSchema = z
       z.literal('FAILED'),
       z.literal('SUPERSEDED'),
     ]),
-    base_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     host: z.string().min(1).max(253),
     port: z.number().int().min(1).max(65535),
     database: z.string().min(1).max(63),
@@ -5338,33 +5265,21 @@ export const DatabaseConnectionStatusSchema = z
       z.literal('DEGRADED'),
     ]),
     active_revision: z.union([
-      z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
     candidate_revision: z.union([
-      z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
     last_known_good_revision: z.union([
-      z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
     active: z.unknown().superRefine((value, context) => {
@@ -5431,13 +5346,9 @@ export const DatabaseConnectionStatusSchema = z
   });
 export const DatabaseConnectionCandidateRequestSchema = z
   .object({
-    base_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    base_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     connection: z
       .object({
         host: z.string().min(1).max(253),
@@ -5510,13 +5421,9 @@ export const DatabaseConnectionCheckSchema = z
   });
 export const DatabaseConnectionValidationResultSchema = z
   .object({
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     status: z.union([z.literal('VALID'), z.literal('INVALID')]),
     checks: z.array(DatabaseConnectionCheckSchema).min(1),
     validated_at: z.iso.datetime({ offset: true }),
@@ -6597,13 +6504,9 @@ export const SetupProviderConnectionValidationResultSchema = z
   });
 export const SetupCompleteRequestSchema = z
   .object({
-    configuration_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    configuration_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
   })
   .strict()
   .refine((value) => Object.hasOwn(value, 'configuration_revision'), {
@@ -6613,21 +6516,13 @@ export const SetupCompleteRequestSchema = z
 export const ConfigurationConsumerStateSchema = z
   .object({
     consumer: z.string().min(1).max(80),
-    desired_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
+    desired_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
+    applied_revision: z.union([
+      z.number().int().min(1).refine(Number.isSafeInteger, {
         message: 'Integer must be exactly representable in JavaScript',
       }),
-    applied_revision: z.union([
-      z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
       z.null(),
     ]),
     ack: z.union([z.literal('PENDING'), z.literal('ACKED'), z.literal('FAILED')]),
@@ -6671,20 +6566,12 @@ export const ConfigurationConsumerStateSchema = z
   });
 export const ConfigurationActiveSchema = z
   .object({
-    active_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
-    last_known_good_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    active_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
+    last_known_good_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     catalog_version: z.string(),
     values: z.array(ConfigurationValueViewSchema),
     snapshot_sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
@@ -6949,23 +6836,15 @@ export const JobProgressSchema = z
   .object({
     mode: z.union([z.literal('NONE'), z.literal('UNITS')]),
     completed_units: z.union([
-      z
-        .number()
-        .int()
-        .min(0)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().min(0).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
     total_units: z.union([
-      z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
     unit: z.union([z.string(), z.null()]),
@@ -7104,13 +6983,9 @@ export const OverviewActiveResearchItemSchema = z
           message: 'Value must match exactly one canonical variant',
         });
     }),
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     action_capabilities: z.array(ActionCapabilitySchema),
     updated_at: z.iso.datetime({ offset: true }),
   })
@@ -7679,13 +7554,9 @@ export const OverviewDataHealthSchema = z
 export const OverviewReadModelSchema = z
   .object({
     as_of: z.iso.datetime({ offset: true }),
-    revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     needs_attention: z.array(OverviewAttentionItemSchema),
     active_research: z.array(OverviewActiveResearchItemSchema),
     strategy_pipeline: OverviewStrategyPipelineSchema,
@@ -8731,13 +8602,9 @@ export const ArtifactReadModelSchema = z
     kind: z.string(),
     media_type: z.string(),
     sha256: z.string().regex(new RegExp('^[0-9a-f]{64}$')),
-    size_bytes: z
-      .number()
-      .int()
-      .min(0)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    size_bytes: z.number().int().min(0).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     provenance: z.unknown().superRefine((value, context) => {
       const matches = [
         ProvenanceRefSchema.safeParse(value).success,
@@ -9295,12 +9162,9 @@ export const ExperimentSearchConfigurationSchema = z
     objective_direction: z.union([z.literal('MAXIMIZE'), z.literal('MINIMIZE')]),
     max_evaluations: z.number().int().min(1),
     seed: z.union([
-      z
-        .number()
-        .int()
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
   })
@@ -13947,13 +13811,9 @@ export const AgentConfigSchema = z
     model_provider: z.string(),
     model_name: z.string(),
     ai_connection_id: z.string(),
-    ai_connection_revision: z
-      .number()
-      .int()
-      .min(1)
-      .refine(Number.isSafeInteger, {
-        message: 'Integer must be exactly representable in JavaScript',
-      }),
+    ai_connection_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+      message: 'Integer must be exactly representable in JavaScript',
+    }),
     runtime_profile: z.string(),
     tool_timeout_seconds: z.number().int().min(1),
     max_steps_override: z.union([z.number().int().min(1), z.null()]),
@@ -14653,13 +14513,9 @@ export const JobResultRefSchema = z
     }),
     object_version: z.union([z.number().int().min(1), z.null()]),
     object_revision: z.union([
-      z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
     artifact_id: z.unknown().superRefine((value, context) => {
@@ -15062,13 +14918,9 @@ export const JobResultRefSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_version'), {
@@ -15745,13 +15597,9 @@ export const JobResultRefSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -15793,13 +15641,9 @@ export const JobResultRefSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -15843,13 +15687,9 @@ export const JobResultRefSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -15913,13 +15753,9 @@ export const JobResultRefSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -16838,25 +16674,17 @@ export const EventPayloadSchema = z
     progress_mode: z.union([z.literal('NONE'), z.literal('UNITS'), z.literal(null)]).optional(),
     completed_units: z
       .union([
-        z
-          .number()
-          .int()
-          .min(0)
-          .refine(Number.isSafeInteger, {
-            message: 'Integer must be exactly representable in JavaScript',
-          }),
+        z.number().int().min(0).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
         z.null(),
       ])
       .optional(),
     total_units: z
       .union([
-        z
-          .number()
-          .int()
-          .min(1)
-          .refine(Number.isSafeInteger, {
-            message: 'Integer must be exactly representable in JavaScript',
-          }),
+        z.number().int().min(1).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
         z.null(),
       ])
       .optional(),
@@ -17587,13 +17415,9 @@ export const EventPayloadSchema = z
     object_version: z.union([z.number().int().min(1), z.null()]).optional(),
     object_revision: z
       .union([
-        z
-          .number()
-          .int()
-          .min(1)
-          .refine(Number.isSafeInteger, {
-            message: 'Integer must be exactly representable in JavaScript',
-          }),
+        z.number().int().min(1).refine(Number.isSafeInteger, {
+          message: 'Integer must be exactly representable in JavaScript',
+        }),
         z.null(),
       ])
       .optional(),
@@ -17951,13 +17775,9 @@ export const EventPayloadSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_version'), {
@@ -18634,13 +18454,9 @@ export const EventPayloadSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -18682,13 +18498,9 @@ export const EventPayloadSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -18732,13 +18544,9 @@ export const EventPayloadSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -18802,13 +18610,9 @@ export const EventPayloadSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -20202,13 +20006,9 @@ export const SseEnvelopeSchema = z
     }),
     object_version: z.union([z.number().int().min(1), z.null()]),
     object_revision: z.union([
-      z
-        .number()
-        .int()
-        .min(1)
-        .refine(Number.isSafeInteger, {
-          message: 'Integer must be exactly representable in JavaScript',
-        }),
+      z.number().int().min(1).refine(Number.isSafeInteger, {
+        message: 'Integer must be exactly representable in JavaScript',
+      }),
       z.null(),
     ]),
     request_id: z.union([z.string(), z.null()]),
@@ -20729,13 +20529,9 @@ export const SseEnvelopeSchema = z
                       })
                       .optional(),
                     object_version: z.number().int().min(1),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_version'), {
@@ -21412,13 +21208,9 @@ export const SseEnvelopeSchema = z
                   .object({
                     object_id: z.literal('SETTINGS-DEFAULT').optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -21460,13 +21252,9 @@ export const SseEnvelopeSchema = z
                       )
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -21510,13 +21298,9 @@ export const SseEnvelopeSchema = z
                       ])
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {
@@ -21580,13 +21364,9 @@ export const SseEnvelopeSchema = z
                       })
                       .optional(),
                     object_version: z.null().nullable().optional(),
-                    object_revision: z
-                      .number()
-                      .int()
-                      .min(1)
-                      .refine(Number.isSafeInteger, {
-                        message: 'Integer must be exactly representable in JavaScript',
-                      }),
+                    object_revision: z.number().int().min(1).refine(Number.isSafeInteger, {
+                      message: 'Integer must be exactly representable in JavaScript',
+                    }),
                   })
                   .passthrough()
                   .refine((value) => Object.hasOwn(value, 'object_revision'), {

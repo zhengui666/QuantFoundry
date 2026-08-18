@@ -45,7 +45,7 @@ fi
 
 set +e
 QF_RELEASE_REPO_ROOT="${QF_RELEASE_REPO_ROOT:-$repo_root}" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
-  uv --directory "$repo_root/backend" run --frozen python - "$registry" "$mode" <<'PY'
+  uv --directory "$script_repo_root/backend" run --frozen python - "$registry" "$mode" <<'PY'
 import datetime as dt
 import hashlib
 import io
@@ -53,9 +53,11 @@ import json
 import os
 import pathlib
 import re
+import selectors
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from urllib.parse import quote, urlparse
 
@@ -117,6 +119,16 @@ head_commit = subprocess.run(
 ).stdout.strip()
 if not sha_pattern.fullmatch(expected_commit) or expected_commit != head_commit:
     raise SystemExit("QF_RELEASE_COMMIT must be the full lowercase checked-out HEAD SHA")
+
+if strict_mode:
+    canonical_registry_rel = pathlib.PurePosixPath("docs/治理/p0-blockers.yaml")
+    if registry_path.is_symlink():
+        raise SystemExit("strict P0 verification registry must not be a symlink")
+    canonical_bytes = subprocess.check_output(
+        ["git", "-C", str(repo_root), "show", f"{expected_commit}:{canonical_registry_rel}"],
+    )
+    if registry_path.read_bytes() != canonical_bytes:
+        raise SystemExit("strict P0 verification registry is not byte-identical to the release commit")
 
 
 def invalid_value(value):
@@ -230,29 +242,60 @@ class RemoteVerifier:
     def gh_download(self, endpoint):
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
-            with tempfile.TemporaryFile() as stderr_file, destination.open("wb") as archive_file:
-                process = subprocess.Popen(
-                    [
-                        "gh",
-                        "api",
-                        endpoint,
-                        "--method",
-                        "GET",
-                        *(["--header", "Accept: application/octet-stream"] if "/actions/artifacts/" in endpoint else []),
-                    ],
-                    env=self.env,
-                    stdout=archive_file,
-                    stderr=stderr_file,
-                )
-                return_code = process.wait()
-                stderr_file.seek(0)
-                stderr = stderr_file.read(64 * 1024).decode(errors="replace").strip()
-            if destination.stat().st_size > MAX_EVIDENCE_BYTES:
-                raise RuntimeError("downloaded evidence exceeds the size limit")
+            process = subprocess.Popen(
+                [
+                    "gh",
+                    "api",
+                    endpoint,
+                    "--method",
+                    "GET",
+                    *(["--header", "Accept: application/octet-stream"] if "/actions/artifacts/" in endpoint else []),
+                ],
+                env=self.env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            selector = selectors.DefaultSelector()
+            selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+            selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+            stderr = bytearray()
+            downloaded = 0
+            deadline = time.monotonic() + 120
+            try:
+                with destination.open("wb") as archive_file:
+                    while selector.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            process.kill()
+                            process.wait()
+                            raise RuntimeError(f"gh api download timed out for {endpoint}")
+                        events = selector.select(remaining)
+                        if not events:
+                            process.kill()
+                            process.wait()
+                            raise RuntimeError(f"gh api download timed out for {endpoint}")
+                        for key, _ in events:
+                            chunk = os.read(key.fileobj.fileno(), 1024 * 1024)
+                            if not chunk:
+                                selector.unregister(key.fileobj)
+                            elif key.data == "stderr":
+                                stderr.extend(chunk[: max(0, 64 * 1024 - len(stderr))])
+                            else:
+                                downloaded += len(chunk)
+                                if downloaded > MAX_EVIDENCE_BYTES:
+                                    process.kill()
+                                    process.wait()
+                                    raise RuntimeError("downloaded evidence exceeds the size limit")
+                                archive_file.write(chunk)
+            finally:
+                selector.close()
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+            return_code = process.returncode
+            stderr_text = bytes(stderr).decode(errors="replace").strip()
             if return_code:
-                raise RuntimeError(f"gh api download failed for {endpoint}: {stderr or return_code}")
-            if destination.stat().st_size > MAX_EVIDENCE_BYTES:
-                raise RuntimeError("downloaded evidence exceeds the size limit")
+                raise RuntimeError(f"gh api download failed for {endpoint}: {stderr_text or return_code}")
             try:
                 return destination.read_bytes()
             except OSError as error:

@@ -26,17 +26,21 @@ then
 fi
 
 set +e
+secret_pattern='(^|[^a-z0-9_])(github_pat_[a-z0-9_]{20,}|gh[pousr]_[a-z0-9]{20,}|glpat-[a-z0-9_-]{20,}|xox[baprs]-[a-z0-9-]{20,}|npm_[a-z0-9]{20,}|(akia|asia)[a-z0-9]{16}|sk-[a-z0-9_-]{20,}|eyj[a-z0-9_-]{20,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}|-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----)'
+git -C "$repo_root" grep --cached -q -I -E -i \
+  "$secret_pattern" -- .
+index_secret_scan_status=$?
 git -C "$repo_root" grep -q -I -E -i \
-  'github_pat_[a-z0-9_]{20,}|gh[pousr]_[a-z0-9]{20,}|glpat-[a-z0-9_-]{20,}|xox[baprs]-[a-z0-9-]{20,}|npm_[a-z0-9]{20,}|(akia|asia)[a-z0-9]{16}|sk-[a-z0-9_-]{20,}|eyj[a-z0-9_-]{20,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}|-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----' \
-  -- .
-secret_scan_status=$?
-set -e
-if [[ "$secret_scan_status" -ne 0 && "$secret_scan_status" -ne 1 ]]; then
+  "$secret_pattern" -- .
+worktree_secret_scan_status=$?
+if [[ "$index_secret_scan_status" -ne 0 && "$index_secret_scan_status" -ne 1 ]] || \
+  [[ "$worktree_secret_scan_status" -ne 0 && "$worktree_secret_scan_status" -ne 1 ]]; then
   printf '%s\n' 'Secret scan failed to execute.' >&2
   exit 1
 fi
-if [[ "$secret_scan_status" -eq 0 ]]; then
-  printf '%s\n' 'Potential committed secret detected.' >&2
+if [[ "$index_secret_scan_status" -eq 0 || "$worktree_secret_scan_status" -eq 0 ]]; then
+  printf '%s\n' 'Potential committed or working-tree secret detected.' >&2
   exit 1
 fi
+set -e
 printf '%s\n' '{"result":"pass","checks":["license-metadata-agpl-3.0-only","secret-patterns"]}'

@@ -9,7 +9,7 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { z } from 'zod';
-import { ApiError, api } from '../../api/client';
+import { ApiError, api, auth } from '../../api/client';
 
 type RouteComponent = () => ReactNode;
 
@@ -21,6 +21,7 @@ export function createAppRouter({ Shell }: RouteComponents) {
     component: Shell,
     beforeLoad: async ({ location }) => {
       if (location.pathname === '/login') return;
+      if (auth.get()) return;
       try {
         await api.session();
       } catch (error) {

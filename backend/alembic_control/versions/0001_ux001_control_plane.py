@@ -429,6 +429,31 @@ def upgrade() -> None:
         )
         op.execute(
             """
+            CREATE FUNCTION qf_canonical_jsonb(value JSONB) RETURNS TEXT AS $$
+            DECLARE result TEXT;
+            BEGIN
+              CASE jsonb_typeof(value)
+                WHEN 'object' THEN
+                  SELECT '{' || COALESCE(string_agg(
+                    to_jsonb(key)::text || ':' || qf_canonical_jsonb(item),
+                    ',' ORDER BY octet_length(key), convert_to(key, 'UTF8')
+                  ), '') || '}' INTO result
+                  FROM jsonb_each(value) AS entries(key, item);
+                WHEN 'array' THEN
+                  SELECT '[' || COALESCE(string_agg(
+                    qf_canonical_jsonb(item), ',' ORDER BY ordinal
+                  ), '') || ']' INTO result
+                  FROM jsonb_array_elements(value) WITH ORDINALITY AS entries(item, ordinal);
+                ELSE
+                  result := value::text;
+              END CASE;
+              RETURN result;
+            END;
+            $$ LANGUAGE plpgsql IMMUTABLE
+            """
+        )
+        op.execute(
+            """
             CREATE FUNCTION qf_validate_bootstrap_audit_insert() RETURNS trigger AS $$
             DECLARE tail_hash TEXT;
             DECLARE tail_sequence BIGINT;
@@ -436,14 +461,14 @@ def upgrade() -> None:
               PERFORM pg_advisory_xact_lock(hashtextextended('qf-bootstrap-audit', 0));
               SELECT sequence, event_hash INTO tail_sequence, tail_hash FROM bootstrap_audit_events
               ORDER BY sequence DESC LIMIT 1 FOR UPDATE;
-              IF NEW.sequence IS NULL OR NEW.sequence <> COALESCE(tail_sequence, 0) + 1 THEN
-                RAISE EXCEPTION 'bootstrap audit sequence is not monotonic';
+              IF NEW.sequence IS NULL OR NEW.sequence <= COALESCE(tail_sequence, 0) THEN
+                NEW.sequence := COALESCE(tail_sequence, 0) + 1;
               END IF;
               IF NEW.previous_event_hash IS DISTINCT FROM tail_hash THEN
                 RAISE EXCEPTION 'bootstrap audit hash chain is disconnected';
               END IF;
               NEW.event_hash := encode(digest(convert_to(
-                jsonb_build_object(
+                qf_canonical_jsonb(jsonb_build_object(
                   'sequence', NEW.sequence,
                   'event_id', NEW.event_id,
                   'event_type', NEW.event_type,
@@ -457,7 +482,7 @@ def upgrade() -> None:
                   'masked_summary', NEW.masked_summary,
                   'previous_event_hash', NEW.previous_event_hash,
                   'created_at', to_char(NEW.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-                )::text,
+                )),
                 'UTF8'
               ), 'sha256'), 'hex');
               RETURN NEW;
@@ -575,6 +600,7 @@ def downgrade() -> None:
             "qf_validate_configuration_value",
             "qf_validate_configuration_catalog_sensitivity",
             "qf_validate_bootstrap_audit_insert",
+            "qf_canonical_jsonb",
             "qf_reject_bootstrap_audit_change",
         ):
             op.execute(f"DROP FUNCTION IF EXISTS {function_name}()")

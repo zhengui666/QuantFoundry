@@ -76,6 +76,7 @@ def downgrade() -> None:
         batch_op.drop_constraint(
             "fk_experiments_source_experiment_id", type_="foreignkey"
         )
+        batch_op.drop_constraint("ck_experiments_source_not_self", type_="check")
         batch_op.drop_column("source_experiment_id")
     _create_sqlite_experiment_guards(include_source=False)
 
@@ -113,6 +114,7 @@ def _postgres_lineage_cycle_guard() -> str:
     return """
         CREATE OR REPLACE FUNCTION qf_reject_experiment_lineage_cycle() RETURNS trigger AS $$
         BEGIN
+          PERFORM pg_advisory_xact_lock(hashtext('quantfoundry:experiments:lineage'));
           IF NEW.source_experiment_id IS NOT NULL AND EXISTS (
             WITH RECURSIVE lineage(id) AS (
               SELECT NEW.source_experiment_id

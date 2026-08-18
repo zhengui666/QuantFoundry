@@ -864,12 +864,20 @@ def _resolve_locator(
     if all(value is None for value in values.values()):
         return None if allow_null else "mandatory locator is absent"
     if expected_object_type == "event_stream":
-        values = {
+        canonical_values = {
             "object_type": "event_stream",
             "object_id": row.get("event_id"),
             "object_version": None,
-            "object_revision": row.get("sequence") or row.get("revision"),
+            "object_revision": row.get("object_revision")
+            if row.get("object_revision") is not None
+            else row.get("revision"),
         }
+        if any(
+            values[name] is not None and values[name] != canonical_values[name]
+            for name in canonical_values
+        ):
+            return "event-stream locator disagrees with canonical event identity"
+        values = canonical_values
     elif expected_object_type is not None:
         if values["object_type"] not in {None, expected_object_type}:
             return "event locator object_type disagrees with event type"
@@ -1503,6 +1511,9 @@ def _install_guards() -> None:
               ) THEN
                 RAISE EXCEPTION 'frozen strategy specification is immutable';
               END IF;
+              IF NEW.state = 'FROZEN' AND NEW.frozen_at IS NULL THEN
+                RAISE EXCEPTION 'frozen strategy requires frozen_at';
+              END IF;
               IF OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
                    NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
                    NEW.version IS DISTINCT FROM OLD.version OR
@@ -1602,6 +1613,12 @@ def _install_guards() -> None:
             """
             CREATE OR REPLACE FUNCTION qf_reject_bound_experiment_job_change() RETURNS trigger AS $$
             BEGIN
+              IF TG_OP = 'DELETE' AND EXISTS (
+                   SELECT 1 FROM experiments e
+                   WHERE e.immutable AND e.detail::jsonb ->> 'job_id' = OLD.job_id
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion job binding cannot be deleted';
+              END IF;
               IF TG_OP = 'UPDATE' AND (
                    NEW.job_type IS DISTINCT FROM OLD.job_type OR
                    NEW.input_payload IS DISTINCT FROM OLD.input_payload
@@ -1618,7 +1635,7 @@ def _install_guards() -> None:
         )
         op.execute(
             "CREATE TRIGGER qf_jobs_bound_experiment_immutable BEFORE UPDATE OF "
-            "job_type, input_payload ON jobs FOR EACH ROW EXECUTE FUNCTION "
+            "job_type, input_payload OR DELETE ON jobs FOR EACH ROW EXECUTE FUNCTION "
             "qf_reject_bound_experiment_job_change()"
         )
         op.execute(
@@ -1793,6 +1810,13 @@ def _install_guards() -> None:
         "AND EXISTS (SELECT 1 FROM experiments e WHERE e.immutable = 1 AND "
         "json_extract(e.detail, '$.job_id') IS OLD.job_id) BEGIN SELECT RAISE(ABORT, "
         "'experiment completion job binding cannot be changed'); END"
+    )
+    op.execute("DROP TRIGGER IF EXISTS qf_jobs_bound_experiment_delete_immutable")
+    op.execute(
+        "CREATE TRIGGER qf_jobs_bound_experiment_delete_immutable BEFORE DELETE ON jobs "
+        "WHEN EXISTS (SELECT 1 FROM experiments e WHERE e.immutable = 1 AND "
+        "json_extract(e.detail, '$.job_id') IS OLD.job_id) BEGIN SELECT RAISE(ABORT, "
+        "'experiment completion job binding cannot be deleted'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE ON "

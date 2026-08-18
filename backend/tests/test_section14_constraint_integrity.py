@@ -740,7 +740,7 @@ def test_records_and_setup_physical_shapes_are_exact() -> None:
     value = json.loads(path.read_text(encoding="utf-8"))
     assert value["table_count"] == 63
     assert value["column_count"] == 967
-    assert sum(len(table["checks"]) for table in value["tables"]) == 218
+    assert sum(len(table["checks"]) for table in value["tables"]) == 220
 
     specs = {table["name"]: table for table in value["tables"]}
     records = specs["records"]

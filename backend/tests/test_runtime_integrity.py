@@ -75,6 +75,7 @@ from quantfoundry.infrastructure.jobs.queue import (
     LostLease,
     claim_job,
     complete_job,
+    fail_job,
     heartbeat_job,
     reap_expired_jobs,
     request_cancellation,
@@ -800,6 +801,42 @@ def test_queue_priority_fencing_and_safe_vs_unsafe_reaping() -> None:
     with pytest.raises(JobNotCancellable):
         request_cancellation(session, lower["job_id"])
     session.rollback()
+    session.close()
+
+
+def test_late_success_dependency_is_terminalized_before_claim() -> None:
+    queue_name = f"late-dependency-{uuid.uuid4().hex[:12]}"
+    session = SessionLocal()
+    session.info.update(
+        actor_id="test-owner",
+        workspace_id="test-workspace",
+        request_id=f"REQ-{uuid.uuid4()}",
+    )
+    prerequisite = job(session, "DATASET_VALIDATE", queue_name=queue_name)
+    session.commit()
+    prerequisite_lease = claim_job(session, queue_name, "worker-prerequisite")
+    assert prerequisite_lease is not None
+    session.commit()
+    fail_job(session, prerequisite_lease, "JOB_FAILED", "fixture failure")
+    session.commit()
+
+    dependent = job(session, "DATASET_VALIDATE", queue_name=queue_name)
+    session.add(
+        JobDependencyRow(
+            job_id=dependent["job_id"],
+            depends_on_job_id=prerequisite["job_id"],
+            workspace_id="test-workspace",
+            dependency_type="SUCCESS",
+        )
+    )
+    session.commit()
+
+    assert claim_job(session, queue_name, "worker-dependent") is None
+    session.commit()
+    dependent_row = session.get(JobRow, dependent["job_id"])
+    assert dependent_row is not None
+    assert dependent_row.status == "FAILED"
+    assert dependent_row.error_code == "JOB_DEPENDENCY_FAILED"
     session.close()
 
 

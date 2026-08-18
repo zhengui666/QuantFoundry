@@ -2,10 +2,10 @@ name: agent-change-gate
 
 on:
   pull_request:
-    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'backend/app/agent_runtime.py', 'backend/app/agent_runtime/**', 'backend/src/quantfoundry/agents/**', 'backend/workers/**', 'backend/pyproject.toml', 'backend/uv.lock', 'frontend/package.json', 'frontend/pnpm-lock.yaml', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
+    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'Makefile', 'backend/app/agent_runtime.py', 'backend/app/agent_runtime/**', 'backend/src/quantfoundry/agents/**', 'backend/workers/**', 'backend/pyproject.toml', 'backend/uv.lock', 'frontend/package.json', 'frontend/pnpm-lock.yaml', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
   push:
     branches: [main]
-    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'backend/app/agent_runtime.py', 'backend/app/agent_runtime/**', 'backend/src/quantfoundry/agents/**', 'backend/workers/**', 'backend/pyproject.toml', 'backend/uv.lock', 'frontend/package.json', 'frontend/pnpm-lock.yaml', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
+    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'Makefile', 'backend/app/agent_runtime.py', 'backend/app/agent_runtime/**', 'backend/src/quantfoundry/agents/**', 'backend/workers/**', 'backend/pyproject.toml', 'backend/uv.lock', 'frontend/package.json', 'frontend/pnpm-lock.yaml', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
 
 concurrency:
   group: agent-change-${{ github.event.pull_request.number || github.ref }}
@@ -165,6 +165,8 @@ jobs:
       - name: Run exact Tool and Agent contract gate
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
           GITHUB_REPOSITORY: ${{ github.repository }}
           QF_INDEPENDENT_REVIEW_REPORT: ${{ runner.temp }}/qf-independent-review/independent-review-locator.json

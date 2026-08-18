@@ -49,6 +49,12 @@ export function researchProjection(started: boolean): ResearchProjection {
     sort_order: 1,
   };
   const page = { next_cursor: null, has_more: false } satisfies Schema<'PageInfo'>;
+  const evidenceArtifact: NonNullable<Schema<'ResearchEvidenceItem'>['result_locator']>['artifact'] = {
+    type: 'artifact',
+    id: 'ART-1BEQJE4YY6S21C6P56JB8ZXKNS',
+    version: null,
+    revision: 1,
+  };
   const evidence: Schema<'ResearchEvidenceItem'> = {
     evidence: {
       type: 'evidence',
@@ -67,12 +73,7 @@ export function researchProjection(started: boolean): ResearchProjection {
     result_locator: {
       result_sha256: 'd'.repeat(64),
       metric_key: 'sharpe',
-      artifact: {
-        type: 'artifact',
-        id: 'ART-1BEQJE4YY6S21C6P56JB8ZXKNS',
-        version: null,
-        revision: 1,
-      },
+      artifact: evidenceArtifact,
     },
     strength: 'MODERATE',
     limitations: 'Single market regime.',
@@ -175,12 +176,7 @@ export function researchProjection(started: boolean): ResearchProjection {
       items: started
         ? [
             {
-              artifact: {
-                type: 'artifact',
-                id: 'ART-1BEQMVTP6047PP2Q1TPS7G2KHJ',
-                version: null,
-                revision: 1,
-              },
+              artifact: evidenceArtifact,
               kind: 'BACKTEST_REPORT',
               media_type: 'application/json',
               sha256: 'a'.repeat(64),

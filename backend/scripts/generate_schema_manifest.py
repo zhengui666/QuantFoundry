@@ -25,6 +25,74 @@ HEADING = re.compile(r"^### (14\.[0-9]+[a-z]?) `([^`]+)`$")
 ROW = re.compile(r"^\|(.+)\|$")
 EXPECTED_TABLE_COUNT = 63
 EXPECTED_COLUMN_COUNT = 967
+EXPECTED_TABLE_KEYS = tuple(
+    tuple(line.split("\t"))
+    for line in """
+14.1\tapp_settings
+14.2\tresearch_policy_versions
+14.3\trisk_policy_versions
+14.4\tcost_model_versions
+14.5\tdata_providers
+14.6\tprovider_credentials
+14.6a\tmodel_provider_connections
+14.7\tdata_capabilities
+14.8\tdatasets
+14.9\tdataset_snapshots
+14.10\tdata_quality_runs
+14.11\tdata_quality_issues
+14.12\tresearch_cases
+14.13\tresearch_revisions
+14.14\tresearch_plan_versions
+14.15\tresearch_plan_nodes
+14.16\tevidence_items
+14.17\tresearch_conclusions
+14.18\texperiments
+14.19\texperiment_results
+14.20\tfactors
+14.21\tfactor_versions
+14.22\tstrategies
+14.23\tstrategy_versions
+14.24\tvalidation_runs
+14.25\tvalidation_test_results
+14.26\tholdout_exposures
+14.27\tred_team_runs
+14.28\tportfolio_scenarios
+14.29\tportfolio_components
+14.30\tinvestment_memos
+14.31\tapproval_requests
+14.32\tpaper_deployments
+14.32a\tpaper_scheduler_states
+14.33\tpaper_daily_runs
+14.34\tpaper_positions
+14.35\tpaper_orders
+14.36\tpaper_fills
+14.37\tpaper_nav
+14.39\tperformance_reviews
+14.40\tagent_configs
+14.41\tagent_runs
+14.42\ttool_calls
+14.43\tjobs
+14.44\tjob_dependencies
+14.45\tdomain_events
+14.46\taudit_events
+14.47\tartifacts
+14.48\tnotifications
+14.49\tidempotency_records
+14.50\tprovenance_records
+14.51\taudit_chain_heads
+14.52\tdata_snapshots
+14.53\tdata_sources
+14.54\tevent_stream_watermarks
+14.55\trecords
+14.56\truntime_heartbeats
+14.57\tsession_tokens
+14.58\tsetup_bindings
+14.59\tsnapshot_partitions
+14.60\tusers
+14.61\tvalidations
+14.62\tworkspaces
+""".strip().splitlines()
+)
 SUPPORT_TABLES = frozenset(
     {
         "audit_chain_heads",
@@ -84,22 +152,32 @@ def _plain(value: str) -> str:
 def extract_manifest(document: Path) -> dict[str, Any]:
     source = document.read_text(encoding="utf-8")
     lines = source.splitlines()
+    try:
+        section_start = lines.index("# 14. PostgreSQL Schema — 字段级定义")
+        section_end = lines.index("# 15. 核心索引与约束")
+    except ValueError as error:
+        raise ValueError(
+            "section 14/15 headings are required for schema hashing"
+        ) from error
+    if section_start >= section_end:
+        raise ValueError("section 14 heading must precede section 15 heading")
+    section_lines = lines[section_start + 1 : section_end]
     tables: list[dict[str, Any]] = []
     index = 0
-    while index < len(lines):
-        match = HEADING.fullmatch(lines[index])
+    while index < len(section_lines):
+        match = HEADING.fullmatch(section_lines[index])
         if match is None:
             index += 1
             continue
         section, table_name = match.groups()
         index += 1
-        while index < len(lines) and not lines[index].strip().startswith("| 字段 |"):
-            if lines[index].startswith("### 14."):
+        while index < len(section_lines) and not section_lines[index].strip().startswith("| 字段 |"):
+            if section_lines[index].startswith("### 14."):
                 raise ValueError(f"{table_name}: missing field table")
             index += 1
         if index >= len(lines):
             raise ValueError(f"{table_name}: missing field table")
-        header = _cells(lines[index])
+        header = _cells(section_lines[index])
         if header != [
             "字段",
             "PostgreSQL 类型",
@@ -109,15 +187,15 @@ def extract_manifest(document: Path) -> dict[str, Any]:
             "语义",
         ]:
             raise ValueError(f"{table_name}: malformed field-table header")
-        if index + 1 >= len(lines) or not re.fullmatch(
-            r"\|\s*:?-+:?\s*(?:\|\s*:?-+:?\s*){5}\|", lines[index + 1]
+        if index + 1 >= len(section_lines) or not re.fullmatch(
+            r"\|\s*:?-+:?\s*(?:\|\s*:?-+:?\s*){5}\|", section_lines[index + 1]
         ):
             raise ValueError(f"{table_name}: malformed field-table delimiter")
         index += 2
         columns: list[dict[str, Any]] = []
-        while index < len(lines):
-            cells = _cells(lines[index])
-            if not lines[index].strip().startswith("|"):
+        while index < len(section_lines):
+            cells = _cells(section_lines[index])
+            if not section_lines[index].strip().startswith("|"):
                 break
             if len(cells) != 6:
                 raise ValueError(
@@ -186,6 +264,9 @@ def extract_manifest(document: Path) -> dict[str, Any]:
         raise ValueError(
             f"expected {EXPECTED_COLUMN_COUNT} section-14 columns, got {column_count}"
         )
+    table_keys = [(table["section"], table["name"]) for table in tables]
+    if table_keys != list(EXPECTED_TABLE_KEYS):
+        raise ValueError("section 14 table identifiers do not match the frozen contract")
     table_names = {table["name"] for table in tables}
     if not SUPPORT_TABLES <= table_names:
         raise ValueError(
@@ -222,7 +303,13 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    manifest = extract_manifest(args.document.resolve())
+    document = args.document.resolve()
+    output = args.output.resolve()
+    if document == output or (
+        document.exists() and output.exists() and os.path.samefile(document, output)
+    ):
+        parser.error("--output must not alias --document")
+    manifest = extract_manifest(document)
     rendered = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if args.check:
         if (

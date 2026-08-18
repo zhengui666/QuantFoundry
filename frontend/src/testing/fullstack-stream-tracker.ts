@@ -16,12 +16,26 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
     RequestIdentity,
     { authorization: string | undefined; cookie: string | undefined; status: number }
   >();
+  let selectedCredential = '';
+
+  const credentialParts = (raw: string) => {
+    const value = raw.trim();
+    const token = value.startsWith('qf_session=')
+      ? (value.slice('qf_session='.length).split(';', 1)[0]?.trim() ?? '')
+      : value;
+    return { cookiePair: `qf_session=${token}`, token };
+  };
 
   const reconcile = () => {
     const expected =
       typeof expectedSessionCookie === 'function' ? expectedSessionCookie() : expectedSessionCookie;
-    if (!expected || authenticatedRequest) return;
-    const expectedPair = expected.includes('=') ? expected.trim() : `qf_session=${expected}`;
+    const { cookiePair: expectedPair, token } = credentialParts(expected);
+    if (selectedCredential !== token) {
+      selectedCredential = token;
+      authenticatedRequest = undefined;
+      authenticatedTerminated = false;
+    }
+    if (!token || authenticatedRequest) return;
     for (const [request, response] of successfulResponses) {
       const cookieMatches = response.cookie
         ?.split(';')
@@ -29,7 +43,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
         .some((part) => part === expectedPair);
       if (
         response.status === 200 &&
-        (cookieMatches || response.authorization === `Bearer ${expected}`)
+        (cookieMatches || response.authorization === `Bearer ${token}`)
       ) {
         authenticatedRequest = request;
         authenticatedTerminated = terminatedRequests.has(request);
@@ -57,17 +71,22 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
         typeof expectedSessionCookie === 'function'
           ? expectedSessionCookie()
           : expectedSessionCookie;
+      const { cookiePair: expectedPair, token } = credentialParts(expected);
       if (status === 200) successfulResponses.set(request, { authorization, cookie, status });
-      const expectedPair = expected.includes('=') ? expected.trim() : `qf_session=${expected}`;
       const cookieMatches = cookie
         ?.split(';')
         .map((part) => part.trim())
         .some((part) => part === expectedPair);
       if (
-        expected.length > 0 &&
+        token.length > 0 &&
         status === 200 &&
-        (cookieMatches || authorization === `Bearer ${expected}`)
+        (cookieMatches || authorization === `Bearer ${token}`)
       ) {
+        if (selectedCredential !== token) {
+          selectedCredential = token;
+          authenticatedRequest = undefined;
+          authenticatedTerminated = false;
+        }
         if (authenticatedRequest === undefined) {
           authenticatedRequest = request;
           authenticatedTerminated = terminatedRequests.has(request);

@@ -71,7 +71,10 @@ APPROVAL_COLUMNS = (
 
 def _add_columns(table: str, columns: tuple[sa.Column, ...]) -> None:
     if op.get_bind().dialect.name == "sqlite":
-        with op.batch_alter_table(table, recreate="always") as batch_op:
+        table_kwargs = {"sqlite_autoincrement": True} if table == "domain_events" else {}
+        with op.batch_alter_table(
+            table, recreate="always", table_kwargs=table_kwargs
+        ) as batch_op:
             for column in columns:
                 batch_op.add_column(column)
         return

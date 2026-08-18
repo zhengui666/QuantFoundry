@@ -39,8 +39,9 @@ def make_artifact(name, report_commit, report_scope_digest=scope_digest):
     embedded = {
         "schema_version": "1.0.0",
         "content_type": content_type,
-        "commit": report_commit,
-        "github_run_id": 100,
+            "commit": report_commit,
+            "github_run_id": 100,
+            "github_run_attempt": 1,
         "actor": "review-bot",
         "triggering_actor": "review-bot",
         "verifier_role": "Independent Review Agent",
@@ -61,6 +62,7 @@ def make_artifact(name, report_commit, report_scope_digest=scope_digest):
         "verifier_role": "Independent Review Agent",
         "result": "approved",
         "github_run_id": 100,
+        "github_run_attempt": 1,
         "actor": "review-bot",
         "triggering_actor": "review-bot",
         "artifact_uri": "https://github.com/acme/quantfoundry/actions/runs/100/artifacts/200",
@@ -85,7 +87,7 @@ printf '%s\n' \
   'for ((index = 1; index <= $#; index++)); do' \
   '  if [[ "${!index}" == --output ]]; then next=$((index + 1)); output="${!next}"; fi' \
   'done' \
-  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"head_sha\":\"%s\",\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300,\"actor\":{\"login\":\"review-bot\"},\"triggering_actor\":{\"login\":\"review-bot\"}}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"id\":100,\"head_sha\":\"%s\",\"run_attempt\":1,\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300,\"actor\":{\"login\":\"review-bot\"},\"triggering_actor\":{\"login\":\"review-bot\"}}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/commits/* ]]; then printf "{\"author\":{\"login\":\"%s\"},\"committer\":{\"login\":\"%s\"}}\n" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \

@@ -79,6 +79,24 @@ def normalized_schema(
         base = {key: value for key, value in result.items() if key != "type"}
         branches: list[Any] = []
         for branch_type in type_value:
+            const_value = base.get("const")
+            if "const" in base:
+                if const_value is None:
+                    compatible_types = {"null"}
+                elif isinstance(const_value, bool):
+                    compatible_types = {"boolean"}
+                elif isinstance(const_value, (int, float)):
+                    compatible_types = {"number"}
+                    if isinstance(const_value, int) or const_value.is_integer():
+                        compatible_types.add("integer")
+                elif isinstance(const_value, str):
+                    compatible_types = {"string"}
+                elif isinstance(const_value, list):
+                    compatible_types = {"array"}
+                else:
+                    compatible_types = {"object"}
+                if branch_type not in compatible_types:
+                    continue
             branch: dict[str, Any]
             if branch_type == "null":
                 if base.get("const") is not None or (
@@ -155,6 +173,7 @@ def normalized_schema(
             disjoint
             and not outer_properties.intersection(set().union(*branch_property_sets))
             and composition_only
+            and "additionalProperties" not in result
         ):
             result.pop("allOf")
             properties = dict(result.pop("properties", {}))

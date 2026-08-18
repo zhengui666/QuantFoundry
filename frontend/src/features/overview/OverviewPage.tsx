@@ -81,30 +81,28 @@ export function OverviewPage() {
                 <Capability
                   key={capability.action}
                   item={capability}
-                  onClick={
-                    ['open', 'view', 'review', 'review_approval'].includes(capability.action) &&
-                    ['approval', 'research', 'strategy'].includes(item.object.type)
-                      ? () => {
-                          const object = item.object;
-                          if (object.type === 'approval')
-                            void navigate({
-                              to: '/approvals/$approvalId',
-                              params: { approvalId: object.id },
-                            });
-                          else if (object.type === 'research')
-                            void navigate({
-                              to: '/research/$researchId',
-                              params: { researchId: object.id },
-                            });
-                          else if (object.type === 'strategy')
-                            void navigate({
-                              to: '/strategies/$strategyId',
-                              params: { strategyId: object.id },
-                              search: { version: object.version ?? undefined },
-                            });
-                        }
-                      : undefined
-                  }
+                  onClick={(() => {
+                    const { action } = capability;
+                    const { type, id, version } = item.object;
+                    const supported =
+                      (type === 'approval' &&
+                        ['open', 'view', 'review_approval'].includes(action)) ||
+                      (type === 'research' && ['open', 'view', 'review'].includes(action)) ||
+                      (type === 'strategy' && ['open', 'view', 'review'].includes(action));
+                    if (!supported) return undefined;
+                    if (type === 'approval')
+                      return () =>
+                        void navigate({ to: '/approvals/$approvalId', params: { approvalId: id } });
+                    if (type === 'research')
+                      return () =>
+                        void navigate({ to: '/research/$researchId', params: { researchId: id } });
+                    return () =>
+                      void navigate({
+                        to: '/strategies/$strategyId',
+                        params: { strategyId: id },
+                        search: { version: version ?? undefined },
+                      });
+                  })()}
                 />
               ))}
             </div>

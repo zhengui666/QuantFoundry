@@ -46,15 +46,41 @@ def run_migrations_offline():
 def run_migrations_online():
     injected_connection = config.attributes.get("connection")
     if injected_connection is not None:
-        if injected_connection.dialect.name == "sqlite":
-            raise RuntimeError(
-                "injected SQLite Alembic connections are unsupported; use the managed connection path"
+        sqlite_migration = injected_connection.dialect.name == "sqlite"
+        if sqlite_migration:
+            injected_connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            injected_connection.commit()
+            injected_connection.exec_driver_sql("BEGIN")
+        try:
+            context.configure(
+                connection=injected_connection, target_metadata=target_metadata
             )
-        context.configure(
-            connection=injected_connection, target_metadata=target_metadata
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+            if sqlite_migration:
+                violations = injected_connection.exec_driver_sql(
+                    "PRAGMA foreign_key_check"
+                ).all()
+                if violations:
+                    raise RuntimeError(
+                        "SQLite migration produced foreign-key violations: "
+                        f"{violations[:3]}"
+                    )
+            if sqlite_migration and injected_connection.in_transaction():
+                injected_connection.commit()
+        except Exception:
+            if sqlite_migration and injected_connection.in_transaction():
+                injected_connection.rollback()
+            raise
+        finally:
+            if sqlite_migration:
+                if injected_connection.in_transaction():
+                    injected_connection.rollback()
+                injected_connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                if injected_connection.exec_driver_sql(
+                    "PRAGMA foreign_keys"
+                ).scalar_one() != 1:
+                    raise RuntimeError("SQLite migration failed to restore foreign keys")
         return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),

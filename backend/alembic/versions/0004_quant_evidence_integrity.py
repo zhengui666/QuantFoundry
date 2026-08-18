@@ -221,11 +221,15 @@ def upgrade() -> None:
                 UPDATE validations
                 SET holdout_state = CASE
                       WHEN EXISTS (SELECT 1 FROM approval_requests a
+                                   JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
                                    WHERE a.validation_id = NEW.validation_id
-                                     AND a.status = 'APPROVED') THEN 'UNLOCKED'
+                                     AND a.status = 'APPROVED'
+                                     AND a.subject_spec_sha256 = sv.spec_sha256) THEN 'UNLOCKED'
                       WHEN EXISTS (SELECT 1 FROM approval_requests a
+                                   JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
                                    WHERE a.validation_id = NEW.validation_id
-                                     AND a.status = 'PENDING') THEN 'APPROVAL_PENDING'
+                                     AND a.status = 'PENDING'
+                                     AND a.subject_spec_sha256 = sv.spec_sha256) THEN 'APPROVAL_PENDING'
                       ELSE 'LOCKED'
                     END,
                     revision = revision + 1
@@ -332,8 +336,8 @@ def upgrade() -> None:
         "CREATE TRIGGER qf_sync_approval_validation AFTER UPDATE OF status ON approval_requests "
         "WHEN OLD.status = 'PENDING' AND NEW.status != 'PENDING' BEGIN "
         "UPDATE validations SET holdout_state = CASE "
-        "WHEN EXISTS (SELECT 1 FROM approval_requests a WHERE a.validation_id = NEW.validation_id AND a.status = 'APPROVED') THEN 'UNLOCKED' "
-        "WHEN EXISTS (SELECT 1 FROM approval_requests a WHERE a.validation_id = NEW.validation_id AND a.status = 'PENDING') THEN 'APPROVAL_PENDING' "
+        "WHEN EXISTS (SELECT 1 FROM approval_requests a JOIN strategy_versions sv ON sv.id = (SELECT strategy_version_id FROM validations WHERE id = NEW.validation_id) WHERE a.validation_id = NEW.validation_id AND a.status = 'APPROVED' AND a.subject_spec_sha256 IS sv.spec_sha256) THEN 'UNLOCKED' "
+        "WHEN EXISTS (SELECT 1 FROM approval_requests a JOIN strategy_versions sv ON sv.id = (SELECT strategy_version_id FROM validations WHERE id = NEW.validation_id) WHERE a.validation_id = NEW.validation_id AND a.status = 'PENDING' AND a.subject_spec_sha256 IS sv.spec_sha256) THEN 'APPROVAL_PENDING' "
         "ELSE 'LOCKED' END, revision = revision + 1 "
         "WHERE id = NEW.validation_id AND holdout_state = 'APPROVAL_PENDING'; END"
     )

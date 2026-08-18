@@ -1512,7 +1512,9 @@ def advance_agent_run(
     row.started_at = row.started_at or now
     expected_revision = row.revision
     session.flush()
-    session.commit()
+    # Hold the row lock across the model call; committing here permits two
+    # workers to issue the same paid invocation before the revision fence.
+    # ponytail: one row lock is sufficient for this single-run execution lane.
     action = _graph_action(configured_model(config, session), row, checkpoint)
     session.refresh(row, with_for_update=True)
     if row.revision != expected_revision:
@@ -1714,7 +1716,8 @@ def advance_agent_run(
     if tool_call is not None:
         expected_revision = row.revision
         session.flush()
-        session.commit()
+        # Keep the claimed ToolCall and AgentRun lock private until execute_tool
+        # assigns the child job, so contenders cannot observe an incomplete call.
         try:
             output = execute_tool(
                 session,

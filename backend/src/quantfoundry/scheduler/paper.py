@@ -1338,6 +1338,7 @@ class PaperScheduler:
         *,
         now: datetime,
         safe_retry: bool,
+        cancellation_requested: bool = False,
         lease_snapshot: LeaseSnapshot,
     ) -> None:
         runs = Base.metadata.tables["paper_daily_runs"]
@@ -1439,10 +1440,23 @@ class PaperScheduler:
                 "RETRY_SCHEDULED",
                 run["status"],
                 run["status"],
-                "JOB_LEASE_LOST",
+            "JOB_CANCELLED" if cancellation_requested else "JOB_LEASE_LOST",
                 "SAFE_PRE_ORDER",
                 False,
                 "SAFE_RETRY_SAME_RUN",
+                lease_snapshot=lease_snapshot,
+            )
+        elif cancellation_requested:
+            self._finish_run(
+                session,
+                deployment,
+                run,
+                job,
+                "CANCELLED",
+                "JOB_CANCELLED",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
                 lease_snapshot=lease_snapshot,
             )
         else:

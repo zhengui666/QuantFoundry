@@ -18,8 +18,8 @@ require_tag_commit() {
     printf '%s\n' 'release evidence requires a clean repository worktree.' >&2
     exit 1
   }
-  if git -C "$repo_root" ls-files -v | awk '$1 ~ /^[a-z]/ { found = 1 } END { exit found ? 0 : 1 }'; then
-    printf '%s\n' 'release evidence rejects assume-unchanged tracked inputs.' >&2
+  if git -C "$repo_root" ls-files -v | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf '%s\n' 'release evidence rejects assume-unchanged or skip-worktree tracked inputs.' >&2
     exit 1
   fi
 }
@@ -50,7 +50,10 @@ collect_inputs() {
 
 collect_oci_sbom() {
   local image="$1" digest="$2" output_file="$3"
-  [[ "$image" == ghcr.io/* ]]
+  [[ "$image" =~ ^ghcr\.io/[a-z0-9]+([._-][a-z0-9]+)*(\/[a-z0-9]+([._-][a-z0-9]+)*)*$ ]] || {
+    printf '%s\n' 'IMAGE must be a valid GHCR repository name.' >&2
+    exit 1
+  }
   [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
   [[ -n "${GHCR_TOKEN:-}" ]] || {
     printf '%s\n' 'GHCR_TOKEN is required to fetch the published image SBOM.' >&2
@@ -59,14 +62,16 @@ collect_oci_sbom() {
   mkdir -p "$(dirname "$output_file")"
   local repository="${image#ghcr.io/}"
   local token
-  token="$(curl --fail --silent --show-error --user "x-access-token:${GHCR_TOKEN}" \
-    "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+  token="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 60 \
+    --user "x-access-token:${GHCR_TOKEN}" --get "https://ghcr.io/token" \
+    --data-urlencode 'service=ghcr.io' --data-urlencode "scope=repository:${repository}:pull" \
     | python3 -c 'import json,sys; value=json.load(sys.stdin).get("token"); assert isinstance(value,str) and value; print(value)')"
   GHCR_BEARER_TOKEN="$token" python3 - "https://ghcr.io" "$repository" "$digest" "$output_file" <<'PY'
 import hashlib
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -216,12 +221,44 @@ manifest() {
     printf '%s\n' 'GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT are required; release evidence cannot invent them.' >&2
     exit 1
   }
+  command -v gh >/dev/null || {
+    printf '%s\n' 'gh is required to verify image attestations directly.' >&2
+    exit 127
+  }
+  [[ -n "${GITHUB_REPOSITORY:-}" ]] || {
+    printf '%s\n' 'GITHUB_REPOSITORY is required to verify image attestations directly.' >&2
+    exit 1
+  }
+  local verification_dir
+  verification_dir="$(mktemp -d "${TMPDIR:-/tmp}/qf-release-attestations.XXXXXX")"
+  for image_label in backend frontend; do
+    local image digest
+    if [[ "$image_label" == backend ]]; then
+      image="$backend_image"
+      digest="$backend_digest"
+    else
+      image="$frontend_image"
+      digest="$frontend_digest"
+    fi
+    gh attestation verify "oci://$image@$digest" --repo "$GITHUB_REPOSITORY" --format json > "$verification_dir/$image_label.json"
+    for evidence_kind in attestations provenance signature-verification; do
+      mkdir -p "$output_dir/$evidence_kind"
+      [[ ! -L "$output_dir/$evidence_kind" ]] || {
+        rm -rf "$verification_dir"
+        printf 'symlink evidence directory is not allowed: %s\n' "$output_dir/$evidence_kind" >&2
+        exit 1
+      }
+      cp "$verification_dir/$image_label.json" "$output_dir/$evidence_kind/$image_label.json"
+    done
+  done
+  rm -rf "$verification_dir"
   python3 - "$repo_root" "$output_dir" "$tag" "$commit" "$backend_image" "$backend_digest" "$frontend_image" "$frontend_digest" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
 import base64
 import hashlib
 import json
 import os
 import pathlib
+import subprocess
 import sys
 
 root = pathlib.Path(sys.argv[1])
@@ -233,6 +270,35 @@ if not repository:
 commit_file = output / "commit.txt"
 if not commit_file.is_file() or commit_file.read_text(encoding="utf-8").strip() != commit:
     raise SystemExit("release evidence commit.txt is not bound to the requested commit")
+
+for source_name, canonical_name in (
+    ("p0-blockers.yaml", "docs/治理/p0-blockers.yaml"),
+    ("release-known-issues.json", "docs/治理/release-known-issues.json"),
+):
+    if (output / source_name).read_bytes() != (root / canonical_name).read_bytes():
+        raise SystemExit(f"{source_name} is not the canonical snapshot for the release commit")
+env = os.environ.copy()
+env["PYTHONPATH"] = f"{root / 'backend/src'}:{root / 'backend'}"
+heads = subprocess.run(
+    ["uv", "--directory", str(root / "backend"), "run", "--frozen", "alembic", "heads"],
+    check=True,
+    capture_output=True,
+    text=True,
+    env=env,
+).stdout
+if (output / "alembic-heads.txt").read_text(encoding="utf-8") != heads:
+    raise SystemExit("alembic-heads.txt is not freshly derived from the release commit")
+migrations = subprocess.run(
+    ["git", "-C", str(root), "ls-files", "backend/alembic/versions/*.py"],
+    check=True,
+    capture_output=True,
+    text=True,
+    shell=False,
+).stdout
+# Git's pathspec is intentionally passed as a separate argument; this exact
+# command is also used by collect_inputs().
+if (output / "alembic-migrations.txt").read_text(encoding="utf-8") != migrations:
+    raise SystemExit("alembic-migrations.txt is not freshly derived from the release commit")
 
 
 def statements(value):
@@ -468,7 +534,8 @@ if not manifest_path.is_file():
 if (output / "release-assets").exists() or (output / "SHA256SUMS").exists():
     raise SystemExit("release asset staging directory and SHA256SUMS must not pre-exist")
 try:
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_payload = manifest_path.read_bytes()
+    manifest = json.loads(manifest_payload)
 except (OSError, json.JSONDecodeError) as error:
     raise SystemExit(f"invalid release manifest: {error}") from error
 
@@ -576,7 +643,7 @@ for item in inventory:
     declared_digest = declared_hashes.get(item["source"])
     if declared_digest and hashlib.sha256(source.read_bytes()).hexdigest() != declared_digest:
         raise SystemExit(f"release asset source changed after manifest creation: {item['source']}")
-    payload = source.read_bytes()
+    payload = manifest_payload if item["source"] == "release-manifest.json" else source.read_bytes()
     if declared_digest and hashlib.sha256(payload).hexdigest() != declared_digest:
         raise SystemExit(f"release asset source changed during packaging: {item['source']}")
     destination = staging / item["name"]

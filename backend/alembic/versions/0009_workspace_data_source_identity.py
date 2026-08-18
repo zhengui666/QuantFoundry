@@ -27,6 +27,10 @@ def upgrade() -> None:
             )
         else:
             bind.exec_driver_sql("BEGIN IMMEDIATE")
+    else:
+        raise RuntimeError(
+            "0009 workspace data-source identity supports PostgreSQL and SQLite only"
+        )
     null_count = bind.execute(
         sa.text("SELECT COUNT(*) FROM data_sources WHERE workspace_id IS NULL")
     ).scalar_one()

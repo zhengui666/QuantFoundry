@@ -121,6 +121,32 @@ def _type_spec(type_: Any) -> dict[str, Any]:
     return result
 
 
+def _canonical_sql(value: str, column: Any) -> str:
+    rendered = re.sub(r"\s+", " ", value).strip()
+    while rendered.startswith("(") and rendered.endswith(")"):
+        rendered = rendered[1:-1].strip()
+    type_name = _type_spec(column.type)["name"]
+    casts = {
+        "varchar": r"character varying|varchar|text",
+        "char": r"character|bpchar|char",
+        "integer": r"integer|int4",
+        "bigint": r"bigint|int8",
+        "smallint": r"smallint|int2",
+        "numeric": r"numeric",
+        "boolean": r"boolean|bool",
+        "date": r"date",
+        "timestamptz": r"timestamp\s+with\s+time\s+zone|timestamptz",
+    }.get(type_name)
+    if casts:
+        rendered = re.sub(
+            rf"::(?:pg_catalog\.)?(?:{casts})(?=\s|\)|$)",
+            "",
+            rendered,
+            flags=re.IGNORECASE,
+        )
+    return rendered
+
+
 def _server_default_spec(column: Any) -> str | None:
     if getattr(column, "computed", None) is not None:
         return None
@@ -141,7 +167,11 @@ def _server_default_spec(column: Any) -> str | None:
             sequence = match.group("sequence").split(".")[-1].replace('"', "")
             if sequence == f"{column.table.name}_{column.name}_seq":
                 return None
-    return str(server_default_arg) if server_default_arg is not None else None
+    return (
+        _canonical_sql(str(server_default_arg), column)
+        if server_default_arg is not None
+        else None
+    )
 
 
 def _generation_spec(column: Any) -> dict[str, Any] | None:
@@ -150,7 +180,7 @@ def _generation_spec(column: Any) -> dict[str, Any] | None:
         return None
     return {
         "sqltext": str(computed.sqltext),
-        "persisted": getattr(computed, "persisted", None),
+        "persisted": True if getattr(computed, "persisted", None) is None else computed.persisted,
     }
 
 
@@ -158,14 +188,26 @@ def _identity_spec(column: Any) -> dict[str, Any] | None:
     identity = getattr(column, "identity", None)
     if identity is None:
         return None
+    type_name = _type_spec(column.type)["name"]
+    limits = {
+        "smallint": (-32768, 32767),
+        "integer": (-2147483648, 2147483647),
+        "bigint": (-9223372036854775808, 9223372036854775807),
+    }.get(type_name)
+    increment = getattr(identity, "increment", None) or 1
+    minimum, maximum = limits or (None, None)
     return {
-        "always": getattr(identity, "always", None),
-        "start": getattr(identity, "start", None),
-        "increment": getattr(identity, "increment", None),
-        "minvalue": getattr(identity, "minvalue", None),
-        "maxvalue": getattr(identity, "maxvalue", None),
-        "cycle": getattr(identity, "cycle", None),
-        "cache": getattr(identity, "cache", None),
+        "always": bool(getattr(identity, "always", False)),
+        "start": getattr(identity, "start", None) or 1,
+        "increment": increment,
+        "minvalue": getattr(identity, "minvalue", None)
+        if getattr(identity, "minvalue", None) is not None
+        else (minimum if increment < 0 else 1),
+        "maxvalue": getattr(identity, "maxvalue", None)
+        if getattr(identity, "maxvalue", None) is not None
+        else (maximum if increment > 0 else -1),
+        "cycle": bool(getattr(identity, "cycle", False)),
+        "cache": getattr(identity, "cache", None) or 1,
     }
 
 

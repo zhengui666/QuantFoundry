@@ -101,7 +101,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
       exactPath,
       initialExactReads,
     );
-    exactReads.forEach((path) => witness.observeRest(path));
+    exactReads.forEach((path, index) => witness.observeRest(path, index + 1));
     const probe = await startCanonicalSseProbe(
       new URL('/api/v1/events/stream', applicationUrl!),
       await sessionCookie(request),
@@ -139,9 +139,12 @@ test.describe('platform-driven full-stack Golden Flow', () => {
       ({ event }) =>
         event.event_type === 'research.updated' && event.object_id === created.research_id,
     );
-    witness.observeEvent(frame);
+    const readsAtEvent = exactReads.length;
+    witness.observeEvent(frame, undefined, readsAtEvent);
     await refetchResponse;
-    exactReads.slice(witness.baseline).forEach((path) => witness.observeRest(path));
+    exactReads
+      .slice(readsAtEvent)
+      .forEach((path, index) => witness.observeRest(path, readsAtEvent + index + 1));
     witness.assertReconciled();
     expect(exactReads.length).toBeGreaterThanOrEqual(initialExactReads + 1);
     expect(witness.snapshot().restReadsAfterBaseline).toBeGreaterThanOrEqual(1);

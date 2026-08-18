@@ -444,6 +444,11 @@ def _validate_evidence(
         and evidence["from_state"] == expected_from_state
         and evidence["to_state"] == baseline["scheduler_status"]
         and effective == initialization == evidence_watermark == baseline_watermark
+        and baseline.get("last_eligible_trading_date") is None
+        and _utc_timestamp(bind, baseline["created_at"], "baseline created_at")
+        == initialization
+        and _utc_timestamp(bind, baseline["updated_at"], "baseline updated_at")
+        == initialization
         and (
             (evidence["to_state"] == "ACTIVE" and evidence_suppressed is None)
             or (
@@ -1014,10 +1019,16 @@ def downgrade() -> None:
         evidence = summary.get(_EVIDENCE_KEY) if summary else None
         if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
             raise RuntimeError("0017 downgrade found ambiguous scheduler evidence")
+        try:
+            evidence_workspace = _uuid_column_value(
+                deployments, "workspace_id", uuid.UUID(str(evidence["workspace_id"]))
+            )
+        except (ValueError, TypeError, AttributeError) as error:
+            raise RuntimeError("0017 downgrade found invalid workspace evidence") from error
         deployment_rows = (
             bind.execute(
                 select(deployments).where(
-                    deployments.c.workspace_id == evidence["workspace_id"],
+                    deployments.c.workspace_id == evidence_workspace,
                     deployments.c.paper_id == evidence["paper_id"],
                 )
             )
@@ -1039,7 +1050,12 @@ def downgrade() -> None:
         event_rows = (
             bind.execute(
                 select(domain_events).where(
-                    domain_events.c.workspace_id == evidence["workspace_id"],
+                    domain_events.c.workspace_id
+                    == _uuid_column_value(
+                        domain_events,
+                        "workspace_id",
+                        uuid.UUID(str(evidence["workspace_id"])),
+                    ),
                     domain_events.c.event_id == evidence["state_transition_id"],
                 )
             )
@@ -1094,9 +1110,12 @@ def downgrade() -> None:
 
     workspaces = {str(evidence["workspace_id"]) for _, evidence, _ in owned}
     for workspace_id in workspaces:
+        typed_audit_workspace = _uuid_column_value(
+            audit_events, "workspace_id", uuid.UUID(workspace_id)
+        )
         audit_rows = bind.execute(
             select(audit_events.c.sequence)
-            .where(audit_events.c.workspace_id == workspace_id)
+            .where(audit_events.c.workspace_id == typed_audit_workspace)
             .order_by(audit_events.c.sequence.desc())
         ).scalars().all()
         owned_audit_sequences = {
@@ -1106,9 +1125,12 @@ def downgrade() -> None:
         }
         if not audit_rows or set(audit_rows[: len(owned_audit_sequences)]) != owned_audit_sequences:
             raise RuntimeError("0017 downgrade requires migration audit events to be the tail")
+        typed_event_workspace = _uuid_column_value(
+            domain_events, "workspace_id", uuid.UUID(workspace_id)
+        )
         event_rows = bind.execute(
             select(domain_events.c.sequence)
-            .where(domain_events.c.workspace_id == workspace_id)
+            .where(domain_events.c.workspace_id == typed_event_workspace)
             .order_by(domain_events.c.sequence.desc())
         ).scalars().all()
         owned_event_sequences = {
@@ -1119,6 +1141,7 @@ def downgrade() -> None:
         if not event_rows or set(event_rows[: len(owned_event_sequences)]) != owned_event_sequences:
             raise RuntimeError("0017 downgrade requires migration domain events to be the tail")
     _drop_downgrade_guards(bind)
+    completed = False
     try:
         for audit, evidence, deployment in owned:
             bind.execute(
@@ -1195,8 +1218,10 @@ def downgrade() -> None:
                     ),
                 )
             )
+        completed = True
     finally:
-        _restore_downgrade_guards(bind)
+        if completed:
+            _restore_downgrade_guards(bind)
 
 
 def _drop_downgrade_guards(bind: Connection) -> None:

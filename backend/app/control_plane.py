@@ -790,15 +790,15 @@ def _upgrade_control_columns(connection=None) -> None:
     """Add only forward-compatible nullable columns to pre-D2 local control DBs."""
     additions = {
         "general_access_keys": {
-            "per_key_salt": "BLOB",
-            "pepper_key_id": "VARCHAR(128)",
+            "per_key_salt": LargeBinary(),
+            "pepper_key_id": String(128),
         },
         "configuration_catalog": {
-            "default_for_first_materialization": "JSON",
-            "deprecated_at": "DATETIME",
+            "default_for_first_materialization": JSON(),
+            "deprecated_at": DateTime(timezone=True),
         },
         "domain_database_connection_revisions": {
-            "secret_key_id": "VARCHAR(128)",
+            "secret_key_id": String(128),
         },
     }
     if connection is None:
@@ -807,8 +807,9 @@ def _upgrade_control_columns(connection=None) -> None:
         return
     for table, columns in additions.items():
         present = {column["name"] for column in inspect(connection).get_columns(table)}
-        for name, sql_type in columns.items():
+        for name, column_type in columns.items():
             if name not in present:
+                sql_type = column_type.compile(dialect=connection.dialect)
                 connection.execute(
                     text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
                 )
@@ -821,6 +822,23 @@ def init_control_db(connection=None) -> None:
 
 def _init_control_db(connection=None) -> None:
     bind = connection or CONTROL_ENGINE
+    if bind.dialect.name == "postgresql":
+        if connection is None:
+            with CONTROL_ENGINE.begin() as locked_connection:
+                locked_connection.execute(
+                    text(
+                        "SELECT pg_advisory_xact_lock("
+                        "hashtext('quantfoundry.control.init'))"
+                    )
+                )
+                _init_control_db(locked_connection)
+            return
+        bind.execute(
+            text(
+                "SELECT pg_advisory_xact_lock("
+                "hashtext('quantfoundry.control.init'))"
+            )
+        )
     try:
         existing_tables = set(inspect(bind).get_table_names())
     except SQLAlchemyError as error:
@@ -842,13 +860,6 @@ def _init_control_db(connection=None) -> None:
         else Session(bind=connection, expire_on_commit=False)
     )
     with session_context as session:
-        if session.get_bind().dialect.name == "postgresql":
-            session.execute(
-                text(
-                    "SELECT pg_advisory_xact_lock("
-                    "hashtext('quantfoundry.control.init'))"
-                )
-            )
         now = _now()
         state = session.get(BootstrapState, "BOOTSTRAP-DEFAULT")
         if state is None:
@@ -1777,23 +1788,38 @@ def _probe_database(
                     "SELECT current_setting('server_version_num')"
                 ).scalar_one()
             )
+            supported_version = version // 10000 == 18
             checks.append(
                 DatabaseConnectionCheck(
                     name="POSTGRES_VERSION",
-                    status="PASS",
+                    status="PASS" if supported_version else "FAIL",
                     detail=f"major {version // 10000}",
                 )
             )
-            privilege = bool(
+            schema_usage = bool(
                 connection.exec_driver_sql(
                     "SELECT has_schema_privilege(current_user, current_schema(), 'USAGE')"
                 ).scalar_one()
             )
+            temp_table = f"qf_probe_{secrets.token_hex(8)}"
+            write_privilege = False
+            try:
+                with connection.begin_nested():
+                    connection.exec_driver_sql(
+                        f"CREATE TEMP TABLE {temp_table} (probe_id integer) ON COMMIT DROP"
+                    )
+                    connection.exec_driver_sql(
+                        f"INSERT INTO {temp_table} (probe_id) VALUES (1)"
+                    )
+                    write_privilege = True
+            except SQLAlchemyError:
+                write_privilege = False
+            privilege = schema_usage and write_privilege
             checks.append(
                 DatabaseConnectionCheck(
                     name="PRIVILEGE",
                     status="PASS" if privilege else "FAIL",
-                    detail="schema usage",
+                    detail="schema usage and rollback-only temp write",
                 )
             )
             alembic = connection.exec_driver_sql(
@@ -1827,11 +1853,7 @@ def _probe_database(
                     ),
                 )
             )
-            failure = (
-                None
-                if privilege and alembic and migration_compatible
-                else "DATABASE_SCHEMA_INCOMPATIBLE"
-            )
+            failure = None if supported_version and privilege and alembic and migration_compatible else "DATABASE_SCHEMA_INCOMPATIBLE"
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         checks = [
             DatabaseConnectionCheck(
@@ -3054,10 +3076,14 @@ def build_router() -> APIRouter:
                 getattr(actor, "workspace_id", None) if actor is not None else None
             )
 
-            # Run the required compatibility materialization before the wrapper
-            # records the idempotent operation as completed. A failure leaves the
-            # operation retryable instead of caching a false success.
-            _sync_domain_compat_setup(workspace_id)
+            post_commit = _IDEMPOTENCY_POST_COMMIT.get()
+            if post_commit is None:
+                _sync_domain_compat_setup(workspace_id)
+            else:
+                # Control DB activation is the durable decision. Materialize the
+                # legacy domain projection only after that transaction commits;
+                # the PENDING consumer state makes a failed projection retryable.
+                post_commit.append(lambda: _sync_domain_compat_setup(workspace_id))
         return result
 
     @router.post("/configuration/rollback", operation_id="rollbackConfiguration")
@@ -3660,6 +3686,7 @@ def build_router() -> APIRouter:
                     .values(
                         active_database_connection_revision=lkg.revision,
                         last_known_good_database_connection_revision=lkg.revision,
+                        readiness_state="READY",
                         updated_at=now,
                     )
                 )

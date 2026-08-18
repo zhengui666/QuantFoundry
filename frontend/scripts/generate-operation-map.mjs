@@ -31,7 +31,11 @@ const parameter = (entry) => {
   return entry;
 };
 const schema = (entry) => {
-  if (entry?.$ref) return resolveReference(entry.$ref, '#/components/schemas');
+  if (entry?.$ref) {
+    const resolved = resolveReference(entry.$ref, '#/components/schemas');
+    const siblings = Object.fromEntries(Object.entries(entry).filter(([key]) => key !== '$ref'));
+    return Object.keys(siblings).length ? { ...resolved, ...siblings } : resolved;
+  }
   return entry;
 };
 const fixedConst = (entry, seen = new Set()) => {

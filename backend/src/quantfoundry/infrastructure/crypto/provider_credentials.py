@@ -23,6 +23,17 @@ class CredentialConfigurationError(RuntimeError):
     pass
 
 
+def _reject_duplicate_key_ids(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for item_id, value in pairs:
+        if item_id in values:
+            raise CredentialConfigurationError(
+                f"provider credential keyring contains duplicate key id: {item_id}"
+            )
+        values[item_id] = value
+    return values
+
+
 def _decode_key(key_id: str, encoded: str) -> bytes:
     try:
         if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", encoded):
@@ -50,7 +61,7 @@ def _credential_keys() -> tuple[str, dict[str, bytes]]:
         )
     if keyring:
         try:
-            values = json.loads(keyring)
+            values = json.loads(keyring, object_pairs_hook=_reject_duplicate_key_ids)
         except (TypeError, json.JSONDecodeError) as error:
             raise CredentialConfigurationError(
                 "provider credential keyring is invalid"

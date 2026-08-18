@@ -81,7 +81,7 @@ def _resync_wire(
         }
     )
     return (
-        f"id: {sequence}\n"
+        f"id: {max(0, sequence - 1)}\n"
         "event: system.resync_required\n"
         f"data: {json.dumps(value, separators=(',', ':'))}\n\n"
     )
@@ -134,6 +134,12 @@ async def durable_event_stream(
                 )
                 has_cursor = last_event_id is not None or cursor_value > 0
                 if has_cursor:
+                    if (
+                        watermark_model is None
+                        and earliest is not None
+                        and cursor_value + 1 < earliest.sequence
+                    ):
+                        return [], int(earliest.sequence)
                     if watermark is None and cursor_value > 0:
                         return [], 1
                     if watermark is not None and cursor_value > watermark:

@@ -177,6 +177,15 @@ require_trusted_orchestrator() {
     write_result trusted-orchestrator 'trusted orchestrator commit changed' 2 'trusted orchestrator checkout was modified'
     exit 2
   }
+  local candidate_worktree trusted_worktree candidate_common trusted_common
+  candidate_worktree="$(git -C "$repo_root" rev-parse --show-toplevel)"
+  trusted_worktree="$(git -C "$orchestrator_root" rev-parse --show-toplevel)"
+  candidate_common="$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)"
+  trusted_common="$(git -C "$orchestrator_root" rev-parse --path-format=absolute --git-common-dir)"
+  [[ "$candidate_worktree" != "$trusted_worktree" && "$candidate_common" != "$trusted_common" ]] || {
+    write_result trusted-orchestrator 'trusted orchestrator must be an independent checkout' 2 'candidate and trusted code share a worktree or Git database'
+    exit 2
+  }
   git -C "$orchestrator_root" diff --quiet || {
     write_result trusted-orchestrator 'trusted orchestrator worktree is clean' 2 'trusted orchestrator checkout was modified'
     exit 2
@@ -185,6 +194,10 @@ require_trusted_orchestrator() {
     write_result trusted-orchestrator 'trusted orchestrator has no untracked files' 2 'trusted orchestrator checkout was modified'
     exit 2
   }
+  git -C "$orchestrator_root" ls-files -v | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }' && {
+    write_result trusted-orchestrator 'trusted orchestrator has no hidden tracked changes' 2 'trusted orchestrator checkout has skip-worktree or assume-unchanged files'
+    exit 2
+  } || true
 }
 
 require_command() {
@@ -277,6 +290,8 @@ run_nightly() {
 }
 
 run_agent_change() {
+  local review_token="${GITHUB_TOKEN:-}" review_gh_token="${GH_TOKEN:-}"
+  unset GITHUB_TOKEN GH_TOKEN
   require_ci_environment
   require_common_tooling
   run_step governance make governance
@@ -289,6 +304,11 @@ run_agent_change() {
     run_step independent-review-locator "$orchestrator_root/scripts/ci/fetch-independent-review-report.sh" "$commit" "$review_locator"
   fi
   require_trusted_orchestrator
+  [[ -n "$review_token" && -n "$review_gh_token" ]] || {
+    write_result independent-review-report 'GITHUB_TOKEN and GH_TOKEN are required for independent review verification' 2 'missing independent review verification credentials'
+    exit 2
+  }
+  export GITHUB_TOKEN="$review_token" GH_TOKEN="$review_gh_token"
   run_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
 }
 
@@ -332,6 +352,8 @@ run_rc() {
   run_step backup-restore bash -c 'cd backend && uv run --frozen pytest -q tests/test_event_migration_and_bootstrap.py -k "restore or roundtrip"'
   run_step release-input-snapshot scripts/release-evidence.sh collect-inputs "$report_dir"
 }
+
+require_trusted_orchestrator
 
 case "$gate" in
   pr-fast) run_pr_fast ;;

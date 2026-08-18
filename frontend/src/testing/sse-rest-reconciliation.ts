@@ -7,6 +7,7 @@ export class SseRestReconciliationWitness {
   readonly baseline: number;
   private matchingEvent: DecodedSseFrame | undefined;
   private matchingRestReads = 0;
+  private eventReadBoundary: number;
 
   constructor(
     private readonly resourceType: string,
@@ -15,22 +16,41 @@ export class SseRestReconciliationWitness {
     initialRestReads: number,
   ) {
     this.baseline = initialRestReads;
+    this.eventReadBoundary = initialRestReads;
   }
 
-  observeEvent(frame: DecodedSseFrame, planner: QueryPlanner = queryKeysForEvent) {
+  observeEvent(
+    frame: DecodedSseFrame,
+    planner: QueryPlanner = queryKeysForEvent,
+    restReadsAtEvent = this.baseline,
+  ) {
+    if (!Number.isInteger(restReadsAtEvent) || restReadsAtEvent < this.baseline)
+      throw new Error('SSE reconciliation event boundary must follow the frozen REST baseline.');
     const mapped = planner(frame.event).some(
       (key) => key[1] === this.resourceType && key[2] === this.resourceId,
     );
     if (mapped) {
       this.matchingEvent = frame;
+      this.eventReadBoundary = restReadsAtEvent;
+      this.matchingRestReads = 0;
+    } else {
+      this.matchingEvent = undefined;
       this.matchingRestReads = 0;
     }
   }
 
-  observeRest(path: string) {
+  observeRest(path: string, requestOrdinal: number) {
     // Initial loader/StrictMode reads are part of the frozen baseline. Only a
-    // generated event-to-query match can arm a later exact REST observation.
-    if (this.matchingEvent && path === this.exactRestPath) this.matchingRestReads += 1;
+    // generated event-to-query match can arm a later exact REST observation. The
+    // ordinal comes from the browser request listener, so reads already in flight
+    // when the SSE frame arrived cannot be misclassified as causal refetches.
+    if (
+      this.matchingEvent &&
+      path === this.exactRestPath &&
+      Number.isInteger(requestOrdinal) &&
+      requestOrdinal > this.eventReadBoundary
+    )
+      this.matchingRestReads += 1;
   }
 
   snapshot() {

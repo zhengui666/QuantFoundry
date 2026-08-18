@@ -15,7 +15,7 @@ from typing import Any, cast
 
 from fastapi.responses import JSONResponse
 from sqlalchemy import delete, event, func, select, text, update
-from sqlalchemy.engine import CursorResult
+from sqlalchemy.engine import Connection, CursorResult, Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,12 @@ RETENTION_DAYS = 7
 def _reject_operation_commit(session: Session) -> None:
     if session.info.get("qf_idempotency_operation_active"):
         raise RuntimeError("idempotency operation must not commit its session")
+
+
+@event.listens_for(Engine, "commit")
+def _reject_operation_connection_commit(connection: Connection) -> None:
+    if connection.info.get("qf_idempotency_operation_active"):
+        raise RuntimeError("idempotency operation must not commit its connection")
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -77,28 +83,28 @@ def _json_response(status: int, path: str, payload: dict[str, Any]) -> JSONRespo
     )
 
 
-def _request_hashes(request: dict[str, Any]) -> set[str]:
+def _request_hashes(request: dict[str, Any]) -> list[str]:
     candidates = request.get("__qf_fingerprint_candidates__")
     if not isinstance(candidates, list) or not candidates or not isinstance(
         request.get("credential_fingerprint"), str
     ):
-        return {
+        return [
             hashlib.sha256(
                 json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest()
-        }
+        ]
     base = {key: value for key, value in request.items() if key != "__qf_fingerprint_candidates__"}
-    hashes: set[str] = set()
+    hashes: list[str] = []
     for candidate in candidates:
         if not isinstance(candidate, str):
             continue
         value = dict(base)
         value["credential_fingerprint"] = candidate
-        hashes.add(
-            hashlib.sha256(
-                json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-            ).hexdigest()
-        )
+        digest = hashlib.sha256(
+            json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if digest not in hashes:
+            hashes.append(digest)
     return hashes
 
 
@@ -162,12 +168,17 @@ def _execute(
     request_hashes = _request_hashes(request)
     if not request_hashes:
         raise fail(422, "INVALID_REQUEST", "request fingerprint is invalid")
-    request_hash = next(iter(request_hashes))
+    request_hash = request_hashes[0]
     method = method.upper()
     lease_owner_id = uuid.uuid4().hex
     try:
+        dialect = session.get_bind().dialect.name
+        if dialect == "sqlite":
+            # ponytail: one SQLite writer lock is enough; split-key locking needs
+            # a database that supports row/advisory locks.
+            session.execute(text("BEGIN IMMEDIATE"))
         now = _database_now(session)
-        if session.get_bind().dialect.name == "postgresql":
+        if dialect == "postgresql":
             coordination_key = "\x1f".join((actor_id, workspace_id, method, path, key))
             if not session.scalar(
                 text("SELECT pg_try_advisory_xact_lock(hashtext(:key))"),
@@ -263,6 +274,8 @@ def _execute(
 
         session.info["qf_idempotency_operation_active"] = True
         root_transaction = session.get_transaction()
+        operation_connection = session.connection()
+        operation_connection.info["qf_idempotency_operation_active"] = True
         original_rollback = session.rollback
         original_close = session.close
 
@@ -277,6 +290,7 @@ def _execute(
             session.rollback = original_rollback  # type: ignore[method-assign]
             session.close = original_close  # type: ignore[method-assign]
             session.info.pop("qf_idempotency_operation_active", None)
+            operation_connection.info.pop("qf_idempotency_operation_active", None)
         if session.get_transaction() is not root_transaction:
             raise RuntimeError("idempotency operation replaced its root transaction")
         completed_at = _database_now(session)

@@ -10,7 +10,7 @@ import re
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -77,6 +77,15 @@ def _parse_timestamp(value: Any, field: str) -> datetime:
     if parsed.tzinfo is None:
         raise EngineInputError(f"{field} must include an explicit timezone")
     return parsed.astimezone(UTC)
+
+
+def _parse_date(value: Any, field: str) -> date:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise EngineInputError(f"invalid {field}")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise EngineInputError(f"invalid {field}: {value}") from error
 
 
 def _parse_bool(value: Any, field: str) -> bool:
@@ -460,16 +469,22 @@ def holdout_policy_result(
     metrics: dict[str, Any], policy: ValidationPolicy
 ) -> tuple[str, list[str]]:
     try:
-        observations = int(metrics["observations"])
+        observations_value = metrics["observations"]
+        if not isinstance(observations_value, int) or isinstance(
+            observations_value, bool
+        ):
+            raise TypeError("observations must be an integer")
+        observations = observations_value
         total_return = float(metrics["total_return"])
         sharpe = float(metrics["sharpe"])
         maximum_drawdown = float(metrics["maximum_drawdown"])
     except (KeyError, TypeError, ValueError, OverflowError) as error:
         raise EngineInputError("holdout metrics are invalid") from error
-    if not all(
-        math.isfinite(value) for value in (total_return, sharpe, maximum_drawdown)
+    if (
+        not all(math.isfinite(value) for value in (total_return, sharpe, maximum_drawdown))
+        or not -1.0 <= maximum_drawdown <= 0.0
     ):
-        raise EngineInputError("holdout metrics must be finite")
+        raise EngineInputError("holdout metrics are invalid")
     checks = {
         "MIN_OBSERVATIONS": observations >= policy.holdout_min_observations,
         "MIN_TOTAL_RETURN": total_return >= policy.holdout_min_total_return,
@@ -515,10 +530,14 @@ def snapshot_rows(
     as_of_time: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     as_of = _parse_timestamp(as_of_time, "as_of_time")
+    start_date = _parse_date(start, "start")
+    end_date = _parse_date(end, "end")
+    if start_date > end_date:
+        raise EngineInputError("snapshot start must not follow end")
     selected = [
         row
         for row in bundle.rows
-        if start <= row["date"] <= end
+        if start_date <= _parse_date(row["date"], "date") <= end_date
         and _parse_timestamp(row["available_at"], "available_at") <= as_of
     ]
     public = [row for row in selected if row["partition"] != "HOLDOUT"]
@@ -533,10 +552,14 @@ def snapshot_rows(
 def date_range_rows(
     rows: list[dict[str, Any]], start: str, end: str, partition: str | None = None
 ) -> list[dict[str, Any]]:
+    start_date = _parse_date(start, "start")
+    end_date = _parse_date(end, "end")
+    if start_date > end_date:
+        raise EngineInputError("range start must not follow end")
     selected = [
         row
         for row in rows
-        if start <= row["date"] <= end
+        if start_date <= _parse_date(row["date"], "date") <= end_date
         and (partition is None or row["partition"] == partition)
     ]
     if not selected:
@@ -1233,33 +1256,38 @@ def validation_checks(
     validation_period = periods.get("validation_period")
     holdout_period = periods.get("holdout_period")
     period_values = [research_period, validation_period, holdout_period]
-    bounds_ok = all(
-        isinstance(period, dict)
-        and isinstance(period.get("start"), str)
-        and isinstance(period.get("end"), str)
-        and period["start"] <= period["end"]
-        for period in period_values
+    parsed_periods: list[tuple[date, date]] | None = None
+    try:
+        parsed_periods = [
+            (
+                _parse_date(period["start"], "period.start"),
+                _parse_date(period["end"], "period.end"),
+            )
+            for period in period_values
+            if isinstance(period, dict)
+        ]
+        if len(parsed_periods) != 3:
+            parsed_periods = None
+    except (KeyError, EngineInputError, TypeError):
+        parsed_periods = None
+    bounds_ok = parsed_periods is not None and all(
+        start <= end for start, end in parsed_periods
     )
     split_ok = (
         bounds_ok
-        and isinstance(research_period, dict)
-        and isinstance(validation_period, dict)
-        and isinstance(holdout_period, dict)
-        and research_period["end"]
-        < validation_period["start"]
-        <= validation_period["end"]
-        < holdout_period["start"]
+        and parsed_periods is not None
+        and parsed_periods[0][1] < parsed_periods[1][0]
+        <= parsed_periods[1][1]
+        < parsed_periods[2][0]
     )
-    row_bounds_ok = (
-        isinstance(validation_period, dict)
-        and isinstance(validation_period.get("start"), str)
-        and isinstance(validation_period.get("end"), str)
-        and all(
-            isinstance(row.get("date"), str)
-            and validation_period["start"] <= row["date"] <= validation_period["end"]
+    try:
+        validation_start, validation_end = parsed_periods[1]
+        row_bounds_ok = all(
+            validation_start <= _parse_date(row.get("date"), "row.date") <= validation_end
             for row in rows
         )
-    )
+    except (TypeError, IndexError, EngineInputError):
+        row_bounds_ok = False
     split_ok = split_ok and row_bounds_ok
     leakage_ok = all(row["partition"] == "VALIDATION" for row in rows)
     try:

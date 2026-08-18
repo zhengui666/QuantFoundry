@@ -133,13 +133,13 @@ triggering_actor = (
 if not isinstance(run_actor, str) or not isinstance(triggering_actor, str):
     raise SystemExit("independent review run has no actor identity")
 commit_payload = gh_json(f"/repos/{repository}/commits/{commit}")
-commit_authors = {
-    item.get("login")
-    for field in ("author", "committer")
-    for item in (commit_payload.get(field),)
-    if isinstance(item, dict) and isinstance(item.get("login"), str)
-}
-if run_actor in commit_authors or triggering_actor in commit_authors:
+commit_authors = set()
+for field in ("author", "committer"):
+    item = commit_payload.get(field)
+    if not isinstance(item, dict) or not isinstance(item.get("login"), str) or not item["login"].strip():
+        raise SystemExit(f"independent review commit {field} identity is unresolved")
+    commit_authors.add(item["login"].casefold())
+if run_actor.casefold() in commit_authors or triggering_actor.casefold() in commit_authors:
     raise SystemExit("independent review actor must be independent from the reviewed commit")
 artifacts = gh_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts").get("artifacts", [])
 artifact = next(
@@ -178,7 +178,10 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         raise SystemExit("independent review artifact report must be a JSON object")
     if report.get("schema_version") != "1.0.0" or report.get("content_type") != content_type:
         raise SystemExit("independent review artifact report schema or content_type is invalid")
-    if report.get("commit") != commit or report.get("github_run_id") != run_id:
+    run_attempt = run.get("run_attempt")
+    if not isinstance(run_attempt, int) or run_attempt < 1:
+        raise SystemExit("independent review run has no valid run_attempt")
+    if report.get("commit") != commit or report.get("github_run_id") != run_id or report.get("github_run_attempt") != run_attempt:
         raise SystemExit("independent review artifact report is not bound to the selected run and commit")
     if report.get("actor") != run_actor or report.get("triggering_actor") != triggering_actor:
         raise SystemExit("independent review artifact report actor identity is not bound to the selected run")
@@ -213,6 +216,7 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         "verifier_role": "Independent Review Agent",
         "result": report["result"],
         "github_run_id": run_id,
+        "github_run_attempt": run_attempt,
         "actor": run_actor,
         "triggering_actor": triggering_actor,
         "artifact_uri": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}",
