@@ -90,6 +90,7 @@ async def _validated_stream(
                 ).strip()
                 if data:
                     _validate_declared_payload(schema, json.loads(data))
+                yield frame + b"\n\n"
         else:
             chunks.append(raw)
     if sse:
@@ -99,6 +100,7 @@ async def _validated_stream(
             ).strip()
             if data:
                 _validate_declared_payload(schema, json.loads(data))
+            yield buffer
     else:
         body = b"".join(chunks)
         if content_type.endswith("+json") or content_type == "application/json":

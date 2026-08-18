@@ -3169,6 +3169,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             experiment is None
             or experiment.workspace_id != job.workspace_id
             or experiment.immutable
+            or experiment.status in {"COMPLETED", "FAILED", "CANCELLED"}
         ):
             return
         detail = json.loads(experiment.detail)
@@ -3338,6 +3339,7 @@ def apply_job_cancellation(session: Session, job: JobRow) -> None:
             experiment is None
             or experiment.workspace_id != job.workspace_id
             or experiment.immutable
+            or experiment.status in {"COMPLETED", "FAILED", "CANCELLED"}
         ):
             return
         detail = json.loads(experiment.detail)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -14,15 +13,11 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as parquet
 from sqlalchemy import event, text
-from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 
 class ArtifactStoreError(RuntimeError):
     pass
-
-
-logger = logging.getLogger(__name__)
 
 
 def _lock_artifact_mutations(session: Session) -> None:
@@ -101,7 +96,7 @@ def _stage_bytes(
 
 
 def publish_staged(session: Session, storage_key: str, expected_sha256: str) -> None:
-    """Validate a stage and defer publication until the DB commit succeeds."""
+    """Validate a stage and publish its DB row in the enclosing transaction."""
 
     root = _root().resolve()
     target = (root / storage_key).resolve()
@@ -201,55 +196,61 @@ def stage_parquet(
     return storage_key, digest, schema_sha256, len(encoded)
 
 
-@event.listens_for(Session, "after_commit")
+@event.listens_for(Session, "before_commit")
 def _finalize_staged_artifacts(session: Session) -> None:
-    stages = session.info.pop("qf_artifact_stages", [])
-    publications = session.info.pop("qf_artifact_publications", set())
-    try:
-        for temporary, target, digest in stages:
-            if target.exists():
-                if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
-                    raise ArtifactStoreError("committed artifact hash mismatch")
-                temporary.unlink(missing_ok=True)
-                continue
-            temporary.replace(target)
-            _fsync_directory(target.parent)
+    stages = session.info.get("qf_artifact_stages", [])
+    publications = session.info.get("qf_artifact_publications", set())
+    if not stages and not publications:
+        return
+    for temporary, target, digest in stages:
+        if target.exists():
             if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
-                raise ArtifactStoreError("committed artifact read-back mismatch")
-        if publications:
-            published_at = datetime.now(UTC).isoformat()
-            def publish(connection: Connection) -> None:
-                for storage_key, digest in publications:
-                    target = (_root().resolve() / storage_key).resolve()
-                    if not target.is_file() or hashlib.sha256(
-                        target.read_bytes()
-                    ).hexdigest() != digest:
-                        raise ArtifactStoreError(
-                            "committed artifact is missing or hash-invalid"
-                        )
-                    connection.execute(
-                        text(
-                            "UPDATE artifacts "
-                            "SET publication_state='PUBLISHED', "
-                            "publication_error=NULL, published_at=:published_at "
-                            "WHERE storage_key=:storage_key AND sha256=:digest "
-                            "AND publication_state='STAGED'"
-                        ),
-                        {
-                            "published_at": published_at,
-                            "storage_key": storage_key,
-                            "digest": digest,
-                        },
-                    )
-            bind = session.get_bind()
-            if isinstance(bind, Connection):
-                with bind.begin():
-                    publish(bind)
-            else:
-                with bind.begin() as connection:
-                    publish(connection)
-    except (ArtifactStoreError, OSError):
-        logger.exception("artifact publication deferred to reconciliation")
+                raise ArtifactStoreError("committed artifact hash mismatch")
+            temporary.unlink(missing_ok=True)
+            continue
+        temporary.replace(target)
+        _fsync_directory(target.parent)
+        if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            raise ArtifactStoreError("committed artifact read-back mismatch")
+    if publications:
+        session.flush()
+        published_at = datetime.now(UTC)
+        for storage_key, digest in publications:
+            target = (_root().resolve() / storage_key).resolve()
+            if not target.is_file() or hashlib.sha256(
+                target.read_bytes()
+            ).hexdigest() != digest:
+                raise ArtifactStoreError("committed artifact is missing or hash-invalid")
+            result = session.execute(
+                text(
+                    "UPDATE artifacts "
+                    "SET publication_state='PUBLISHED', "
+                    "publication_error=NULL, published_at=:published_at "
+                    "WHERE storage_key=:storage_key AND sha256=:digest "
+                    "AND publication_state='STAGED'"
+                ),
+                {
+                    "published_at": published_at,
+                    "storage_key": storage_key,
+                    "digest": digest,
+                },
+            )
+            if result.rowcount != 1:
+                raise ArtifactStoreError("staged artifact metadata is missing")
+        for artifact in session.identity_map.values():
+            if (
+                getattr(artifact, "storage_key", None),
+                getattr(artifact, "sha256", None),
+            ) in publications:
+                artifact.publication_state = "PUBLISHED"
+                artifact.publication_error = None
+                artifact.published_at = published_at
+
+
+@event.listens_for(Session, "after_commit")
+def _clear_staged_artifact_state(session: Session) -> None:
+    session.info.pop("qf_artifact_stages", None)
+    session.info.pop("qf_artifact_publications", None)
 
 
 @event.listens_for(Session, "after_rollback")

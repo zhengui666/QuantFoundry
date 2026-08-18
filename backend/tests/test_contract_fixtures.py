@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from jsonschema import ValidationError
 from sqlalchemy import func
 
 from app.contract_route import CanonicalRoute

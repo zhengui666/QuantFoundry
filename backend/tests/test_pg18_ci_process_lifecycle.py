@@ -83,15 +83,13 @@ while True:
             time.sleep(0.05)
         assert ready_path.is_file()
         ready = json.loads(ready_path.read_text(encoding="utf-8"))
-        assert ready == {
-            "pid": process.pid,
-            "pgid": process.pid,
-            "hup_default": True,
-            "int_not_ignored": True,
-            "quit_default": True,
-            "term_default": True,
-        }
-        process.send_signal(signal.SIGINT)
+        assert ready["pid"] != process.pid
+        assert ready["pgid"] == process.pid
+        assert ready["hup_default"] is True
+        assert ready["int_not_ignored"] is True
+        assert ready["quit_default"] is True
+        assert ready["term_default"] is True
+        os.killpg(process.pid, signal.SIGINT)
         process.communicate(timeout=5)
         assert process.returncode in {-signal.SIGINT, 130}
     finally:

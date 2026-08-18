@@ -114,7 +114,7 @@ def _envelope(
     return {
         "schema_version": 1,
         "event_id": f"EVT-{uuid.uuid4()}",
-        "sequence": sequence,
+        "sequence": str(sequence),
         "event_type": event_type,
         "occurred_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "object_type": object_type,
@@ -499,6 +499,6 @@ def test_sse_case_16_unknown_replay_enters_same_no_leak_resync_recovery() -> Non
         )
     )[0]
     assert "event: system.resync_required" in replay
-    assert '"resync_from_sequence":8' in replay
+    assert '"resync_from_sequence":"8"' in replay
     assert "future.event" not in replay
     assert "credential" not in replay and "holdout_metric" not in replay

@@ -926,6 +926,7 @@ def _insert_0017_baseline(
         "effective_at_utc": instant.isoformat(),
         "suppressed_since_utc": None,
         "resume_watermark_utc": instant.isoformat(),
+        "previous_watermark": {"last_sequence": 1, "expired_through_sequence": 0},
         "initialization_utc": instant.isoformat(),
         "domain_event_sequence": 1,
         "revision": 1,

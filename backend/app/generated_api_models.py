@@ -157,15 +157,26 @@ class ConfigurationValueWrite2(BaseModel):
     value: Any | None = None
 
 
-class ConfigurationValueView(BaseModel):
+class ConfigurationValueView1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
     key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
-    sensitivity: Literal["PUBLIC", "MASKED", "SECRET"]
+    sensitivity: Literal["PUBLIC", "MASKED", "SECRET", "PUBLIC", "MASKED"]
     configured: bool
-    value: str | float | bool | dict[str, Any] | list | None
+    value: str | float | bool | dict[str, Any] | list | None = None
     masked_hint: str | None = Field(..., max_length=80)
+
+
+class ConfigurationValueView2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
+    sensitivity: Literal["SECRET"]
+    configured: bool
+    value: str | float | bool | dict[str, Any] | list | None = None
+    masked_hint: str = Field(..., max_length=80, min_length=1)
 
 
 class ConfigurationCandidateRequest(BaseModel):
@@ -188,7 +199,7 @@ class ConfigurationCandidate(BaseModel):
     ]
     base_revision: int = Field(..., ge=1)
     catalog_version: str
-    values: list[ConfigurationValueView]
+    values: list[ConfigurationValueView1 | ConfigurationValueView2]
     snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     created_at: AwareDatetime
 
@@ -20468,7 +20479,7 @@ class ConfigurationActive(BaseModel):
     active_revision: int = Field(..., ge=1)
     last_known_good_revision: int = Field(..., ge=1)
     catalog_version: str
-    values: list[ConfigurationValueView]
+    values: list[ConfigurationValueView1 | ConfigurationValueView2]
     snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     consumer_states: list[ConfigurationConsumerState]
     updated_at: AwareDatetime
@@ -20884,6 +20895,32 @@ class SettingsDetail(BaseModel):
                                         "maxLength": 80,
                                     },
                                 },
+                                "oneOf": [
+                                    {
+                                        "properties": {
+                                            "sensitivity": {
+                                                "enum": ["PUBLIC", "MASKED"]
+                                            }
+                                        },
+                                        "required": ["sensitivity", "value"],
+                                    },
+                                    {
+                                        "properties": {
+                                            "sensitivity": {"const": "SECRET"},
+                                            "value": {"type": "null"},
+                                            "masked_hint": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 80,
+                                            },
+                                        },
+                                        "required": [
+                                            "sensitivity",
+                                            "value",
+                                            "masked_hint",
+                                        ],
+                                    },
+                                ],
                             },
                         },
                         "snapshot_sha256": {
@@ -21021,7 +21058,7 @@ class SettingsDetail(BaseModel):
     active_revision: int = Field(..., ge=1)
     last_known_good_revision: int = Field(..., ge=1)
     catalog_version: str
-    values: list[ConfigurationValueView]
+    values: list[ConfigurationValueView1 | ConfigurationValueView2]
     snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     consumer_states: list[ConfigurationConsumerState]
     updated_at: AwareDatetime
@@ -21094,6 +21131,32 @@ class SettingsDetail(BaseModel):
                                             "maxLength": 80,
                                         },
                                     },
+                                    "oneOf": [
+                                        {
+                                            "properties": {
+                                                "sensitivity": {
+                                                    "enum": ["PUBLIC", "MASKED"]
+                                                }
+                                            },
+                                            "required": ["sensitivity", "value"],
+                                        },
+                                        {
+                                            "properties": {
+                                                "sensitivity": {"const": "SECRET"},
+                                                "value": {"type": "null"},
+                                                "masked_hint": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 80,
+                                                },
+                                            },
+                                            "required": [
+                                                "sensitivity",
+                                                "value",
+                                                "masked_hint",
+                                            ],
+                                        },
+                                    ],
                                 },
                             },
                             "snapshot_sha256": {
@@ -28305,6 +28368,45 @@ class ConfigurationValueWrite(
     RootModel[ConfigurationValueWrite1 | ConfigurationValueWrite2]
 ):
     root: ConfigurationValueWrite1 | ConfigurationValueWrite2
+
+
+class ConfigurationValueView(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "oneOf": [
+                {
+                    "properties": {"sensitivity": {"enum": ["PUBLIC", "MASKED"]}},
+                    "required": ["sensitivity", "value"],
+                },
+                {
+                    "properties": {
+                        "sensitivity": {"const": "SECRET"},
+                        "value": {"type": "null"},
+                        "masked_hint": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                        },
+                    },
+                    "required": ["sensitivity", "value", "masked_hint"],
+                },
+            ]
+        },
+    )
+    key: str = Field(..., pattern=r"^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$")
+    sensitivity: Literal["PUBLIC", "MASKED", "SECRET"]
+    configured: bool
+    value: str | float | bool | dict[str, Any] | list | None
+    masked_hint: str | None = Field(..., max_length=80)
+
+    @model_validator(mode="after")
+    def validate_secret_view(self):
+        if self.sensitivity == "SECRET" and (
+            self.value is not None or not self.masked_hint
+        ):
+            raise ValueError("secret configuration values must be masked")
+        return self
 
 
 class ExperimentSearchDimension(

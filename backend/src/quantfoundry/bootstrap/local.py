@@ -223,6 +223,7 @@ def seed_local(
     created_paths = [path for path in file_paths if not path.exists()]
     timestamp = datetime.now(UTC)
     session = SessionLocal()
+    commit_attempted = False
     try:
         _write_json(cost_root / f"{cost_model['cost_model_id']}.json", cost_model)
         _write_json(

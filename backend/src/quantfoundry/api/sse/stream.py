@@ -11,8 +11,12 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC
 from typing import Any
 
+from jsonschema import ValidationError as JsonSchemaValidationError
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+
+from quantfoundry.infrastructure.db.schema import canonical_workspace_id
 
 
 def _wire(
@@ -107,14 +111,19 @@ async def durable_event_stream(
         def poll(*, cursor_value: int = cursor) -> tuple[list[Any], int | None]:
             session = session_factory()
             try:
+                storage_workspace_id = (
+                    canonical_workspace_id(workspace_id)
+                    if session.get_bind().dialect.name == "postgresql"
+                    else workspace_id
+                )
                 earliest = session.execute(
                     select(event_model)
-                    .where(event_model.workspace_id == workspace_id)
+                    .where(event_model.workspace_id == storage_workspace_id)
                     .order_by(event_model.sequence.asc())
                     .limit(1)
                 ).scalar_one_or_none()
                 stream_state = (
-                    session.get(watermark_model, workspace_id)
+                    session.get(watermark_model, storage_workspace_id)
                     if watermark_model is not None
                     else None
                 )
@@ -123,7 +132,7 @@ async def durable_event_stream(
                     if stream_state is not None
                     else session.scalar(
                         select(func.max(event_model.sequence)).where(
-                            event_model.workspace_id == workspace_id
+                            event_model.workspace_id == storage_workspace_id
                         )
                     )
                 )
@@ -158,7 +167,7 @@ async def durable_event_stream(
                         select(event_model)
                         .where(
                             event_model.sequence > cursor_value,
-                            event_model.workspace_id == workspace_id,
+                            event_model.workspace_id == storage_workspace_id,
                         )
                         .order_by(event_model.sequence.asc())
                         .limit(batch_size)
@@ -177,7 +186,9 @@ async def durable_event_stream(
                     current_state = stream_state
                     if stream_state is not None:
                         session.expire(stream_state)
-                        current_state = session.get(watermark_model, workspace_id)
+                        current_state = session.get(
+                            watermark_model, storage_workspace_id
+                        )
                     if (
                         current_state is not None
                         and cursor_value < current_state.expired_through_sequence
@@ -195,7 +206,11 @@ async def durable_event_stream(
             for event in events:
                 try:
                     wire = _wire(event, envelope)
-                except json.JSONDecodeError:
+                except (
+                    json.JSONDecodeError,
+                    JsonSchemaValidationError,
+                    PydanticValidationError,
+                ):
                     yield _resync_wire(
                         envelope,
                         event.sequence,

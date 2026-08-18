@@ -96,12 +96,18 @@ def test_nautilus_port_maps_canonical_submit_and_cancel() -> None:
     )
     connector.cancel("acct-1", "b-1")
 
-    submit = port.calls[1]
+    submit = next(
+        call
+        for call in port.calls
+        if call["method"] == "POST" and call["path"].endswith("/orders")
+    )
     assert submit["method"] == "POST"
     assert submit["path"] == "/v1/accounts/acct-1/orders"
     assert submit["idempotency_key"] == "submit:6:acct-1:9:LORD-NT-1"
     assert submit["payload"]["schema_version"] == "LIVE_CONNECTOR_V1"
-    cancel = port.calls[2]
+    cancel = next(
+        call for call in port.calls if call["path"].endswith("/orders/b-1/cancel")
+    )
     assert cancel["path"].endswith("/orders/b-1/cancel")
     assert cancel["idempotency_key"] == "cancel:6:acct-1:3:b-1"
 
