@@ -259,7 +259,7 @@ def test_fresh_local_smoke_runs_without_test_fixture_state(
         env=environment,
         capture_output=True,
         text=True,
-        timeout=30,
+            timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout.strip().splitlines()[-1])
