@@ -152,7 +152,7 @@ jobs:
       - name: Run PR fast gate
         shell: bash
         env:
-          QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
+          QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           trusted_root="$GITHUB_WORKSPACE/trusted-gate"
