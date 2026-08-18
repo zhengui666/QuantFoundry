@@ -497,6 +497,23 @@ def test_physical_snapshot_exact_diff_detects_nested_default_drift() -> None:
     assert errors == ['$.tables[0].columns[0].server_default:expected="0":actual="1"']
 
 
+def test_default_normalization_matches_postgres_catalog_rendering() -> None:
+    from scripts import schema_manifest_check
+
+    equivalent = (
+        ("TRUE", "true", "boolean"),
+        ("'{}'", "'{}'::jsonb", "jsonb"),
+        ("now()+interval '7 days'", "(now() + '7 days'::interval)", "timestamptz"),
+    )
+    for expected, actual, type_name in equivalent:
+        assert schema_manifest_check._normalized_default(expected, type_name) == (
+            schema_manifest_check._normalized_default(actual, type_name)
+        )
+    assert schema_manifest_check._normalized_default("0", "integer") != (
+        schema_manifest_check._normalized_default("1", "integer")
+    )
+
+
 def test_check_normalization_preserves_string_literal_case() -> None:
     from scripts import schema_manifest_check
 

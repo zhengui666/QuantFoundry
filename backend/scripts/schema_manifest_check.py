@@ -124,13 +124,16 @@ def _actual_type(value: Any, dialect: str) -> tuple[Any, ...]:
         return ("daterange",) if dialect == "postgresql" else ("varchar", None)
     if value.__class__.__name__ == "JSONTextCompat":
         return ("jsonb",)
-    if isinstance(value, postgresql.JSONB):
+    effective = (
+        value.dialect_impl(postgresql.dialect()) if dialect == "postgresql" else value
+    )
+    if isinstance(effective, postgresql.JSONB):
         return ("jsonb",)
-    if isinstance(value, postgresql.DATERANGE):
+    if isinstance(effective, postgresql.DATERANGE):
         return ("daterange",)
-    if isinstance(value, postgresql.TIMESTAMP):
-        return ("timestamptz",) if value.timezone else ("timestamp",)
-    name = value.__class__.__name__.lower()
+    if isinstance(effective, postgresql.TIMESTAMP):
+        return ("timestamptz",) if effective.timezone else ("timestamp",)
+    name = effective.__class__.__name__.lower()
     aliases = {
         "biginteger": "bigint",
         "smallinteger": "smallint",
@@ -149,12 +152,12 @@ def _actual_type(value: Any, dialect: str) -> tuple[Any, ...]:
     }
     normalized = aliases.get(name, name)
     if normalized in {"varchar", "char"}:
-        return normalized, getattr(value, "length", None)
+        return normalized, getattr(effective, "length", None)
     if normalized == "numeric":
         return (
             normalized,
-            getattr(value, "precision", None),
-            getattr(value, "scale", None),
+            getattr(effective, "precision", None),
+            getattr(effective, "scale", None),
         )
     return (normalized,)
 
@@ -314,6 +317,47 @@ def _column_default_signature(column: Any) -> str | None:
     return str(arg) if arg is not None else None
 
 
+def _normalized_default(value: str | None, type_name: str) -> str | None:
+    if value is None:
+        return None
+    result = _normalized_sql_layout(value)
+    while _has_single_wrapping_parentheses(result):
+        result = result[1:-1].strip()
+    result = re.sub(
+        r"now\(\)\s*\+\s*'((?:''|[^'])*)'::interval$",
+        r"now() + interval '\1'",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(
+        r"now\(\)\s*\+\s*interval\s+'((?:''|[^'])*)'$",
+        r"now() + interval '\1'",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(
+        r"::(?:pg_catalog\.)?(?:jsonb|json|text|character varying|varchar|bpchar|char)$",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    ).strip()
+    if result.lower() in {"true", "false"}:
+        return result.upper()
+    if type_name in {"json", "jsonb"}:
+        match = re.fullmatch(r"'((?:''|[^'])*)'", result)
+        if match is not None:
+            try:
+                parsed = json.loads(match.group(1).replace("''", "'"))
+            except json.JSONDecodeError:
+                pass
+            else:
+                encoded = json.dumps(
+                    parsed, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                )
+                return "'" + encoded.replace("'", "''") + "'"
+    return result
+
+
 def _column_generation_signature(column: Any) -> dict[str, Any] | None:
     computed = getattr(column, "computed", None)
     if computed is None:
@@ -374,7 +418,9 @@ def _operator_class_signature(value: Any) -> tuple[tuple[str, str], ...]:
     try:
         return tuple(sorted((str(item[0]), str(item[1])) for item in value))
     except (IndexError, TypeError) as error:
-        raise RuntimeError(f"invalid PostgreSQL operator-class mapping: {value!r}") from error
+        raise RuntimeError(
+            f"invalid PostgreSQL operator-class mapping: {value!r}"
+        ) from error
 
 
 def _legacy_index_key(value: str) -> dict[str, str]:
@@ -434,6 +480,8 @@ def _expected_constraint_name(
     label: str,
     dialect: str,
 ) -> str | None:
+    if label == "orm" and name is None:
+        return None
     if name is not None or dialect != "postgresql":
         return name
     return _postgres_generated_constraint_name(kind, table_name, columns)
@@ -753,11 +801,17 @@ def _check_metadata(
                 errors.append(f"{label}:missing-physical-column:{table_name}.{name}")
                 continue
             column = table.c[name]
-            actual_default = _column_default_signature(column)
-            if actual_default != physical_column.get("server_default"):
+            type_name = str(physical_column["type"]["name"])
+            actual_default = _normalized_default(
+                _column_default_signature(column), type_name
+            )
+            expected_default = _normalized_default(
+                physical_column.get("server_default"), type_name
+            )
+            if actual_default != expected_default:
                 errors.append(
                     f"{label}:default:{table_name}.{name}:"
-                    f"expected={physical_column.get('server_default')}:actual={actual_default}"
+                    f"expected={expected_default}:actual={actual_default}"
                 )
             actual_generation = _column_generation_signature(column)
             if actual_generation != physical_column.get("generation"):
@@ -870,11 +924,15 @@ def _check_metadata(
             errors.append(f"{label}:missing-unique:{table_name}:{unique_shape}")
         for unique_shape in sorted(actual_unique - expected_unique, key=repr):
             errors.append(f"{label}:unexpected-unique:{table_name}:{unique_shape}")
-        for foreign_key_shape in sorted(expected_foreign_keys - actual_foreign_keys, key=repr):
+        for foreign_key_shape in sorted(
+            expected_foreign_keys - actual_foreign_keys, key=repr
+        ):
             errors.append(
                 f"{label}:missing-foreign-key:{table_name}:{foreign_key_shape}"
             )
-        for foreign_key_shape in sorted(actual_foreign_keys - expected_foreign_keys, key=repr):
+        for foreign_key_shape in sorted(
+            actual_foreign_keys - expected_foreign_keys, key=repr
+        ):
             errors.append(
                 f"{label}:unexpected-foreign-key:{table_name}:{foreign_key_shape}"
             )
@@ -1116,6 +1174,9 @@ def _normalized_physical_snapshot(
         for column in table.get("columns", []):
             column.setdefault("generation", None)
             column.setdefault("identity", None)
+            column["server_default"] = _normalized_default(
+                column.get("server_default"), str(column["type"]["name"])
+            )
         for kind, prefix in (("unique_constraints", "uq"), ("foreign_keys", "fk")):
             for constraint in table[kind]:
                 if kind == "unique_constraints":
@@ -1256,9 +1317,7 @@ def _check_impl(database_url: str | None, *, orm: bool = True) -> dict[str, Any]
 
         orm_table_count = len(Base.metadata.tables)
         orm_dialect = (
-            make_url(database_url).get_backend_name()
-            if database_url
-            else "sqlite"
+            make_url(database_url).get_backend_name() if database_url else "sqlite"
         )
         errors.extend(
             _check_metadata(
