@@ -28,6 +28,7 @@ def _json_type() -> sa.TypeEngine[object]:
 def _install_experiment_completion_binding() -> None:
     if op.get_bind().dialect.name != "sqlite":
         return
+    op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_binding")
     op.execute(
         "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON "
         "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
