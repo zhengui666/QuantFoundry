@@ -312,7 +312,7 @@ trusted_step() {
 require_command() {
   local command_name="$1"
   local command_path directory
-  command_path="$(command -v "$command_name" 2>/dev/null || true)"
+  command_path="$(PATH="$trusted_path" command -v "$command_name" 2>/dev/null || true)"
   if [[ ! "$command_path" = /* || ! -x "$command_path" || -L "$command_path" ]]; then
     write_result "host-${command_name}" "command -v ${command_name}" 127 "missing host dependency: ${command_name}"
     exit 127
