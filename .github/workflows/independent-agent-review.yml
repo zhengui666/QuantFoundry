@@ -77,9 +77,10 @@ jobs:
           reviewed_paths = [
               "AGENTS.md", "PROJECT_BACKGROUND.md", "Makefile", "backend/pyproject.toml", "backend/uv.lock",
               "backend/src/quantfoundry", "backend/app/agent_runtime.py", "backend/workers",
-              "backend/alembic", "backend/alembic.ini", "backend/alembic_control.ini",
               "frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/src", "docs/Agent技术方案",
-              "docs/后端系统技术方案/contracts", "docs/治理", ".github/workflows", "scripts/ci",
+              "docs/后端系统技术方案/contracts", "docs/治理",
+              "backend/alembic", "backend/alembic.ini", "backend/alembic_control.ini",
+              ".github/workflows", "scripts/ci",
               "scripts/ci.sh", "scripts/api_healthcheck.py", "scripts/p0-check.sh", "scripts/p0-check-test.sh",
               "scripts/tool_contract_check.py", "scripts/release-check.sh", "scripts/release-evidence.sh",
               "scripts/release-known-issues-check.sh",
