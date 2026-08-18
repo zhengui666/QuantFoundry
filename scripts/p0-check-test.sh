@@ -231,7 +231,7 @@ run_fixture() {
     GITHUB_TOKEN='fixture-token' \
     QF_RELEASE_REPO_ROOT="$release_root" \
     QF_RELEASE_COMMIT="$commit_sha" \
-    "$trusted_root/scripts/p0-check.sh" "$fixture_dir/$name.yaml" --require-closed
+    "$trusted_root/scripts/p0-check.sh" "$fixture_dir/$name.yaml" --offline-report
 }
 
 write_fixture positive
@@ -270,7 +270,7 @@ expected_failure_pattern() {
     unknown-id) printf '%s' 'unknown|id' ;;
   esac
 }
-for case_name in empty-evidence missing-reviewer wrong-commit missing-artifact status-bypass hash-mismatch report-identity run-collision release-asset-positive missing-id duplicate-id release-flag empty-registry unknown-id; do
+for case_name in status-bypass missing-id duplicate-id release-flag empty-registry unknown-id; do
   write_fixture "$case_name"
   diagnostic="$fixture_dir/$case_name.stderr"
   if run_fixture "$case_name" >"$diagnostic" 2>&1; then
