@@ -11,13 +11,14 @@ import argparse
 import sys
 from datetime import UTC, datetime
 
+from sqlalchemy import select
+
 from app.control_plane import (
     ControlSessionLocal,
     GeneralAccessKey,
     init_control_db,
     issue_access_key,
 )
-from sqlalchemy import select
 
 
 def main() -> int:

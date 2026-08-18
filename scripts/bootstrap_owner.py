@@ -19,7 +19,7 @@ BACKEND_SRC = Path(__file__).resolve().parents[1] / "backend" / "src"
 if str(BACKEND_SRC) not in sys.path:
     sys.path.insert(0, str(BACKEND_SRC))
 
-from quantfoundry.api.app import (
+from quantfoundry.api.app import (  # noqa: E402 - backend source path is configured immediately above
     SessionLocal,
     SessionToken,
     User,

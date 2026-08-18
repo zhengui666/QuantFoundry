@@ -12,12 +12,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from app.bootstrap import seed_local
 from bootstrap_owner import EMAIL_PATTERN, provision
-from quantfoundry.api.app import Base, SessionLocal, User, Workspace
-from quantfoundry.bootstrap.local import _workspace_seed_values
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
+
+from app.bootstrap import seed_local
+from quantfoundry.api.app import Base, SessionLocal, User, Workspace
+from quantfoundry.bootstrap.local import _workspace_seed_values
 
 
 def _identity_state(email: str, workspace_name: str) -> tuple[bool, bool]:
