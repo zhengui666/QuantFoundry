@@ -48,7 +48,7 @@ def main() -> int:
         issued_key = issue_access_key(args.label.strip())
         try:
             print(issued_key, flush=True)
-        except (BrokenPipeError, OSError, ValueError) as error:
+        except BaseException as error:
             key_id = issued_key.split(".", 1)[0][4:]
             try:
                 with ControlSessionLocal.begin() as session:
@@ -57,16 +57,20 @@ def main() -> int:
                         row.status = "REVOKED"
                         row.revoked_at = datetime.now(UTC)
                         row.revision += 1
-            except Exception as revoke_error:  # noqa: BLE001 - recovery must report residual credential state
+            except BaseException as revoke_error:  # noqa: BLE001 - recovery must report residual credential state
                 print(
                     f"access-key bootstrap delivery failed; revocation also failed for {key_id}; key may remain active: {revoke_error}",
                     file=sys.stderr,
                 )
+                if isinstance(revoke_error, (KeyboardInterrupt, SystemExit)):
+                    raise
                 return 2
             print(
                 f"access-key bootstrap delivery failed; issued key {key_id} was revoked: {error}",
                 file=sys.stderr,
             )
+            if isinstance(error, KeyboardInterrupt):
+                raise
             return 1
     except (RuntimeError, ValueError) as error:
         print(f"access-key bootstrap failed: {error}", file=sys.stderr)

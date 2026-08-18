@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assets = resolve(frontendRoot, 'dist/assets');
 const maximumBytes = 500 * 1024;
+const maximumTotalBytes = 4 * 1024 * 1024;
 const collectJavaScript = async (directory) => {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
@@ -25,5 +26,8 @@ if (oversized.length > 0)
   throw new Error(
     `Production bundle limit exceeded: ${oversized.map(({ file, bytes }) => `${file}=${bytes}`).join(', ')}`,
   );
+const totalBytes = sizes.reduce((total, { bytes }) => total + bytes, 0);
+if (totalBytes > maximumTotalBytes)
+  throw new Error(`Production bundle aggregate limit exceeded: ${totalBytes} bytes > ${maximumTotalBytes} bytes`);
 for (const { file, bytes } of sizes.sort((left, right) => right.bytes - left.bytes))
   process.stdout.write(`${relative(frontendRoot, file)}: ${bytes} bytes\n`);

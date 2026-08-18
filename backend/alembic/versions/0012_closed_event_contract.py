@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 import sqlalchemy as sa
 
 from alembic import op
+from quantfoundry.contracts.events.event_contract import validate_event_payload
 from quantfoundry.domain.value_objects.public_ids import is_public_id
 
 revision = "0012_closed_events"
@@ -259,6 +260,10 @@ def _preserved_payload(raw: object) -> str | None:
     except (TypeError, ValueError):
         return None
     if not isinstance(value, dict) or not set(value).issubset(_EVENT_PAYLOAD_FIELDS):
+        return None
+    try:
+        value = validate_event_payload(value)
+    except (TypeError, ValueError):
         return None
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 

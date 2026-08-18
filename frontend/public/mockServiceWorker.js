@@ -54,8 +54,12 @@ addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim())
 })
 
+let lifecycleMessageQueue = Promise.resolve()
+
 addEventListener('message', function (event) {
-  event.waitUntil(handleMessage(event))
+  const message = lifecycleMessageQueue.then(() => handleMessage(event))
+  lifecycleMessageQueue = message.catch(() => {})
+  event.waitUntil(message)
 })
 
 async function handleMessage(event) {
@@ -158,6 +162,7 @@ addEventListener('fetch', function (event) {
  * @param {number} requestInterceptedAt
  */
 async function handleRequest(event, requestId, requestInterceptedAt) {
+  const originatedFromActiveClient = Boolean(event.clientId && activeClientIds.has(event.clientId))
   await reconcileActiveClients()
   const client = await resolveMainClient(event)
   const requestCloneForEvents = event.request.clone()
@@ -166,6 +171,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
     client,
     requestId,
     requestInterceptedAt,
+    originatedFromActiveClient,
   )
 
   // Send back the response clone for the "response:*" life-cycle events.
@@ -239,7 +245,7 @@ async function resolveMainClient(event) {
  * @param {number} requestInterceptedAt
  * @returns {Promise<Response>}
  */
-async function getResponse(event, client, requestId, requestInterceptedAt) {
+async function getResponse(event, client, requestId, requestInterceptedAt, originatedFromActiveClient) {
   // Clone the request because it might've been already used
   // (i.e. its body has been read and sent to the client).
   const requestClone = event.request.clone()
@@ -275,7 +281,7 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
 
   // Bypass mocking when the client is not active.
   if (!client) {
-    return passthrough()
+    return originatedFromActiveClient ? failClosed() : passthrough()
   }
 
   // Bypass initial page load requests (i.e. static assets).
@@ -283,7 +289,7 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
   // means that MSW hasn't dispatched the "MOCK_ACTIVATE" event yet
   // and is not ready to handle requests.
   if (!activeClientIds.has(client.id)) {
-    return passthrough()
+    return originatedFromActiveClient ? failClosed() : passthrough()
   }
 
   // Notify the client that a request has been intercepted.

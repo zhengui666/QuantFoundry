@@ -14,6 +14,10 @@ key_label="${QF_BOOTSTRAP_KEY_LABEL:-primary}"
   printf '%s\n' 'QF_BOOTSTRAP_KEY_LABEL must contain 1 to 80 characters.' >&2
   exit 1
 }
+[[ -t 1 || "${QF_ALLOW_INSECURE_BOOTSTRAP_OUTPUT:-}" == 1 ]] || {
+  printf '%s\n' 'refusing to print an owner key to a non-interactive output; use a terminal or explicitly set QF_ALLOW_INSECURE_BOOTSTRAP_OUTPUT=1.' >&2
+  exit 1
+}
 
 docker compose --env-file "$environment_file" run --rm api \
   python /workspace/scripts/bootstrap-general-key.py \

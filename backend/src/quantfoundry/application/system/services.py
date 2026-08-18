@@ -14,6 +14,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
 from sqlalchemy import inspect, select, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -132,7 +133,9 @@ def probe_health(
         "holdout_exposures",
         "snapshot_partitions",
     }
-    probe_session = Session(bind=session.get_bind())
+    bind = session.get_bind()
+    probe_bind = bind.engine if isinstance(bind, Connection) else bind
+    probe_session = Session(bind=probe_bind)
     try:
         database = _database_state(probe_session, required_tables)
         states = {

@@ -101,6 +101,7 @@ _EVIDENCE_FIELDS = {
     "effective_at_utc",
     "suppressed_since_utc",
     "resume_watermark_utc",
+    "previous_watermark",
     "initialization_utc",
     "domain_event_sequence",
     "revision",
@@ -391,6 +392,18 @@ def _validate_evidence(
     evidence = summary[_EVIDENCE_KEY]
     if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
         _block("ambiguous scheduler initialization evidence", deployment)
+    previous_watermark = evidence.get("previous_watermark")
+    if previous_watermark is not None and (
+        not isinstance(previous_watermark, Mapping)
+        or set(previous_watermark) != {"last_sequence", "expired_through_sequence"}
+        or any(
+            not isinstance(previous_watermark[name], int)
+            or isinstance(previous_watermark[name], bool)
+            or previous_watermark[name] < 0
+            for name in ("last_sequence", "expired_through_sequence")
+        )
+    ):
+        _block("ambiguous scheduler initialization watermark evidence", deployment)
     audit = audits[0]
 
     effective = _utc_timestamp(bind, evidence["effective_at_utc"], "effective_at_utc")
@@ -598,12 +611,18 @@ def _validate_support_rows(
     if audit is None:
         head_valid = head is None
     else:
+        audit_count = bind.execute(
+            select(func.count())
+            .select_from(audit_events)
+            .where(audit_events.c.workspace_id == workspace_id)
+        ).scalar_one()
         head_valid = (
             head is not None
             and head["event_sha256"] == audit["event_hash"]
             and isinstance(head["revision"], int)
             and not isinstance(head["revision"], bool)
             and head["revision"] >= 1
+            and int(head["revision"]) == int(audit_count)
         )
     if event is None:
         watermark_valid = watermark is None or (
@@ -764,6 +783,14 @@ def _insert_baseline(
         .mappings()
         .one_or_none()
     )
+    previous_watermark = (
+        None
+        if watermark is None
+        else {
+            "last_sequence": int(watermark["last_sequence"]),
+            "expired_through_sequence": int(watermark["expired_through_sequence"]),
+        }
+    )
     if watermark is None:
         bind.execute(
             event_stream_watermarks.insert().values(
@@ -799,6 +826,7 @@ def _insert_baseline(
         "effective_at_utc": instant.isoformat(),
         "suppressed_since_utc": suppressed.isoformat() if suppressed else None,
         "resume_watermark_utc": instant.isoformat(),
+        "previous_watermark": previous_watermark,
         "initialization_utc": instant.isoformat(),
         "domain_event_sequence": domain_event_sequence,
         "revision": revision,
@@ -978,7 +1006,10 @@ def _run_upgrade(bind: Connection) -> None:
             transaction.rollback()
         if bind.dialect.name == "sqlite" and bind.in_transaction():
             bind.rollback()
-        _persist_quarantine(bind, error)
+        try:
+            _persist_quarantine(bind, error)
+        except BaseException as quarantine_error:
+            error.add_note(f"quarantine persistence failed: {quarantine_error!r}")
         raise
     except Exception:
         if transaction.is_active:
@@ -1144,6 +1175,12 @@ def downgrade() -> None:
     completed = False
     try:
         for audit, evidence, deployment in owned:
+            typed_domain_workspace = _uuid_column_value(
+                domain_events, "workspace_id", uuid.UUID(str(evidence["workspace_id"]))
+            )
+            typed_audit_workspace = _uuid_column_value(
+                audit_events, "workspace_id", uuid.UUID(str(evidence["workspace_id"]))
+            )
             bind.execute(
                 states.delete().where(
                     states.c.workspace_id == deployment["workspace_id"],
@@ -1152,13 +1189,13 @@ def downgrade() -> None:
             )
             bind.execute(
                 domain_events.delete().where(
-                    domain_events.c.workspace_id == evidence["workspace_id"],
+                    domain_events.c.workspace_id == typed_domain_workspace,
                     domain_events.c.event_id == evidence["state_transition_id"],
                 )
             )
             bind.execute(
                 audit_events.delete().where(
-                    audit_events.c.workspace_id == audit["workspace_id"],
+                    audit_events.c.workspace_id == typed_audit_workspace,
                     audit_events.c.sequence == audit["sequence"],
                 )
             )
@@ -1170,14 +1207,22 @@ def downgrade() -> None:
                     .values(status="STOPPED", revision=int(deployment["revision"]) - 1)
                 )
         for workspace_id in workspaces:
+            typed_audit_workspace = _uuid_column_value(
+                audit_events, "workspace_id", uuid.UUID(workspace_id)
+            )
             remaining_audit = bind.execute(
                 select(audit_events.c.event_hash)
-                .where(audit_events.c.workspace_id == workspace_id)
+                .where(audit_events.c.workspace_id == typed_audit_workspace)
                 .order_by(audit_events.c.sequence.desc())
                 .limit(1)
             ).scalar_one_or_none()
             head = (
-                bind.execute(select(heads).where(heads.c.workspace_id == workspace_id))
+                bind.execute(
+                    select(heads).where(
+                        heads.c.workspace_id
+                        == _uuid_column_value(heads, "workspace_id", uuid.UUID(workspace_id))
+                    )
+                )
                 .mappings()
                 .one_or_none()
             )
@@ -1201,23 +1246,29 @@ def downgrade() -> None:
                             revision=max(1, previous_revision),
                         )
                     )
-            last_event = bind.execute(
-                select(domain_events.c.sequence)
-                .where(domain_events.c.workspace_id == workspace_id)
-                .order_by(domain_events.c.sequence.desc())
-                .limit(1)
-            ).scalar_one_or_none()
-            bind.execute(
-                watermarks.update()
-                .where(watermarks.c.workspace_id == workspace_id)
-                .values(
-                    last_sequence=int(last_event or 0),
-                    expired_through_sequence=func.min(
-                        watermarks.c.expired_through_sequence,
-                        int(last_event or 0),
-                    ),
-                )
+            prior = min(
+                (
+                    evidence
+                    for _, evidence, _ in owned
+                    if str(evidence["workspace_id"]) == workspace_id
+                ),
+                key=lambda evidence: int(evidence["domain_event_sequence"]),
+            )["previous_watermark"]
+            watermark_workspace = _uuid_column_value(
+                watermarks, "workspace_id", uuid.UUID(workspace_id)
             )
+            if prior is None:
+                bind.execute(
+                    watermarks.delete().where(
+                        watermarks.c.workspace_id == watermark_workspace
+                    )
+                )
+            else:
+                bind.execute(
+                    watermarks.update()
+                    .where(watermarks.c.workspace_id == watermark_workspace)
+                    .values(**dict(prior))
+                )
         completed = True
     finally:
         if completed:

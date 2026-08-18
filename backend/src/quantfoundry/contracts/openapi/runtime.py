@@ -17,7 +17,7 @@ from typing import Any
 import jsonschema
 import yaml
 
-from quantfoundry.contracts.openapi.api_models import validate_schema
+from quantfoundry.contracts.openapi.api_models import application_schemas, validate_schema
 
 _SPEC: dict[str, Any] | None = None
 
@@ -68,5 +68,9 @@ def validated_payload(name: str, payload: Any) -> Any:
     patterns and additional properties.  Callers must convert such failures to
     a canonical internal problem; silently normalizing is forbidden.
     """
+    schema = application_schemas().get(name)
+    if not isinstance(schema, dict):
+        raise KeyError(f"unknown OpenAPI schema: {name}")
+    validate_json_schema(schema, payload)
     validate_schema(name, payload)
     return payload

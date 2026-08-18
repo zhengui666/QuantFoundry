@@ -397,6 +397,12 @@ def _sqlite_bootstrap_audit_hash(
     ).hexdigest()
 
 
+def register_sqlite_control_functions(dbapi_connection: Any) -> None:
+    dbapi_connection.create_function(
+        "qf_bootstrap_audit_hash", 13, _sqlite_bootstrap_audit_hash
+    )
+
+
 def _canonical_json(value: Any) -> str:
     """Match PostgreSQL jsonb output ordering for the control audit vector."""
     if isinstance(value, dict):
@@ -429,9 +435,7 @@ def _engine():
         @event.listens_for(engine, "connect")
         def _configure_sqlite_control_connection(dbapi_connection, _connection_record):
             dbapi_connection.execute("PRAGMA foreign_keys=ON")
-            dbapi_connection.create_function(
-                "qf_bootstrap_audit_hash", 13, _sqlite_bootstrap_audit_hash
-            )
+            register_sqlite_control_functions(dbapi_connection)
 
     return engine
 
@@ -568,6 +572,16 @@ def _replay_idempotent(record: ControlIdempotencyRecord) -> Response:
     )
 
 
+def _resume_completed_side_effect(record: ControlIdempotencyRecord) -> None:
+    if record.operation == "completeSetup":
+        _sync_domain_compat_setup()
+    elif record.operation in {
+        "activateDomainDatabaseConnection",
+        "revertDomainDatabaseConnection",
+    }:
+        ensure_domain_database_current()
+
+
 def _replay_after_key_rotation(
     request: Request, operation: str, key: str, fingerprint: str
 ) -> Response | None:
@@ -622,6 +636,7 @@ def _replay_after_key_rotation(
                 "IDEMPOTENCY_CONFLICT",
                 "idempotency key was reused for another request",
             )
+        _resume_completed_side_effect(record)
         return _replay_idempotent(record)
 
 
@@ -709,6 +724,7 @@ def _with_idempotency(operation: str, success_status: int = 200):
                             "idempotency key was reused for another request",
                         )
                     if record.status == "COMPLETED":
+                        _resume_completed_side_effect(record)
                         return _replay_idempotent(record)
                     lease_expires_at = _aware(record.lease_expires_at)
                     if lease_expires_at is not None and lease_expires_at > now:
@@ -1004,6 +1020,8 @@ def issue_access_key(label: str, expires_at: datetime | None = None) -> str:
     raw = f"qfk_{key_id}.{secret}"
     with _initial_claim_lock():
         with ControlSessionLocal.begin() as session:
+            if _lock_bootstrap_state(session) is None:
+                raise RuntimeError("control database bootstrap state is missing")
             if (
                 session.execute(
                     select(GeneralAccessKey).where(GeneralAccessKey.status == "ACTIVE")
@@ -1796,30 +1814,28 @@ def _probe_database(
                     detail=f"major {version // 10000}",
                 )
             )
-            schema_usage = bool(
+            schema_privileges = connection.exec_driver_sql(
+                "SELECT has_schema_privilege(current_user, current_schema(), 'USAGE') "
+                "AND has_schema_privilege(current_user, current_schema(), 'CREATE')"
+            ).scalar_one()
+            domain_write_privileges = bool(
                 connection.exec_driver_sql(
-                    "SELECT has_schema_privilege(current_user, current_schema(), 'USAGE')"
+                    "SELECT "
+                    "CASE WHEN to_regclass(current_schema() || '.domain_events') IS NULL "
+                    "THEN false ELSE has_table_privilege(current_user, "
+                    "current_schema() || '.domain_events', 'INSERT') END "
+                    "AND CASE WHEN to_regclass(current_schema() || '.workspaces') IS NULL "
+                    "THEN false ELSE has_table_privilege(current_user, "
+                    "current_schema() || '.workspaces', 'INSERT') AND "
+                    "has_table_privilege(current_user, current_schema() || '.workspaces', 'UPDATE') END"
                 ).scalar_one()
             )
-            temp_table = f"qf_probe_{secrets.token_hex(8)}"
-            write_privilege = False
-            try:
-                with connection.begin_nested():
-                    connection.exec_driver_sql(
-                        f"CREATE TEMP TABLE {temp_table} (probe_id integer) ON COMMIT DROP"
-                    )
-                    connection.exec_driver_sql(
-                        f"INSERT INTO {temp_table} (probe_id) VALUES (1)"
-                    )
-                    write_privilege = True
-            except SQLAlchemyError:
-                write_privilege = False
-            privilege = schema_usage and write_privilege
+            privilege = bool(schema_privileges and domain_write_privileges)
             checks.append(
                 DatabaseConnectionCheck(
                     name="PRIVILEGE",
                     status="PASS" if privilege else "FAIL",
-                    detail="schema usage and rollback-only temp write",
+                    detail="schema CREATE/USAGE and domain table write privileges",
                 )
             )
             alembic = connection.exec_driver_sql(
@@ -1951,6 +1967,8 @@ def _publish_domain_database(candidate_engine: Any) -> Any:
 @_serialize_domain_switch
 def _rebind_domain_database(
     row: DomainDatabaseConnectionRevision,
+    *,
+    publish: bool = True,
 ) -> tuple[Any, Any]:
     """Switch the domain session factory only after a fresh canary succeeds."""
     secret = _database_secret(row)
@@ -1961,7 +1979,11 @@ def _rebind_domain_database(
     try:
         with candidate_engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1").scalar_one()
-        return _publish_domain_database(candidate_engine), candidate_engine
+        if publish:
+            return _publish_domain_database(candidate_engine), candidate_engine
+        from app import main as domain_main
+
+        return domain_main.engine, candidate_engine
     except (SQLAlchemyError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         _dispose_engine(candidate_engine)
         raise
@@ -1996,15 +2018,30 @@ def _restore_domain_database(previous_engine: Any, candidate_engine: Any) -> Non
 
 
 def _schedule_domain_switch_cleanup(
-    previous_engine: Any, candidate_engine: Any
+    previous_engine: Any, candidate_engine: Any, *, candidate_published: bool = False
 ) -> None:
     post_commit = _IDEMPOTENCY_POST_COMMIT.get()
     rollback = _IDEMPOTENCY_ROLLBACK.get()
     if post_commit is None or rollback is None:
+        if not candidate_published:
+            _publish_domain_database(candidate_engine)
         _dispose_engine(previous_engine)
         return
-    post_commit.append(lambda: _dispose_engine(previous_engine))
-    rollback.append(lambda: _restore_domain_database(previous_engine, candidate_engine))
+    if candidate_published:
+        post_commit.append(lambda: _dispose_engine(previous_engine))
+        rollback.append(lambda: _restore_domain_database(previous_engine, candidate_engine))
+        return
+
+    def publish_after_commit() -> None:
+        try:
+            _publish_domain_database(candidate_engine)
+        except Exception:
+            _dispose_engine(candidate_engine)
+            raise
+        _dispose_engine(previous_engine)
+
+    post_commit.append(publish_after_commit)
+    rollback.append(lambda: _dispose_engine(candidate_engine))
 
 
 def restore_active_domain_database() -> None:
@@ -3121,13 +3158,20 @@ def build_router() -> APIRouter:
                     "source revision was not previously activated",
                 )
             source_rows = list(_effective_value_rows(db, source.revision).values())
+            snapshot: dict[str, Any] = {}
             copied_values: list[
                 tuple[ConfigurationValue, bytes | None, str | None]
             ] = []
             for row in source_rows:
                 if row.ciphertext is None:
+                    snapshot[row.key] = row.typed_value
                     copied_values.append((row, None, None))
                     continue
+                snapshot[row.key] = {
+                    "configured": True,
+                    "secret": True,
+                    "value_sha256": row.value_sha256,
+                }
                 catalog = db.get(ConfigurationCatalogRow, row.key)
                 try:
                     plaintext = (
@@ -3149,10 +3193,10 @@ def build_router() -> APIRouter:
                     )
                 copied_values.append((row, plaintext.encode(), row.secret_key_id))
             revision = ConfigurationRevision(
-                base_revision=active.active_revision if active else 1,
+                base_revision=None,
                 state="ACTIVE",
                 catalog_version=CATALOG_VERSION,
-                snapshot_sha256=source.snapshot_sha256,
+                snapshot_sha256=_json_hash(snapshot),
                 actor_principal="OWNER",
                 validation_status="VALID",
                 created_at=_now(),
@@ -3202,6 +3246,7 @@ def build_router() -> APIRouter:
                 )
             else:
                 old_candidate = db.get(ConfigurationRevision, active.active_revision)
+                previous_active_revision = active.active_revision
                 result = db.execute(
                     update(ActiveConfiguration)
                     .where(
@@ -3209,7 +3254,7 @@ def build_router() -> APIRouter:
                         ActiveConfiguration.active_revision == active.active_revision,
                     )
                     .values(
-                        last_known_good_revision=active.active_revision,
+                        last_known_good_revision=previous_active_revision,
                         active_revision=revision.revision,
                         updated_at=_now(),
                     )
@@ -3247,7 +3292,7 @@ def build_router() -> APIRouter:
             if bootstrap is not None:
                 bootstrap.active_configuration_revision = revision.revision
                 bootstrap.last_known_good_configuration_revision = (
-                    active.active_revision if active else revision.revision
+                    previous_active_revision if active else revision.revision
                 )
                 bootstrap.updated_at = _now()
             _audit(
@@ -3525,7 +3570,7 @@ def build_router() -> APIRouter:
                         409, probe_failure, "database candidate is no longer valid"
                     )
                 try:
-                    switched = _rebind_domain_database(candidate)
+                    switched = _rebind_domain_database(candidate, publish=False)
                 except (
                     SQLAlchemyError,
                     OSError,
@@ -3562,7 +3607,7 @@ def build_router() -> APIRouter:
                     )
                 )
                 if state_update.rowcount != 1:
-                    _restore_domain_database(*switched)
+                    _dispose_engine(switched[1])
                     switched = None
                     return _problem(
                         412, "REVISION_MISMATCH", "database revision does not match"
@@ -3603,7 +3648,7 @@ def build_router() -> APIRouter:
             RuntimeError,
         ):
             if switched is not None:
-                _restore_domain_database(*switched)
+                _dispose_engine(switched[1])
             raise
         return payload
 
@@ -3663,7 +3708,7 @@ def build_router() -> APIRouter:
                         409, probe_failure, "last-known-good database is unavailable"
                     )
                 try:
-                    switched = _rebind_domain_database(lkg)
+                    switched = _rebind_domain_database(lkg, publish=False)
                 except (
                     SQLAlchemyError,
                     OSError,
@@ -3691,7 +3736,7 @@ def build_router() -> APIRouter:
                     )
                 )
                 if state_update.rowcount != 1:
-                    _restore_domain_database(*switched)
+                    _dispose_engine(switched[1])
                     switched = None
                     return _problem(
                         412, "REVISION_MISMATCH", "database revision does not match"
@@ -3728,7 +3773,7 @@ def build_router() -> APIRouter:
             RuntimeError,
         ):
             if switched is not None:
-                _restore_domain_database(*switched)
+                _dispose_engine(switched[1])
             raise
         return payload
 

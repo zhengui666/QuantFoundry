@@ -20,6 +20,7 @@ python3 - "$release_json" "$tag_json" "$work_dir" "$tag" "$commit" "$repository"
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import urllib.error
@@ -106,6 +107,7 @@ for asset in assets:
                 "api.github.com",
                 "github.com",
                 "objects.githubusercontent.com",
+                "release-assets.githubusercontent.com",
             }
             or parsed.username
             or parsed.password
@@ -149,13 +151,16 @@ PY
 (cd "$work_dir" && sha256sum --check --strict SHA256SUMS)
 
 python3 - "$work_dir" "$tag" "$commit" "$repository" <<'PY'
-import base64
 import json
+import os
 import pathlib
+import re
+import subprocess
 import sys
 
 work_dir, expected_tag, expected_commit, expected_repository = sys.argv[1:]
 root = pathlib.Path(work_dir)
+release = json.loads((root / "release.json").read_text(encoding="utf-8"))
 
 def statements(value):
     entries = value if isinstance(value, list) else [value]
@@ -254,7 +259,11 @@ required_sources = {
     "sbom/backend.spdx.json",
     "sbom/frontend.spdx.json",
 }
-sources = {item.get("source") for item in inventory if isinstance(item, dict)}
+source_values = [item.get("source") for item in inventory if isinstance(item, dict)]
+name_values = [item.get("name") for item in inventory if isinstance(item, dict)]
+if len(source_values) != len(set(source_values)) or len(name_values) != len(set(name_values)):
+    raise SystemExit("release inventory contains duplicate source or asset names")
+sources = set(source_values)
 if not required_sources.issubset(sources):
     raise SystemExit("release inventory is missing supply-chain or P0 snapshots")
 asset_path = {
@@ -264,9 +273,24 @@ asset_path = {
 }
 trusted_verifier_root = pathlib.Path(os.environ.get("QF_RELEASE_TRUSTED_VERIFIER_ROOT", ""))
 trusted_verifier_commit = os.environ.get("QF_RELEASE_TRUSTED_VERIFIER_COMMIT", "")
+expected_trusted_verifier_commit = "4ca07ed0232104a3feddc427a2632d4646ece5a"
+trusted_remote = subprocess.run(
+    ["git", "-C", str(trusted_verifier_root), "remote", "get-url", "origin"],
+    check=False,
+    capture_output=True,
+    text=True,
+).stdout.strip()
+trusted_status = subprocess.run(
+    ["git", "-C", str(trusted_verifier_root), "status", "--porcelain=v1", "--untracked-files=all"],
+    check=False,
+    capture_output=True,
+    text=True,
+).stdout
 if (
     not trusted_verifier_root.is_dir()
-    or not re.fullmatch(r"[0-9a-f]{40}", trusted_verifier_commit)
+    or trusted_verifier_commit != expected_trusted_verifier_commit
+    or trusted_remote not in {"https://github.com/zhengui666/QuantFoundry", "https://github.com/zhengui666/QuantFoundry.git"}
+    or trusted_status
     or subprocess.run(
         ["git", "-C", str(trusted_verifier_root), "rev-parse", "HEAD"],
         check=False,
@@ -276,18 +300,65 @@ if (
     != trusted_verifier_commit
 ):
     raise SystemExit("trusted verifier checkout is required for release snapshot validation")
+release_root = pathlib.Path(os.environ.get("QF_RELEASE_REPO_ROOT", ""))
+if not release_root.is_dir():
+    raise SystemExit("release checkout is required for release snapshot validation")
+release_head = subprocess.run(
+    ["git", "-C", str(release_root), "rev-parse", "HEAD"],
+    check=False,
+    capture_output=True,
+    text=True,
+).stdout.strip()
+release_status = subprocess.run(
+    ["git", "-C", str(release_root), "status", "--porcelain=v1", "--untracked-files=all"],
+    check=False,
+    capture_output=True,
+    text=True,
+).stdout
+if release_head != expected_commit or release_status:
+    raise SystemExit("release checkout is not a clean checkout of the reviewed commit")
+candidate_snapshot = pathlib.Path(work_dir) / "release-root"
+subprocess.run(
+    ["git", "clone", "--no-local", "--no-checkout", str(release_root), str(candidate_snapshot)],
+    check=True,
+    stdout=subprocess.DEVNULL,
+)
+subprocess.run(
+    ["git", "-C", str(candidate_snapshot), "checkout", "--detach", expected_commit],
+    check=True,
+    stdout=subprocess.DEVNULL,
+)
+if subprocess.run(
+    ["git", "-C", str(candidate_snapshot), "status", "--porcelain=v1", "--untracked-files=all"],
+    check=False,
+    capture_output=True,
+    text=True,
+).stdout:
+    raise SystemExit("release verification snapshot is not clean")
+trusted_snapshot = pathlib.Path(work_dir) / "trusted-verifier"
+subprocess.run(
+    ["git", "clone", "--no-local", "--no-checkout", str(trusted_verifier_root), str(trusted_snapshot)],
+    check=True,
+    stdout=subprocess.DEVNULL,
+)
+subprocess.run(
+    ["git", "-C", str(trusted_snapshot), "checkout", "--detach", trusted_verifier_commit],
+    check=True,
+    stdout=subprocess.DEVNULL,
+)
+subprocess.run(["chmod", "-R", "a-w", str(trusted_snapshot)], check=True)
 trusted_env = os.environ.copy()
 trusted_env.update(
     {
-        "QF_RELEASE_REPO_ROOT": os.environ.get("QF_RELEASE_REPO_ROOT", str(trusted_verifier_root)),
+        "QF_RELEASE_REPO_ROOT": str(candidate_snapshot),
         "QF_RELEASE_COMMIT": commit,
-        "QF_RELEASE_TRUSTED_VERIFIER_ROOT": str(trusted_verifier_root),
+        "QF_RELEASE_TRUSTED_VERIFIER_ROOT": str(trusted_snapshot),
         "QF_RELEASE_TRUSTED_VERIFIER_COMMIT": trusted_verifier_commit,
     }
 )
 subprocess.run(
     [
-        str(trusted_verifier_root / "scripts/p0-check.sh"),
+        str(trusted_snapshot / "scripts/p0-check.sh"),
         str(asset_path["p0-blockers.yaml"]),
         "--require-closed",
     ],
@@ -295,7 +366,7 @@ subprocess.run(
     env=trusted_env,
 )
 subprocess.run(
-    [str(trusted_verifier_root / "scripts/release-known-issues-check.sh"), str(asset_path["release-known-issues.json"])],
+    [str(trusted_snapshot / "scripts/release-known-issues-check.sh"), str(asset_path["release-known-issues.json"])],
     check=True,
     env=trusted_env,
 )
@@ -311,7 +382,6 @@ for image, expected_name in zip(images, expected_images, strict=True):
     name, digest = image.get("name"), image.get("digest")
     if name != expected_name or not isinstance(digest, str) or not digest.startswith("sha256:"):
         raise SystemExit("invalid image digest in release manifest")
-    subprocess = __import__("subprocess")
     subject = f"{name}@{digest}"
     subprocess.run(["docker", "buildx", "imagetools", "inspect", subject], check=True)
     verified = subprocess.run(
@@ -322,6 +392,8 @@ for image, expected_name in zip(images, expected_images, strict=True):
             f"oci://{subject}",
             "--repo",
             expected_repository,
+            "--signer-workflow",
+            ".github/workflows/rc-release.yml",
             "--format",
             "json",
         ],
@@ -388,5 +460,41 @@ for image, expected_name in zip(images, expected_images, strict=True):
         raise SystemExit("Compose backend binding does not match image digest")
     if image is images[1] and compose.get("frontend") != f"{name}@{digest}":
         raise SystemExit("Compose frontend binding does not match image digest")
+
+def live_json(endpoint):
+    env = os.environ.copy()
+    env["GH_TOKEN"] = env.get("GITHUB_TOKEN") or env.get("GH_TOKEN", "")
+    result = subprocess.run(
+        ["gh", "api", endpoint],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return json.loads(result.stdout)
+
+live_release = live_json(f"repos/{expected_repository}/releases/tags/{expected_tag}")
+live_tag = live_json(f"repos/{expected_repository}/git/ref/tags/{expected_tag}")
+if (
+    live_release.get("draft") is not False
+    or live_release.get("prerelease") is not True
+    or live_release.get("tag_name") != expected_tag
+    or live_release.get("target_commitish") != expected_commit
+    or live_tag.get("object", {}).get("type") != "commit"
+    or live_tag.get("object", {}).get("sha") != expected_commit
+):
+    raise SystemExit("release or tag changed during supply-chain verification")
+initial_assets = {
+    (asset.get("id"), asset.get("name"))
+    for asset in release.get("assets", [])
+    if isinstance(asset, dict)
+}
+live_assets = {
+    (asset.get("id"), asset.get("name"))
+    for asset in live_release.get("assets", [])
+    if isinstance(asset, dict)
+}
+if live_assets != initial_assets:
+    raise SystemExit("release asset inventory changed during supply-chain verification")
 print(json.dumps({"result": "pass", "tag": expected_tag, "commit": expected_commit, "images": images}, sort_keys=True))
 PY

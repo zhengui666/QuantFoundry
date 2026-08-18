@@ -17,6 +17,13 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
     { authorization: string | undefined; cookie: string | undefined; status: number }
   >();
   let selectedCredential = '';
+  const rotateCredential = (token: string) => {
+    if (selectedCredential === token) return;
+    selectedCredential = token;
+    successfulResponses.clear();
+    authenticatedRequest = undefined;
+    authenticatedTerminated = false;
+  };
 
   const credentialParts = (raw: string) => {
     const value = raw.trim();
@@ -30,11 +37,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
     const expected =
       typeof expectedSessionCookie === 'function' ? expectedSessionCookie() : expectedSessionCookie;
     const { cookiePair: expectedPair, token } = credentialParts(expected);
-    if (selectedCredential !== token) {
-      selectedCredential = token;
-      authenticatedRequest = undefined;
-      authenticatedTerminated = false;
-    }
+    rotateCredential(token);
     if (!token || authenticatedRequest) return;
     for (const [request, response] of successfulResponses) {
       const cookieMatches = response.cookie
@@ -72,6 +75,7 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
           ? expectedSessionCookie()
           : expectedSessionCookie;
       const { cookiePair: expectedPair, token } = credentialParts(expected);
+      rotateCredential(token);
       if (status === 200) successfulResponses.set(request, { authorization, cookie, status });
       const cookieMatches = cookie
         ?.split(';')
@@ -82,11 +86,6 @@ export function createAuthenticatedStreamTracker<RequestIdentity extends object>
         status === 200 &&
         (cookieMatches || authorization === `Bearer ${token}`)
       ) {
-        if (selectedCredential !== token) {
-          selectedCredential = token;
-          authenticatedRequest = undefined;
-          authenticatedTerminated = false;
-        }
         if (authenticatedRequest === undefined) {
           authenticatedRequest = request;
           authenticatedTerminated = terminatedRequests.has(request);

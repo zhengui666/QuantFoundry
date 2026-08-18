@@ -4,6 +4,9 @@ set -euo pipefail
 script_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 repo_root="${QF_CI_REPO_ROOT:-$script_repo_root}"
 orchestrator_root="${QF_CI_TRUSTED_ROOT:-$script_repo_root}"
+export QF_CI_REPO_ROOT="$repo_root"
+trusted_path="/usr/local/bin:/usr/bin:/bin"
+declare -A trusted_commands=()
 gate="${1:-}"
 report_dir="${QF_CI_REPORT_DIR:-}"
 orchestrator_commit="$(git -C "$orchestrator_root" rev-parse HEAD 2>/dev/null || true)"
@@ -20,8 +23,14 @@ if [[ -n "${2:-}" ]]; then
 fi
 if [[ -z "$report_dir" ]]; then
   report_dir="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-${gate}.XXXXXX")"
+else
+  [[ ! -e "$report_dir" && ! -L "$report_dir" ]] || {
+    printf '%s\n' '{"result":"invalid","reason":"report directory must not pre-exist"}' >&2
+    exit 2
+  }
+  umask 077
+  mkdir "$report_dir"
 fi
-mkdir -p "$report_dir"
 chmod 700 "$report_dir"
 mkdir -p "$report_dir/logs"
 chmod 700 "$report_dir/logs"
@@ -37,6 +46,7 @@ write_result() {
   local name="$1" command_text="$2" exit_code="$3" limitation="${4:-}"
   python3 - "$results_file" "$name" "$command_text" "$exit_code" "$limitation" <<'PY'
 import json
+import os
 import pathlib
 import sys
 
@@ -57,6 +67,7 @@ finish() {
   set +e
   python3 - "$report_dir/result.json" "$gate" "$commit" "$ref" "$started_at" "$status" "$results_file" "$report_dir/fullstack-diagnostics.json" <<'PY'
 import json
+import os
 import pathlib
 import sys
 
@@ -80,6 +91,12 @@ result = {
     "started_at_utc": sys.argv[5],
     "result": "pass" if sys.argv[6] == "0" else "fail",
     "exit_code": int(sys.argv[6]),
+    "github_run_id": int(os.environ["GITHUB_RUN_ID"])
+    if os.environ.get("GITHUB_RUN_ID", "").isdigit()
+    else None,
+    "github_run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"])
+    if os.environ.get("GITHUB_RUN_ATTEMPT", "").isdigit()
+    else None,
     "steps": steps,
     "environment_limitations": [step for step in steps if step["environment_limitation"]],
 }
@@ -113,6 +130,7 @@ run_step() {
   command_text="$(
     QF_CI_REDACTION_DATABASE_URL="${QF_DATABASE_URL:-}" \
     QF_CI_REDACTION_ALEMBIC_URL="${QF_ALEMBIC_URL:-}" \
+    QF_CI_REDACTION_PG18_DATABASE_URL="${QF_PG18_CI_BASE_DATABASE_URL:-}" \
     QF_CI_REDACTION_POSTGRES_PASSWORD="${QF_POSTGRES_PASSWORD:-}" \
     python3 - "$@" <<'PY'
 import os
@@ -122,6 +140,7 @@ import sys
 secrets = [
     os.environ.get("QF_CI_REDACTION_DATABASE_URL", ""),
     os.environ.get("QF_CI_REDACTION_ALEMBIC_URL", ""),
+    os.environ.get("QF_CI_REDACTION_PG18_DATABASE_URL", ""),
     os.environ.get("QF_CI_REDACTION_POSTGRES_PASSWORD", ""),
 ]
 arguments = []
@@ -141,7 +160,7 @@ secrets = [value for name, value in os.environ.items() if name in {
     "QF_CREDENTIAL_ENCRYPTION_KEY", "QF_CREDENTIAL_FINGERPRINT_KEY",
     "QF_POSTGRES_PASSWORD", "PGPASSWORD", "QF_DATABASE_URL", "QF_ALEMBIC_URL",
     "QF_CONTROL_DB_URL", "QF_LOCAL_PROVIDER_API_KEY",
-    "QF_LOCAL_DATA_CREDENTIAL",
+    "QF_LOCAL_DATA_CREDENTIAL", "QF_PG18_CI_BASE_DATABASE_URL",
 } and value]
 for line in sys.stdin:
     for secret in secrets:
@@ -149,9 +168,43 @@ for line in sys.stdin:
     sys.stdout.write(line)
 '
   }
+  local step_home="$report_dir/home/$name" step_tmp="$report_dir/tmp/$name"
+  mkdir -p "$step_home" "$step_tmp" "$step_home/.config" "$step_home/.docker"
+  local -a isolated_env=(
+    env -i
+    "HOME=$step_home"
+    "PATH=$trusted_path"
+    "TMPDIR=$step_tmp"
+    "XDG_CONFIG_HOME=$step_home/.config"
+    "XDG_CACHE_HOME=$step_home/.cache"
+    "DOCKER_CONFIG=$step_home/.docker"
+    "GIT_CONFIG_NOSYSTEM=1"
+    "GIT_CONFIG_GLOBAL=/dev/null"
+    "GIT_TERMINAL_PROMPT=0"
+  )
+  local variable_name
+  for variable_name in \
+    CI GITHUB_ACTIONS GITHUB_REF GITHUB_REPOSITORY GITHUB_RUN_ATTEMPT GITHUB_RUN_ID \
+    GITHUB_SERVER_URL GITHUB_SHA QF_ALEMBIC_URL QF_BUILD_ID QF_CI_DISPOSABLE_DATABASE \
+    QF_CI_REPO_ROOT \
+    QF_CODEX_BASE_URL QF_CODEX_DISPLAY_NAME QF_CODEX_MODELS QF_CONTROL_DB_URL \
+    QF_DATABASE_URL QF_ENV QF_ENVIRONMENT QF_FULLSTACK_DIAGNOSTICS_FILE QF_GIT_COMMIT \
+    QF_INDEPENDENT_REVIEW_REPORT QF_LOCAL_DATA_CREDENTIAL QF_LOCAL_PROVIDER_API_KEY \
+    QF_PG18_CI_BASE_DATABASE_URL QF_PG18_CI_CHILD_STOP_TIMEOUT_SECONDS \
+    QF_PG18_CI_READINESS_TIMEOUT_SECONDS QF_RELEASE_COMMIT QF_RELEASE_GOVERNANCE_ROOT \
+    QF_RELEASE_REPO_ROOT QF_RELEASE_TAG QF_RELEASE_TRUSTED_VERIFIER_COMMIT \
+    QF_RELEASE_TRUSTED_VERIFIER_ROOT QF_SKIP_AUTO_CREATE; do
+    if [[ -n "${!variable_name+x}" ]]; then
+      isolated_env+=("$variable_name=${!variable_name}")
+    fi
+  done
+  if [[ "${QF_CI_ALLOW_REVIEW_CREDENTIALS:-}" == 1 ]]; then
+    [[ -n "${GITHUB_TOKEN:-}" ]] && isolated_env+=("GITHUB_TOKEN=$GITHUB_TOKEN")
+    [[ -n "${GH_TOKEN:-}" ]] && isolated_env+=("GH_TOKEN=$GH_TOKEN")
+  fi
   local status=0 redactor_status=0
   set +e
-  (cd "$repo_root" && "$@") 2>&1 \
+  (cd "$repo_root" && "${isolated_env[@]}" "$@") 2>&1 \
     | redact_ci_secrets >"$report_dir/logs/$name.log"
   local -a pipeline_status=("${PIPESTATUS[@]}")
   status=${pipeline_status[0]:-1}
@@ -194,18 +247,85 @@ require_trusted_orchestrator() {
     write_result trusted-orchestrator 'trusted orchestrator has no untracked files' 2 'trusted orchestrator checkout was modified'
     exit 2
   }
-  git -C "$orchestrator_root" ls-files -v | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }' && {
+  local hidden_flags
+  hidden_flags="$(git -C "$orchestrator_root" ls-files -v)" || {
+    write_result trusted-orchestrator 'trusted orchestrator file flags can be inspected' 2 'Git hidden-file flag inspection failed'
+    exit 2
+  }
+  if printf '%s\n' "$hidden_flags" | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }'; then
     write_result trusted-orchestrator 'trusted orchestrator has no hidden tracked changes' 2 'trusted orchestrator checkout has skip-worktree or assume-unchanged files'
     exit 2
-  } || true
+  fi
+}
+
+trusted_step() {
+  require_trusted_orchestrator
+  local name="$1"
+  shift
+  local snapshot="$report_dir/trusted/$name"
+  [[ ! -e "$snapshot" && ! -L "$snapshot" ]] || {
+    write_result "$name" 'trusted snapshot path must not pre-exist' 2 'trusted snapshot path collision'
+    exit 2
+  }
+  mkdir -p "$snapshot"
+  git -C "$orchestrator_root" archive --format=tar "$trusted_commit" | tar -xf - -C "$snapshot"
+  chmod -R a-w "$snapshot"
+  local saved_repo_root="$repo_root"
+  local saved_verifier_root="${QF_RELEASE_TRUSTED_VERIFIER_ROOT-}"
+  local saved_verifier_commit="${QF_RELEASE_TRUSTED_VERIFIER_COMMIT-}"
+  repo_root="$snapshot"
+  export QF_RELEASE_TRUSTED_VERIFIER_ROOT="$snapshot"
+  export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_commit"
+  local -a args=()
+  local argument
+  for argument in "$@"; do
+    case "$argument" in
+      "$orchestrator_root"/*)
+        args+=("$snapshot/${argument#"$orchestrator_root/"}")
+        ;;
+      QF_RELEASE_TRUSTED_VERIFIER_ROOT=*)
+        args+=("QF_RELEASE_TRUSTED_VERIFIER_ROOT=$snapshot")
+        ;;
+      *)
+        args+=("$argument")
+        ;;
+    esac
+  done
+  run_step "$name" "${args[@]}"
+  repo_root="$saved_repo_root"
+  if [[ -n "$saved_verifier_root" ]]; then
+    export QF_RELEASE_TRUSTED_VERIFIER_ROOT="$saved_verifier_root"
+  else
+    unset QF_RELEASE_TRUSTED_VERIFIER_ROOT
+  fi
+  if [[ -n "$saved_verifier_commit" ]]; then
+    export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$saved_verifier_commit"
+  else
+    unset QF_RELEASE_TRUSTED_VERIFIER_COMMIT
+  fi
 }
 
 require_command() {
   local command_name="$1"
-  if ! command -v "$command_name" >/dev/null 2>&1; then
+  local command_path directory
+  command_path="$(command -v "$command_name" 2>/dev/null || true)"
+  if [[ ! "$command_path" = /* || ! -x "$command_path" || -L "$command_path" ]]; then
     write_result "host-${command_name}" "command -v ${command_name}" 127 "missing host dependency: ${command_name}"
     exit 127
   fi
+  directory="$command_path"
+  while [[ "$directory" != / ]]; do
+    [[ ! -w "$directory" ]] || {
+      write_result "host-${command_name}" "command -v ${command_name}" 126 "host dependency path is writable: ${command_path}"
+      exit 126
+    }
+    directory="$(dirname "$directory")"
+  done
+  trusted_commands["$command_name"]="$command_path"
+  case ":$trusted_path:" in
+    *":$(dirname "$command_path"):"*) ;;
+    *) trusted_path="$trusted_path:$(dirname "$command_path")" ;;
+  esac
 }
 
 require_common_tooling() {
@@ -217,7 +337,7 @@ require_common_tooling() {
   require_command docker
   require_command shellcheck
   require_command actionlint
-  if ! docker compose version >/dev/null 2>&1; then
+  if ! "${trusted_commands[docker]}" compose version >/dev/null 2>&1; then
     write_result host-docker-compose 'docker compose version' 127 'missing host dependency: docker compose plugin'
     exit 127
   fi
@@ -240,14 +360,14 @@ require_ci_environment() {
     write_result ci-postgres 'QF_CI_DISPOSABLE_DATABASE/QF_DATABASE_URL/QF_ALEMBIC_URL/QF_SKIP_AUTO_CREATE are required' 2 'missing explicitly disposable real PostgreSQL CI configuration'
     exit 2
   fi
-  run_step ci-disposable-database "$orchestrator_root/scripts/ci/verify-disposable-ci-database.py" "$QF_DATABASE_URL"
+  trusted_step ci-disposable-database "$orchestrator_root/scripts/ci/verify-disposable-ci-database.py" "$QF_DATABASE_URL"
 }
 
 run_pr_fast() {
   require_ci_environment
   require_common_tooling
   run_step governance make governance
-  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
+  trusted_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step platform make platform
   run_step hygiene make hygiene
   run_step migration scripts/ci.sh migration
@@ -260,12 +380,12 @@ run_pr_fast() {
 run_main_full() {
   require_ci_environment
   require_common_tooling
-  run_step p0-registry-snapshot env \
+  trusted_step p0-registry-snapshot env \
     QF_RELEASE_REPO_ROOT="$repo_root" \
     QF_RELEASE_TRUSTED_VERIFIER_ROOT="$orchestrator_root" \
     QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_commit" \
     "$orchestrator_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --offline-report
-  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
+  trusted_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step full-ci-platform make platform
   run_step full-ci-hygiene make hygiene
   run_step full-ci-migration scripts/ci.sh migration
@@ -295,13 +415,12 @@ run_agent_change() {
   require_ci_environment
   require_common_tooling
   run_step governance make governance
-  require_trusted_orchestrator
-  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
+  trusted_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step tool-registry-exact make tools
   run_step agent-contract-and-policy make backend-ci
   local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-$report_dir/independent-review-locator.json}"
   if [[ -z "${QF_INDEPENDENT_REVIEW_REPORT:-}" ]]; then
-    run_step independent-review-locator "$orchestrator_root/scripts/ci/fetch-independent-review-report.sh" "$commit" "$review_locator"
+    trusted_step independent-review-locator "$orchestrator_root/scripts/ci/fetch-independent-review-report.sh" "$commit" "$review_locator"
   fi
   require_trusted_orchestrator
   [[ -n "$review_token" && -n "$review_gh_token" ]] || {
@@ -309,22 +428,53 @@ run_agent_change() {
     exit 2
   }
   export GITHUB_TOKEN="$review_token" GH_TOKEN="$review_gh_token"
-  run_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
+  export QF_CI_ALLOW_REVIEW_CREDENTIALS=1
+  trusted_step independent-review-report "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" "$review_locator" "$commit"
+  unset QF_CI_ALLOW_REVIEW_CREDENTIALS GITHUB_TOKEN GH_TOKEN
 }
 
-verify_remote_release_tag() {
-  local refs remote_commit
-  refs="$(git -C "$repo_root" ls-remote --exit-code origin \
-    "refs/tags/$QF_RELEASE_TAG" "refs/tags/$QF_RELEASE_TAG^{}")" || return 1
-  remote_commit="$(printf '%s\n' "$refs" | awk -v tag="$QF_RELEASE_TAG" '
-    $2 == "refs/tags/" tag "^{}" { peeled = $1 }
-    $2 == "refs/tags/" tag { direct = $1 }
-    END { print peeled != "" ? peeled : direct }
-  ')"
-  [[ -n "$remote_commit" && "$remote_commit" == "$commit" ]] || {
-    printf 'remote release tag target %s does not match checkout %s\n' "$remote_commit" "$commit" >&2
-    return 1
+run_agent_change_verify() {
+  local review_token="${GITHUB_TOKEN:-}" review_gh_token="${GH_TOKEN:-}"
+  local review_locator="${QF_INDEPENDENT_REVIEW_REPORT:-}"
+  local review_attestation="${QF_INDEPENDENT_REVIEW_ATTESTATION:-}"
+  require_trusted_orchestrator
+  [[ -n "$review_locator" ]] || {
+    write_result independent-review-report 'QF_INDEPENDENT_REVIEW_REPORT is required' 2 'missing independent review verification artifact'
+    exit 2
   }
+  [[ -f "$review_attestation" ]] || {
+    write_result independent-review-attestation 'independent review attestation is required' 2 'missing independent review attestation artifact'
+    exit 2
+  }
+  python3 - "$review_locator" "$review_attestation" "$commit" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+locator, attestation, commit = map(pathlib.Path, sys.argv[1:])
+payload = json.loads(locator.read_text(encoding="utf-8"))
+proof = json.loads(attestation.read_text(encoding="utf-8"))
+if payload.get("commit") != str(commit):
+    raise SystemExit("independent review locator commit mismatch")
+if proof.get("schema_version") != "1.0.0" or proof.get("commit") != str(commit):
+    raise SystemExit("independent review attestation commit binding is invalid")
+if proof.get("result") != "verified" or proof.get("locator_sha256") != hashlib.sha256(locator.read_bytes()).hexdigest():
+    raise SystemExit("independent review attestation does not bind the downloaded locator")
+PY
+  [[ -n "$review_token" && -n "$review_gh_token" ]] || {
+    write_result independent-review-report 'GITHUB_TOKEN and GH_TOKEN are required for independent review verification' 2 'missing independent review verification credentials'
+    exit 2
+  }
+  export GITHUB_TOKEN="$review_token" GH_TOKEN="$review_gh_token"
+  export QF_CI_ALLOW_REVIEW_CREDENTIALS=1
+  trusted_step release-governance-static env \
+    QF_RELEASE_GOVERNANCE_ROOT="$repo_root" \
+    "$orchestrator_root/scripts/ci/release-governance-static-gate.sh" --skip-fixtures
+  trusted_step independent-review-report \
+    "$orchestrator_root/scripts/ci/verify-independent-review-report.sh" \
+    "$review_locator" "$commit"
+  unset QF_CI_ALLOW_REVIEW_CREDENTIALS GITHUB_TOKEN GH_TOKEN
 }
 
 run_rc() {
@@ -342,10 +492,29 @@ run_rc() {
     write_result release-tag-target 'release tag must resolve to checkout HEAD' 2 'release tag target does not match checkout HEAD'
     exit 2
   }
-  run_step remote-release-tag verify_remote_release_tag
-  run_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
-  run_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" "$orchestrator_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed-except-supply-chain
-  run_step known-issues-review "$orchestrator_root/scripts/release-known-issues-check.sh"
+  run_step remote-release-tag python3 -c '
+import subprocess
+import sys
+
+tag, expected = sys.argv[1:]
+refs = subprocess.check_output(
+    ["git", "ls-remote", "--exit-code", "https://github.com/zhengui666/QuantFoundry.git", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"],
+    text=True,
+)
+direct = peeled = ""
+for line in refs.splitlines():
+    sha, ref = line.split("\t", 1)
+    if ref == f"refs/tags/{tag}":
+        direct = sha
+    elif ref == f"refs/tags/{tag}^{{}}":
+        peeled = sha
+remote = peeled or direct
+if remote != expected:
+    raise SystemExit(f"remote release tag target {remote} does not match checkout {expected}")
+' "$QF_RELEASE_TAG" "$commit"
+  trusted_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
+  trusted_step p0-require-closed-except-supply-chain env "QF_RELEASE_COMMIT=$commit" "$orchestrator_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed-except-supply-chain
+  trusted_step known-issues-review "$orchestrator_root/scripts/release-known-issues-check.sh"
   run_step rc-full-ci make ci
   run_step fresh-compose-migration make fullstack
   run_step pg18-migration make pg18
@@ -359,6 +528,12 @@ case "$gate" in
   pr-fast) run_pr_fast ;;
   main-full) run_main_full ;;
   nightly) run_nightly ;;
-  agent-change) run_agent_change ;;
+  agent-change)
+    if [[ "${QF_AGENT_CHANGE_VERIFY_ONLY:-}" == 1 ]]; then
+      run_agent_change_verify
+    else
+      run_agent_change
+    fi
+    ;;
   rc) run_rc ;;
 esac

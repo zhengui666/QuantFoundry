@@ -63,11 +63,12 @@ export function SettingsPage() {
         draftBaseline.revision !== activeBody.active_revision
       )
         throw new Error(t('settings.conflict'));
+      const submittedDraftValues = { ...draftValues };
       const values: Schema<'ConfigurationCandidateRequest'>['values'] =
         catalog.data?.body.entries.flatMap<
           Schema<'ConfigurationCandidateRequest'>['values'][number]
         >((entry) => {
-          const input = draftValues[entry.key] ?? '';
+          const input = submittedDraftValues[entry.key] ?? '';
           const raw = input.trim();
           if (!raw) return [];
           if (entry.sensitivity === 'SECRET') return [{ key: entry.key, secret: input }];
@@ -86,11 +87,14 @@ export function SettingsPage() {
       if (validation.body.revision !== candidate.body.revision)
         throw new Error('Configuration candidate changed during validation; retry.');
       if (validation.body.status !== 'VALID') throw new Error(t('settings.validationFailed'));
-      return api.activateConfiguration(candidate.body.revision, draftBaseline.etag);
+      return {
+        result: await api.activateConfiguration(candidate.body.revision, draftBaseline.etag),
+        submittedDraftValues,
+      };
     },
-    onSuccess: (result) => {
+    onSuccess: ({ result, submittedDraftValues }) => {
       setConfigurationMessage(t('settings.saved'));
-      setDraftBaselineFingerprint(JSON.stringify(draftValues));
+      setDraftBaselineFingerprint(JSON.stringify(submittedDraftValues));
       if (result.etag)
         setDraftBaseline({ etag: result.etag, revision: result.body.active_revision });
       void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'active') });
@@ -111,16 +115,31 @@ export function SettingsPage() {
   const [dbBaseline, setDbBaseline] = useState<{ etag: string; activeRevision: number }>();
   const [dbCandidateRevision, setDbCandidateRevision] = useState<number>();
   const [dbValidatedRevision, setDbValidatedRevision] = useState<number>();
+  const [dbValidatedBaseline, setDbValidatedBaseline] = useState<{
+    etag: string;
+    activeRevision: number;
+  }>();
   const serverCandidateRevision = database.data?.body.candidate?.revision;
   const serverCandidateState = database.data?.body.candidate?.state;
   useEffect(() => {
-    if (serverCandidateRevision !== undefined) {
-      setDbCandidateRevision(serverCandidateRevision);
-      setDbValidatedRevision(
-        serverCandidateState === 'VALIDATED' ? serverCandidateRevision : undefined,
-      );
+    if (!database.data) return;
+    if (serverCandidateRevision === undefined) {
+      setDbCandidateRevision(undefined);
+      setDbValidatedRevision(undefined);
+      setDbValidatedBaseline(undefined);
+      return;
     }
-  }, [serverCandidateRevision, serverCandidateState]);
+    setDbCandidateRevision(serverCandidateRevision);
+    setDbValidatedRevision(
+      serverCandidateState === 'VALIDATED' ? serverCandidateRevision : undefined,
+    );
+    if (serverCandidateState === 'VALIDATED' && database.data.etag && database.data.body.active_revision !== null)
+      setDbValidatedBaseline({
+        etag: database.data.etag,
+        activeRevision: database.data.body.active_revision,
+      });
+    else setDbValidatedBaseline(undefined);
+  }, [database.data, serverCandidateRevision, serverCandidateState]);
   const persistedValidatedRevision =
     database.data?.body.candidate?.state === 'VALIDATED'
       ? database.data.body.candidate.revision
@@ -169,7 +188,7 @@ export function SettingsPage() {
     });
   }, [database.data, dbDraftIdentity, dbFormDirty, dbFormSource]);
   const saveDatabase = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!database.data || !dbBaseline?.etag)
         throw new Error('Database connection baseline is unavailable.');
       if (
@@ -180,63 +199,88 @@ export function SettingsPage() {
       const port = Number(dbForm.port);
       if (!Number.isInteger(port) || port < 1 || port > 65535)
         throw new Error('Database port must be an integer between 1 and 65535.');
-      return api.putDatabaseConnectionCandidate(
+      const submittedForm = { ...dbForm };
+      const result = await api.putDatabaseConnectionCandidate(
         {
           base_revision: dbBaseline.activeRevision,
           connection: {
-            host: dbForm.host.trim(),
+            host: submittedForm.host.trim(),
             port,
-            database: dbForm.database.trim(),
-            tls_mode: dbForm.tls_mode,
-            ...(dbForm.username.trim() ? { username: dbForm.username.trim() } : {}),
-            ...(dbForm.password ? { password: dbForm.password } : {}),
+            database: submittedForm.database.trim(),
+            tls_mode: submittedForm.tls_mode,
+            ...(submittedForm.username.trim() ? { username: submittedForm.username.trim() } : {}),
+            ...(submittedForm.password ? { password: submittedForm.password } : {}),
           },
         },
         dbBaseline.etag,
       );
+      return { result, submittedForm };
     },
-    onSuccess: ({ body }) => {
+    onSuccess: ({ result: { body }, submittedForm }) => {
       setDbCandidateRevision(body.revision);
       setDbValidatedRevision(undefined);
-      setDbSavedFingerprint(dbFingerprint(dbForm));
+      setDbValidatedBaseline(undefined);
+      setDbSavedFingerprint(dbFingerprint(submittedForm));
       void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
     },
   });
   const validateDatabase = useMutation({
     mutationFn: async () => {
-      const revision = dbCandidateRevision ?? database.data?.body.candidate?.revision;
+      const current = database.data;
+      const revision = dbCandidateRevision ?? current?.body.candidate?.revision;
       if (!revision) throw new Error('Database candidate revision is unavailable.');
+      if (!current?.etag || current.body.active_revision === null)
+        throw new Error('Database connection baseline is unavailable.');
+      const baseline = { etag: current.etag, activeRevision: current.body.active_revision };
       const result = await api.validateDatabaseConnectionCandidate(revision);
       if (result.body.status !== 'VALID') {
         throw new Error('Database connection validation failed.');
       }
-      return result;
+      if (result.body.revision !== revision)
+        throw new Error('Database candidate changed during validation; retry.');
+      return { result, baseline };
     },
-    onSuccess: ({ body }) => {
+    onSuccess: ({ result: { body }, baseline }) => {
       setDbValidatedRevision(body.revision);
+      setDbValidatedBaseline(baseline);
       void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
     },
   });
   const activateDatabase = useMutation({
     mutationFn: () => {
-      const etag = database.data?.etag;
-      if (!etag) throw new Error('Database connection ETag is unavailable.');
+      const current = database.data;
+      const etag = current?.etag;
+      if (!current || !etag) throw new Error('Database connection ETag is unavailable.');
       if (!validatedRevision) throw new Error('Validated database candidate is unavailable.');
+      if (
+        current.body.candidate?.revision !== validatedRevision ||
+        current.body.candidate?.state !== 'VALIDATED' ||
+        !dbValidatedBaseline ||
+        dbValidatedBaseline.etag !== etag ||
+        dbValidatedBaseline.activeRevision !== current.body.active_revision
+      )
+        throw new Error('Database candidate changed after validation; validate it again.');
       return api.activateDatabaseConnection(etag, validatedRevision);
     },
     onSuccess: () => {
       setDbCandidateRevision(undefined);
       setDbValidatedRevision(undefined);
+      setDbValidatedBaseline(undefined);
       setDbSavedFingerprint(undefined);
       void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
     },
   });
   const [keyForm, setKeyForm] = useState(initialSecret);
-  const [issuedSecrets, setIssuedSecrets] = useState<string[]>([]);
+  const [issuedSecret, setIssuedSecret] = useState<string>();
+  useEffect(() => {
+    if (!issuedSecret) return;
+    const timer = window.setTimeout(() => setIssuedSecret(undefined), 60_000);
+    return () => window.clearTimeout(timer);
+  }, [issuedSecret]);
   const issue = useMutation({
     mutationFn: () => api.createAccessKey({ label: keyForm.label.trim() }),
     onSuccess: ({ body }) => {
-      setIssuedSecrets((current) => [...current, body.secret]);
+      setIssuedSecret(body.secret);
       setKeyForm(initialSecret);
       void queryClient.invalidateQueries({
         queryKey: workspaceQueryKey('settings', 'access-keys'),
@@ -262,7 +306,7 @@ export function SettingsPage() {
         result.body &&
         'secret' in result.body
       )
-        setIssuedSecrets((current) => [...current, result.body.secret]);
+        setIssuedSecret(result.body.secret);
       void queryClient.invalidateQueries({
         queryKey: workspaceQueryKey('settings', 'access-keys'),
       });
@@ -420,11 +464,11 @@ export function SettingsPage() {
           </button>
         </form>
         {issue.error && <Problem error={issue.error} />}
-        {issuedSecrets.map((secret) => (
-          <State key={secret} kind="permission">
-            {t('settings.oneTimeSecret')} <code>{secret}</code>
+        {issuedSecret && (
+          <State kind="permission">
+            {t('settings.oneTimeSecret')} <code>{issuedSecret}</code>
           </State>
-        ))}
+        )}
         <div className="table-scroll">
           <table>
             <thead>

@@ -54,6 +54,8 @@ def main() -> int:
         "script_location", str(root / "alembic_control").replace("%", "%%")
     )
     with CONTROL_ENGINE.begin() as connection:
+        if connection.dialect.name == "sqlite":
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
         config.attributes["connection"] = connection
         command.upgrade(config, "head")
         init_control_db(connection)

@@ -140,7 +140,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
         event.event_type === 'research.updated' && event.object_id === created.research_id,
     );
     const readsAtEvent = exactReads.length;
-    witness.observeEvent(frame, undefined, readsAtEvent);
+    witness.observeEvent(frame, readsAtEvent);
     await refetchResponse;
     exactReads
       .slice(readsAtEvent)

@@ -1,16 +1,24 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generate, parse, walk } from 'css-tree';
 
 const css = await readFile(
   join(dirname(fileURLToPath(import.meta.url)), '../src/design-system/tokens/semantic.css'),
   'utf8',
 );
-const stylesheet = css.replace(/\/\*[\s\S]*?\*\//g, '');
+const stylesheet = parse(css, { context: 'stylesheet' });
+const rootTokens = new Map();
+walk(stylesheet, (node) => {
+  if (node.type !== 'Rule' || generate(node.prelude).trim() !== ':root' || !node.block) return;
+  node.block.children.forEach((child) => {
+    if (child.type === 'Declaration' && child.property.startsWith('--'))
+      rootTokens.set(child.property, generate(child.value).trim());
+  });
+});
 
 function token(name) {
-  const declaration = new RegExp(`(?:^|[;{}])\\s*--${name}\\s*:\\s*([^;{}]+)`, 'gi');
-  const values = [...stylesheet.matchAll(declaration)].map((match) => match[1].trim());
+  const values = rootTokens.has(`--${name}`) ? [rootTokens.get(`--${name}`)] : [];
   if (values.length !== 1 || !/^#[0-9a-f]{6}$/i.test(values[0]))
     throw new Error(`Expected exactly one valid root color token: --${name}`);
   return values[0];

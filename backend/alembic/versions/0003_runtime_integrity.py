@@ -166,6 +166,12 @@ def _create_immutability_guards() -> None:
             """
             CREATE FUNCTION qf_reject_frozen_strategy_change() RETURNS trigger AS $$
             BEGIN
+              IF TG_OP = 'INSERT' THEN
+                IF NEW.state <> 'CANDIDATE' THEN
+                  RAISE EXCEPTION 'strategy version must start as candidate';
+                END IF;
+                RETURN NEW;
+              END IF;
               IF TG_OP = 'DELETE' AND OLD.state <> 'CANDIDATE' THEN
                 RAISE EXCEPTION 'frozen strategy version cannot be changed';
               END IF;
@@ -232,13 +238,19 @@ def _create_immutability_guards() -> None:
             """
         )
         op.execute(
-            "CREATE TRIGGER qf_strategy_versions_immutable BEFORE UPDATE OR DELETE "
+            "CREATE TRIGGER qf_strategy_versions_immutable BEFORE INSERT OR UPDATE OR DELETE "
             "ON strategy_versions FOR EACH ROW EXECUTE FUNCTION qf_reject_frozen_strategy_change()"
         )
         op.execute(
             """
             CREATE FUNCTION qf_reject_completed_experiment_change() RETURNS trigger AS $$
             BEGIN
+              IF TG_OP = 'INSERT' THEN
+                IF NEW.immutable THEN
+                  RAISE EXCEPTION 'experiment must start mutable';
+                END IF;
+                RETURN NEW;
+              END IF;
               IF OLD.immutable THEN
                 RAISE EXCEPTION 'completed experiment cannot be changed';
               END IF;
@@ -282,13 +294,19 @@ def _create_immutability_guards() -> None:
             """
         )
         op.execute(
-            "CREATE TRIGGER qf_experiments_immutable BEFORE UPDATE OR DELETE ON experiments "
+            "CREATE TRIGGER qf_experiments_immutable BEFORE INSERT OR UPDATE OR DELETE ON experiments "
             "FOR EACH ROW EXECUTE FUNCTION qf_reject_completed_experiment_change()"
         )
         op.execute(
             """
             CREATE FUNCTION qf_reject_terminal_approval_change() RETURNS trigger AS $$
             BEGIN
+              IF TG_OP = 'INSERT' THEN
+                IF NEW.status <> 'PENDING' THEN
+                  RAISE EXCEPTION 'approval must start pending';
+                END IF;
+                RETURN NEW;
+              END IF;
               IF OLD.status <> 'PENDING' THEN
                 RAISE EXCEPTION 'terminal approval cannot be changed';
               END IF;
@@ -312,7 +330,7 @@ def _create_immutability_guards() -> None:
             """
         )
         op.execute(
-            "CREATE TRIGGER qf_approval_requests_immutable BEFORE UPDATE OR DELETE "
+            "CREATE TRIGGER qf_approval_requests_immutable BEFORE INSERT OR UPDATE OR DELETE "
             "ON approval_requests FOR EACH ROW EXECUTE FUNCTION qf_reject_terminal_approval_change()"
         )
         op.execute(
@@ -368,6 +386,11 @@ def _create_immutability_guards() -> None:
         "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
     )
     op.execute(
+        "CREATE TRIGGER qf_strategy_versions_insert_immutable BEFORE INSERT "
+        "ON strategy_versions WHEN NEW.state != 'CANDIDATE' BEGIN "
+        "SELECT RAISE(ABORT, 'strategy version must start as candidate'); END"
+    )
+    op.execute(
         "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state != 'CANDIDATE' AND ("
         "NEW.id IS NOT OLD.id OR "
@@ -392,6 +415,16 @@ def _create_immutability_guards() -> None:
             "ON approval_requests WHEN OLD.status != 'PENDING' BEGIN "
             "SELECT RAISE(ABORT, 'terminal approval cannot be changed'); END"
         )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_insert_immutable BEFORE INSERT ON experiments "
+        "WHEN NEW.immutable = 1 BEGIN "
+        "SELECT RAISE(ABORT, 'experiment must start mutable'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_insert_immutable BEFORE INSERT "
+        "ON approval_requests WHEN NEW.status != 'PENDING' BEGIN "
+        "SELECT RAISE(ABORT, 'approval must start pending'); END"
+    )
     op.execute(
         "CREATE TRIGGER qf_strategy_versions_freeze_immutable BEFORE UPDATE "
         "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND ("
@@ -628,9 +661,12 @@ def _drop_immutability_guards() -> None:
             op.execute(f"DROP TRIGGER qf_{table}_{action}_immutable")
     op.execute("DROP TRIGGER qf_domain_events_update_immutable")
     op.execute("DROP TRIGGER qf_domain_events_delete_immutable")
+    op.execute("DROP TRIGGER qf_strategy_versions_insert_immutable")
     for table in ("strategy_versions", "experiments", "approval_requests"):
         for action in ("update", "delete"):
             op.execute(f"DROP TRIGGER qf_{table}_{action}_immutable")
+    op.execute("DROP TRIGGER qf_experiments_insert_immutable")
+    op.execute("DROP TRIGGER qf_approval_requests_insert_immutable")
     op.execute("DROP TRIGGER qf_strategy_versions_freeze_immutable")
     op.execute("DROP TRIGGER qf_strategy_versions_candidate_immutable")
     op.execute("DROP TRIGGER qf_experiments_complete_immutable")

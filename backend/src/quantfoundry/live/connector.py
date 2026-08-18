@@ -181,7 +181,9 @@ def _order_fingerprint(account_id: str, order: OrderRequest) -> str:
 
 
 def _validate_order_response(
-    result: dict[str, Any], client_order_id: str | None
+    result: dict[str, Any],
+    client_order_id: str | None,
+    broker_order_id: str | None = None,
 ) -> dict[str, Any]:
     statuses = {
         "CREATED",
@@ -211,6 +213,10 @@ def _validate_order_response(
         or (
             client_order_id is not None
             and result.get("client_order_id") != client_order_id
+        )
+        or (
+            broker_order_id is not None
+            and result.get("broker_order_id") != broker_order_id
         )
         or not isinstance(result.get("broker_order_id"), str)
         or not result["broker_order_id"]
@@ -775,6 +781,7 @@ class ConnectorClient:
         self._nonce_factory = nonce_factory
         self._preview_fingerprints: dict[str, tuple[float, str]] = {}
         self._order_fingerprints: dict[tuple[str, str], str] = {}
+        self._orders_requiring_reconciliation: set[tuple[str, str]] = set()
         self._capabilities: ConnectorCapabilities | None = None
         self._capabilities_fetched_at: float | None = None
         if timeout <= 0:
@@ -944,6 +951,10 @@ class ConnectorClient:
         capabilities.validate_order(order)
         fingerprint = _order_fingerprint(account_id, order)
         identity = (account_id, order.client_order_id)
+        if identity in self._orders_requiring_reconciliation:
+            raise ConnectorUnavailable(
+                "order outcome is unknown; reconcile by client_order_id before retry"
+            )
         previous_fingerprint = self._order_fingerprints.get(identity)
         if previous_fingerprint is not None and previous_fingerprint != fingerprint:
             raise ConnectorProtocolError(
@@ -959,15 +970,20 @@ class ConnectorClient:
             ):
                 raise ConnectorProtocolError("validated margin preview is required")
         self._order_fingerprints[identity] = fingerprint
-        result = self._request(
-            "POST",
-            f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
-            payload=order.to_wire(),
-            idempotency_key=_idempotency_key(
-                "submit", account_id, order.client_order_id
-            ),
-        )
+        try:
+            result = self._request(
+                "POST",
+                f"/v1/accounts/{_segment(account_id, 'account_id')}/orders",
+                payload=order.to_wire(),
+                idempotency_key=_idempotency_key(
+                    "submit", account_id, order.client_order_id
+                ),
+            )
+        except ConnectorUnavailable:
+            self._orders_requiring_reconciliation.add(identity)
+            raise
         validated = _validate_order_response(result, order.client_order_id)
+        self._orders_requiring_reconciliation.discard(identity)
         if order.instrument.asset_class in MARGIN_PREVIEW_ASSETS:
             self._preview_fingerprints.pop(fingerprint, None)
         return validated
@@ -989,7 +1005,12 @@ class ConnectorClient:
             )
         if query:
             path += "?" + "&".join(query)
-        return _validate_orders_response(self._request("GET", path), client_order_id)
+        result = _validate_orders_response(self._request("GET", path), client_order_id)
+        if client_order_id is not None and any(
+            item.get("client_order_id") == client_order_id for item in result["orders"]
+        ):
+            self._orders_requiring_reconciliation.discard((account_id, client_order_id))
+        return result
 
     def order(self, account_id: str, broker_order_id: str) -> dict[str, Any]:
         return _validate_order_response(
@@ -999,6 +1020,7 @@ class ConnectorClient:
                 f"{_segment(broker_order_id, 'broker_order_id')}",
             ),
             None,
+            broker_order_id,
         )
 
     def cancel(self, account_id: str, broker_order_id: str) -> dict[str, Any]:
@@ -1011,6 +1033,7 @@ class ConnectorClient:
                 idempotency_key=_idempotency_key("cancel", account_id, broker_order_id),
             ),
             None,
+            broker_order_id,
         )
 
     def fills(self, account_id: str, *, cursor: str | None = None) -> dict[str, Any]:

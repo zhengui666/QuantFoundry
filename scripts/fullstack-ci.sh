@@ -99,6 +99,7 @@ export QF_POSTGRES_DB=quantfoundry
 export QF_POSTGRES_USER=quantfoundry
 export QF_POSTGRES_PASSWORD
 QF_FULLSTACK_DATABASE_URL="postgresql+psycopg://${QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB}"
+export QF_FULLSTACK_DATABASE_URL
 export QF_ARTIFACT_ROOT=/var/lib/quantfoundry/artifacts
 export QF_DATA_ROOT=/var/lib/quantfoundry/data
 export QF_AGENT_PROVIDER=remote-codex
@@ -112,6 +113,7 @@ export QF_CODEX_DISPLAY_NAME='QuantFoundry Remote Codex local transport'
 export QF_CODEX_API_KEY
 export QF_LOCAL_PROVIDER_API_KEY
 export QF_LOCAL_DATA_CREDENTIAL
+export QF_FULLSTACK_ALLOW_INSECURE_DB=1
 export QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER=1
 export QF_CREDENTIAL_ENCRYPTION_KEY_ID=fullstack-local-key-v1
 export QF_CREDENTIAL_ENCRYPTION_KEY
@@ -140,14 +142,14 @@ general_key="$(QF_ENV_FILE="$environment_file" QF_BOOTSTRAP_KEY_LABEL=fullstack 
 export QF_FULLSTACK_GENERAL_KEY="$general_key"
 
 application_url="http://127.0.0.1:${http_port}"
-docker compose --project-name "$project_name" --profile local \
+  docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" exec -T \
-  -e QF_FULLSTACK_GENERAL_KEY="$general_key" \
-  -e QF_FULLSTACK_DATABASE_URL="$QF_FULLSTACK_DATABASE_URL" \
-  -e QF_FULLSTACK_ALLOW_INSECURE_DB=1 \
-  -e QF_CODEX_BASE_URL="$QF_CODEX_BASE_URL" \
-  -e QF_CODEX_MODEL="$QF_CODEX_MODEL" \
-  -e QF_LOCAL_PROVIDER_API_KEY="$QF_LOCAL_PROVIDER_API_KEY" api \
+  -e QF_FULLSTACK_GENERAL_KEY \
+  -e QF_FULLSTACK_DATABASE_URL \
+  -e QF_FULLSTACK_ALLOW_INSECURE_DB \
+  -e QF_CODEX_BASE_URL \
+  -e QF_CODEX_MODEL \
+  -e QF_LOCAL_PROVIDER_API_KEY api \
   python /workspace/scripts/fullstack_seed.py \
   --prepare-only \
   --application-url "$application_url"
@@ -158,12 +160,12 @@ docker compose --project-name "$project_name" --profile local \
 
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" exec -T \
-  -e QF_FULLSTACK_GENERAL_KEY="$general_key" \
-  -e QF_FULLSTACK_DATABASE_URL="$QF_FULLSTACK_DATABASE_URL" \
-  -e QF_FULLSTACK_ALLOW_INSECURE_DB=1 \
-  -e QF_CODEX_BASE_URL="$QF_CODEX_BASE_URL" \
-  -e QF_CODEX_MODEL="$QF_CODEX_MODEL" \
-  -e QF_LOCAL_PROVIDER_API_KEY="$QF_LOCAL_PROVIDER_API_KEY" api \
+  -e QF_FULLSTACK_GENERAL_KEY \
+  -e QF_FULLSTACK_DATABASE_URL \
+  -e QF_FULLSTACK_ALLOW_INSECURE_DB \
+  -e QF_CODEX_BASE_URL \
+  -e QF_CODEX_MODEL \
+  -e QF_LOCAL_PROVIDER_API_KEY api \
   python /workspace/scripts/fullstack_seed.py \
   --application-url "$application_url" \
   > "$seed_output"

@@ -1,4 +1,4 @@
-import { lstat, readFile, readdir } from 'node:fs/promises';
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { load } from 'js-yaml';
@@ -85,8 +85,18 @@ export const collectFormalPublicIdFiles = async (
   sources = formalPublicIdSources,
 ) => {
   const root = resolve(repositoryRoot);
+  const canonicalRoot = await realpath(root);
   const files = new Set();
   const coverage = new Map();
+
+  const assertInsideRoot = async (candidate, sourcePath) => {
+    const canonicalCandidate = await realpath(candidate).catch(() => null);
+    const relativePath = canonicalCandidate
+      ? relative(canonicalRoot, canonicalCandidate)
+      : relative(root, candidate);
+    if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${sep}`))
+      throw new Error(`Formal public-ID source escapes repository root: ${sourcePath}`);
+  };
 
   for (const source of sources) {
     const absolutePath = resolve(root, source.path);
@@ -97,10 +107,14 @@ export const collectFormalPublicIdFiles = async (
     if (!metadata) throw new Error(`Formal public-ID source is missing: ${source.path}`);
     if (metadata.isSymbolicLink())
       throw new Error(`Formal public-ID source contains an unsupported symlink: ${absolutePath}`);
+    await assertInsideRoot(absolutePath, source.path);
     if (source.kind === 'file' && !metadata.isFile())
       throw new Error(`Formal public-ID source is not a file: ${source.path}`);
     if (source.kind === 'directory' && !metadata.isDirectory())
       throw new Error(`Formal public-ID source is not a directory: ${source.path}`);
+    const resolvedPath = await realpath(absolutePath).catch(() => null);
+    if (!resolvedPath) throw new Error(`Formal public-ID source is missing: ${source.path}`);
+    await assertInsideRoot(resolvedPath, source.path);
 
     const candidates = source.kind === 'file' ? [absolutePath] : await collect(absolutePath);
     const scanned = candidates.filter(
@@ -165,7 +179,7 @@ const grammarNotation = (token, context, file, key = '') => {
   );
 };
 
-const jsonIdKeys = /^(?:id|value|token|key|[a-z0-9]+_(?:id|ref|token|key))$/i;
+const jsonIdKeys = /^(?:id|value|token|key|[A-Za-z][A-Za-z0-9]*(?:Id|ID|Ref|REF|Token|TOKEN|Key|KEY)|[a-z0-9]+_(?:id|ref|token|key))$/;
 
 const invalidTokens = (text, context, location, matchers, key = '', file = location) => {
   const failures = [];
@@ -192,11 +206,7 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
     const rawPrefix = value.split('-', 1)[0];
     const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
-    const suffix = value.slice(rawPrefix.length + 1);
-    const recognized =
-      canonical !== undefined &&
-      (rawPrefix === prefix ||
-        (suffix.length >= 20 && /^[A-Za-z0-9_-]+$/.test(suffix) && /[0-9]/.test(suffix)));
+    const recognized = canonical !== undefined;
     if (recognized && !canonical.some((matcher) => matcher.test(value))) report(value);
   }
   const matches = [
@@ -212,11 +222,8 @@ const invalidTokens = (text, context, location, matchers, key = '', file = locat
     const rawPrefix = match[1] ?? '';
     const prefix = rawPrefix.toUpperCase();
     const canonical = matchers.get(prefix);
-    const suffix = match[2] ?? '';
     const recognized =
-      (canonical !== undefined &&
-        (rawPrefix === prefix ||
-          (suffix.length >= 20 && /^[A-Za-z0-9_-]+$/.test(suffix) && /[0-9]/.test(suffix)))) ||
+      canonical !== undefined ||
       (prefix === 'MEM' && rawPrefix === prefix);
     if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
     if (match[2] !== '' && grammarNotation(token, context, file, key)) continue;

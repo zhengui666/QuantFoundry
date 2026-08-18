@@ -26,7 +26,7 @@ const objectRefBranches = [
   ['strategy', 'STRAT'],
   ['validation', 'VAL'],
   ['exposure', 'HOLD'],
-  ['red_team_run', 'RTRUN'],
+  ['red_team_run', 'RT'],
   ['portfolio', 'PORT'],
   ['memo', 'MEMO'],
   ['approval', 'APR'],

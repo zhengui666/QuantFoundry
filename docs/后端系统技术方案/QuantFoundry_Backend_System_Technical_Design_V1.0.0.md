@@ -3078,7 +3078,7 @@ P0 R2 不为 Tab 新增 canonical operation；`GET /research/{research_id}` 的 
 
 - `overview` 固定包含 current revision brief、nullable current conclusion、plan-node progress、latest evidence 与 nullable current agent work；不返回 CoT、raw tool payload 或 secret；
 - 尚未生成 plan/conclusion/current agent work 时返回 `null`；没有列表数据时返回 `items=[]`，不省略字段；
-- `timeline|experiments|evidence|artifacts|audit` 均使用 closed item schema + `PageInfo`。R2 embedded projection 返回当前授权范围的完整稳定排序集，因此 `page.has_more=false`、`next_cursor=null`；后续若需真正 cursor continuation，须先单独进入 canonical contract revision；
+- `timeline|experiments|evidence|artifacts|audit` 均使用 closed item schema + `PageInfo`。canonical OpenAPI 为 `/research`、`/approvals` 与 ResearchDetail embedded pages 冻结 `cursor`（十进制 offset token）和 `limit`（1..100，默认 100）；服务端先按稳定 ID 顺序取 `limit+1` 判断 `has_more`，不以全量 `.all()` 作为 list API 实现。ResearchDetail 指定 `tab` 时只对该 tab 使用 continuation cursor，其他 tab 仍返回有界的第一页；未指定 `tab` 时同一 cursor/limit 应用于五个 embedded page；无更多数据时 `next_cursor=null`；
 - `ObjectRef`、`ProvenanceRef`、`ResearchStatus`、`ExperimentStatus`、`ExperimentValidityState` 为共享语义，禁止在 controller/fixture 中另造松散 string map；
 - projection 来自 `research_cases + research_revisions + research_conclusions + research_plan_versions/nodes + experiments + evidence_items + artifacts + audit_events/agent_runs/provenance_records`，不新建可与这些表分叉的 Tab truth table。
 

@@ -28,7 +28,8 @@ criteria = [
 ]
 scope_paths = [
     "AGENTS.md", "PROJECT_BACKGROUND.md", "Makefile", "backend/pyproject.toml", "backend/uv.lock", "backend/src/quantfoundry", "backend/app/agent_runtime.py", "backend/workers", "frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/src",
-    "docs/Agent技术方案", "docs/后端系统技术方案/contracts/tools", "docs/治理",
+    "docs/Agent技术方案", "docs/后端系统技术方案/contracts", "docs/治理",
+    "backend/alembic", "backend/alembic.ini", "backend/alembic_control.ini",
     ".github/workflows", "scripts/ci", "scripts/ci.sh", "scripts/api_healthcheck.py", "scripts/p0-check.sh", "scripts/p0-check-test.sh", "scripts/tool_contract_check.py", "scripts/release-check.sh", "scripts/release-evidence.sh", "scripts/release-known-issues-check.sh",
 ]
 scope_digest = hashlib.sha256(subprocess.check_output([
@@ -92,7 +93,8 @@ printf '%s\n' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry/commits/* ]]; then printf "{\"author\":{\"login\":\"%s\"},\"committer\":{\"login\":\"%s\"}}\n" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}"; exit 0; fi' \
   'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
   'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"51bf6299bb3c1a290530efe7a99a6e043a43359d\"}\n"; exit 0; fi' \
-  'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/100/attempts/1/artifacts ]]; then printf "{\"total_count\":1,\"artifacts\":[{\"id\":200,\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}]}\n"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"id\":200,\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then if [[ -n "$output" ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; else cat "$QF_REVIEW_MOCK_ARCHIVE"; fi; exit 0; fi' \
   'exit 1' > "$mock_gh"
 chmod +x "$mock_gh"

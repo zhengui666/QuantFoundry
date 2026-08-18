@@ -70,11 +70,6 @@ def run_once() -> int:
         maintenance_error = error
         artifact_store_ready = False
     domain_stage(
-        "heartbeat",
-        lambda session: record_heartbeat(session, "scheduler", scheduler_id(), None),
-        None,
-    )
-    domain_stage(
         "paper discovery",
         lambda session: PaperScheduler().discover(
             session, now=datetime.now(UTC), owner=scheduler_id()
@@ -103,6 +98,11 @@ def run_once() -> int:
     except Exception as error:
         logger.exception("scheduler event retention failed")
         maintenance_error = maintenance_error or error
+    domain_stage(
+        "heartbeat",
+        lambda session: record_heartbeat(session, "scheduler", scheduler_id(), None),
+        None,
+    )
     if maintenance_error is not None:
         raise maintenance_error
     return retried + failed

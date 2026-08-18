@@ -276,46 +276,40 @@ class RemoteCodexModel:
                 },
             ],
         }
-        attempts = self.runtime.max_attempts
-        last_error: Exception | None = None
-        for _attempt in range(attempts):
-            try:
-                response = httpx.post(
-                    self.runtime.url,
-                    headers={
-                        "Authorization": f"Bearer {self.runtime.api_key}",
-                        "X-QF-Codex-Runtime": self.runtime.runtime_key,
-                        "X-QF-Codex-Instance": self.runtime.remote_instance_id,
-                        "X-QF-Codex-Invocation": invocation_id,
-                    },
-                    json=request,
-                    timeout=self.runtime.timeout_seconds,
+        try:
+            response = httpx.post(
+                self.runtime.url,
+                headers={
+                    "Authorization": f"Bearer {self.runtime.api_key}",
+                    "X-QF-Codex-Runtime": self.runtime.runtime_key,
+                    "X-QF-Codex-Instance": self.runtime.remote_instance_id,
+                    "X-QF-Codex-Invocation": invocation_id,
+                },
+                json=request,
+                timeout=self.runtime.timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            response_instance = response.headers.get("X-QF-Codex-Instance")
+            if (
+                response_instance
+                and response_instance != self.runtime.remote_instance_id
+            ):
+                raise AgentRuntimeError(
+                    "Remote Codex instance identity changed during invocation"
                 )
-                response.raise_for_status()
-                payload = response.json()
-                response_instance = response.headers.get("X-QF-Codex-Instance")
-                if (
-                    response_instance
-                    and response_instance != self.runtime.remote_instance_id
-                ):
-                    raise AgentRuntimeError(
-                        "Remote Codex instance identity changed during invocation"
-                    )
-                content = payload["choices"][0]["message"]["content"]
-                action = json.loads(content)
-                break
-            except (
-                httpx.HTTPError,
-                KeyError,
-                IndexError,
-                TypeError,
-                json.JSONDecodeError,
-            ) as error:
-                last_error = error
-        else:
+            content = payload["choices"][0]["message"]["content"]
+            action = json.loads(content)
+        except httpx.HTTPStatusError as error:
             raise AgentRuntimeError(
-                f"Remote Codex failed after {self.runtime.max_attempts} attempts"
-            ) from last_error
+                f"Remote Codex returned HTTP {error.response.status_code}"
+            ) from error
+        except (httpx.TimeoutException, httpx.NetworkError) as error:
+            raise AgentRuntimeError(
+                "Remote Codex invocation outcome is unknown; retry requires reconciliation"
+            ) from error
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise AgentRuntimeError("Remote Codex response is invalid") from error
         if not isinstance(action, dict):
             raise AgentRuntimeError("Remote Codex action is not a JSON object")
         usage = payload.get("usage") if isinstance(payload, dict) else None
@@ -1233,6 +1227,7 @@ def _suspend_for_child_job(
             "pending_tool_call_id": tool_call.id,
             "pending_job_id": child_job_id,
             "pending_resume_job_id": resume_job.id,
+            "pending_owner_job_id": parent_job.id,
             "resume_fencing_token": row.resume_fencing_token,
             "checkpointed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
@@ -1412,6 +1407,17 @@ def _consume_resume(
         research.detail = json.dumps(
             validated_payload("ResearchDetail", research_detail)
         )
+        emit(
+            session,
+            "research",
+            research.id,
+            research.revision,
+            "research.updated",
+            payload={"state": research.status, "status": research.status},
+            job_id=child.id,
+            agent_run_id=row.id,
+            correlation_id=resume_job.correlation_id,
+        )
         refreshed_context = _context_pack(session, row)
         refreshed_context_sha256 = content_hash(refreshed_context)
         row.context_sha256 = refreshed_context_sha256
@@ -1423,6 +1429,7 @@ def _consume_resume(
     checkpoint.pop("pending_tool_call_id", None)
     checkpoint.pop("pending_job_id", None)
     checkpoint.pop("pending_resume_job_id", None)
+    checkpoint.pop("pending_owner_job_id", None)
     checkpoint["graph_status"] = "RUNNING"
     checkpoint["safe_checkpoint"] = "AFTER_TOOL"
     checkpoint["checkpointed_at"] = now.isoformat().replace("+00:00", "Z")
@@ -1870,7 +1877,8 @@ def _revoke_pending_jobs(
         except (TypeError, json.JSONDecodeError):
             continue
         if pending_id == checkpoint.get("pending_job_id"):
-            if pending_inputs.get("parent_job_id") != owner_job_id:
+            expected_owner = checkpoint.get("pending_owner_job_id") or owner_job_id
+            if pending_inputs.get("parent_job_id") != expected_owner:
                 continue
         elif pending_inputs.get("agent_run_id") != row.id:
             continue

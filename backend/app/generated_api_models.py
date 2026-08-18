@@ -133,7 +133,7 @@ class ConfigurationCatalogEntry(BaseModel):
     dependencies: list[Dependency]
     schema_: dict[str, Any] = Field(..., alias="schema")
     """
-    Closed JSON Schema for this key; it is immutable catalog data
+    Closed JSON Schema for this key; it is immutable catalog data, not a user-supplied override.
     """
     validator: str = Field(..., max_length=160, min_length=1)
     safe_range: dict[str, Any] | None = None
@@ -145,7 +145,7 @@ class ConfigurationValueWrite1(BaseModel):
     )
     key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
     value: str | float | bool | dict[str, Any] | list | None = None
-    secret: str | None = Field(default=None, max_length=16384, min_length=1)
+    secret: Any | None = None
 
 
 class ConfigurationValueWrite2(BaseModel):
@@ -153,8 +153,8 @@ class ConfigurationValueWrite2(BaseModel):
         extra="forbid",
     )
     key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
-    value: str | float | bool | dict[str, Any] | list | None = None
     secret: str = Field(..., max_length=16384, min_length=1)
+    value: Any | None = None
 
 
 class ConfigurationValueView(BaseModel):
@@ -20812,8 +20812,13 @@ class SetupProviderConnectionValidationResult(
     ) = Field(..., discriminator="state")
 
 
-class SettingsDetail(RootModel[ConfigurationActive]):
+class SettingsDetail(BaseModel):
+    """
+    Backward-compatible schema name for the active configuration projection. It is no longer an app_settings row and contains no user/workspace or file-backed value semantics.
+    """
+
     model_config = ConfigDict(
+        extra="forbid",
         json_schema_extra={
             "allOf": [
                 {
@@ -21013,7 +21018,13 @@ class SettingsDetail(RootModel[ConfigurationActive]):
             ]
         },
     )
-    root: ConfigurationActive
+    active_revision: int = Field(..., ge=1)
+    last_known_good_revision: int = Field(..., ge=1)
+    catalog_version: str
+    values: list[ConfigurationValueView]
+    snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    consumer_states: list[ConfigurationConsumerState]
+    updated_at: AwareDatetime
 
     @model_validator(mode="after")
     def validate_conditional_constraints(self):
@@ -22840,7 +22851,7 @@ class EventPayload(BaseModel):
         ]
         | None
     ) = None
-    resync_from_sequence: int | None = Field(default=None, ge=1)
+    resync_from_sequence: str | None = Field(default=None, pattern="^[1-9][0-9]*$")
     progress_mode: Literal["NONE", "UNITS"] | None = None
     completed_units: int | None = Field(default=None, ge=0)
     total_units: int | None = Field(default=None, ge=1)
@@ -24859,7 +24870,7 @@ class SseEnvelope(BaseModel):
             "EVT-550e8400-e29b-41d4-a716-446655440000",
         ],
     )
-    sequence: int = Field(..., ge=1)
+    sequence: str = Field(..., pattern="^[1-9][0-9]*$")
     event_type: Literal[
         "job.updated",
         "research.created",

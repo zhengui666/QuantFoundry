@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
@@ -113,6 +114,40 @@ def _fingerprint(database_url: str) -> dict[str, tuple[int, str]]:
         engine.dispose()
 
 
+def _sequence_fingerprint(database_url: str) -> dict[str, tuple[Any, ...]]:
+    engine = create_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT schemaname, sequencename, start_value, "
+                    "increment_by, min_value, max_value, cycle, cache_size "
+                    "FROM pg_sequences ORDER BY schemaname, sequencename"
+                )
+            ).mappings()
+            result = {}
+            preparer = connection.dialect.identifier_preparer
+            for row in rows:
+                schema = preparer.quote(str(row["schemaname"]))
+                name = preparer.quote(str(row["sequencename"]))
+                state = connection.execute(
+                    text(f"SELECT last_value, is_called FROM {schema}.{name}")
+                ).mappings().one()
+                result[f"{row['schemaname']}.{row['sequencename']}"] = (
+                    state["last_value"],
+                    state["is_called"],
+                    row["start_value"],
+                    row["increment_by"],
+                    row["min_value"],
+                    row["max_value"],
+                    row["cycle"],
+                    row["cache_size"],
+                )
+            return result
+    finally:
+        engine.dispose()
+
+
 def _agent_roles(database_url: str, column: str) -> set[tuple[str, str]]:
     engine = create_engine(database_url)
     try:
@@ -207,19 +242,42 @@ def _validate_coverage(
 
 
 def _validate_content_roundtrip(
-    before: dict[str, tuple[int, str]], after: dict[str, tuple[int, str]]
+    before: dict[str, tuple[int, str]],
+    after: dict[str, tuple[int, str]],
+    sequences_before: dict[str, tuple[Any, ...]] | None = None,
+    sequences_after: dict[str, tuple[Any, ...]] | None = None,
 ) -> None:
-    if after == before:
-        return
     changed = sorted(set(before) | set(after))
     changed = [name for name in changed if before.get(name) != after.get(name)]
     detail = {
         name: {"before": before.get(name), "after": after.get(name)} for name in changed
     }
-    raise RuntimeError(
-        "0016 populated roundtrip changed table count/hash: "
-        + json.dumps(detail, sort_keys=True)
-    )
+    if before != after:
+        raise RuntimeError(
+            "0016 populated roundtrip changed table count/hash: "
+            + json.dumps(detail, sort_keys=True)
+        )
+    if (sequences_before is None) != (sequences_after is None):
+        raise TypeError("sequence fingerprints must be supplied together")
+    if (
+        sequences_before is not None
+        and sequences_after is not None
+        and sequences_before != sequences_after
+    ):
+        raise RuntimeError(
+            "0016 populated roundtrip changed sequence state: "
+            + json.dumps(
+                {
+                    name: {
+                        "before": sequences_before.get(name),
+                        "after": sequences_after.get(name),
+                    }
+                    for name in sorted(set(sequences_before) | set(sequences_after))
+                    if sequences_before.get(name) != sequences_after.get(name)
+                },
+                sort_keys=True,
+            )
+        )
 
 
 def _schema_contract(database_url: str) -> dict[str, Any]:
@@ -266,6 +324,23 @@ def _alembic_check(database_url: str) -> None:
     try:
         config = Config(str(BACKEND_ROOT / "alembic.ini"))
         config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+        script = ScriptDirectory.from_config(config)
+        engine = create_engine(database_url)
+        try:
+            with engine.connect() as connection:
+                current = {
+                    str(value)
+                    for value in connection.execute(
+                        text("SELECT version_num FROM alembic_version")
+                    ).scalars()
+                }
+        finally:
+            engine.dispose()
+        expected = set(script.get_heads())
+        if current != expected:
+            raise RuntimeError(
+                f"database is not at current Alembic heads: {sorted(current)} != {sorted(expected)}"
+            )
         command.check(config)
     finally:
         if previous is None:
@@ -346,6 +421,7 @@ def main() -> int:
     _alembic_check(args.database_url)
     schema_before = _schema_contract(args.database_url)
     before = _fingerprint(args.database_url)
+    sequences_before = _sequence_fingerprint(args.database_url)
     roles_before = _agent_roles(args.database_url, "role_key")
     coverage = _validate_coverage(
         before,
@@ -372,8 +448,9 @@ def main() -> int:
         _alembic(args.database_url, "upgrade", "head")
         restored = True
         after = _fingerprint(args.database_url)
+        sequences_after = _sequence_fingerprint(args.database_url)
         roles_after = _agent_roles(args.database_url, "role_key")
-        _validate_content_roundtrip(before, after)
+        _validate_content_roundtrip(before, after, sequences_before, sequences_after)
         if roles_after != roles_before:
             raise RuntimeError("agent_configs role mapping changed after upgrade")
         _validate_coverage(
@@ -393,6 +470,20 @@ def main() -> int:
         if downgraded and not restored:
             try:
                 _alembic(args.database_url, "upgrade", "head")
+                restored_after = _fingerprint(args.database_url)
+                restored_sequences = _sequence_fingerprint(args.database_url)
+                restored_roles = _agent_roles(args.database_url, "role_key")
+                _validate_content_roundtrip(
+                    before, restored_after, sequences_before, restored_sequences
+                )
+                if restored_roles != roles_before:
+                    raise RuntimeError(
+                        "automatic restoration changed agent_configs role mapping"
+                    )
+                if _schema_contract(args.database_url) != schema_before:
+                    raise RuntimeError(
+                        "automatic restoration changed the schema contract"
+                    )
             except BaseException as restore_error:
                 if original_error is not None:
                     raise RuntimeError(

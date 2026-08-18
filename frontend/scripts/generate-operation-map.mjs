@@ -34,7 +34,7 @@ const schema = (entry) => {
   if (entry?.$ref) {
     const resolved = resolveReference(entry.$ref, '#/components/schemas');
     const siblings = Object.fromEntries(Object.entries(entry).filter(([key]) => key !== '$ref'));
-    return Object.keys(siblings).length ? { ...resolved, ...siblings } : resolved;
+    return Object.keys(siblings).length ? { allOf: [resolved, siblings] } : resolved;
   }
   return entry;
 };
@@ -44,12 +44,23 @@ const fixedConst = (entry, seen = new Set()) => {
   if (seen.has(resolved))
     throw new Error('Cyclic schema composition while inferring fixed query value');
   const nextSeen = new Set(seen).add(resolved);
-  if (resolved?.const !== undefined) return resolved.const;
+  if (Object.hasOwn(resolved, 'const')) {
+    const value = resolved.const;
+    if (
+      value === null ||
+      (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
+    )
+      throw new Error('Fixed query parameter const must be a string, number, or boolean');
+    return value;
+  }
   const allOfValues = (resolved.allOf ?? [])
     .map((variant) => fixedConst(variant, nextSeen))
     .filter((value) => value !== undefined);
-  if (allOfValues.length && allOfValues.every((value) => value === allOfValues[0]))
+  if (allOfValues.length) {
+    if (!allOfValues.every((value) => value === allOfValues[0]))
+      throw new Error('Conflicting fixed query parameter constraints');
     return allOfValues[0];
+  }
   for (const variants of [resolved.oneOf, resolved.anyOf]) {
     if (!variants) continue;
     const values = variants.map((variant) => fixedConst(variant, nextSeen));
@@ -106,8 +117,8 @@ const operations = Object.entries(document.paths ?? {}).flatMap(([path, rawPathI
       const parameters = [...parametersByKey.values()];
       const headers = parameters
         .filter((entry) => entry?.in === 'header')
-        .map((entry) => entry.name)
-        .sort();
+        .map((entry) => ({ name: entry.name, required: entry.required === true }))
+        .sort((left, right) => left.name.localeCompare(right.name));
       const query = parameters
         .filter((entry) => entry?.in === 'query')
         .map((entry) => ({
@@ -132,10 +143,10 @@ if (operations.length !== 66)
 const ids = new Set(operations.map((operation) => operation.id));
 if (ids.size !== operations.length) throw new Error('Canonical operation IDs must be unique');
 const quote = (value) => JSON.stringify(value);
-const content = `/**\n * This file is generated from docs/后端系统技术方案/contracts/openapi-v1.yaml.\n * Do not edit directly.\n */\nimport type { operations } from '../generated';\n\nexport type CanonicalOperation = {\n  readonly method: string;\n  readonly path: string;\n  readonly headers: readonly string[];\n  readonly query: readonly { readonly name: string; readonly required: boolean; readonly value?: string | number | boolean }[];\n  readonly authenticated: boolean;\n};\n\nexport const operationMap = {\n${operations
+const content = `/**\n * This file is generated from docs/后端系统技术方案/contracts/openapi-v1.yaml.\n * Do not edit directly.\n */\nimport type { operations } from '../generated';\n\nexport type CanonicalOperation = {\n  readonly method: string;\n  readonly path: string;\n  readonly headers: readonly { readonly name: string; readonly required: boolean }[];\n  readonly query: readonly { readonly name: string; readonly required: boolean; readonly value?: string | number | boolean }[];\n  readonly authenticated: boolean;\n};\n\nexport const operationMap = {\n${operations
   .map(
     (operation) =>
-      `  ${quote(operation.id)}: { method: ${quote(operation.method)}, path: ${quote(operation.path)}, headers: [${operation.headers.map(quote).join(', ')}], query: ${quote(operation.query)}, authenticated: ${operation.authenticated} },`,
+      `  ${quote(operation.id)}: { method: ${quote(operation.method)}, path: ${quote(operation.path)}, headers: ${quote(operation.headers)}, query: ${quote(operation.query)}, authenticated: ${operation.authenticated} },`,
   )
   .join(
     '\n',

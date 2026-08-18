@@ -10,15 +10,52 @@ tag="${1:-}"
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_TERMINAL_PROMPT=0
-unset GIT_SSH_COMMAND GIT_SSH GIT_PROXY_COMMAND GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+unset GIT_SSH_COMMAND GIT_SSH GIT_PROXY_COMMAND GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT \
+  GIT_SSL_NO_VERIFY GIT_ASKPASS SSH_ASKPASS GIT_CREDENTIAL_HELPER
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_EXEC_PATH GIT_REPLACE_REF_BASE
+unset BASH_ENV ENV
+export GIT_NO_REPLACE_OBJECTS=1
 unset HTTPS_PROXY HTTP_PROXY ALL_PROXY https_proxy http_proxy all_proxy
+while IFS='=' read -r environment_name _; do
+  case "$environment_name" in
+    GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*) unset "$environment_name" ;;
+  esac
+done < <(env)
+
+assert_secure_tool() {
+  local tool_path="$1" cursor
+  [[ "$tool_path" = /* && -x "$tool_path" && ! -L "$tool_path" ]] || return 1
+  cursor="$tool_path"
+  while [[ "$cursor" != / ]]; do
+    [[ ! -w "$cursor" ]] || return 1
+    cursor="$(dirname "$cursor")"
+  done
+}
 
 reject_transport_overrides() {
   local root="$1"
-  if git -C "$root" config --local --get-regexp \
-    '^(core\.(sshCommand|gitProxy)|url\..*\.(insteadOf|pushInsteadOf)|remote\..*\.(proxy|proxyurl)|http\.(proxy|ssl|extraheader))' \
-    >/dev/null 2>&1; then
-    printf '%s\n' '{"result":"invalid","reason":"transport-affecting Git configuration is not allowed"}' >&2
+  local keys lower
+  keys="$(git -C "$root" config --local --name-only --get-regexp '.*')" || {
+    printf '%s\n' '{"result":"invalid","reason":"local Git configuration could not be inspected"}' >&2
+    exit 1
+  }
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    lower="${key,,}"
+    case "$lower" in
+      core.sshcommand|core.gitproxy|core.fsmonitor|core.hookspath|core.askpass|
+      credential.helper|credential.*.helper|include.*|url.*.insteadof|url.*.pushinsteadof|
+      remote.*.proxy|remote.*.proxyurl|http.proxy|http.sslverify|http.extraheader|
+      http.*.proxy|http.*.sslverify|http.*.extraheader|filter.*.process|filter.*.clean|
+      filter.*.smudge|diff.*.command|mergetool.*.cmd|submodule.*.update)
+        printf '%s\n' '{"result":"invalid","reason":"transport-affecting Git configuration is not allowed"}' >&2
+        exit 1
+        ;;
+    esac
+  done <<< "$keys"
+  if [[ -n "$(git -C "$root" for-each-ref --format='%(refname)' refs/replace/)" ]]; then
+    printf '%s\n' '{"result":"invalid","reason":"Git replacement refs are not allowed"}' >&2
     exit 1
   fi
 }
@@ -32,12 +69,11 @@ tracked_state() {
   exit 2
 }
 
+reject_transport_overrides "$repo_root"
 git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   printf '%s\n' '{"result":"invalid","reason":"release check requires a Git worktree"}' >&2
   exit 2
 }
-reject_transport_overrides "$repo_root"
-
 remote_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
 canonical_repository="zhengui666/QuantFoundry"
 [[ -z "${GITHUB_REPOSITORY:-}" || "$GITHUB_REPOSITORY" == "$canonical_repository" ]] || {
@@ -60,6 +96,12 @@ tag_target="$(git -C "$repo_root" rev-parse "${local_tag_object}^{commit}")" || 
   printf '{"result":"invalid","reason":"tag %s does not resolve to a commit"}\n' "$tag" >&2
   exit 2
 }
+if [[ -n "${QF_RELEASE_COMMIT:-}" ]]; then
+  [[ "$QF_RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ && "$tag_target" == "$QF_RELEASE_COMMIT" ]] || {
+    printf '%s\n' '{"result":"invalid","reason":"tag target does not match the trusted release commit"}' >&2
+    exit 1
+  }
+fi
 checkout_head="$(git -C "$repo_root" rev-parse HEAD)"
 [[ "$checkout_head" == "$tag_target" ]] || {
   printf '{"result":"invalid","reason":"checkout HEAD does not equal tag target","tag":"%s"}\n' "$tag" >&2
@@ -87,6 +129,7 @@ git -C "$verifier_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   printf '%s\n' '{"result":"invalid","reason":"verifier root is not a Git worktree"}' >&2
   exit 1
 }
+reject_transport_overrides "$verifier_root"
 verifier_head="$(git -C "$verifier_root" rev-parse HEAD)"
 verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$trusted_verifier_root" ]]; then
@@ -111,7 +154,6 @@ if [[ -n "$trusted_verifier_root" ]]; then
     exit 1
   fi
   trusted_verifier_remote="$(git -C "$verifier_root" remote get-url origin 2>/dev/null || true)"
-  reject_transport_overrides "$verifier_root"
   case "$trusted_verifier_remote" in
     "https://github.com/${canonical_repository}.git"|"https://github.com/${canonical_repository}") ;;
     *)
@@ -192,6 +234,7 @@ pre_p0_verifier_status="$(git -C "$verifier_root" status --porcelain=v1 --untrac
 
 snapshot_parent="$(mktemp -d "${TMPDIR:-/tmp}/qf-release-verifier.XXXXXX")"
 snapshot_root="$snapshot_parent/verifier"
+release_snapshot_root="$snapshot_parent/release"
 trap 'rm -rf "$snapshot_parent"' EXIT
 git clone --no-local --no-checkout -- "$verifier_root" "$snapshot_root" >/dev/null 2>&1
 git -C "$snapshot_root" checkout --detach "$trusted_verifier_head" >/dev/null 2>&1
@@ -204,8 +247,13 @@ git -C "$snapshot_root" checkout --detach "$trusted_verifier_head" >/dev/null 2>
   exit 1
 }
 chmod -R a-w "$snapshot_root"
-uv_bin="$(command -v uv)"
-gh_bin="$(command -v gh)"
+git clone --no-local --no-checkout -- "$repo_root" "$release_snapshot_root" >/dev/null 2>&1
+git -C "$release_snapshot_root" checkout --detach "$tag_target" >/dev/null 2>&1
+[[ "$(git -C "$release_snapshot_root" rev-parse HEAD)" == "$tag_target" ]] || exit 1
+uv_bin="$(command -v uv 2>/dev/null || true)"
+gh_bin="$(command -v gh 2>/dev/null || true)"
+assert_secure_tool "$uv_bin" || exit 1
+assert_secure_tool "$gh_bin" || exit 1
 export PATH="$(dirname "$uv_bin"):$(dirname "$gh_bin"):/usr/bin:/bin"
 export HOME="$snapshot_parent/home"
 export UV_CACHE_DIR="$snapshot_parent/uv-cache"
@@ -213,9 +261,9 @@ export UV_PROJECT_ENVIRONMENT="$snapshot_parent/venv"
 export PYTHONDONTWRITEBYTECODE=1
 mkdir -p "$HOME" "$UV_CACHE_DIR"
 
-QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="$tag_target" \
+QF_RELEASE_REPO_ROOT="$release_snapshot_root" QF_RELEASE_COMMIT="$tag_target" \
 QF_RELEASE_TRUSTED_VERIFIER_ROOT="$snapshot_root" QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_verifier_head" \
-  "$snapshot_root/scripts/p0-check.sh" "$repo_root/docs/治理/p0-blockers.yaml" --require-closed
+  "$snapshot_root/scripts/p0-check.sh" "$release_snapshot_root/docs/治理/p0-blockers.yaml" --require-closed
 post_p0_head="$(git -C "$repo_root" rev-parse HEAD)"
 post_p0_status="$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)"
 [[ "$post_p0_head" == "$tag_target" && -z "$post_p0_status" ]] || {

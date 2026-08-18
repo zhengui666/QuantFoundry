@@ -9,6 +9,7 @@ import os
 import secrets
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from bootstrap_owner import EMAIL_PATTERN, provision
@@ -136,19 +137,19 @@ def main() -> int:
     model_name = os.getenv("QF_CODEX_MODEL", "qf-local-v1")
 
     owner_id = workspace_id = session_token = None
-    owner_existed = False
     workspace_created = False
+    owner_created = False
     cleanup_paths: list[Path] = []
     preserved_paths: set[Path] = set()
     try:
-        owner_existed, workspace_existed = _identity_state(
+        _owner_existed, workspace_existed = _identity_state(
             args.email, args.workspace_name
         )
         if workspace_existed:
             raise RuntimeError(
                 "refusing to bootstrap an existing workspace; local bootstrap is fresh-only"
             )
-        owner_id, workspace_id, session_token, workspace_created = provision(
+        owner_id, workspace_id, session_token, workspace_created, owner_created = provision(
             args.email, args.workspace_name, args.ttl_hours
         )
         if not workspace_created:
@@ -166,6 +167,23 @@ def main() -> int:
             workspace_name=args.workspace_name,
         )
         base_url = os.getenv("QF_BOOTSTRAP_API_URL", "http://api:8000/api/v1")
+        parsed_base_url = urlsplit(base_url)
+        if (
+            parsed_base_url.scheme != "https"
+            and not (
+                parsed_base_url.scheme == "http"
+                and parsed_base_url.hostname
+                in {"api", "localhost", "127.0.0.1", "::1"}
+            )
+            or not parsed_base_url.netloc
+            or parsed_base_url.username
+            or parsed_base_url.password
+            or parsed_base_url.query
+            or parsed_base_url.fragment
+        ):
+            raise RuntimeError(
+                "QF_BOOTSTRAP_API_URL must be HTTPS or an explicitly local HTTP endpoint"
+            )
         auth = {"Authorization": f"Bearer {session_token}"}
         key_prefix = f"local-bootstrap-{workspace_id}-{secrets.token_hex(16)}"
         with httpx.Client(base_url=base_url, timeout=15) as client:
@@ -237,7 +255,7 @@ def main() -> int:
                 _compensate_workspace(
                     workspace_id,
                     owner_id,
-                    delete_owner=not owner_existed,
+                    delete_owner=owner_created,
                 )
             except Exception as cleanup_error:  # noqa: BLE001 - preserve the original bootstrap failure
                 compensation_error = cleanup_error

@@ -94,10 +94,26 @@ def load_physical_metadata(
     include_checks: bool = True,
     include_sqlite_null_ordering: bool = True,
     include_server_defaults: bool = True,
+    sqlite_compatibility: bool = True,
 ) -> MetaData:
     value = json.loads(path.read_text(encoding="utf-8"))
     metadata = MetaData()
     specs = {table["name"]: table for table in value["tables"]}
+
+    def table_key(table_spec: dict[str, Any]) -> str:
+        schema = table_spec.get("schema")
+        if sqlite_compatibility:
+            return table_spec["name"]
+        return f"{schema}.{table_spec['name']}" if schema else table_spec["name"]
+
+    def target_name(target: str) -> str:
+        if sqlite_compatibility:
+            return target
+        table_name, column_name = target.rsplit(".", 1)
+        target_spec = specs.get(table_name)
+        schema = target_spec.get("schema") if target_spec else None
+        return f"{schema}.{target}" if schema else target
+
     for table_spec in value["tables"]:
         columns = []
         primary_key = table_spec.get("primary_key") or [
@@ -156,7 +172,8 @@ def load_physical_metadata(
                     ),
                 )
             )
-        table = Table(table_spec["name"], metadata, *columns)
+        table_schema = None if sqlite_compatibility else table_spec.get("schema")
+        table = Table(table_spec["name"], metadata, *columns, schema=table_schema)
         if table_spec.get("primary_key"):
             primary_key_spec = table_spec.get("primary_key_constraint") or {}
             table.append_constraint(
@@ -168,7 +185,7 @@ def load_physical_metadata(
                 )
             )
     for table_name, table_spec in specs.items():
-        table = metadata.tables[table_name]
+        table = metadata.tables[table_key(table_spec)]
         for constraint in table_spec["unique_constraints"]:
             name = constraint["name"]
             table.append_constraint(
@@ -204,7 +221,7 @@ def load_physical_metadata(
             table.append_constraint(
                 ForeignKeyConstraint(
                     constraint["columns"],
-                    constraint["targets"],
+                    [target_name(target) for target in constraint["targets"]],
                     name=name[:63] if name is not None else None,
                     ondelete=constraint.get("ondelete"),
                     onupdate=constraint.get("onupdate"),

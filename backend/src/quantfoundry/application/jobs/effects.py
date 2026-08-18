@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from quantfoundry.api.app import (
@@ -230,25 +231,41 @@ def _persist_section14_snapshot(
     )
     if provider_row is None:
         provider_internal_id = uuid.uuid4()
-        session.execute(
-            providers.insert().values(
-                id=provider_internal_id,
-                workspace_id=job.workspace_id,
-                provider_id=provider_id,
-                adapter_key=bundle.adapter_key,
-                display_name=provider_id,
-                status="CONNECTED",
-                is_default=False,
-                config={"adapter_version": bundle.adapter_version},
-                credential_ref=None,
-                last_tested_at=now,
-                last_success_at=now,
-                last_error_code=None,
-                revision=1,
-                created_at=now,
-                updated_at=now,
+        try:
+            with session.begin_nested():
+                session.execute(
+                    providers.insert().values(
+                        id=provider_internal_id,
+                        workspace_id=job.workspace_id,
+                        provider_id=provider_id,
+                        adapter_key=bundle.adapter_key,
+                        display_name=provider_id,
+                        status="CONNECTED",
+                        is_default=False,
+                        config={"adapter_version": bundle.adapter_version},
+                        credential_ref=None,
+                        last_tested_at=now,
+                        last_success_at=now,
+                        last_error_code=None,
+                        revision=1,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        except IntegrityError:
+            provider_row = (
+                session.execute(
+                    select(providers).where(
+                        providers.c.workspace_id == job.workspace_id,
+                        providers.c.provider_id == provider_id,
+                    )
+                )
+                .mappings()
+                .one_or_none()
             )
-        )
+            if provider_row is None:
+                raise
+            provider_internal_id = provider_row["id"]
     else:
         provider_internal_id = provider_row["id"]
         provider_config = provider_row["config"]
@@ -1340,7 +1357,14 @@ def _create_snapshot(
     if request_sha256 != inputs["request_sha256"]:
         raise InvalidJobState("snapshot admission hash mismatch")
     bundle = load_dataset(inputs["dataset_id"])
-    source = session.get(DataSource, (inputs["dataset_id"], job.workspace_id))
+    source = session.execute(
+        select(DataSource)
+        .where(
+            DataSource.id == inputs["dataset_id"],
+            DataSource.workspace_id == job.workspace_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
     if (
         source is None
         or source.status != "VALID"
@@ -2117,7 +2141,7 @@ def _sync_holdout_strategy(
     desired_state = strategy.state
     if status == "COMPLETED":
         desired_state = "VALIDATED" if result == "PASS" else "REJECTED"
-    elif status == "FAILED":
+    elif status in {"FAILED", "CANCELLED"}:
         desired_state = "REJECTED"
     if strategy.state in {"VALIDATED", "VALIDATING"}:
         strategy.state = desired_state

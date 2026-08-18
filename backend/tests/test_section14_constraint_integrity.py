@@ -694,7 +694,7 @@ def test_physical_snapshot_preserves_documented_composite_pk_order() -> None:
     ]
     assert specs["domain_events"]["primary_key"] == ["workspace_id", "sequence"]
 
-    metadata = load_physical_metadata(path)
+    metadata = load_physical_metadata(path, sqlite_compatibility=True)
     assert [
         column.name for column in metadata.tables["job_dependencies"].primary_key
     ] == ["workspace_id", "job_id", "depends_on_job_id"]

@@ -361,7 +361,7 @@ export function Problem({ error }: { error: unknown }) {
   const problem = error.problem;
   return (
     <State kind={problem.status === 403 ? 'permission' : 'error'}>
-      {localizedErrorCopy(problem.code, t, i18n.language)} {problem.detail}{' '}
+      {localizedErrorCopy(problem.code, t, i18n.language)}{' '}
       <a href={`/activity?requestId=${encodeURIComponent(problem.request_id)}`}>
         {t('error.auditRequest', { requestId: problem.request_id })}
       </a>
@@ -369,7 +369,7 @@ export function Problem({ error }: { error: unknown }) {
         <ul>
           {problem.field_errors.map((field) => (
             <li key={`${field.field}:${field.code}`}>
-              {field.field}: {field.message}
+              {t('error.field', { field: field.field })}
             </li>
           ))}
         </ul>

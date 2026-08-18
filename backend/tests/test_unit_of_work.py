@@ -106,6 +106,34 @@ def test_failure_rolls_back_domain_audit_event_and_idempotency_result() -> None:
         verification.close()
 
 
+@pytest.mark.parametrize("reset", ["rollback", "close"])
+def test_idempotency_operation_cannot_end_its_connection_transaction(
+    reset: str,
+) -> None:
+    session = SessionLocal()
+    key = f"uow-connection-reset-{reset}-{uuid.uuid4()}"
+
+    def operation() -> tuple[int, dict[str, str]]:
+        connection = session.connection()
+        getattr(connection, reset)()
+        return 201, {"unreachable": "true"}
+
+    with pytest.raises(RuntimeError, match="must not"):
+        execute(
+            session,
+            Idempotency,
+            key,
+            {"reset": reset},
+            "/connection-reset",
+            operation,
+            problem,
+            actor_id="test-owner",
+            workspace_id="test-workspace",
+            method="POST",
+        )
+    session.close()
+
+
 def test_idempotency_scope_and_expired_record_cleanup() -> None:
     key = f"uow-scoped-{uuid.uuid4()}"
     actor_a = f"USR-{uuid.uuid4()}"

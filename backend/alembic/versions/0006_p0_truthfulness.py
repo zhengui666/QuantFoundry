@@ -21,6 +21,7 @@ WORKSPACE_TABLES = (
     "jobs",
     "data_sources",
     "data_snapshots",
+    "snapshot_partitions",
     "experiments",
     "factors",
     "strategies",
@@ -41,6 +42,7 @@ _SCOPED_PARENT_KEYS = (
     "approval_requests",
     "jobs",
     "agent_runs",
+    "data_snapshots",
 )
 _SCOPED_REFERENCES = (
     ("experiments", "research_id", "research_cases"),
@@ -60,12 +62,31 @@ _SCOPED_REFERENCES = (
     ("tool_calls", "experiment_id", "experiments"),
     ("tool_calls", "job_id", "jobs"),
     ("tool_calls", "research_id", "research_cases"),
+    ("snapshot_partitions", "snapshot_id", "data_snapshots"),
 )
 
 
 def _assert_ownership_backfill_is_mappable() -> None:
     bind = op.get_bind()
     tables = (*WORKSPACE_TABLES, "domain_events", "audit_events", "agent_configs")
+    locked_tables = (*tables, "research_cases", "idempotency_records")
+    if bind.dialect.name == "postgresql":
+        bind.execute(
+            sa.text(
+                "LOCK TABLE "
+                + ", ".join(f'"{table}"' for table in locked_tables)
+                + " IN ACCESS EXCLUSIVE MODE"
+            )
+        )
+    elif bind.dialect.name == "sqlite":
+        if bind.in_transaction():
+            bind.execute(sa.text("UPDATE records SET id = id WHERE 0"))
+        else:
+            bind.exec_driver_sql("BEGIN IMMEDIATE")
+    else:
+        raise RuntimeError(
+            "0006 ownership migration supports PostgreSQL and SQLite only"
+        )
     counts = {
         table: int(bind.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar_one())
         for table in tables
@@ -168,6 +189,12 @@ def _replace_strategy_guard() -> None:
             """
             CREATE FUNCTION qf_validate_strategy_transition() RETURNS trigger AS $$
             BEGIN
+              IF TG_OP = 'INSERT' THEN
+                IF NEW.state <> 'CANDIDATE' THEN
+                  RAISE EXCEPTION 'strategy version must start as candidate';
+                END IF;
+                RETURN NEW;
+              END IF;
               IF TG_OP = 'DELETE' THEN
                 IF OLD.state <> 'CANDIDATE' THEN
                   RAISE EXCEPTION 'non-candidate strategy version cannot be deleted';
@@ -235,18 +262,26 @@ def _replace_strategy_guard() -> None:
             """
         )
         op.execute(
-            "CREATE TRIGGER qf_strategy_versions_immutable BEFORE UPDATE OR DELETE "
+            "CREATE TRIGGER qf_strategy_versions_immutable BEFORE INSERT OR UPDATE OR DELETE "
             "ON strategy_versions FOR EACH ROW EXECUTE FUNCTION qf_validate_strategy_transition()"
         )
         return
     for action in ("update", "delete"):
         op.execute(f"DROP TRIGGER IF EXISTS qf_strategy_versions_{action}_immutable")
+    op.execute("DROP TRIGGER IF EXISTS qf_strategy_versions_insert_immutable")
     op.execute("DROP TRIGGER IF EXISTS qf_strategy_versions_freeze_immutable")
     op.execute(
         """
         CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE
         ON strategy_versions WHEN OLD.state != 'CANDIDATE'
         BEGIN SELECT RAISE(ABORT, 'non-candidate strategy version cannot be deleted'); END
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER qf_strategy_versions_insert_immutable BEFORE INSERT
+        ON strategy_versions WHEN NEW.state != 'CANDIDATE'
+        BEGIN SELECT RAISE(ABORT, 'strategy version must start as candidate'); END
         """
     )
     op.execute(

@@ -123,6 +123,15 @@ export default tseslint.config(
           message: 'Use the canonical operation client in src/api instead of raw fetch.',
         },
         {
+          selector: "MemberExpression[object.name=/^(window|globalThis|self)$/][property.name='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector:
+            "MemberExpression[object.name=/^(window|globalThis|self)$/][computed=true][property.value='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
           selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='fetch']",
           message: 'Use the canonical operation client in src/api instead of raw fetch.',
         },
@@ -130,6 +139,16 @@ export default tseslint.config(
           selector:
             "CallExpression[callee.type='MemberExpression'][callee.computed=true][callee.property.value='fetch']",
           message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector:
+            "VariableDeclarator[init.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[computed=false][key.name=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message: 'Use the canonical operation client/storage adapter instead of destructuring browser globals.',
+        },
+        {
+          selector:
+            "VariableDeclarator[init.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[computed=true][key.value=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message: 'Use the canonical operation client/storage adapter instead of destructuring browser globals.',
         },
         {
           selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
@@ -150,6 +169,18 @@ export default tseslint.config(
             'MemberExpression[computed=true][property.value=/^(localStorage|sessionStorage|indexedDB)$/]',
           message:
             'Use the allowlisted transient-storage adapter; client storage is not server truth.',
+        },
+        {
+          selector:
+            "VariableDeclarator[id.type='ObjectPattern'][init.type='MemberExpression'][init.object.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[key.name=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message:
+            'Use the allowlisted canonical client/storage adapter; direct platform access is forbidden.',
+        },
+        {
+          selector:
+            "VariableDeclarator[id.type='ObjectPattern'][init.type='MemberExpression'][init.object.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[computed=true][key.value=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message:
+            'Use the allowlisted canonical client/storage adapter; direct platform access is forbidden.',
         },
       ],
       'no-restricted-globals': [

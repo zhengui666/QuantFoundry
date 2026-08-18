@@ -171,7 +171,9 @@ def credential_fingerprint_candidates(credential: str) -> dict[str, str]:
     keyring = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEYS", "").strip()
     if keyring:
         try:
-            values = json.loads(keyring)
+            values = json.loads(
+                keyring, object_pairs_hook=_reject_duplicate_key_ids
+            )
         except json.JSONDecodeError as error:
             raise CredentialConfigurationError(
                 "provider credential fingerprint keyring is invalid"

@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
 
 def provision(
     email: str, workspace_name: str, ttl_hours: int
-) -> tuple[str, str, str, bool]:
+) -> tuple[str, str, str, bool, bool]:
     session = SessionLocal()
     try:
         if session.get_bind().dialect.name != "postgresql":
@@ -64,7 +64,8 @@ def provision(
         user = session.execute(
             select(User).where(func.lower(User.email) == email).with_for_update()
         ).scalar_one_or_none()
-        if user is None:
+        owner_created = user is None
+        if owner_created:
             user = User(
                 id=f"USR-{uuid.uuid4().hex}", email=email, role="OWNER", revision=1
             )
@@ -107,7 +108,7 @@ def provision(
             )
         )
         session.commit()
-        return user.id, workspace.id, plaintext, created_workspace
+        return user.id, workspace.id, plaintext, created_workspace, owner_created
     except Exception:
         session.rollback()
         raise
@@ -118,7 +119,7 @@ def provision(
 def main() -> int:
     try:
         args = parse_args()
-        user_id, workspace_id, token, _created_workspace = provision(
+        user_id, workspace_id, token, _created_workspace, _owner_created = provision(
             args.email, args.workspace_name, args.ttl_hours
         )
     except (RuntimeError, SQLAlchemyError) as error:

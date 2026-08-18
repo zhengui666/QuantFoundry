@@ -32,6 +32,8 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
             "ACKNOWLEDGED",
             "PARTIALLY_FILLED",
             "FILLED",
+            "CANCEL_PENDING",
+            "CANCELLED",
             "EXPIRED",
             "UNKNOWN",
             "RECONCILING",
@@ -219,6 +221,14 @@ def apply_fill(
             if not retained.is_finite() or retained <= 0 or retained > quantity:
                 raise LivePolicyError("recorded fill quantity is invalid")
             retained_max = max(retained_max or retained, retained)
+    if terminal_status is not None and terminal_status not in {
+        "CANCELLED",
+        "EXPIRED",
+        "FILLED",
+    }:
+        raise LivePolicyError("terminal status is invalid")
+    if terminal_status == "FILLED" and cumulative != quantity:
+        raise LivePolicyError("FILLED status requires the complete order quantity")
     if fill_id in known_fill_ids:
         if known_fill_quantities is None or fill_id not in known_fill_quantities:
             raise LivePolicyError("duplicate fill has no retained quantity evidence")
@@ -228,7 +238,10 @@ def apply_fill(
             raise LivePolicyError("recorded fill quantity is invalid") from error
         if known_cumulative != cumulative:
             raise LivePolicyError("duplicate fill id has conflicting quantity")
-        return current, known_fill_ids, False
+        if terminal_status is None:
+            return current, known_fill_ids, False
+        next_status = transition_order(current, terminal_status)
+        return next_status, known_fill_ids, next_status != current
     if previous_cumulative_quantity is not None:
         try:
             previous = Decimal(previous_cumulative_quantity)
@@ -245,14 +258,6 @@ def apply_fill(
         raise LivePolicyError(
             "previous cumulative quantity is required after a prior fill"
         )
-    if terminal_status is not None and terminal_status not in {
-        "CANCELLED",
-        "EXPIRED",
-        "FILLED",
-    }:
-        raise LivePolicyError("terminal status is invalid")
-    if terminal_status == "FILLED" and cumulative != quantity:
-        raise LivePolicyError("FILLED status requires the complete order quantity")
     target: OrderStatus = (
         "FILLED" if cumulative == quantity else terminal_status or "PARTIALLY_FILLED"
     )

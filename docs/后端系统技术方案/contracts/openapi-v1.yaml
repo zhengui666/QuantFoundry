@@ -864,6 +864,9 @@ paths:
     get:
       summary: List research cases
       operationId: listResearch
+      parameters:
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/PageLimit'}
       responses:
         '200':
           description: Paged research cases
@@ -903,6 +906,9 @@ paths:
       operationId: getResearch
       parameters:
         - {$ref: '#/components/parameters/ResearchId'}
+        - {in: query, name: tab, required: false, schema: {type: string, enum: [timeline, experiments, evidence, artifacts, audit]}}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/PageLimit'}
       responses:
         '200':
           description: Research case
@@ -1389,6 +1395,9 @@ paths:
     get:
       summary: List approval requests by server-authoritative status
       operationId: listApprovals
+      parameters:
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/PageLimit'}
       responses:
         '200':
           description: Paged approval summaries
@@ -1620,6 +1629,8 @@ components:
     IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, minLength: 20, maxLength: 128}}
     IfMatch: {in: header, name: If-Match, required: true, schema: {type: string, minLength: 1}}
     DatabaseCandidateRevision: {in: header, name: X-Candidate-Revision, required: true, schema: {type: integer, minimum: 1}}
+    Cursor: {in: query, name: cursor, required: false, schema: {type: string, pattern: '^[0-9]+$', maxLength: 18}}
+    PageLimit: {in: query, name: limit, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 100}}
     ResearchId: {in: path, name: research_id, required: true, schema: *ResearchIdSchema}
     DatasetId:
       in: path
@@ -1777,6 +1788,15 @@ components:
         configured: {type: boolean}
         value: {anyOf: [{type: string}, {type: number}, {type: boolean}, {type: object, additionalProperties: true}, {type: array}, {type: 'null'}]}
         masked_hint: {type: [string, 'null'], maxLength: 80}
+      oneOf:
+        - properties:
+            sensitivity: {enum: [PUBLIC, MASKED]}
+          required: [sensitivity, value]
+        - properties:
+            sensitivity: {const: SECRET}
+            value: {type: 'null'}
+            masked_hint: {type: string, minLength: 1, maxLength: 80}
+          required: [sensitivity, value, masked_hint]
     ConfigurationCandidateRequest:
       type: object
       additionalProperties: false

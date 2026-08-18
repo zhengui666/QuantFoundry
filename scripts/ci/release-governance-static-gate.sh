@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="${QF_RELEASE_GOVERNANCE_ROOT:-${QF_CI_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
+repo_root="${QF_RELEASE_GOVERNANCE_ROOT:-${QF_CI_REPO_ROOT:-}}"
+trusted_root="${QF_RELEASE_TRUSTED_VERIFIER_ROOT:-$repo_root}"
+[[ -n "$repo_root" ]] || {
+  printf '%s\n' '{"result":"invalid","reason":"candidate repository root is required"}' >&2
+  exit 2
+}
+skip_fixtures=0
+if [[ "${1:-}" == "--skip-fixtures" ]]; then
+  skip_fixtures=1
+elif [[ "$#" -ne 0 ]]; then
+  printf '%s\n' '{"result":"invalid","reason":"unsupported release governance gate argument"}' >&2
+  exit 2
+fi
 
-uv --directory "$repo_root/backend" run --frozen python - "$repo_root" <<'PY'
+uv --directory "$trusted_root/backend" run --frozen python - "$repo_root" <<'PY'
 import ast
 import json
 import pathlib
@@ -25,7 +37,7 @@ run_rc_match = re.search(
 )
 run_rc_body = run_rc_match.group("body") if run_rc_match else ""
 run_step_entries = re.findall(
-    r"(?m)^\s*run_step\s+([A-Za-z0-9_-]+)\s+(.+?)\s*$", run_rc_body
+    r"(?m)^\s*(?:run_step|trusted_step)\s+([A-Za-z0-9_-]+)\s+(.+?)\s*$", run_gate
 )
 run_step_calls = dict(run_step_entries)
 run_agent_match = re.search(
@@ -63,6 +75,7 @@ def shell_command_nodes(command):
 
 
 def contains_command(command, expected):
+    command = command.replace("\n", ";")
     wanted = shlex.split(expected, comments=True, posix=True)
 
     def matches(actual, expected_token):
@@ -79,11 +92,11 @@ def contains_command(command, expected):
             actual = actual[1:]
             while actual and "=" in actual[0]:
                 actual = actual[1:]
-        if any(
-            all(matches(actual_token, expected_token) for actual_token, expected_token in zip(
-                actual[index : index + len(wanted)], wanted
-            ))
-            for index in range(len(actual) - len(wanted) + 1)
+        if operator not in {None, ";", "&&", "||"}:
+            continue
+        if len(actual) >= len(wanted) and all(
+            matches(actual_token, expected_token)
+            for actual_token, expected_token in zip(actual[: len(wanted)], wanted)
         ):
             return True
     return False
@@ -93,7 +106,7 @@ required_run_steps = {
     "known-issues-review": "scripts/release-known-issues-check.sh",
     "fresh-compose-migration": "make fullstack",
     "pg18-migration": "make pg18",
-    "backup-restore": "tests/test_event_migration_and_bootstrap.py",
+    "backup-restore": "uv run --frozen pytest -q tests/test_event_migration_and_bootstrap.py",
     "p0-require-closed-except-supply-chain": "scripts/p0-check.sh",
     "release-governance-static": "scripts/ci/release-governance-static-gate.sh",
 }
@@ -170,18 +183,27 @@ else:
     if publish_job.get("permissions") != expected_publish_permissions:
         errors.append("rc-release publish job permissions are not the canonical minimal set")
     publish_runs = [
-        step.get("run", "")
-        for step in publish_job.get("steps", [])
-        if isinstance(step, dict) and isinstance(step.get("run", ""), str)
+        (index, step.get("run", ""))
+        for index, step in enumerate(publish_job.get("steps", []))
+        if isinstance(step, dict)
+        and isinstance(step.get("run", ""), str)
+        and step.get("if") not in (False, "false", "${{ false }}")
     ]
-    for required in (
+    required_publish_controls = (
         "scripts/release-evidence.sh create-or-validate-draft",
         "scripts/release-evidence.sh package-assets evidence",
         "scripts/release-evidence.sh verify-remote-assets",
         'gh release edit "$TAG" --draft=false',
-    ):
-        if not any(required in run for run in publish_runs):
+    )
+    publish_positions = []
+    for required in required_publish_controls:
+        matches = [index for index, run in publish_runs if contains_command(run, required)]
+        if len(matches) != 1:
             errors.append(f"rc-release publish job lacks executable control {required}")
+        else:
+            publish_positions.append((matches[0], required))
+    if len(publish_positions) == len(required_publish_controls) and [index for index, _ in publish_positions] != sorted(index for index, _ in publish_positions):
+        errors.append("rc-release publish controls are not in canonical draft-package-verify-publish order")
 if "scripts/ci/run-gate.sh rc" not in rc:
     errors.append("rc-release does not invoke the canonical rc run-gate entrypoint")
 if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/release-assets" not in rc or "--clobber" not in rc:
@@ -281,6 +303,6 @@ PY
 "$repo_root/scripts/p0-check-test.sh"
 "$repo_root/scripts/ci/release-evidence-assets-test.sh"
 "$repo_root/scripts/ci/verify-independent-review-report-test.sh"
-if [[ "${QF_RELEASE_GOVERNANCE_SKIP_FIXTURES:-0}" != 1 ]]; then
+if [[ "$skip_fixtures" != 1 ]]; then
   "$repo_root/scripts/ci/release-governance-static-gate-test.sh"
 fi

@@ -14,7 +14,7 @@ type ObjectRefFor<Type extends string, Prefix extends string> = {
   version: number | null;
   revision: number;
 };
-type StrictObjectRef = ObjectRefFor<"research_policy", "RP"> | ObjectRefFor<"risk_policy", "RISK"> | ObjectRefFor<"cost_model", "COST"> | ObjectRefFor<"credential", "CRED"> | ObjectRefFor<"capability", "CAP"> | ObjectRefFor<"dataset", "DSSET"> | ObjectRefFor<"snapshot", "DS"> | ObjectRefFor<"data_quality_run", "DQ"> | ObjectRefFor<"data_quality_issue", "DQI"> | ObjectRefFor<"research", "RSCH"> | ObjectRefFor<"evidence", "EVID"> | ObjectRefFor<"conclusion", "CONC"> | ObjectRefFor<"experiment", "EXP"> | ObjectRefFor<"factor", "FAC"> | ObjectRefFor<"strategy", "STRAT"> | ObjectRefFor<"validation", "VAL"> | ObjectRefFor<"exposure", "HOLD"> | ObjectRefFor<"red_team_run", "RTRUN"> | ObjectRefFor<"portfolio", "PORT"> | ObjectRefFor<"memo", "MEMO"> | ObjectRefFor<"approval", "APR"> | ObjectRefFor<"paper", "PAPER"> | ObjectRefFor<"paper_run", "PRUN"> | ObjectRefFor<"paper_order", "PORD"> | ObjectRefFor<"paper_fill", "PFILL"> | ObjectRefFor<"review", "REV"> | ObjectRefFor<"agent_run", "ARUN"> | ObjectRefFor<"tool_call", "TCALL"> | ObjectRefFor<"job", "JOB"> | ObjectRefFor<"domain_event", "EVT"> | ObjectRefFor<"audit_event", "AUD"> | ObjectRefFor<"artifact", "ART"> | ObjectRefFor<"notification", "NOTIF"> | ObjectRefFor<"provenance", "PROV">;
+type StrictObjectRef = ObjectRefFor<"research_policy", "RP"> | ObjectRefFor<"risk_policy", "RISK"> | ObjectRefFor<"cost_model", "COST"> | ObjectRefFor<"credential", "CRED"> | ObjectRefFor<"capability", "CAP"> | ObjectRefFor<"dataset", "DSSET"> | ObjectRefFor<"snapshot", "DS"> | ObjectRefFor<"data_quality_run", "DQ"> | ObjectRefFor<"data_quality_issue", "DQI"> | ObjectRefFor<"research", "RSCH"> | ObjectRefFor<"evidence", "EVID"> | ObjectRefFor<"conclusion", "CONC"> | ObjectRefFor<"experiment", "EXP"> | ObjectRefFor<"factor", "FAC"> | ObjectRefFor<"strategy", "STRAT"> | ObjectRefFor<"validation", "VAL"> | ObjectRefFor<"exposure", "HOLD"> | ObjectRefFor<"red_team_run", "RT"> | ObjectRefFor<"portfolio", "PORT"> | ObjectRefFor<"memo", "MEMO"> | ObjectRefFor<"approval", "APR"> | ObjectRefFor<"paper", "PAPER"> | ObjectRefFor<"paper_run", "PRUN"> | ObjectRefFor<"paper_order", "PORD"> | ObjectRefFor<"paper_fill", "PFILL"> | ObjectRefFor<"review", "REV"> | ObjectRefFor<"agent_run", "ARUN"> | ObjectRefFor<"tool_call", "TCALL"> | ObjectRefFor<"job", "JOB"> | ObjectRefFor<"domain_event", "EVT"> | ObjectRefFor<"audit_event", "AUD"> | ObjectRefFor<"artifact", "ART"> | ObjectRefFor<"notification", "NOTIF"> | ObjectRefFor<"provenance", "PROV">;
 
 export interface paths {
     "/system/health": {
@@ -1255,7 +1255,15 @@ export interface components {
                 [key: string]: unknown;
             } | unknown[] | null;
             masked_hint: string | null;
-        };
+        } & ({
+            /** @enum {unknown} */
+            sensitivity: "PUBLIC" | "MASKED";
+        } | {
+            /** @constant */
+            sensitivity: "SECRET";
+            value: null;
+            masked_hint: string;
+        });
         ConfigurationCandidateRequest: {
             /** Format: int64 */
             base_revision: number;
@@ -3290,6 +3298,8 @@ export interface components {
         IdempotencyKey: string;
         IfMatch: string;
         DatabaseCandidateRevision: number;
+        Cursor: string;
+        PageLimit: number;
         ResearchId: string;
         /** @description High-entropy Dataset public ID; exact R2 grammar is DSSET- plus canonical uppercase Crockford ULID or canonical lowercase UUIDv4. Resolution is always bound to the installation's fixed singleton namespace. */
         DatasetId: string;
@@ -4231,7 +4241,10 @@ export interface operations {
     };
     listResearch: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
             header: {
                 "X-CSRF-Token": string;
             };
@@ -4289,7 +4302,11 @@ export interface operations {
     };
     getResearch: {
         parameters: {
-            query?: never;
+            query?: {
+                tab?: "timeline" | "experiments" | "evidence" | "artifacts" | "audit";
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
             header?: never;
             path: {
                 research_id: components["parameters"]["ResearchId"];
@@ -4958,7 +4975,10 @@ export interface operations {
     };
     listApprovals: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["PageLimit"];
+            };
             header?: never;
             path?: never;
             cookie?: never;

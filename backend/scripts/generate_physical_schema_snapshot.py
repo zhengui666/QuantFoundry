@@ -124,6 +124,25 @@ def _type_spec(type_: Any) -> dict[str, Any]:
 def _canonical_sql(value: str, column: Any) -> str:
     rendered = re.sub(r"\s+", " ", value).strip()
     while rendered.startswith("(") and rendered.endswith(")"):
+        depth = 0
+        quote: str | None = None
+        closes_at_end = True
+        for index, char in enumerate(rendered):
+            if quote is not None:
+                if char == quote and rendered[index - 1] != "\\":
+                    quote = None
+                continue
+            if char in "'\"":
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0 and index != len(rendered) - 1:
+                    closes_at_end = False
+                    break
+        if not closes_at_end or depth != 0:
+            break
         rendered = rendered[1:-1].strip()
     type_name = _type_spec(column.type)["name"]
     casts = {
@@ -147,7 +166,7 @@ def _canonical_sql(value: str, column: Any) -> str:
     return rendered
 
 
-def _server_default_spec(column: Any) -> str | None:
+def _server_default_spec(column: Any, *, reflected: bool = False) -> str | None:
     if getattr(column, "computed", None) is not None:
         return None
     if getattr(column, "identity", None) is not None:
@@ -160,7 +179,9 @@ def _server_default_spec(column: Any) -> str | None:
         raise ValueError(
             f"unsupported server default for {column.table.name}.{column.name}"
         )
-    if server_default_arg is not None and _autoincrement_spec(column):
+    if server_default_arg is not None and _autoincrement_spec(
+        column, reflected=reflected
+    ):
         rendered = str(server_default_arg).strip()
         match = _IMPLICIT_SERIAL_DEFAULT.fullmatch(rendered)
         if match is not None:
@@ -179,7 +200,12 @@ def _generation_spec(column: Any) -> dict[str, Any] | None:
     if computed is None:
         return None
     return {
-        "sqltext": str(computed.sqltext),
+        "sqltext": str(
+            computed.sqltext.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).strip(),
         "persisted": True if getattr(computed, "persisted", None) is None else computed.persisted,
     }
 
@@ -194,25 +220,43 @@ def _identity_spec(column: Any) -> dict[str, Any] | None:
         "integer": (-2147483648, 2147483647),
         "bigint": (-9223372036854775808, 9223372036854775807),
     }.get(type_name)
-    increment = getattr(identity, "increment", None) or 1
+    increment = getattr(identity, "increment", None)
+    if increment is None:
+        increment = 1
     minimum, maximum = limits or (None, None)
+    minvalue = getattr(identity, "minvalue", None)
+    maxvalue = getattr(identity, "maxvalue", None)
+    if minvalue is None:
+        minvalue = minimum if increment < 0 else 1
+    if maxvalue is None:
+        maxvalue = maximum if increment > 0 else -1
+    start = getattr(identity, "start", None)
+    if start is None:
+        start = minvalue if increment > 0 else maxvalue
+    cache = getattr(identity, "cache", None)
     return {
         "always": bool(getattr(identity, "always", False)),
-        "start": getattr(identity, "start", None) or 1,
+        "start": start,
         "increment": increment,
-        "minvalue": getattr(identity, "minvalue", None)
-        if getattr(identity, "minvalue", None) is not None
-        else (minimum if increment < 0 else 1),
-        "maxvalue": getattr(identity, "maxvalue", None)
-        if getattr(identity, "maxvalue", None) is not None
-        else (maximum if increment > 0 else -1),
+        "minvalue": minvalue,
+        "maxvalue": maxvalue,
         "cycle": bool(getattr(identity, "cycle", False)),
-        "cache": getattr(identity, "cache", None) or 1,
+        "cache": 1 if cache is None else cache,
     }
 
 
-def _autoincrement_spec(column: Any) -> bool:
+def _autoincrement_spec(column: Any, *, reflected: bool = False) -> bool:
     table = column.table
+    if reflected:
+        server_default = getattr(column, "server_default", None)
+        default = getattr(server_default, "arg", None)
+        return bool(
+            getattr(column, "identity", None) is not None
+            or (
+                default is not None
+                and _IMPLICIT_SERIAL_DEFAULT.fullmatch(str(default).strip()) is not None
+            )
+        )
     return bool(
         column.autoincrement is True
         or (
@@ -252,7 +296,16 @@ def _index_key_spec(expression: Any) -> dict[str, Any]:
     }
 
 
-def snapshot(metadata: MetaData) -> dict[str, Any]:
+def _compiled_sql(expression: Any) -> str:
+    return str(
+        expression.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).strip()
+
+
+def snapshot(metadata: MetaData, *, reflected: bool = False) -> dict[str, Any]:
     from quantfoundry.contracts.events.locator import (
         POSTGRES_LOCATOR_CONTRACT_SHA256,
         POSTGRES_LOCATOR_HELPERS,
@@ -281,8 +334,8 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                     "type": _type_spec(column.type),
                     "nullable": column.nullable,
                     "primary_key": column.primary_key,
-                    "autoincrement": _autoincrement_spec(column),
-                    "server_default": _server_default_spec(column),
+                    "autoincrement": _autoincrement_spec(column, reflected=reflected),
+                    "server_default": _server_default_spec(column, reflected=reflected),
                     "generation": _generation_spec(column),
                     "identity": _identity_spec(column),
                 }
@@ -320,7 +373,7 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
         )
         checks = sorted(
             [
-                {"name": constraint.name, "sql": str(constraint.sqltext)}
+                {"name": constraint.name, "sql": _compiled_sql(constraint.sqltext)}
                 for constraint in table.constraints
                 if isinstance(constraint, CheckConstraint)
             ],
@@ -349,7 +402,7 @@ def snapshot(metadata: MetaData) -> dict[str, Any]:
                         _index_key_spec(expression) for expression in index.expressions
                     ],
                     "include": list(include),
-                    "where": str(where) if where is not None else None,
+                    "where": _compiled_sql(where) if where is not None else None,
                     "operator_classes": sorted(
                         (str(key), str(value))
                         for key, value in operator_classes.items()
@@ -407,9 +460,29 @@ def main() -> int:
         try:
             metadata = MetaData()
             metadata.reflect(bind=engine)
+            if engine.dialect.name != "postgresql":
+                raise ValueError("--database-url must target PostgreSQL")
+            from scripts.schema_manifest_check import _check_postgres_helpers
+            from quantfoundry.contracts.events.locator import (
+                POSTGRES_LOCATOR_CONTRACT_SHA256,
+                POSTGRES_LOCATOR_HELPERS,
+                locator_truth_table,
+            )
+
+            helper_contract = {
+                "sha256": POSTGRES_LOCATOR_CONTRACT_SHA256,
+                "functions": list(POSTGRES_LOCATOR_HELPERS),
+                "truth_table": locator_truth_table(),
+            }
+            errors = _check_postgres_helpers(args.database_url, helper_contract)
+            if errors:
+                raise RuntimeError(
+                    "database locator helper contract mismatch: "
+                    + "; ".join(errors[:5])
+                )
         finally:
             engine.dispose()
-    value = snapshot(metadata)
+    value = snapshot(metadata, reflected=not args.orm)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:

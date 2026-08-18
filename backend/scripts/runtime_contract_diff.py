@@ -76,6 +76,44 @@ def normalized_schema(
     result.pop("examples", None)
     type_value = result.get("type")
     if isinstance(type_value, list):
+        type_specific_keywords = {
+            "string": {"minLength", "maxLength", "pattern", "format"},
+            "number": {
+                "multipleOf",
+                "maximum",
+                "exclusiveMaximum",
+                "minimum",
+                "exclusiveMinimum",
+            },
+            "integer": {
+                "multipleOf",
+                "maximum",
+                "exclusiveMaximum",
+                "minimum",
+                "exclusiveMinimum",
+            },
+            "array": {
+                "prefixItems",
+                "items",
+                "contains",
+                "minContains",
+                "maxContains",
+                "uniqueItems",
+                "minItems",
+                "maxItems",
+            },
+            "object": {
+                "maxProperties",
+                "minProperties",
+                "required",
+                "properties",
+                "patternProperties",
+                "additionalProperties",
+                "propertyNames",
+                "dependentRequired",
+                "dependentSchemas",
+            },
+        }
         base = {key: value for key, value in result.items() if key != "type"}
         branches: list[Any] = []
         for branch_type in type_value:
@@ -98,16 +136,28 @@ def normalized_schema(
                 if branch_type not in compatible_types:
                     continue
             branch: dict[str, Any]
+            branch = {
+                key: value
+                for key, value in base.items()
+                if key
+                not in {
+                    keyword
+                    for supported_type, keywords in type_specific_keywords.items()
+                    if supported_type != branch_type
+                    and not {supported_type, branch_type} <= {"number", "integer"}
+                    for keyword in keywords
+                }
+            }
             if branch_type == "null":
                 if base.get("const") is not None or (
                     isinstance(base.get("enum"), list) and None not in base["enum"]
                 ):
                     continue
-                branch = {**base, "type": "null"}
+                branch["type"] = "null"
                 if isinstance(branch.get("enum"), list):
                     branch["enum"] = [None]
             else:
-                branch = {**base, "type": branch_type}
+                branch["type"] = branch_type
                 if isinstance(branch.get("enum"), list):
                     branch["enum"] = [
                         item for item in branch["enum"] if item is not None
@@ -154,7 +204,15 @@ def normalized_schema(
     ):
         result.pop("type")
     for key, value in list(result.items()):
-        result[key] = normalized_schema(document, value, active_refs)
+        if key in {"properties", "patternProperties", "dependentSchemas"} and isinstance(
+            value, dict
+        ):
+            result[key] = {
+                name: normalized_schema(document, child, active_refs)
+                for name, child in sorted(value.items())
+            }
+        else:
+            result[key] = normalized_schema(document, value, active_refs)
     branches = result.get("allOf")
     if isinstance(branches, list) and all(
         isinstance(branch, dict) for branch in branches
@@ -257,6 +315,20 @@ def normalized_schema(
     return result
 
 
+def strict_equal(left: Any, right: Any) -> bool:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(
+            strict_equal(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            strict_equal(a, b) for a, b in zip(left, right, strict=True)
+        )
+    return left == right
+
+
 def normalized_header(document: dict[str, Any], value: Any) -> Any:
     if not isinstance(value, dict):
         return normalized_fragment(document, value)
@@ -266,8 +338,16 @@ def normalized_header(document: dict[str, Any], value: Any) -> Any:
         if key == "schema"
         else {
             media_type: {
-                **{field: normalized_fragment(document, field_value) for field, field_value in media.items() if field != "schema"},
-                **({"schema": normalized_schema(document, media.get("schema"))} if "schema" in media else {}),
+                **{
+                    field: normalized_fragment(document, field_value)
+                    for field, field_value in media.items()
+                    if field != "schema"
+                },
+                **(
+                    {"schema": normalized_schema(document, media.get("schema"))}
+                    if "schema" in media
+                    else {}
+                ),
             }
             for media_type, media in item.items()
         }
@@ -375,9 +455,10 @@ for key, expected in canonical_operations.items():
     label = f"{key[1].upper()} {key[0]}"
     if actual.get("operationId") != expected.get("operationId"):
         errors.append(f"{label}: operationId")
-    if normalized_parameters(
-        canonical, expected, canonical["paths"][key[0]]
-    ) != normalized_parameters(runtime, actual, runtime["paths"][key[0]]):
+    if not strict_equal(
+        normalized_parameters(canonical, expected, canonical["paths"][key[0]]),
+        normalized_parameters(runtime, actual, runtime["paths"][key[0]]),
+    ):
         errors.append(f"{label}: parameters")
     expected_request = resolve(canonical, expected.get("requestBody", {}))
     actual_request = resolve(runtime, actual.get("requestBody", {}))
@@ -389,9 +470,10 @@ for key, expected in canonical_operations.items():
         errors.append(f"{label}: request body content types")
     for media_type, expected_media in expected_content.items():
         actual_media = actual_content.get(media_type, {})
-        if normalized_schema(
-            canonical, expected_media.get("schema")
-        ) != normalized_schema(runtime, actual_media.get("schema")):
+        if not strict_equal(
+            normalized_schema(canonical, expected_media.get("schema")),
+            normalized_schema(runtime, actual_media.get("schema")),
+        ):
             errors.append(f"{label}: request body {media_type} schema")
         if normalized_encoding(expected_media) != normalized_encoding(actual_media):
             errors.append(f"{label}: request body {media_type} encoding")
@@ -416,40 +498,50 @@ for key, expected in canonical_operations.items():
             errors.append(f"{label}: response {status} headers")
         for media_type, expected_media in expected_response.get("content", {}).items():
             actual_media = actual_response.get("content", {}).get(media_type, {})
-            if normalized_schema(
-                canonical, expected_media.get("schema")
-            ) != normalized_schema(runtime, actual_media.get("schema")):
+            if not strict_equal(
+                normalized_schema(canonical, expected_media.get("schema")),
+                normalized_schema(runtime, actual_media.get("schema")),
+            ):
                 errors.append(f"{label}: response {status} {media_type} schema")
             if normalized_encoding(expected_media) != normalized_encoding(actual_media):
                 errors.append(f"{label}: response {status} {media_type} encoding")
-        if normalized_fragment(
-            canonical, expected_response.get("links", {})
-        ) != normalized_fragment(runtime, actual_response.get("links", {})):
+        if not strict_equal(
+            normalized_fragment(canonical, expected_response.get("links", {})),
+            normalized_fragment(runtime, actual_response.get("links", {})),
+        ):
             errors.append(f"{label}: response {status} links")
     if expected.get("deprecated", False) != actual.get("deprecated", False):
         errors.append(f"{label}: deprecated")
-    if normalized_fragment(
-        canonical, effective_servers(canonical, canonical["paths"][key[0]], expected)
-    ) != normalized_fragment(
-        runtime, effective_servers(runtime, runtime["paths"][key[0]], actual)
+    if not strict_equal(
+        normalized_fragment(
+            canonical,
+            effective_servers(canonical, canonical["paths"][key[0]], expected),
+        ),
+        normalized_fragment(
+            runtime, effective_servers(runtime, runtime["paths"][key[0]], actual)
+        ),
     ):
         errors.append(f"{label}: servers")
-    if normalized_fragment(
-        canonical, expected.get("callbacks", {})
-    ) != normalized_fragment(runtime, actual.get("callbacks", {})):
+    if not strict_equal(
+        normalized_fragment(canonical, expected.get("callbacks", {})),
+        normalized_fragment(runtime, actual.get("callbacks", {})),
+    ):
         errors.append(f"{label}: callbacks")
     expected_security = expected.get("security", canonical.get("security"))
     actual_security = actual.get("security", runtime.get("security"))
-    if normalized_security(expected_security) != normalized_security(actual_security):
+    if not strict_equal(
+        normalized_security(expected_security), normalized_security(actual_security)
+    ):
         errors.append(f"{label}: security")
 
 canonical_schemas = canonical["components"]["schemas"]
 runtime_schemas = runtime.get("components", {}).get("schemas", {})
 for schema_name, canonical_schema in canonical_schemas.items():
     runtime_schema = runtime_schemas.get(schema_name)
-    if runtime_schema is None or normalized_schema(
-        canonical, canonical_schema
-    ) != normalized_schema(runtime, runtime_schema):
+    if runtime_schema is None or not strict_equal(
+        normalized_schema(canonical, canonical_schema),
+        normalized_schema(runtime, runtime_schema),
+    ):
         errors.append(f"component schema differs: {schema_name}")
 
 expected_operation_count = canonical["info"]["x-quantfoundry-operation-count"]
@@ -459,8 +551,9 @@ if expected_operation_count != len(canonical_operations):
     errors.append("canonical operation metadata differs from canonical paths")
 canonical_security_schemes = canonical.get("components", {}).get("securitySchemes", {})
 runtime_security_schemes = runtime.get("components", {}).get("securitySchemes", {})
-if normalized_schema(canonical, canonical_security_schemes) != normalized_schema(
-    runtime, runtime_security_schemes
+if not strict_equal(
+    normalized_schema(canonical, canonical_security_schemes),
+    normalized_schema(runtime, runtime_security_schemes),
 ):
     errors.append("security schemes differ")
 canonical_error_schema = canonical_schemas.get("CanonicalErrorCode")

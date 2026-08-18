@@ -41,7 +41,14 @@ docs/**
 docs/后端系统技术方案/**
 !docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md
 !docs/后端系统技术方案/contracts/
-!docs/后端系统技术方案/contracts/**
+!docs/后端系统技术方案/contracts/bootstrap-control-v1.yaml
+!docs/后端系统技术方案/contracts/configuration-catalog-v1.yaml
+!docs/后端系统技术方案/contracts/live-connector-v1.yaml
+!docs/后端系统技术方案/contracts/openapi-v1.yaml
+!docs/后端系统技术方案/contracts/ux001-d1-test-matrix.yaml
+!docs/后端系统技术方案/contracts/tools/
+!docs/后端系统技术方案/contracts/tools/README.md
+!docs/后端系统技术方案/contracts/tools/v1-p0.yaml
 docs/后端系统技术方案/contracts/**/credentials/**
 docs/后端系统技术方案/contracts/**/secrets/**
 docs/后端系统技术方案/contracts/**/*.pem

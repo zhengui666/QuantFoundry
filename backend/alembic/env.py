@@ -48,6 +48,11 @@ def run_migrations_online():
     if injected_connection is not None:
         sqlite_migration = injected_connection.dialect.name == "sqlite"
         if sqlite_migration:
+            if injected_connection.in_transaction():
+                raise RuntimeError(
+                    "SQLite Alembic requires an idle injected connection; "
+                    "it will not commit a caller-owned transaction"
+                )
             injected_connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
             injected_connection.commit()
             injected_connection.exec_driver_sql("BEGIN")
@@ -74,13 +79,19 @@ def run_migrations_online():
             raise
         finally:
             if sqlite_migration:
-                if injected_connection.in_transaction():
-                    injected_connection.rollback()
-                injected_connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-                if injected_connection.exec_driver_sql(
-                    "PRAGMA foreign_keys"
-                ).scalar_one() != 1:
-                    raise RuntimeError("SQLite migration failed to restore foreign keys")
+                try:
+                    if injected_connection.in_transaction():
+                        injected_connection.rollback()
+                    injected_connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                    if injected_connection.exec_driver_sql(
+                        "PRAGMA foreign_keys"
+                    ).scalar_one() != 1:
+                        raise RuntimeError(
+                            "SQLite migration failed to restore foreign keys"
+                        )
+                finally:
+                    if injected_connection.in_transaction():
+                        injected_connection.rollback()
         return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),

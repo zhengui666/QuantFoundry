@@ -676,6 +676,16 @@ def compute_factor_rows(
             if len(available_history) < lookback:
                 continue
             prior = available_history[-lookback]
+            unavailable_gap = any(
+                prior["date"] < item["date"] <= current["date"]
+                and _parse_timestamp(item["available_at"], "available_at")
+                > knowledge_time
+                for item in history[: index + 1]
+            )
+            if unavailable_gap:
+                raise EngineInputError(
+                    "factor history contains an unavailable corporate-action gap"
+                )
             visible_prices = _adjusted_price_map([*available_history, current])
             current_price = visible_prices[current["date"]][current["symbol"]]
             prior_price = visible_prices[prior["date"]][prior["symbol"]]
@@ -956,6 +966,12 @@ def _portfolio_returns(
         # set is PIT-filtered; delayed closes remain valid for return marking.
         next_rows = market_by_date[tomorrow]
         today_market_rows = market_by_date[today]
+        missing_held_symbols = set(previous_weights) - set(today_market_rows)
+        if missing_held_symbols:
+            raise EngineInputError(
+                "held positions have no mark on the valuation date: "
+                + ", ".join(sorted(missing_held_symbols))
+            )
         today_rows = {
             symbol: row
             for symbol, row in by_date.get(today, {}).items()

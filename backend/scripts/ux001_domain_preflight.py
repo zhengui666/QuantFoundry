@@ -109,17 +109,26 @@ def main() -> int:
         with engine.connect() as connection:
             report = _report(connection)
             if migrate and report["status"] in {"READY", "EMPTY"}:
-                # _report() leaves an implicit read transaction open. End it
-                # before binding Alembic to this same connection; this keeps
-                # in-memory SQLite and migration state in one database.
-                connection.commit()
-                migration_started = True
                 if connection.dialect.name == "sqlite":
-                    _apply_migration(config, database_url, connection)
+                    report = {
+                        **report,
+                        "status": "QUARANTINE",
+                        "reason": "SQLITE_MIGRATION_REQUIRES_EXCLUSIVE_LOCK",
+                    }
+                elif connection.dialect.name != "postgresql":
+                    report = {
+                        **report,
+                        "status": "QUARANTINE",
+                        "reason": "UNSUPPORTED_MIGRATION_DIALECT",
+                    }
                 else:
+                    # _report() leaves an implicit read transaction open. End it
+                    # before binding Alembic to this same connection.
+                    connection.commit()
+                    migration_started = True
                     with connection.begin():
                         _apply_migration(config, database_url, connection)
-                report = {**_report(connection), "migration": "APPLIED"}
+                    report = {**_report(connection), "migration": "APPLIED"}
     except Exception as error:
         reason = (
             "MIGRATION_FAILED"

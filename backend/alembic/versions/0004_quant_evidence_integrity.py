@@ -18,6 +18,8 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError("0004 evidence migration supports PostgreSQL and SQLite only")
     if bind.dialect.name == "postgresql":
         bind.execute(
             sa.text(
@@ -221,12 +223,14 @@ def upgrade() -> None:
                 UPDATE validations
                 SET holdout_state = CASE
                       WHEN EXISTS (SELECT 1 FROM approval_requests a
-                                   JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
+                                   JOIN validations v ON v.id = NEW.validation_id
+                                   JOIN strategy_versions sv ON sv.id = v.strategy_version_id
                                    WHERE a.validation_id = NEW.validation_id
                                      AND a.status = 'APPROVED'
                                      AND a.subject_spec_sha256 = sv.spec_sha256) THEN 'UNLOCKED'
                       WHEN EXISTS (SELECT 1 FROM approval_requests a
-                                   JOIN strategy_versions sv ON sv.id = OLD.strategy_version_id
+                                   JOIN validations v ON v.id = NEW.validation_id
+                                   JOIN strategy_versions sv ON sv.id = v.strategy_version_id
                                    WHERE a.validation_id = NEW.validation_id
                                      AND a.status = 'PENDING'
                                      AND a.subject_spec_sha256 = sv.spec_sha256) THEN 'APPROVAL_PENDING'
@@ -248,6 +252,8 @@ def upgrade() -> None:
             """
             CREATE FUNCTION qf_reject_exposure_evidence_change() RETURNS trigger AS $$
             BEGIN
+              PERFORM 1 FROM validations v
+                WHERE v.id = OLD.validation_id FOR UPDATE;
               IF EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id
                 AND v.holdout_state IN ('EXPOSED', 'FAILED')
                 AND v.strategy_version_id = OLD.strategy_version_id) THEN
@@ -311,7 +317,7 @@ def upgrade() -> None:
     op.execute(
         "CREATE TRIGGER qf_approval_evidence_immutable BEFORE UPDATE "
         "ON approval_requests WHEN EXISTS (SELECT 1 FROM validations v WHERE v.id = OLD.validation_id "
-        "AND ((v.holdout_state = 'APPROVAL_PENDING' AND OLD.status = 'PENDING') OR "
+        "AND ((v.holdout_state IN ('APPROVAL_PENDING', 'FAILED') AND OLD.status = 'PENDING') OR "
         "(v.holdout_state IN ('UNLOCKED', 'RUNNING', 'EXPOSED', 'FAILED') AND "
         "OLD.status = 'APPROVED'))) AND ("
         "NEW.validation_id IS NOT OLD.validation_id OR NEW.subject_sha256 IS NOT OLD.subject_sha256 OR "

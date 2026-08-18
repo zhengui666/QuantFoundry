@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import inspect
 import os
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import jsonschema
@@ -56,6 +57,58 @@ def _problem(request: Request, detail: str) -> JSONResponse:
         status_code=500,
         media_type="application/problem+json",
     )
+
+
+def _validate_declared_payload(schema: dict[str, Any], payload: Any) -> None:
+    reference = schema.get("$ref")
+    if reference:
+        validate_schema(reference.rsplit("/", 1)[-1], payload)
+    else:
+        validate_json_schema(schema, payload)
+
+
+async def _validated_stream(
+    iterator: Any,
+    schema: dict[str, Any],
+    content_type: str,
+    *,
+    sse: bool,
+) -> AsyncIterator[bytes]:
+    chunks: list[bytes] = []
+    total = 0
+    buffer = b""
+    async for chunk in iterator:
+        raw = chunk.encode("utf-8") if isinstance(chunk, str) else bytes(chunk)
+        total += len(raw)
+        if total > 4 * 1024 * 1024:
+            raise ValueError("streaming response exceeded contract validation limit")
+        if sse:
+            buffer += raw
+            while b"\n\n" in buffer:
+                frame, buffer = buffer.split(b"\n\n", 1)
+                data = b"\n".join(
+                    line[5:] for line in frame.splitlines() if line.startswith(b"data:")
+                ).strip()
+                if data:
+                    _validate_declared_payload(schema, json.loads(data))
+        else:
+            chunks.append(raw)
+    if sse:
+        if buffer.strip():
+            data = b"\n".join(
+                line[5:] for line in buffer.splitlines() if line.startswith(b"data:")
+            ).strip()
+            if data:
+                _validate_declared_payload(schema, json.loads(data))
+    else:
+        body = b"".join(chunks)
+        if content_type.endswith("+json") or content_type == "application/json":
+            _validate_declared_payload(schema, json.loads(body))
+        else:
+            _validate_declared_payload(schema, body.decode("utf-8"))
+    if not sse:
+        for chunk in chunks:
+            yield chunk
 
 
 class CanonicalRoute(APIRoute):
@@ -128,7 +181,7 @@ class CanonicalRoute(APIRoute):
                                 and getattr(
                                     request.app.state,
                                     "environment",
-                                    os.getenv("QF_ENV", ""),
+                                    getattr(request.app.state, "environment", ""),
                                 )
                                 == "test"
                                 and request.headers.get("authorization", "").startswith(
@@ -199,7 +252,9 @@ class CanonicalRoute(APIRoute):
                 )
                 if exception_handler is None:
                     raise
-                response = await exception_handler(request, error)
+                response = exception_handler(request, error)
+                if inspect.isawaitable(response):
+                    response = await response
             raw_declared = operation.get("responses", {}).get(str(response.status_code))
             if raw_declared is None:
                 return _problem(
@@ -234,6 +289,12 @@ class CanonicalRoute(APIRoute):
                     return _problem(
                         request, "handler returned an undeclared SSE content type"
                     )
+                media = declared_content["text/event-stream"]
+                schema = media.get("schema")
+                if schema:
+                    response.body_iterator = _validated_stream(
+                        response.body_iterator, schema, "text/event-stream", sse=True
+                    )
                 return response
             if not declared_content:
                 if hasattr(response, "body"):
@@ -251,6 +312,11 @@ class CanonicalRoute(APIRoute):
                     return _problem(
                         request,
                         "streaming response returned an undeclared content type",
+                    )
+                schema = declared_content[content_type].get("schema")
+                if schema:
+                    response.body_iterator = _validated_stream(
+                        response.body_iterator, schema, content_type, sse=False
                     )
                 return response
             response_body = getattr(response, "body", b"")
@@ -273,11 +339,7 @@ class CanonicalRoute(APIRoute):
                         decoded_body = json.loads(response_body)
                     else:
                         decoded_body = response_body.decode("utf-8")
-                    reference = schema.get("$ref")
-                    if reference:
-                        validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
-                    else:
-                        validate_json_schema(schema, decoded_body)
+                    _validate_declared_payload(schema, decoded_body)
                     if (
                         200 <= response.status_code < 300
                         and operation.get("operationId") == "completeSetup"

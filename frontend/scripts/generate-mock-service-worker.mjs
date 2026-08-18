@@ -56,7 +56,7 @@ export const patchWorker = (source) => {
     'client close reconciliation',
   );
 
-  let patched = `${source.slice(0, listenerStart)}addEventListener('message', function (event) {\n  event.waitUntil(handleMessage(event))\n})\n\nasync function handleMessage(event) {\n${safeMessageBody}\n}${source.slice(listenerEnd + listenerClosing.length)}`;
+  let patched = `${source.slice(0, listenerStart)}let lifecycleMessageQueue = Promise.resolve()\n\naddEventListener('message', function (event) {\n  const message = lifecycleMessageQueue.then(() => handleMessage(event))\n  lifecycleMessageQueue = message.catch(() => {})\n  event.waitUntil(message)\n})\n\nasync function handleMessage(event) {\n${safeMessageBody}\n}${source.slice(listenerEnd + listenerClosing.length)}`;
   patched = replaceOnce(
     patched,
     'const activeClientIds = new Set()\n',
@@ -114,8 +114,20 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     'async function handleRequest(event, requestId, requestInterceptedAt) {\n  const client = await resolveMainClient(event)',
-    'async function handleRequest(event, requestId, requestInterceptedAt) {\n  await reconcileActiveClients()\n  const client = await resolveMainClient(event)',
+    'async function handleRequest(event, requestId, requestInterceptedAt) {\n  const originatedFromActiveClient = Boolean(event.clientId && activeClientIds.has(event.clientId))\n  await reconcileActiveClients()\n  const client = await resolveMainClient(event)',
     'fetch active client reconciliation',
+  );
+  patched = replaceOnce(
+    patched,
+    '    requestInterceptedAt,\n  )',
+    '    requestInterceptedAt,\n    originatedFromActiveClient,\n  )',
+    'request client provenance',
+  );
+  patched = replaceOnce(
+    patched,
+    'async function getResponse(event, client, requestId, requestInterceptedAt) {',
+    'async function getResponse(event, client, requestId, requestInterceptedAt, originatedFromActiveClient) {',
+    'response client provenance parameter',
   );
 
   const responseCallStart =
@@ -156,8 +168,14 @@ export const patchWorker = (source) => {
   patched = replaceOnce(
     patched,
     '  if (!client) {\n    return passthrough()\n  }',
-    '  if (!client) {\n    return passthrough()\n  }',
+    '  if (!client) {\n    return originatedFromActiveClient ? failClosed() : passthrough()\n  }',
     'inactive client fail-closed behavior',
+  );
+  patched = replaceOnce(
+    patched,
+    "  if (!activeClientIds.has(client.id)) {\n    return passthrough()\n  }",
+    "  if (!activeClientIds.has(client.id)) {\n    return originatedFromActiveClient ? failClosed() : passthrough()\n  }",
+    'lost active client fail-closed behavior',
   );
   patched = replaceOnce(
     patched,

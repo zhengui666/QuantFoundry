@@ -2,6 +2,7 @@
 set -euo pipefail
 
 environment_file="${QF_ENV_FILE:-.env}"
+source_environment_file="$environment_file"
 
 if [[ -L "$environment_file" ]]; then
   printf '%s\n' 'Environment file must not be a symlink.' >&2
@@ -78,6 +79,44 @@ PY
   printf '%s\n' 'Set the database password and generated credential-encryption key, then run make bootstrap again.' >&2
   exit 1
 fi
+
+environment_snapshot="$(mktemp "${TMPDIR:-/tmp}/quantfoundry-env.XXXXXX")"
+chmod 600 "$environment_snapshot"
+trap 'rm -f -- "$environment_snapshot"' EXIT
+python3 - "$source_environment_file" "$environment_snapshot" <<'PY'
+import os
+import stat
+import sys
+
+source, destination = sys.argv[1:]
+flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+descriptor = os.open(source, flags)
+try:
+    metadata = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or metadata.st_mode & 0o077
+    ):
+        raise SystemExit("environment file must be a regular, owner-owned file with mode 0600")
+    with os.fdopen(descriptor, "rb") as handle:
+        descriptor = -1
+        payload = handle.read()
+finally:
+    if descriptor != -1:
+        os.close(descriptor)
+output = os.open(
+    destination,
+    os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
+    0o600,
+)
+try:
+    os.write(output, payload)
+    os.fchmod(output, 0o600)
+finally:
+    os.close(output)
+PY
+environment_file="$environment_snapshot"
 
 qf_env="$(environment_value QF_ENV)"
 qf_environment="$(environment_value QF_ENVIRONMENT)"

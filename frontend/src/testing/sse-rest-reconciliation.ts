@@ -7,6 +7,7 @@ export class SseRestReconciliationWitness {
   readonly baseline: number;
   private matchingEvent: DecodedSseFrame | undefined;
   private matchingRestReads = 0;
+  private lastObservedBoundary: number;
   private eventReadBoundary: number;
 
   constructor(
@@ -16,25 +17,24 @@ export class SseRestReconciliationWitness {
     initialRestReads: number,
   ) {
     this.baseline = initialRestReads;
+    this.lastObservedBoundary = initialRestReads;
     this.eventReadBoundary = initialRestReads;
   }
 
   observeEvent(
     frame: DecodedSseFrame,
+    restReadsAtEvent: number,
     planner: QueryPlanner = queryKeysForEvent,
-    restReadsAtEvent = this.baseline,
   ) {
-    if (!Number.isInteger(restReadsAtEvent) || restReadsAtEvent < this.baseline)
+    if (!Number.isInteger(restReadsAtEvent) || restReadsAtEvent < this.lastObservedBoundary)
       throw new Error('SSE reconciliation event boundary must follow the frozen REST baseline.');
+    this.lastObservedBoundary = restReadsAtEvent;
     const mapped = planner(frame.event).some(
       (key) => key[1] === this.resourceType && key[2] === this.resourceId,
     );
     if (mapped) {
       this.matchingEvent = frame;
       this.eventReadBoundary = restReadsAtEvent;
-      this.matchingRestReads = 0;
-    } else {
-      this.matchingEvent = undefined;
       this.matchingRestReads = 0;
     }
   }

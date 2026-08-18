@@ -5,6 +5,14 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script_repo_root="$repo_root"
 registry="${1:-$repo_root/docs/治理/p0-blockers.yaml}"
 mode="${2:---require-closed}"
+uv_bin="$(command -v uv 2>/dev/null || true)"
+[[ "$uv_bin" = /* && -x "$uv_bin" && ! -L "$uv_bin" ]] || { printf '%s\n' 'uv is required to parse the canonical P0 registry.' >&2; exit 2; }
+uv_directory="$uv_bin"
+while [[ "$uv_directory" != / ]]; do
+  [[ ! -w "$uv_directory" ]] || { printf '%s\n' 'uv is located below a writable path.' >&2; exit 2; }
+  uv_directory="$(dirname "$uv_directory")"
+done
+export PATH="$(dirname "$uv_bin"):/usr/local/bin:/usr/bin:/bin"
 
 [[ "$mode" == "--offline-report" || "$mode" == "--report" || "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]] || {
   printf 'Usage: %s [registry] [--offline-report|--report|--require-closed|--require-closed-except-supply-chain]\n' "$0" >&2
@@ -12,11 +20,22 @@ mode="${2:---require-closed}"
 }
 [[ -f "$registry" ]] || { printf 'Missing P0 registry: %s\n' "$registry" >&2; exit 2; }
 registry="$(cd "$(dirname "$registry")" && pwd)/$(basename "$registry")"
-command -v uv >/dev/null || { printf '%s\n' 'uv is required to parse the canonical P0 registry.' >&2; exit 2; }
+unset PYTHONPATH PYTHONHOME PYTHONSTARTUP UV_PYTHON UV_CONFIG_FILE UV_INDEX_URL UV_EXTRA_INDEX_URL UV_DEFAULT_INDEX UV_NATIVE_TLS
 
 if [[ "$mode" == "--report" ]]; then
   mode="--offline-report"
 fi
+
+strict_runtime_root=""
+cleanup_strict_runtime() {
+  local status=$?
+  trap - EXIT
+  if [[ -n "$strict_runtime_root" ]]; then
+    rm -rf -- "$strict_runtime_root"
+  fi
+  exit "$status"
+}
+trap cleanup_strict_runtime EXIT
 
 if [[ "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]]; then
   trusted_verifier_root="${QF_RELEASE_TRUSTED_VERIFIER_ROOT:-}"
@@ -37,15 +56,58 @@ if [[ "$mode" == "--require-closed" || "$mode" == "--require-closed-except-suppl
     printf '%s\n' 'trusted verifier checkout does not match its commit anchor' >&2
     exit 2
   }
-  [[ -z "$(git -C "$trusted_verifier_root" status --porcelain --untracked-files=all)" ]] || {
+  trusted_status="$(git -C "$trusted_verifier_root" status --porcelain --untracked-files=all)" || {
+    printf '%s\n' 'trusted verifier status cannot be inspected' >&2
+    exit 2
+  }
+  [[ -z "$trusted_status" ]] || {
     printf '%s\n' 'trusted verifier checkout is not clean' >&2
     exit 2
   }
+  hidden_flags="$(git -C "$trusted_verifier_root" ls-files -v)" || {
+    printf '%s\n' 'trusted verifier file flags cannot be inspected' >&2
+    exit 2
+  }
+  if printf '%s\n' "$hidden_flags" | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf '%s\n' 'trusted verifier rejects assume-unchanged or skip-worktree files' >&2
+    exit 2
+  fi
+  release_root="${QF_RELEASE_REPO_ROOT:-$repo_root}"
+  release_root="$(cd "$release_root" 2>/dev/null && pwd)" || {
+    printf '%s\n' 'release checkout is unavailable' >&2
+    exit 2
+  }
+  release_head="$(git -C "$release_root" rev-parse HEAD 2>/dev/null)" || {
+    printf '%s\n' 'release checkout HEAD cannot be inspected' >&2
+    exit 2
+  }
+  release_commit="${QF_RELEASE_COMMIT:-$release_head}"
+  [[ "$release_head" == "$release_commit" ]] || {
+    printf '%s\n' 'release checkout does not match its commit anchor' >&2
+    exit 2
+  }
+  release_status="$(git -C "$release_root" status --porcelain --untracked-files=all)" || {
+    printf '%s\n' 'release checkout status cannot be inspected' >&2
+    exit 2
+  }
+  [[ -z "$release_status" ]] || {
+    printf '%s\n' 'release checkout is not clean' >&2
+    exit 2
+  }
+  release_flags="$(git -C "$release_root" ls-files -v)" || exit 2
+  if printf '%s\n' "$release_flags" | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf '%s\n' 'release checkout rejects assume-unchanged or skip-worktree files' >&2
+    exit 2
+  fi
+  strict_runtime_root="$(mktemp -d "${TMPDIR:-/tmp}/qf-p0-runtime.XXXXXX")"
+  export UV_PROJECT_ENVIRONMENT="$strict_runtime_root/venv"
+  export UV_CACHE_DIR="$strict_runtime_root/cache"
+  mkdir -m 0700 "$UV_CACHE_DIR"
 fi
 
 set +e
 QF_RELEASE_REPO_ROOT="${QF_RELEASE_REPO_ROOT:-$repo_root}" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
-  uv --directory "$script_repo_root/backend" run --frozen python - "$registry" "$mode" <<'PY'
+  "$uv_bin" --directory "$script_repo_root/backend" run --frozen python -I - "$registry" "$mode" <<'PY'
 import datetime as dt
 import hashlib
 import io
@@ -219,8 +281,8 @@ class RemoteVerifier:
     def __init__(self):
         self.repository = os.environ.get("GITHUB_REPOSITORY", "")
         self.token = os.environ.get("GITHUB_TOKEN", "")
-        if not repository_pattern.fullmatch(self.repository):
-            raise RuntimeError("GITHUB_REPOSITORY is required for online P0 closure verification")
+        if self.repository != "zhengui666/QuantFoundry":
+            raise RuntimeError("GITHUB_REPOSITORY must be the canonical repository for online P0 closure verification")
         if not self.token:
             raise RuntimeError("GITHUB_TOKEN is required for online P0 closure verification")
         if not shutil_which("gh"):
@@ -394,9 +456,13 @@ def validate_embedded_report(prefix, report, record, role, run_id, remote, error
         "schema_version", "content_type", "commit_sha", "github_run_id", "verifier_role", "verified_at_utc",
         "closure_criteria", "commands", "artifact", "attestation",
     }
-    if set(report) != expected_fields:
+    if set(report) not in {expected_fields, expected_fields | {"github_run_attempt"}}:
         errors.append(f"{prefix}.embedded_report has an invalid field set")
         return
+    if "github_run_attempt" in report and (
+        not isinstance(report["github_run_attempt"], int) or report["github_run_attempt"] < 1
+    ):
+        errors.append(f"{prefix}.embedded_report.github_run_attempt must be positive")
     report_meta = record["report"]
     if report.get("schema_version") != "1.0.0":
         errors.append(f"{prefix}.embedded_report.schema_version must be 1.0.0")

@@ -234,12 +234,28 @@ def _as_json_objects(value: JsonValue) -> list[JsonObject]:
     return cast(list[JsonObject], value)
 
 
+def _page_detail(value: object, cursor: str | None, limit: int) -> object:
+    if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+        return value
+    offset = int(cursor or "0")
+    items = value["items"]
+    selected = items[offset : offset + limit + 1]
+    has_more = len(selected) > limit
+    page = dict(value)
+    page["items"] = selected[:limit]
+    page["page"] = {
+        "next_cursor": str(offset + limit) if has_more else None,
+        "has_more": has_more,
+    }
+    return page
+
+
 def _tool_result_summary(value: object) -> dict[str, Any] | None:
     if not value:
         return None
     try:
         summary = json.loads(_as_str(value))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if not isinstance(summary, dict):
         return None
@@ -2010,7 +2026,7 @@ def remote_codex_mode() -> bool:
     try:
         snapshot = remote_codex_projection()
         return snapshot[0].lower() in {"openai-compatible", "remote-codex"}
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError:
         return False
 
 
@@ -2023,7 +2039,7 @@ def remote_codex_projection() -> tuple[str, str]:
         provider = str(snapshot.get("model_provider") or "remote-codex")
         if model != "unconfigured":
             return provider, model
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError:
         pass
     return ("remote-codex", os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL))
 
@@ -3047,7 +3063,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3622,7 +3638,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+    except httpx.HTTPError, KeyError, TypeError, ValueError:
         return False
     return payload.get("model_name") in available_models
 
@@ -3667,7 +3683,7 @@ def validate_live_connector(
                 accounts = connector.accounts()
             finally:
                 connector.close()
-        except (ConnectorError, ValueError):
+        except ConnectorError, ValueError:
             return 200, {
                 "connection_id": data.connection_id,
                 "state": "FAILED",
@@ -4209,9 +4225,24 @@ def get_snapshot(
 
 
 @app.get("/api/v1/research")
-def list_research(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
+def list_research(
+    cursor: str | None = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    limit: int = Query(100, ge=1, le=100),
+    actor: Actor = Depends(require_owner),
+    s: Session = Depends(db),
+):
+    offset = int(cursor or "0")
+    rows = (
+        s.query(ResearchRow)
+        .filter_by(workspace_id=actor.workspace_id)
+        .order_by(ResearchRow.id)
+        .offset(offset)
+        .limit(limit + 1)
+        .all()
+    )
+    has_more = len(rows) > limit
     items = []
-    for row in s.query(ResearchRow).filter_by(workspace_id=actor.workspace_id).all():
+    for row in rows[:limit]:
         detail = _json_loads(row.detail)
         items.append(
             {
@@ -4229,7 +4260,10 @@ def list_research(actor: Actor = Depends(require_owner), s: Session = Depends(db
         )
     return {
         "items": items,
-        "page": {"next_cursor": None, "has_more": False},
+        "page": {
+            "next_cursor": str(offset + limit) if has_more else None,
+            "has_more": has_more,
+        },
     }
 
 
@@ -4345,13 +4379,26 @@ def create_research(
 @app.get("/api/v1/research/{research_id}")
 def read_research(
     research_id: ResearchId,
+    tab: Literal["timeline", "experiments", "evidence", "artifacts", "audit"]
+    | None = Query(None),
+    cursor: str | None = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    limit: int = Query(100, ge=1, le=100),
     actor: Actor = Depends(require_owner),
     s: Session = Depends(db),
 ):
     r = owned(s, ResearchRow, research_id, actor, "research")
-    return JSONResponse(
-        json.loads(r.detail), headers={"ETag": f'W/"{r.id}:{r.revision}"'}
+    detail = _json_loads(r.detail)
+    all_tabs = (
+        "timeline",
+        "experiments",
+        "evidence",
+        "artifacts",
+        "audit",
     )
+    for name in all_tabs:
+        page_cursor = cursor if tab is None or tab == name else None
+        detail[name] = _page_detail(detail.get(name), page_cursor, limit)
+    return JSONResponse(detail, headers={"ETag": f'W/"{r.id}:{r.revision}"'})
 
 
 @app.post("/api/v1/research/{research_id}/start", status_code=202)
@@ -5971,14 +6018,24 @@ def export_memo(
 
 
 @app.get("/api/v1/approvals")
-def list_approvals(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
-    items = []
-    for row in (
+def list_approvals(
+    cursor: str | None = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    limit: int = Query(100, ge=1, le=100),
+    actor: Actor = Depends(require_owner),
+    s: Session = Depends(db),
+):
+    offset = int(cursor or "0")
+    rows = (
         s.query(ApprovalRow)
         .filter_by(workspace_id=actor.workspace_id)
         .order_by(ApprovalRow.id)
+        .offset(offset)
+        .limit(limit + 1)
         .all()
-    ):
+    )
+    has_more = len(rows) > limit
+    items = []
+    for row in rows[:limit]:
         detail = _json_loads(row.detail)
         items.append(
             {
@@ -5997,7 +6054,13 @@ def list_approvals(actor: Actor = Depends(require_owner), s: Session = Depends(d
                 )
             }
         )
-    return {"items": items, "page": {"next_cursor": None, "has_more": False}}
+    return {
+        "items": items,
+        "page": {
+            "next_cursor": str(offset + limit) if has_more else None,
+            "has_more": has_more,
+        },
+    }
 
 
 @app.get("/api/v1/approvals/{approval_id}")
@@ -6257,7 +6320,7 @@ def agent_config_payload(row):
                 or snapshot.get("effective_configuration_revision")
                 or 1
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             ai_connection_id = "CODEX-DEFAULT"
     return {
         "role_key": row.role,
@@ -6407,7 +6470,7 @@ def agent_run(
             from app.control_plane import active_runtime_snapshot
 
             snapshot = active_runtime_snapshot()
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             snapshot = {}
         ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
         ai_connection_revision = int(
@@ -6488,7 +6551,7 @@ def tool_call(
             configuration_sha256 = str(
                 snapshot.get("effective_configuration_sha256") or configuration_sha256
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             pass
     return {
         "tool_call_id": r.id,

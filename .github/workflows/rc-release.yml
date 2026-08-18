@@ -358,4 +358,21 @@ jobs:
           publish_immutable_tag "$IMAGE_PREFIX/backend" "$COMMIT" "$BACKEND_DIGEST"
           publish_immutable_tag "$IMAGE_PREFIX/frontend" "$TAG" "$FRONTEND_DIGEST"
           publish_immutable_tag "$IMAGE_PREFIX/frontend" "$COMMIT" "$FRONTEND_DIGEST"
+          assert_remote_tag_commit() {
+            local tag_object tag_type tag_sha resolved
+            tag_object="$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+            tag_type="$(jq -r '.object.type' <<<"$tag_object")"
+            tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
+            case "$tag_type" in
+              commit) resolved="$tag_sha" ;;
+              tag) resolved="$(gh api "/repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.object.sha')" ;;
+              *) printf 'unsupported remote tag object type: %s\n' "$tag_type" >&2; exit 1 ;;
+            esac
+            [[ "$resolved" == "$COMMIT" ]] || {
+              printf 'remote release tag moved: %s != %s\n' "$resolved" "$COMMIT" >&2
+              exit 1
+            }
+          }
+          assert_remote_tag_commit
           gh release edit "$TAG" --draft=false --prerelease
+          assert_remote_tag_commit

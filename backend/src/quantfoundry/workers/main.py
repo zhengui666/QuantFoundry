@@ -31,6 +31,7 @@ from quantfoundry.infrastructure.jobs.queue import (
     fail_job,
     heartbeat_job,
     lock_active_lease,
+    record_heartbeat,
 )
 
 
@@ -58,6 +59,8 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
         return 0
     session = SessionLocal()
     try:
+        if session.get_bind().dialect.name != "postgresql":
+            session.execute(text("BEGIN IMMEDIATE"))
         threshold = now or datetime.now(UTC)
         workspaces = session.execute(
             select(Event.workspace_id).where(Event.expires_at < threshold).distinct()
@@ -65,6 +68,11 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
         count = 0
         for (workspace_id,) in workspaces:
             key = workspace_id or "system"
+            event_workspace = (
+                Event.workspace_id.is_(None)
+                if workspace_id is None
+                else Event.workspace_id == workspace_id
+            )
             if session.get_bind().dialect.name == "postgresql":
                 session.execute(
                     text("SELECT pg_advisory_xact_lock(hashtext(:workspace_id))"),
@@ -78,7 +86,7 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
                 )
             maximum_sequence = session.scalar(
                 select(func.max(Event.sequence)).where(
-                    Event.workspace_id == key,
+                    event_workspace,
                     Event.expires_at < threshold,
                 )
             )
@@ -105,7 +113,7 @@ def cleanup_expired_events(now: datetime | None = None) -> int:
             count += (
                 session.query(Event)
                 .filter(
-                    Event.workspace_id == key,
+                    event_workspace,
                     Event.expires_at < threshold,
                 )
                 .delete(synchronize_session=False)
@@ -195,6 +203,15 @@ def _run_once(
     if not _domain_ready():
         return 0
     queue_name = "agent" if agent_queue else "core"
+    heartbeat_session = SessionLocal()
+    try:
+        record_heartbeat(heartbeat_session, "worker", worker_id(queue_name), queue_name)
+        heartbeat_session.commit()
+    except Exception:  # noqa: BLE001 - liveness must not prevent job processing
+        heartbeat_session.rollback()
+        logger.exception("worker heartbeat failed", extra={"queue": queue_name})
+    finally:
+        heartbeat_session.close()
     probe_artifact_store()
     lease = _claim(queue_name, identity or worker_id(queue_name))
     if lease is None:

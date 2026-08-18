@@ -18,6 +18,10 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError(
+            "0005 reproduce lineage supports PostgreSQL and SQLite only"
+        )
     if bind.dialect.name == "postgresql":
         op.add_column("experiments", sa.Column("source_experiment_id", sa.String()))
         op.create_foreign_key(
@@ -57,6 +61,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name not in {"postgresql", "sqlite"}:
+        raise RuntimeError(
+            "0005 reproduce lineage supports PostgreSQL and SQLite only"
+        )
     if bind.dialect.name == "postgresql":
         op.execute("DROP TRIGGER IF EXISTS qf_experiments_lineage_cycle ON experiments")
         op.execute("DROP FUNCTION IF EXISTS qf_reject_experiment_lineage_cycle()")

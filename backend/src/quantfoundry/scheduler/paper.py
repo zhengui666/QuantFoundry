@@ -752,9 +752,19 @@ class PaperScheduler:
         )
         for decision in decisions:
             if decision.outcome == "UNKNOWN":
-                raise PaperSchedulerError(
-                    f"{decision.gate} returned unknown: {decision.reason_code}"
+                self._finish_run(
+                    session,
+                    deployment,
+                    row,
+                    job,
+                    "FAILED",
+                    decision.reason_code,
+                    "UNKNOWN_POST_SIDE_EFFECT",
+                    True,
+                    "NO_AUTOMATIC_REPLAY",
+                    now=now,
                 )
+                return None
             if decision.outcome == "REJECTED":
                 self._finish_run(
                     session,
@@ -926,7 +936,9 @@ class PaperScheduler:
                     snapshots.c.as_of_time <= now,
                 )
                 .order_by(
-                    snapshots.c.coverage_end.desc(), snapshots.c.as_of_time.desc()
+                    snapshots.c.coverage_end.desc(),
+                    snapshots.c.as_of_time.desc(),
+                    snapshots.c.id.desc(),
                 )
                 .limit(1)
             )
@@ -1161,7 +1173,7 @@ class PaperScheduler:
                 expected_turnover,
                 *limits.values(),
             )
-        ):
+        ) or any(value < 0 for value in (expected_turnover, *limits.values())):
             return GateDecision(
                 "RISK",
                 "UNKNOWN",

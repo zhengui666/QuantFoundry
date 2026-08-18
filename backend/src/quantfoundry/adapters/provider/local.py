@@ -35,6 +35,10 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
         },
     }
 
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(15.0)
+
     def _json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         encoded = json.dumps(payload, separators=(",", ":")).encode()
         self.send_response(status)
@@ -232,8 +236,11 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             if len(body) != length:
                 raise ValueError("incomplete request body")
             request = json.loads(body)
-        except ValueError:
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
+        except (OSError, TimeoutError, ValueError):
+            try:
+                self._json(HTTPStatus.REQUEST_TIMEOUT, {"error": "request_timeout"})
+            except OSError:
+                pass
             return
         if not isinstance(request, dict) or not isinstance(request.get("model"), str):
             self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"})
@@ -332,6 +339,8 @@ def create_server(
         raise RuntimeError(
             "QF_LOCAL_PROVIDER_API_KEY must contain at least 20 characters"
         )
+    if host not in {"127.0.0.1", "::1", "localhost"}:
+        raise RuntimeError("local provider must bind to a loopback address")
     if actions is not None and not actions:
         raise ValueError("actions must be non-empty when explicitly configured")
     statuses = list(failure_statuses or [])

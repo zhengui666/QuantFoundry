@@ -35,6 +35,12 @@ def _reject_operation_connection_commit(connection: Connection) -> None:
         raise RuntimeError("idempotency operation must not commit its connection")
 
 
+@event.listens_for(Engine, "rollback")
+def _reject_operation_connection_rollback(connection: Connection) -> None:
+    if connection.info.get("qf_idempotency_operation_active"):
+        raise RuntimeError("idempotency operation must not roll back its connection")
+
+
 def _utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None

@@ -80,6 +80,11 @@ def upgrade() -> None:
         bind.execute(
             sa.text("LOCK TABLE domain_events, records IN ACCESS EXCLUSIVE MODE")
         )
+    else:
+        if bind.in_transaction():
+            bind.execute(sa.text("UPDATE domain_events SET sequence = sequence WHERE 0"))
+        else:
+            bind.exec_driver_sql("BEGIN IMMEDIATE")
     collision = bind.execute(
         sa.text(
             "SELECT 1 FROM records source JOIN records target "

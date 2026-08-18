@@ -175,7 +175,7 @@ def extract_manifest(document: Path) -> dict[str, Any]:
             if section_lines[index].startswith("### 14."):
                 raise ValueError(f"{table_name}: missing field table")
             index += 1
-        if index >= len(lines):
+        if index >= len(section_lines):
             raise ValueError(f"{table_name}: missing field table")
         header = _cells(section_lines[index])
         if header != [

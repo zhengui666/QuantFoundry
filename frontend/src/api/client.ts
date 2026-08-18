@@ -164,6 +164,9 @@ export const workspaceQueryKey = (...segments: readonly unknown[]): readonly unk
 
 export const idempotency = (): string => crypto.randomUUID();
 type OperationPathParams = Readonly<Record<string, string | number>>;
+export type PageQuery = Readonly<{ cursor?: string; limit?: number }>;
+export type ResearchDetailPageQuery = PageQuery &
+  Readonly<{ tab?: 'timeline' | 'experiments' | 'evidence' | 'artifacts' | 'audit' }>;
 
 function pathFor(operationId: CanonicalOperationId, pathParams: OperationPathParams = {}): string {
   const operation = operationMap[operationId];
@@ -175,7 +178,7 @@ function pathFor(operationId: CanonicalOperationId, pathParams: OperationPathPar
   });
   const query = new URLSearchParams();
   for (const parameter of operation.query) {
-    const value = parameter.value ?? pathParams[parameter.name];
+    const value = ('value' in parameter ? parameter.value : undefined) ?? pathParams[parameter.name];
     if (value === undefined && parameter.required)
       throw new ContractError(
         `Missing canonical query parameter ${parameter.name} for ${operationId}.`,
@@ -188,7 +191,7 @@ function pathFor(operationId: CanonicalOperationId, pathParams: OperationPathPar
 function headersFor(operationId: CanonicalOperationId, init: RequestInit) {
   const operation = operationMap[operationId];
   const headers = new Headers(init.headers);
-  const canonicalHeaders: readonly string[] = operation.headers;
+  const canonicalHeaders: readonly string[] = operation.headers.map(({ name }) => name);
   for (const header of ['If-Match', 'Idempotency-Key', 'Last-Event-ID'])
     if (headers.has(header) && !canonicalHeaders.includes(header))
       throw new ContractError(`${header} is not defined by canonical operation ${operationId}.`);
@@ -692,19 +695,23 @@ export const api = {
       DataCapabilityListSchema,
       'DataCapabilityList',
     ),
-  research: async (signal?: AbortSignal) =>
+  research: async (signal?: AbortSignal, page: PageQuery = {}) =>
     validateResult<Schema<'ResearchPage'>>(
-      await request<unknown>('listResearch', { signal: signal ?? null }),
+      await request<unknown>('listResearch', { signal: signal ?? null }, page),
       ResearchPageSchema,
       'ResearchPage',
     ),
-  researchDetail: async (id: string, signal?: AbortSignal) => {
+  researchDetail: async (
+    id: string,
+    signal?: AbortSignal,
+    page: ResearchDetailPageQuery = {},
+  ) => {
     const researchId = parsePublicId('research', id);
     return validateResult<Schema<'ResearchDetail'>>(
       await request<unknown>(
         'getResearch',
         { signal: signal ?? null },
-        { research_id: researchId },
+        { research_id: researchId, ...page },
       ),
       ResearchDetailSchema,
       'ResearchDetail',
@@ -1017,9 +1024,9 @@ export const api = {
       'JobAccepted',
     );
   },
-  approvals: async (signal?: AbortSignal) =>
+  approvals: async (signal?: AbortSignal, page: PageQuery = {}) =>
     validateResult<Schema<'ApprovalPage'>>(
-      await request<unknown>('listApprovals', { signal: signal ?? null }),
+      await request<unknown>('listApprovals', { signal: signal ?? null }, page),
       ApprovalPageSchema,
       'ApprovalPage',
     ),
@@ -1202,7 +1209,7 @@ export const EVENT_QUERY_RULES = {
   'research.updated': (event) =>
     plan([researchDetail(event.object_id), researchList(), overview()]),
   'research.conclusion.created': (event) =>
-    plan([researchDetail(event.object_id), researchList(), overview()]),
+    plan([...owningResearch(event), researchList(), overview()]),
   'experiment.created': (event) =>
     plan([
       ...owningResearch(event),
@@ -1253,10 +1260,10 @@ export const EVENT_QUERY_RULES = {
   'memo.created': (event) => plan([workspaceQueryKey('memo', event.object_id), overview()]),
   'memo.updated': (event) => plan([workspaceQueryKey('memo', event.object_id), overview()]),
   'setup.completed': () => plan([workspaceQueryKey('setup-status'), overview()]),
-  'configuration.updated': () => plan([workspaceQueryKey('settings'), overview()]),
-  'configuration.apply_failed': () => plan([workspaceQueryKey('settings')]),
-  'database.connection.updated': () => plan([workspaceQueryKey('settings')]),
-  'database.connection.failed': () => plan([workspaceQueryKey('settings')]),
+  'configuration.updated': () => plan([workspaceQueryKey('settings', 'active'), overview()]),
+  'configuration.apply_failed': () => plan([workspaceQueryKey('settings', 'active')]),
+  'database.connection.updated': () => plan([workspaceQueryKey('settings', 'database')]),
+  'database.connection.failed': () => plan([workspaceQueryKey('settings', 'database')]),
   'notification.created': () => plan([overview()]),
   'notification.updated': () => plan([overview()]),
   'system.health.updated': () => plan([workspaceQueryKey('system-health'), overview()]),
@@ -1460,7 +1467,8 @@ export function streamEvents(
               onState?.('resynchronizing');
               continue;
             }
-            if (!event || !isSafeHoldoutNotification(event)) {
+            if (!event) continue;
+            if (!isSafeHoldoutNotification(event)) {
               consecutiveContractSkews += 1;
               if (!(await safeResync())) break streamLoop;
               if (!current()) return;

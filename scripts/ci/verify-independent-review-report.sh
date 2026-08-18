@@ -57,8 +57,11 @@ scope_paths = [
     "frontend/pnpm-lock.yaml",
     "frontend/src",
     "docs/Agent技术方案",
-    "docs/后端系统技术方案/contracts/tools",
+    "docs/后端系统技术方案/contracts",
     "docs/治理",
+    "backend/alembic",
+    "backend/alembic.ini",
+    "backend/alembic_control.ini",
     ".github/workflows",
     "scripts/ci",
     "scripts/ci.sh",
@@ -138,6 +141,20 @@ def gh_json(endpoint):
     except json.JSONDecodeError as error:
         raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
 
+
+def gh_pages(endpoint, key):
+    items = []
+    separator = "&" if "?" in endpoint else "?"
+    for page in range(1, 101):
+        payload = gh_json(f"{endpoint}{separator}per_page=100&page={page}")
+        page_items = payload.get(key)
+        if not isinstance(page_items, list):
+            raise SystemExit(f"gh api response for {endpoint} has no {key} list")
+        items.extend(page_items)
+        if len(page_items) < 100:
+            return items
+    raise SystemExit(f"gh api pagination limit exceeded for {endpoint}")
+
 run = gh_json(f"/repos/{repository}/actions/runs/{run_id}")
 if run.get("head_sha") != expected_commit or run.get("run_attempt") != run_attempt:
     raise SystemExit("independent review report run is not bound to the current commit")
@@ -156,6 +173,9 @@ for field in ("author", "committer"):
     if not isinstance(item, dict) or not isinstance(item.get("login"), str) or not item["login"].strip():
         raise SystemExit(f"independent review commit {field} identity is unresolved")
     commit_authors.add(item["login"].casefold())
+message = commit_payload.get("commit", {}).get("message", "")
+if re.search(r"(?im)^Co-authored-by:", message):
+    raise SystemExit("independent review cannot resolve co-author identities fail-closed")
 if run_actor.casefold() in commit_authors or triggering_actor.casefold() in commit_authors:
     raise SystemExit("independent review actor must be independent from the reviewed commit")
 if report.get("actor") != run_actor or report.get("triggering_actor") != triggering_actor:
@@ -176,12 +196,30 @@ workflow_source = gh_json(
 if workflow_source.get("sha") != trusted_workflow_blob_sha:
     raise SystemExit("independent review workflow is not the trusted revision")
 artifact_id = match.group(3)
+attempt_artifacts = gh_pages(
+    f"/repos/{repository}/actions/runs/{run_id}/attempts/{run_attempt}/artifacts",
+    "artifacts",
+)
+attempt_matches = [
+    item
+    for item in attempt_artifacts
+    if (
+        item.get("id") == int(artifact_id)
+        and item.get("name") == f"independent-agent-review-{run_id}"
+        and not item.get("expired")
+        and isinstance(item.get("workflow_run"), dict)
+        and item["workflow_run"].get("id") == run_id
+    )
+]
+if len(attempt_matches) != 1:
+    raise SystemExit("independent review artifact is not present exactly once in the claimed run attempt")
 artifact = gh_json(f"/repos/{repository}/actions/artifacts/{artifact_id}")
 if (
+    artifact.get("id") != int(artifact_id)
+    or
     artifact.get("name") != f"independent-agent-review-{run_id}"
     or artifact.get("expired")
     or artifact.get("workflow_run", {}).get("id") != run_id
-    or artifact.get("workflow_run", {}).get("run_attempt", run_attempt) != run_attempt
 ):
     raise SystemExit("independent review report artifact is missing, expired, or not bound to its run")
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-") as directory:

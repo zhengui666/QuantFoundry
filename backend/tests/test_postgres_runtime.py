@@ -453,7 +453,7 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                 workspace_id=workspace_id,
                 strategy_version_id=concurrency_version_id,
                 status="WAITING_HOLDOUT",
-                holdout_state="APPROVAL_PENDING",
+                holdout_state="LOCKED",
                 exposure_count=0,
                 revision=2,
                 detail='{"result":"PASS"}',
@@ -525,6 +525,13 @@ def test_postgres_migration_skip_locked_and_immutable_trigger() -> None:
                     }
                 ),
             )
+        )
+        session.flush()
+        session.execute(
+            text(
+                "UPDATE validations SET holdout_state='APPROVAL_PENDING' WHERE id=:id"
+            ),
+            {"id": concurrency_validation_id},
         )
         session.commit()
         session.close()

@@ -166,6 +166,13 @@ async def durable_event_stream(
                     .scalars()
                     .all()
                 )
+                if (
+                    watermark_model is None
+                    and has_cursor
+                    and events
+                    and int(events[0].sequence) > cursor_value + 1
+                ):
+                    return [], int(events[0].sequence)
                 if watermark_model is not None and has_cursor:
                     current_state = stream_state
                     if stream_state is not None:
@@ -188,7 +195,7 @@ async def durable_event_stream(
             for event in events:
                 try:
                     wire = _wire(event, envelope)
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except json.JSONDecodeError:
                     yield _resync_wire(
                         envelope,
                         event.sequence,

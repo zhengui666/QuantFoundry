@@ -138,6 +138,10 @@ def upgrade() -> None:
         sa.Column("schema_version", sa.Integer, nullable=False),
         sa.Column("scope", sa.String(32), nullable=False),
         sa.Column("sensitivity", sa.String(16), nullable=False),
+        sa.CheckConstraint(
+            "sensitivity IN ('PUBLIC', 'MASKED', 'SECRET')",
+            name="configuration_catalog_sensitivity_valid",
+        ),
         sa.Column("apply_mode", sa.String(32), nullable=False),
         sa.Column("consumers", sa.JSON, nullable=False),
         sa.Column("dependencies", sa.JSON, nullable=False),
@@ -378,12 +382,12 @@ def upgrade() -> None:
             BEGIN
               SELECT sensitivity INTO sensitivity_value
               FROM configuration_catalog WHERE key = NEW.key;
-              IF sensitivity_value = 'SECRET' AND (
+              IF sensitivity_value IN ('SECRET', 'MASKED') AND (
                    NEW.ciphertext IS NULL OR NEW.secret_key_id IS NULL OR NEW.typed_value IS NOT NULL
                  ) THEN
                 RAISE EXCEPTION 'secret configuration values require ciphertext and key metadata';
               END IF;
-              IF sensitivity_value <> 'SECRET' AND (
+              IF sensitivity_value NOT IN ('SECRET', 'MASKED') AND (
                    NEW.ciphertext IS NOT NULL OR NEW.secret_key_id IS NOT NULL OR NEW.typed_value IS NULL
                  ) THEN
                 RAISE EXCEPTION 'non-secret configuration values require typed_value only';
@@ -397,7 +401,7 @@ def upgrade() -> None:
             """
             CREATE FUNCTION qf_validate_configuration_catalog_sensitivity() RETURNS trigger AS $$
             BEGIN
-              IF NEW.sensitivity = 'SECRET' AND EXISTS (
+              IF NEW.sensitivity IN ('SECRET', 'MASKED') AND EXISTS (
                 SELECT 1 FROM configuration_values
                 WHERE key = NEW.key AND (
                   ciphertext IS NULL OR secret_key_id IS NULL OR typed_value IS NOT NULL
@@ -405,7 +409,7 @@ def upgrade() -> None:
               ) THEN
                 RAISE EXCEPTION 'catalog sensitivity change leaves plaintext configuration values';
               END IF;
-              IF NEW.sensitivity <> 'SECRET' AND EXISTS (
+              IF NEW.sensitivity NOT IN ('SECRET', 'MASKED') AND EXISTS (
                 SELECT 1 FROM configuration_values
                 WHERE key = NEW.key AND (
                   ciphertext IS NOT NULL OR secret_key_id IS NOT NULL OR typed_value IS NULL
@@ -461,9 +465,7 @@ def upgrade() -> None:
               PERFORM pg_advisory_xact_lock(hashtextextended('qf-bootstrap-audit', 0));
               SELECT sequence, event_hash INTO tail_sequence, tail_hash FROM bootstrap_audit_events
               ORDER BY sequence DESC LIMIT 1 FOR UPDATE;
-              IF NEW.sequence IS NULL OR NEW.sequence <= COALESCE(tail_sequence, 0) THEN
-                NEW.sequence := COALESCE(tail_sequence, 0) + 1;
-              END IF;
+              NEW.sequence := COALESCE(tail_sequence, 0) + 1;
               IF NEW.previous_event_hash IS DISTINCT FROM tail_hash THEN
                 RAISE EXCEPTION 'bootstrap audit hash chain is disconnected';
               END IF;
@@ -514,26 +516,26 @@ def upgrade() -> None:
         return
     op.execute(
         "CREATE TRIGGER qf_configuration_values_sensitivity BEFORE INSERT ON configuration_values "
-        "WHEN ((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) = 'SECRET' "
+        "WHEN ((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) IN ('SECRET', 'MASKED') "
         "AND (NEW.ciphertext IS NULL OR NEW.secret_key_id IS NULL OR NEW.typed_value IS NOT NULL)) OR "
-        "((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) != 'SECRET' "
+        "((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) NOT IN ('SECRET', 'MASKED') "
         "AND (NEW.ciphertext IS NOT NULL OR NEW.secret_key_id IS NOT NULL OR NEW.typed_value IS NULL)) "
         "BEGIN SELECT RAISE(ABORT, 'configuration value sensitivity mismatch'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_configuration_catalog_sensitivity BEFORE UPDATE OF sensitivity "
         "ON configuration_catalog WHEN NEW.sensitivity != OLD.sensitivity AND ("
-        "(NEW.sensitivity = 'SECRET' AND EXISTS (SELECT 1 FROM configuration_values v "
+        "(NEW.sensitivity IN ('SECRET', 'MASKED') AND EXISTS (SELECT 1 FROM configuration_values v "
         "WHERE v.key = NEW.key AND (v.ciphertext IS NULL OR v.secret_key_id IS NULL OR v.typed_value IS NOT NULL))) OR "
-        "(NEW.sensitivity != 'SECRET' AND EXISTS (SELECT 1 FROM configuration_values v "
+        "(NEW.sensitivity NOT IN ('SECRET', 'MASKED') AND EXISTS (SELECT 1 FROM configuration_values v "
         "WHERE v.key = NEW.key AND (v.ciphertext IS NOT NULL OR v.secret_key_id IS NOT NULL OR v.typed_value IS NULL)))"
         ") BEGIN SELECT RAISE(ABORT, 'catalog sensitivity change conflicts with values'); END"
     )
     op.execute(
         "CREATE TRIGGER qf_configuration_values_sensitivity_update BEFORE UPDATE ON configuration_values "
-        "WHEN ((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) = 'SECRET' "
+        "WHEN ((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) IN ('SECRET', 'MASKED') "
         "AND (NEW.ciphertext IS NULL OR NEW.secret_key_id IS NULL OR NEW.typed_value IS NOT NULL)) OR "
-        "((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) != 'SECRET' "
+        "((SELECT sensitivity FROM configuration_catalog WHERE key = NEW.key) NOT IN ('SECRET', 'MASKED') "
         "AND (NEW.ciphertext IS NOT NULL OR NEW.secret_key_id IS NOT NULL OR NEW.typed_value IS NULL)) "
         "BEGIN SELECT RAISE(ABORT, 'configuration value sensitivity mismatch'); END"
     )

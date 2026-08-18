@@ -7,6 +7,10 @@ on:
         description: "Published release tag to verify"
         required: true
         type: string
+      release_commit:
+        description: "Immutable commit SHA expected for the release tag"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -46,12 +50,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           QF_RELEASE_TAG: ${{ inputs.release_tag }}
+          QF_RELEASE_COMMIT: ${{ inputs.release_commit }}
         run: |
           set -euo pipefail
           [[ "$QF_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]]
-          git fetch --tags --force origin
+          [[ "$QF_RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           tag_commit="$(git rev-parse "refs/tags/$QF_RELEASE_TAG^{commit}")"
-          [[ -n "$tag_commit" ]]
+          [[ "$tag_commit" == "$QF_RELEASE_COMMIT" ]]
           release_json="$(gh api "/repos/$GITHUB_REPOSITORY/releases/tags/$QF_RELEASE_TAG")"
           python3 - "$release_json" "$tag_commit" "$QF_RELEASE_TAG" <<'PY'
           import json
@@ -68,6 +73,7 @@ jobs:
           git worktree add --detach "$release_root" "$tag_commit"
           trap 'git worktree remove --force "$release_root"' EXIT
           QF_RELEASE_CHECK_ROOT="$release_root" \
+            QF_RELEASE_COMMIT="$QF_RELEASE_COMMIT" \
             QF_RELEASE_CHECK_VERIFIER_ROOT="$GITHUB_WORKSPACE/trusted-verifier" \
             QF_RELEASE_CHECK_TRUSTED_VERIFIER_ROOT="$GITHUB_WORKSPACE/trusted-verifier" \
             QF_RELEASE_CHECK_TRUSTED_VERIFIER_COMMIT="$(git -C "$GITHUB_WORKSPACE/trusted-verifier" rev-parse HEAD)" \

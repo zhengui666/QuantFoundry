@@ -26,14 +26,17 @@ def upgrade() -> None:
     op.create_index("ix_records_kind", "records", ["kind"])
     op.create_table(
         "idempotency_records",
-        sa.Column("key", sa.String(), primary_key=True),
         sa.Column("method", sa.String(), nullable=False),
         sa.Column("path", sa.String(), nullable=False),
+        sa.Column("key", sa.String(), nullable=False),
         sa.Column("request_hash", sa.String(64), nullable=False),
         sa.Column("status", sa.Integer()),
         sa.Column("response", sa.Text()),
         sa.Column("state", sa.String(), nullable=False),
         sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
+        sa.PrimaryKeyConstraint(
+            "method", "path", "key", name="pk_idempotency_records"
+        ),
     )
     op.create_table(
         "domain_events",
@@ -282,8 +285,8 @@ def upgrade() -> None:
         sa.Column("status", sa.String(), nullable=False),
         sa.Column("input_sha256", sa.String(64), nullable=False),
         sa.Column("objective", sa.Text()),
-        sa.Column("research_id", sa.String()),
-        sa.Column("experiment_id", sa.String()),
+        sa.Column("research_id", sa.String(), sa.ForeignKey("research_cases.id")),
+        sa.Column("experiment_id", sa.String(), sa.ForeignKey("experiments.id")),
         sa.Column("job_id", sa.String(), sa.ForeignKey("jobs.id")),
         sa.Column("policy_version_ref", sa.String(), nullable=False),
         sa.Column("result_summary", sa.Text()),
@@ -299,6 +302,8 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_tool_calls_agent_run_id", "tool_calls", ["agent_run_id"])
+    op.create_index("ix_tool_calls_research_id", "tool_calls", ["research_id"])
+    op.create_index("ix_tool_calls_experiment_id", "tool_calls", ["experiment_id"])
     op.create_index("ix_tool_calls_job_id", "tool_calls", ["job_id"])
 
 

@@ -22,21 +22,42 @@ def main() -> None:
     for managed_signal in managed_signals:
         signal.signal(managed_signal, signal.SIG_DFL)
     ready_path = os.environ.get("QF_PROCESS_GROUP_READY")
-    if ready_path:
+    read_fd, write_fd = os.pipe()
+    os.set_inheritable(write_fd, False)
+    child_pid = os.fork()
+    if child_pid == 0:
+        os.close(read_fd)
         try:
-            with open(ready_path, "x", encoding="utf-8"):
-                pass
+            os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
         except OSError:
-            raise
+            try:
+                os.write(write_fd, b"!")
+            finally:
+                os._exit(127)
+
+    os.close(write_fd)
     try:
-        os.execvp(sys.argv[1], sys.argv[1:])
-    except OSError:
+        exec_failed = os.read(read_fd, 1)
+    finally:
+        os.close(read_fd)
+    finished_pid, status = os.waitpid(child_pid, os.WNOHANG)
+    if exec_failed or (finished_pid == child_pid and not os.WIFEXITED(status)):
+        if finished_pid != child_pid:
+            _, status = os.waitpid(child_pid, 0)
         if ready_path:
             try:
                 os.unlink(ready_path)
             except FileNotFoundError:
                 pass
-        raise
+        raise SystemExit(127)
+    if ready_path:
+        with open(ready_path, "x", encoding="utf-8"):
+            pass
+    if finished_pid != child_pid:
+        _, status = os.waitpid(child_pid, 0)
+    if os.WIFEXITED(status):
+        raise SystemExit(os.WEXITSTATUS(status))
+    raise SystemExit(128 + os.WTERMSIG(status))
 
 
 if __name__ == "__main__":

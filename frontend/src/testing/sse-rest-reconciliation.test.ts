@@ -26,7 +26,7 @@ const path = `/api/v1/research/${event.object_id}`;
 describe('SSE→REST causal reconciliation witness mutation-test seam', () => {
   it('passes only after the generated mapping event and a new exact REST read', () => {
     const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
-    witness.observeEvent(frame);
+    witness.observeEvent(frame, 2);
     witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).not.toThrow();
     expect(witness.snapshot().restReadsAfterBaseline).toBe(1);
@@ -34,7 +34,7 @@ describe('SSE→REST causal reconciliation witness mutation-test seam', () => {
 
   it('negative control fails if queryKeysForEvent is replaced with no invalidation', () => {
     const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
-    witness.observeEvent(frame, () => []);
+    witness.observeEvent(frame, 2, () => []);
     witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).toThrow('No generated event-to-query mapping');
     expect(witness.snapshot().restReadsAfterBaseline).toBe(0);
@@ -53,14 +53,14 @@ describe('SSE→REST causal reconciliation witness mutation-test seam', () => {
       ...frame,
       event: { ...event, object_id: 'EXP-1M49GS2TJYQ2JPYV54YDGY7R59' },
     };
-    witness.observeEvent(relatedFrame, () => [['workspace', 'research', event.object_id]]);
+    witness.observeEvent(relatedFrame, 2, () => [['workspace', 'research', event.object_id]]);
     witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).not.toThrow();
   });
 
   it('does not count a REST read that was already present when the event arrived', () => {
     const witness = new SseRestReconciliationWitness('research', event.object_id, path, 2);
-    witness.observeEvent(frame, undefined, 3);
+    witness.observeEvent(frame, 3);
     witness.observeRest(path, 3);
     expect(() => witness.assertReconciled()).toThrow('No exact REST refetch');
   });

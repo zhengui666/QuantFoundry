@@ -483,12 +483,20 @@ def _restore_sqlite_source_schema(
     expected_foreign_key_violations: set[tuple[Any, ...]] | None = None,
 ) -> None:
     """Rebuild the captured source schema and restore its unmodified rows."""
+    trigger_statements = [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith("CREATE TRIGGER")
+    ]
     for statement in statements:
-        bind.execute(text(statement))
+        if statement not in trigger_statements:
+            bind.execute(text(statement))
     bind.execute(text("PRAGMA defer_foreign_keys = ON"))
     metadata = MetaData()
     metadata.reflect(bind=bind)
     _restore_exact_source(bind, metadata, source_rows)
+    for statement in trigger_statements:
+        bind.execute(text(statement))
     violations = list(bind.execute(text("PRAGMA foreign_key_check")))
     actual_foreign_key_violations = {tuple(row) for row in violations}
     expected_foreign_key_violations = expected_foreign_key_violations or set()
@@ -1015,7 +1023,9 @@ def _backfill_closed_storage(
 
 def _defer_domain_locator_check(metadata: MetaData) -> Any:
     """Leave the retained-data locator check for PostgreSQL NOT VALID validation."""
-    table = metadata.tables["domain_events"]
+    table = metadata.tables.get("domain_events")
+    if table is None:
+        table = metadata.tables["public.domain_events"]
     constraint = next(
         item for item in table.constraints if item.name == _DOMAIN_LOCATOR_CHECK_NAME
     )
@@ -1164,7 +1174,10 @@ def _restore_all_tables(
     # Section-14 uses UUID workspace keys.  Apply one deterministic mapping to
     # every scoped row before restoring, including legacy text-backed schemas.
     # Keep generic helper callers unchanged when no workspace authority exists.
-    if "workspaces" in metadata.tables:
+    workspace_table = metadata.tables.get("workspaces")
+    if workspace_table is None:
+        workspace_table = metadata.tables.get("public.workspaces")
+    if workspace_table is not None:
         for rows in source_rows.values():
             for row in rows:
                 if row.get("workspace_id") is not None:
@@ -1172,7 +1185,10 @@ def _restore_all_tables(
         for row in source_rows.get("workspaces", []):
             if row.get("id") is not None:
                 row["id"] = str(_workspace_uuid(row["id"]))
-    if "users" in metadata.tables and "workspaces" in metadata.tables:
+    users_table = metadata.tables.get("users")
+    if users_table is None:
+        users_table = metadata.tables.get("public.users")
+    if users_table is not None and workspace_table is not None:
         referenced_workspaces = {
             _workspace_uuid(row["workspace_id"])
             for rows in source_rows.values()
@@ -1211,7 +1227,14 @@ def _restore_all_tables(
                     "revision": 1,
                 }
             )
-    pending = set(metadata.tables)
+    pending = {table.name for table in metadata.tables.values()}
+
+    def table_for(name: str) -> Table:
+        table = metadata.tables.get(name)
+        if table is not None:
+            return table
+        return metadata.tables[f"public.{name}"]
+
     ordered_tables: list[Table] = []
     while pending:
         ready = sorted(
@@ -1219,7 +1242,7 @@ def _restore_all_tables(
             for name in pending
             if not {
                 element.column.table.name
-                for constraint in metadata.tables[name].foreign_key_constraints
+                for constraint in table_for(name).foreign_key_constraints
                 if all(not element.parent.nullable for element in constraint.elements)
                 for element in constraint.elements
                 if element.column.table.name != name
@@ -1229,7 +1252,7 @@ def _restore_all_tables(
         if not ready:
             ready = [sorted(pending)[0]]
         for name in ready:
-            ordered_tables.append(metadata.tables[name])
+            ordered_tables.append(table_for(name))
             pending.remove(name)
     if bind.dialect.name == "sqlite":
         bind.execute(text("PRAGMA defer_foreign_keys = ON"))
@@ -1395,16 +1418,16 @@ def _drop_application_tables() -> None:
               END IF;
               IF NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (
                 SELECT 1 FROM approval_requests a
-                JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id
-                WHERE a.validation_id = OLD.id AND a.status = 'PENDING'
+                JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id
+                WHERE a.validation_id = NEW.id AND a.status = 'PENDING'
                   AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'holdout approval evidence is missing';
               END IF;
               IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (
                 SELECT 1 FROM approval_requests a
-                JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id
-                WHERE a.validation_id = OLD.id AND a.status = 'APPROVED'
+                JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id
+                WHERE a.validation_id = NEW.id AND a.status = 'APPROVED'
                   AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'approved holdout evidence is missing';
@@ -1413,14 +1436,15 @@ def _drop_application_tables() -> None:
                 SELECT 1 FROM holdout_exposures e
                 JOIN approval_requests a ON a.id = e.approval_id
                 JOIN strategy_versions sv ON sv.id = e.strategy_version_id
-                WHERE e.validation_id = OLD.id
+                WHERE e.validation_id = NEW.id
                   AND e.strategy_version_public_id = NEW.strategy_version_id
-                  AND a.validation_id = OLD.id
+                  AND a.validation_id = NEW.id
                   AND a.status = 'APPROVED'
                   AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'holdout exposure evidence is missing';
               END IF;
+              IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
             END;
             $$ LANGUAGE plpgsql
@@ -1482,6 +1506,78 @@ def _install_guards() -> None:
     bind = op.get_bind()
     _drop_sqlite_guard_triggers()
     if bind.dialect.name == "postgresql":
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_validate_holdout_insert() RETURNS trigger AS $$
+            BEGIN
+              IF NEW.holdout_state <> 'LOCKED' OR NEW.exposure_count <> 0 THEN
+                RAISE EXCEPTION 'new holdout validation must start LOCKED with zero exposure';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_insert ON validations")
+        op.execute(
+            "CREATE TRIGGER qf_validations_holdout_insert BEFORE INSERT ON validations "
+            "FOR EACH ROW EXECUTE FUNCTION qf_validate_holdout_insert()"
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_terminal_approval_change() RETURNS trigger AS $$
+            BEGIN
+              IF OLD.status <> 'PENDING' THEN
+                RAISE EXCEPTION 'terminal approval cannot be changed';
+              END IF;
+              IF TG_OP = 'DELETE' THEN
+                IF EXISTS (
+                  SELECT 1 FROM validations v
+                  WHERE v.id = OLD.validation_id
+                    AND v.holdout_state IN ('APPROVAL_PENDING', 'FAILED')
+                ) THEN
+                  RAISE EXCEPTION 'active holdout approval evidence cannot be deleted';
+                END IF;
+                RETURN OLD;
+              END IF;
+              IF NEW.status <> 'PENDING' AND (
+                NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+              ) THEN
+                RAISE EXCEPTION 'approval evidence cannot change while resolving';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_pending_approval_evidence_change() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'UPDATE' AND (
+                NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+              ) THEN
+                RAISE EXCEPTION 'approval evidence cannot be changed';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
         op.execute(
             """
             CREATE OR REPLACE FUNCTION qf_validate_strategy_transition() RETURNS trigger AS $$
@@ -1628,6 +1724,7 @@ def _install_guards() -> None:
                  ) THEN
                 RAISE EXCEPTION 'experiment completion job binding cannot be changed';
               END IF;
+              IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
             END;
             $$ LANGUAGE plpgsql
@@ -1765,6 +1862,14 @@ def _install_guards() -> None:
                 f"ON {table} WHEN {predicate} BEGIN SELECT RAISE(ABORT, "
                 f"'{message}'); END"
             )
+    op.execute("DROP TRIGGER IF EXISTS qf_approval_requests_active_delete_immutable")
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_active_delete_immutable BEFORE DELETE "
+        "ON approval_requests WHEN OLD.status = 'PENDING' AND EXISTS ("
+        "SELECT 1 FROM validations v WHERE v.id = OLD.validation_id AND "
+        "v.holdout_state IN ('APPROVAL_PENDING', 'FAILED')) BEGIN SELECT RAISE(ABORT, "
+        "'active holdout approval evidence cannot be deleted'); END"
+    )
     op.execute(
         "DROP TRIGGER IF EXISTS qf_approval_requests_pending_evidence_immutable"
     )
@@ -1836,6 +1941,12 @@ def _install_guards() -> None:
             f"ON records WHEN OLD.kind IN ('artifact', 'provenance') BEGIN SELECT "
             "RAISE(ABORT, 'immutable record cannot be changed'); END"
         )
+    op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_insert")
+    op.execute(
+        "CREATE TRIGGER qf_validations_holdout_insert BEFORE INSERT ON validations "
+        "WHEN NEW.holdout_state != 'LOCKED' OR NEW.exposure_count != 0 BEGIN SELECT "
+        "RAISE(ABORT, 'new holdout validation must start LOCKED with zero exposure'); END"
+    )
     op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_transition")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_transition BEFORE UPDATE OF "
@@ -1855,18 +1966,18 @@ def _install_guards() -> None:
         "(OLD.holdout_state != 'LOCKED' AND NEW.strategy_version_id IS NOT OLD.strategy_version_id) OR "
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id "
-        "WHERE a.validation_id = OLD.id AND a.status = 'PENDING' AND "
+        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id "
+        "WHERE a.validation_id = NEW.id AND a.status = 'PENDING' AND "
         "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = OLD.strategy_version_id "
-        "WHERE a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
+        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id "
+        "WHERE a.validation_id = NEW.id AND a.status = 'APPROVED' AND "
         "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (SELECT 1 FROM "
         "holdout_exposures e JOIN approval_requests a ON a.id = e.approval_id "
         "JOIN strategy_versions sv ON sv.id = e.strategy_version_id WHERE "
-        "e.validation_id = OLD.id AND e.strategy_version_public_id = NEW.strategy_version_id AND "
-        "a.validation_id = OLD.id AND a.status = 'APPROVED' AND "
+        "e.validation_id = NEW.id AND e.strategy_version_public_id = NEW.strategy_version_id AND "
+        "a.validation_id = NEW.id AND a.status = 'APPROVED' AND "
         "a.subject_spec_sha256 IS sv.spec_sha256)) BEGIN SELECT RAISE(ABORT, "
         "'holdout state lacks durable evidence'); END"
     )
@@ -1912,6 +2023,7 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
             # PostgreSQL uuidv7() default.  SQLite deliberately omits it: its
             # compatibility path supplies explicit UUID values instead.
             include_server_defaults=(bind.dialect.name == "postgresql"),
+            sqlite_compatibility=(bind.dialect.name == "sqlite"),
         )
 
     try:
@@ -1954,7 +2066,10 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
             metadata.create_all(bind=bind)
         finally:
             if deferred_domain_locator_check is not None:
-                metadata.tables["domain_events"].constraints.add(
+                domain_events = metadata.tables.get("domain_events")
+                if domain_events is None:
+                    domain_events = metadata.tables["public.domain_events"]
+                domain_events.constraints.add(
                     deferred_domain_locator_check
                 )
         _restore_all_tables(

@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pip install --disable-pip-version-check uv==0.10.7
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
           uv --directory trusted-verifier/backend sync --frozen --all-groups
           "$GITHUB_WORKSPACE/trusted-verifier/scripts/ci/install-shellcheck.sh"
           curl --fail --location --silent --show-error --output /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
@@ -74,8 +74,9 @@ jobs:
           reviewed_paths = [
               "AGENTS.md", "PROJECT_BACKGROUND.md", "Makefile", "backend/pyproject.toml", "backend/uv.lock",
               "backend/src/quantfoundry", "backend/app/agent_runtime.py", "backend/workers",
+              "backend/alembic", "backend/alembic.ini", "backend/alembic_control.ini",
               "frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/src", "docs/Agent技术方案",
-              "docs/后端系统技术方案/contracts/tools", "docs/治理", ".github/workflows", "scripts/ci",
+              "docs/后端系统技术方案/contracts", "docs/治理", ".github/workflows", "scripts/ci",
               "scripts/ci.sh", "scripts/api_healthcheck.py", "scripts/p0-check.sh", "scripts/p0-check-test.sh",
               "scripts/tool_contract_check.py", "scripts/release-check.sh", "scripts/release-evidence.sh",
               "scripts/release-known-issues-check.sh",
@@ -84,6 +85,11 @@ jobs:
               if subprocess.run(["git", "cat-file", "-e", f"{commit}:{path}"]).returncode != 0:
                   raise SystemExit(f"reviewed path is missing at reviewed commit: {path}")
           scope = subprocess.check_output(["git", "ls-tree", "-r", "--full-tree", commit, "--", *reviewed_paths])
+          report_commands = [
+              {"command": "scripts/ci/release-governance-static-gate.sh", "result": "pass", "exit_code": 0},
+              {"command": "scripts/ci/p0-architecture-review.sh", "result": "pass", "exit_code": 0},
+              {"command": os.environ["QF_ACTIONLINT_COMMAND"].strip(), "result": "pass", "exit_code": 0},
+          ]
           report = {
               "schema_version": "1.0.0",
               "content_type": "application/vnd.quantfoundry.independent-review+json;version=1",
@@ -100,15 +106,22 @@ jobs:
               ],
               "reviewed_paths": reviewed_paths,
               "review_scope_sha256": hashlib.sha256(scope).hexdigest(),
-              "commands": [
-                  {"command": "scripts/ci/release-governance-static-gate.sh", "result": "pass", "exit_code": 0},
-                  {"command": "scripts/ci/p0-architecture-review.sh", "result": "pass", "exit_code": 0},
-                  {"command": os.environ["QF_ACTIONLINT_COMMAND"].strip(), "result": "pass", "exit_code": 0},
-              ],
+              "blocker_results": {
+                  blocker: {"result": "pass", "basis": [command["command"] for command in report_commands]}
+                  for blocker in (
+                      "P0-PRODUCT-PAPER-DAILY-SCHEDULER", "P0-CONTRACT-OPENAPI-45",
+                      "P0-CONTRACT-TOOLS-13", "P0-SCHEMA-ALEMBIC-AUTHORITY",
+                      "P0-ARCHITECTURE-TARGET-LAYERS", "P0-CI-REPRODUCIBILITY",
+                      "P0-SECURITY-RESEARCH-INTEGRITY",
+                  )
+              },
+              "commands": report_commands,
           }
           pathlib.Path(output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           pathlib.Path(output).with_name("gate-result.json").write_text(json.dumps({
-              "gate": "independent-review", "commit": commit, "result": "pass", "exit_code": 0,
+              "gate": "independent-review", "commit": commit,
+              "github_run_id": int(run_id), "github_run_attempt": int(run_attempt),
+              "result": "pass", "exit_code": 0,
               "steps": report["commands"],
           }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
@@ -144,7 +157,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pip install --disable-pip-version-check uv==0.10.7
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
           uv --directory trusted-verifier/backend sync --frozen --all-groups
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -166,13 +179,15 @@ jobs:
           release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
           test "$release_commit" = "$GITHUB_SHA"
           "$GITHUB_WORKSPACE/trusted-verifier/scripts/ci/supply-chain-review.sh" "$RELEASE_TAG" "$release_commit"
-          python3 - "$release_commit" "$RUNNER_TEMP/qf-p0-review-evidence/release-gate-result.json" <<'PY'
+          python3 - "$release_commit" "$RUNNER_TEMP/qf-p0-review-evidence/release-gate-result.json" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
           import json
           import pathlib
           import sys
           pathlib.Path(sys.argv[2]).write_text(json.dumps({
               "gate": "supply-chain-review",
               "commit": sys.argv[1],
+              "github_run_id": int(sys.argv[3]),
+              "github_run_attempt": int(sys.argv[4]),
               "result": "pass",
               "exit_code": 0,
               "steps": [{"command": "scripts/ci/supply-chain-review.sh", "result": "pass", "exit_code": 0}],
@@ -185,11 +200,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           QF_P0_REGISTRY_PATH: ${{ github.workspace }}/docs/治理/p0-blockers.yaml
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           uv --directory trusted-verifier/backend run --frozen python trusted-verifier/scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
             --result-file "$RUNNER_TEMP/qf-p0-review-evidence/gate-result.json"
-          if [[ -n "${{ inputs.release_tag }}" ]]; then
+          if [[ -n "$RELEASE_TAG" ]]; then
             uv --directory trusted-verifier/backend run --frozen python trusted-verifier/scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
               --result-file "$RUNNER_TEMP/qf-p0-review-evidence/release-gate-result.json"

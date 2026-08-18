@@ -8,6 +8,27 @@ usage() {
   exit 2
 }
 
+validate_output_path() {
+  local target="$1" probe
+  [[ "$target" = /* ]] || target="$PWD/$target"
+  probe="$target"
+  while [[ "$probe" != / && ! -e "$probe" && ! -L "$probe" ]]; do
+    probe="$(dirname "$probe")"
+  done
+  [[ ! -L "$probe" && ! -L "$target" ]] || {
+    printf 'symlink output path is not allowed: %s\n' "$target" >&2
+    exit 1
+  }
+  if [[ -d "$probe" ]]; then
+    [[ -n "$(cd -P "$probe" && pwd)" ]] || exit 1
+  else
+    [[ -d "$(dirname "$probe")" ]] || {
+      printf 'output path parent is unavailable: %s\n' "$target" >&2
+      exit 1
+    }
+  fi
+}
+
 require_tag_commit() {
   local tag="$1" commit="$2"
   [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha$ ]]
@@ -27,6 +48,8 @@ require_tag_commit() {
 gate() {
   local tag="$1" commit="$2" output_dir="$3"
   require_tag_commit "$tag" "$commit"
+  validate_output_path "$output_dir"
+  validate_output_path "$output_dir/reports"
   mkdir -p "$output_dir/reports"
   cp "$repo_root/docs/治理/p0-blockers.yaml" "$output_dir/p0-blockers.yaml"
   cp "$repo_root/docs/治理/release-known-issues.json" "$output_dir/release-known-issues.json"
@@ -40,6 +63,8 @@ gate() {
 
 collect_inputs() {
   local output_dir="$1"
+  validate_output_path "$output_dir"
+  validate_output_path "$output_dir/p0-blockers.yaml"
   mkdir -p "$output_dir"
   cp "$repo_root/docs/治理/p0-blockers.yaml" "$output_dir/p0-blockers.yaml"
   cp "$repo_root/docs/治理/release-known-issues.json" "$output_dir/release-known-issues.json"
@@ -50,6 +75,7 @@ collect_inputs() {
 
 collect_oci_sbom() {
   local image="$1" digest="$2" output_file="$3"
+  validate_output_path "$output_file"
   [[ "$image" =~ ^ghcr\.io/[a-z0-9]+([._-][a-z0-9]+)*(\/[a-z0-9]+([._-][a-z0-9]+)*)*$ ]] || {
     printf '%s\n' 'IMAGE must be a valid GHCR repository name.' >&2
     exit 1
@@ -215,6 +241,7 @@ PY
 manifest() {
   local tag="$1" commit="$2" output_dir="$3" backend_image="$4" backend_digest="$5" frontend_image="$6" frontend_digest="$7"
   require_tag_commit "$tag" "$commit"
+  validate_output_path "$output_dir"
   [[ "$backend_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
   [[ "$frontend_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
   [[ -n "${GITHUB_RUN_ID:-}" && -n "${GITHUB_RUN_ATTEMPT:-}" ]] || {
@@ -242,6 +269,8 @@ manifest() {
     fi
     gh attestation verify "oci://$image@$digest" --repo "$GITHUB_REPOSITORY" --format json > "$verification_dir/$image_label.json"
     for evidence_kind in attestations provenance signature-verification; do
+      validate_output_path "$output_dir/$evidence_kind"
+      validate_output_path "$output_dir/$evidence_kind/$image_label.json"
       mkdir -p "$output_dir/$evidence_kind"
       [[ ! -L "$output_dir/$evidence_kind" ]] || {
         rm -rf "$verification_dir"
@@ -371,7 +400,7 @@ def require_binding(path, value, subject_name, digest, expected_predicate):
                     and isinstance(dependency_digest, dict)
                     and dependency_digest.get("sha1") == commit
                 )
-        if subject_ok and (source_pair_ok or dependency_pair_ok):
+        if subject_ok and (source_pair_ok or (workflow_ok and dependency_pair_ok)):
             return
     raise SystemExit(f"{path} is not structurally bound to image, repository, and commit")
 
@@ -519,6 +548,7 @@ PY
 
 package_assets() {
   local output_dir="$1"
+  validate_output_path "$output_dir"
   python3 - "$output_dir" "$repo_root" <<'PY'
 import hashlib
 import json
@@ -728,6 +758,7 @@ PY
 verify_remote_assets() {
   local tag="$1" commit="$2" output_dir="$3"
   require_tag_commit "$tag" "$commit"
+  validate_output_path "$output_dir"
   [[ -n "${GH_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || {
     printf '%s\n' 'GH_TOKEN and GITHUB_REPOSITORY are required for remote release verification.' >&2
     exit 1
@@ -820,7 +851,7 @@ def download(name):
         if (
             parsed.scheme != "https"
             or parsed.hostname
-            not in {"api.github.com", "github.com", "objects.githubusercontent.com"}
+            not in {"api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"}
             or parsed.username
             or parsed.password
         ):
@@ -864,6 +895,10 @@ PY
 
 compose_bind() {
   local output_dir="$1" backend_image="$2" backend_digest="$3" frontend_image="$4" frontend_digest="$5"
+  validate_output_path "$output_dir"
+  validate_output_path "$output_dir/release-compose-images.yml"
+  validate_output_path "$output_dir/compose-config.json"
+  validate_output_path "$output_dir/compose-images.json"
   [[ "$backend_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
   [[ "$frontend_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
   mkdir -p "$output_dir"

@@ -7,7 +7,7 @@ import type { operations } from '../generated';
 export type CanonicalOperation = {
   readonly method: string;
   readonly path: string;
-  readonly headers: readonly string[];
+  readonly headers: readonly { readonly name: string; readonly required: boolean }[];
   readonly query: readonly {
     readonly name: string;
     readonly required: boolean;
@@ -41,49 +41,65 @@ export const operationMap = {
   logoutOwnerSession: {
     method: 'POST',
     path: '/auth/logout',
-    headers: ['X-CSRF-Token'],
+    headers: [{ name: 'X-CSRF-Token', required: true }],
     query: [],
     authenticated: true,
   },
   listGeneralAccessKeys: {
     method: 'GET',
     path: '/auth/access-keys',
-    headers: ['X-CSRF-Token'],
+    headers: [{ name: 'X-CSRF-Token', required: true }],
     query: [],
     authenticated: true,
   },
   createGeneralAccessKey: {
     method: 'POST',
     path: '/auth/access-keys',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   renameGeneralAccessKey: {
     method: 'PATCH',
     path: '/auth/access-keys/{key_id}',
-    headers: ['If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   rotateGeneralAccessKey: {
     method: 'POST',
     path: '/auth/access-keys/{key_id}/rotate',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   revokeGeneralAccessKey: {
     method: 'POST',
     path: '/auth/access-keys/{key_id}/revoke',
-    headers: ['If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   expireGeneralAccessKey: {
     method: 'POST',
     path: '/auth/access-keys/{key_id}/expire',
-    headers: ['If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -104,28 +120,43 @@ export const operationMap = {
   putConfigurationCandidate: {
     method: 'PUT',
     path: '/configuration/candidate',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   validateConfigurationCandidate: {
     method: 'POST',
     path: '/configuration/candidate/validate',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   activateConfiguration: {
     method: 'POST',
     path: '/configuration/activate',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   rollbackConfiguration: {
     method: 'POST',
     path: '/configuration/rollback',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -139,28 +170,45 @@ export const operationMap = {
   putDomainDatabaseConnectionCandidate: {
     method: 'PUT',
     path: '/database/connection/candidate',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   validateDomainDatabaseConnectionCandidate: {
     method: 'POST',
     path: '/database/connection/candidate/validate',
-    headers: ['Idempotency-Key', 'X-CSRF-Token', 'X-Candidate-Revision'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-Candidate-Revision', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   activateDomainDatabaseConnection: {
     method: 'POST',
     path: '/database/connection/activate',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token', 'X-Candidate-Revision'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-Candidate-Revision', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   revertDomainDatabaseConnection: {
     method: 'POST',
     path: '/database/connection/revert',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -174,7 +222,11 @@ export const operationMap = {
   completeSetup: {
     method: 'POST',
     path: '/setup/complete',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -188,14 +240,20 @@ export const operationMap = {
   validateLiveConnector: {
     method: 'POST',
     path: '/setup/live-connectors/validate',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   validateSetupProviderConnection: {
     method: 'POST',
     path: '/setup/provider-connections/validate',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -210,21 +268,27 @@ export const operationMap = {
   evaluateDataCapabilities: {
     method: 'POST',
     path: '/data/capabilities/evaluate',
-    headers: ['X-CSRF-Token'],
+    headers: [{ name: 'X-CSRF-Token', required: true }],
     query: [],
     authenticated: true,
   },
   validateDataset: {
     method: 'POST',
     path: '/data/datasets/{dataset_id}/validate',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   createDatasetSnapshot: {
     method: 'POST',
     path: '/data/datasets/{dataset_id}/snapshots',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -238,14 +302,20 @@ export const operationMap = {
   listResearch: {
     method: 'GET',
     path: '/research',
-    headers: ['X-CSRF-Token'],
-    query: [],
+    headers: [{ name: 'X-CSRF-Token', required: true }],
+    query: [
+      { name: 'cursor', required: false },
+      { name: 'limit', required: false },
+    ],
     authenticated: true,
   },
   createResearch: {
     method: 'POST',
     path: '/research',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -253,20 +323,31 @@ export const operationMap = {
     method: 'GET',
     path: '/research/{research_id}',
     headers: [],
-    query: [],
+    query: [
+      { name: 'tab', required: false },
+      { name: 'cursor', required: false },
+      { name: 'limit', required: false },
+    ],
     authenticated: true,
   },
   startResearch: {
     method: 'POST',
     path: '/research/{research_id}/start',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   createExperiment: {
     method: 'POST',
     path: '/experiments',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -280,28 +361,40 @@ export const operationMap = {
   reproduceExperiment: {
     method: 'POST',
     path: '/experiments/{experiment_id}/reproduce',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   createFactor: {
     method: 'POST',
     path: '/factors',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   analyzeFactor: {
     method: 'POST',
     path: '/factors/{factor_id}/analyses',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   createStrategy: {
     method: 'POST',
     path: '/strategies',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -322,21 +415,31 @@ export const operationMap = {
   runFastBacktest: {
     method: 'POST',
     path: '/strategies/{strategy_id}/versions/{version}/backtests',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   freezeStrategy: {
     method: 'POST',
     path: '/strategies/{strategy_id}/versions/{version}/freeze',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   createValidation: {
     method: 'POST',
     path: '/validations',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -357,14 +460,22 @@ export const operationMap = {
   requestHoldoutApproval: {
     method: 'POST',
     path: '/validations/{validation_id}/holdout-approval-requests',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   runHoldout: {
     method: 'POST',
     path: '/validations/{validation_id}/holdout-runs',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -378,7 +489,10 @@ export const operationMap = {
   generateMemo: {
     method: 'POST',
     path: '/memos',
-    headers: ['Idempotency-Key', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -390,7 +504,16 @@ export const operationMap = {
     query: [{ name: 'format', required: true, value: 'MARKDOWN' }],
     authenticated: true,
   },
-  listApprovals: { method: 'GET', path: '/approvals', headers: [], query: [], authenticated: true },
+  listApprovals: {
+    method: 'GET',
+    path: '/approvals',
+    headers: [],
+    query: [
+      { name: 'cursor', required: false },
+      { name: 'limit', required: false },
+    ],
+    authenticated: true,
+  },
   getApproval: {
     method: 'GET',
     path: '/approvals/{approval_id}',
@@ -401,14 +524,22 @@ export const operationMap = {
   approveApproval: {
     method: 'POST',
     path: '/approvals/{approval_id}/approve',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
   rejectApproval: {
     method: 'POST',
     path: '/approvals/{approval_id}/reject',
-    headers: ['Idempotency-Key', 'If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -416,14 +547,17 @@ export const operationMap = {
   getAgentConfig: {
     method: 'GET',
     path: '/agents/{role}/config',
-    headers: ['X-CSRF-Token'],
+    headers: [{ name: 'X-CSRF-Token', required: true }],
     query: [],
     authenticated: true,
   },
   updateAgentConfig: {
     method: 'PUT',
     path: '/agents/{role}/config',
-    headers: ['If-Match', 'X-CSRF-Token'],
+    headers: [
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ],
     query: [],
     authenticated: true,
   },
@@ -445,7 +579,7 @@ export const operationMap = {
   streamEvents: {
     method: 'GET',
     path: '/events/stream',
-    headers: ['Last-Event-ID'],
+    headers: [{ name: 'Last-Event-ID', required: false }],
     query: [],
     authenticated: true,
   },

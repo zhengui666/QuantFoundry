@@ -60,11 +60,17 @@ for (const [weight, asset] of expected) {
       [
         'from fontTools.ttLib import TTFont',
         'import sys',
-        'font = TTFont(sys.argv[1])',
+        'font = TTFont(sys.argv[1], lazy=False, checkChecksums=2)',
+        'expected_weight = int(sys.argv[2])',
+        'required = {"name", "OS/2"}',
+        'missing = required.difference(font.reader.keys())',
+        'if missing: raise ValueError(f"font is missing required tables: {sorted(missing)}")',
         'names = {record.toUnicode() for record in font["name"].names if record.nameID == 1}',
-        'assert "Noto Sans CJK SC" in names or any(name.startswith("Noto Sans CJK SC ") for name in names), "font family metadata is invalid"',
-      ].join('; '),
+        'if not ("Noto Sans CJK SC" in names or any(name.startswith("Noto Sans CJK SC ") for name in names)): raise ValueError("font family metadata is invalid")',
+        'if font["OS/2"].usWeightClass != expected_weight: raise ValueError("OS/2 weight metadata is invalid")',
+      ].join('\\n'),
       fontPath,
+      weight,
     ]);
   } catch (error) {
     throw new Error(`Font decoder rejected ${asset}: ${error.message}`, { cause: error });

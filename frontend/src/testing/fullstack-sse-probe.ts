@@ -15,7 +15,12 @@ export async function startCanonicalSseProbe(
   trustedOrigin: string,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ) {
-  const origin = new URL(trustedOrigin).origin;
+  const trusted = new URL(trustedOrigin);
+  const localInsecureOrigin =
+    trusted.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(trusted.hostname);
+  if (trusted.protocol !== 'https:' && !localInsecureOrigin)
+    throw new Error('Authenticated SSE probe requires an HTTPS trusted origin outside localhost.');
+  const origin = trusted.origin;
   if (
     url.origin !== origin ||
     url.pathname !== '/api/v1/events/stream' ||

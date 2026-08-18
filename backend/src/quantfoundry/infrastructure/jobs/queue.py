@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import and_, exists, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, aliased
 
@@ -176,19 +177,36 @@ def record_heartbeat(
 ) -> None:
     timestamp = now or datetime.now(UTC)
     key = {"component": component, "instance_id": instance_id}
-    row = session.get(RuntimeHeartbeat, key)
-    if row is None:
-        session.add(
-            RuntimeHeartbeat(
-                component=component,
-                instance_id=instance_id,
-                queue_name=queue_name,
-                occurred_at=timestamp,
-            )
+    updated = session.execute(
+        update(RuntimeHeartbeat)
+        .where(
+            RuntimeHeartbeat.component == component,
+            RuntimeHeartbeat.instance_id == instance_id,
         )
-    else:
-        row.queue_name = queue_name
-        row.occurred_at = timestamp
+        .values(queue_name=queue_name, occurred_at=timestamp)
+    )
+    if updated.rowcount:
+        return
+    try:
+        with session.begin_nested():
+            session.add(
+                RuntimeHeartbeat(
+                    component=component,
+                    instance_id=instance_id,
+                    queue_name=queue_name,
+                    occurred_at=timestamp,
+                )
+            )
+            session.flush()
+    except IntegrityError:
+        session.execute(
+            update(RuntimeHeartbeat)
+            .where(
+                RuntimeHeartbeat.component == component,
+                RuntimeHeartbeat.instance_id == instance_id,
+            )
+            .values(queue_name=queue_name, occurred_at=timestamp)
+        )
 
 
 def claim_job(
@@ -231,31 +249,64 @@ def claim_job(
             ),
         )
     )
-    statement = (
-        select(JobRow)
-        .where(
+    blocked_ids: set[str] = set()
+    while True:
+        statement = select(JobRow).where(
             JobRow.status == "QUEUED",
             JobRow.queue_name == queue_name,
             JobRow.queued_at <= timestamp,
             ~exists(unsatisfied_dependency),
         )
-        .order_by(JobRow.priority.asc(), JobRow.queued_at.asc(), JobRow.id.asc())
-        .limit(1)
-        .with_for_update(skip_locked=True)
-    )
-    row = session.execute(statement).scalar_one_or_none()
-    record_heartbeat(session, "worker", worker_id, queue_name, timestamp)
+        if blocked_ids:
+            statement = statement.where(~JobRow.id.in_(blocked_ids))
+        row = session.execute(
+            statement.order_by(JobRow.priority.asc(), JobRow.queued_at.asc(), JobRow.id.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        ).scalar_one_or_none()
+        if row is None:
+            break
+        fresh_dependency = (
+            select(1)
+            .select_from(dependency)
+            .join(
+                prerequisite,
+                and_(
+                    prerequisite.id == dependency.depends_on_job_id,
+                    prerequisite.workspace_id == dependency.workspace_id,
+                ),
+            )
+            .where(
+                dependency.job_id == row.id,
+                dependency.workspace_id == row.workspace_id,
+                or_(
+                    (
+                        (dependency.dependency_type == "SUCCESS")
+                        & (prerequisite.status != "COMPLETED")
+                    ),
+                    (
+                        (dependency.dependency_type == "TERMINAL")
+                        & prerequisite.status.not_in({"COMPLETED", "FAILED", "CANCELLED"})
+                    ),
+                ),
+            )
+        )
+        if session.execute(fresh_dependency.limit(1)).first() is None:
+            break
+        blocked_ids.add(row.id)
+    lease_timestamp = now or datetime.now(UTC)
+    record_heartbeat(session, "worker", worker_id, queue_name, lease_timestamp)
     if row is None:
         return None
     row.status = "RUNNING"
     row.lease_owner = worker_id
-    row.lease_expires_at = timestamp + timedelta(seconds=lease_seconds)
-    row.heartbeat_at = timestamp
+    row.lease_expires_at = lease_timestamp + timedelta(seconds=lease_seconds)
+    row.heartbeat_at = lease_timestamp
     row.attempt += 1
     row.fencing_token += 1
     row.started_at = row.started_at or timestamp
     row.revision += 1
-    _update_wire_payload(row, timestamp)
+    _update_wire_payload(row, lease_timestamp)
     emit(
         session,
         "job",
@@ -344,8 +395,8 @@ def update_progress(
     step_label: str | None = None,
     now: datetime | None = None,
 ) -> None:
+    row = lock_active_lease(session, lease, now=now)
     timestamp = now or datetime.now(UTC)
-    row = lock_active_lease(session, lease, now=timestamp)
     if total_units is not None and total_units < 0:
         raise ValueError("total_units must be non-negative")
     if completed_units is not None and completed_units < 0:
@@ -441,8 +492,7 @@ def complete_job(
     *,
     now: datetime | None = None,
 ) -> JobRow:
-    timestamp = now or datetime.now(UTC)
-    row = lock_active_lease(session, lease, now=timestamp)
+    row = lock_active_lease(session, lease, now=now)
     if result_ref is not None and not job_result_ref_valid(result_ref):
         raise ValueError("job result_ref violates the closed canonical schema")
     cancelled = row.cancel_requested_at is not None
@@ -454,6 +504,7 @@ def complete_job(
 
             cancel_agent_run(session, row)
         apply_job_cancellation(session, row)
+    timestamp = now or datetime.now(UTC)
     next_status = "CANCELLED" if cancelled else "COMPLETED"
     effective_result_ref = None if cancelled else result_ref
     next_revision = row.revision + 1
@@ -529,8 +580,7 @@ def fail_job(
     *,
     now: datetime | None = None,
 ) -> JobRow:
-    timestamp = now or datetime.now(UTC)
-    row = lock_active_lease(session, lease, now=timestamp)
+    row = lock_active_lease(session, lease, now=now)
     cancelled = row.cancel_requested_at is not None
     if cancelled:
         from quantfoundry.application.jobs.effects import apply_job_cancellation
@@ -540,6 +590,7 @@ def fail_job(
 
             cancel_agent_run(session, row)
         apply_job_cancellation(session, row)
+    timestamp = now or datetime.now(UTC)
     next_revision = row.revision + 1
     next_status = "CANCELLED" if cancelled else "FAILED"
     detail = json.loads(row.payload)

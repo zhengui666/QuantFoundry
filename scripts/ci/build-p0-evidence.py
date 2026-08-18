@@ -54,6 +54,15 @@ def args() -> argparse.Namespace:
 def read_commands(options: argparse.Namespace) -> list[dict[str, Any]]:
     if options.result_file:
         result = json.loads(options.result_file.read_text(encoding="utf-8"))
+        expected_run_id = os.environ.get("GITHUB_RUN_ID")
+        expected_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+        if (
+            not expected_run_id
+            or not expected_attempt
+            or result.get("github_run_id") != int(expected_run_id)
+            or result.get("github_run_attempt") != int(expected_attempt)
+        ):
+            raise SystemExit("P0 evidence gate result is not bound to this run attempt")
         expected_gate = (
             "supply-chain-review"
             if options.blocker == [SUPPLY_BLOCKER]
@@ -109,7 +118,19 @@ def main() -> None:
         )
     )
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
-    by_id = {item["id"]: item for item in registry["blockers"]}
+    if not isinstance(registry, dict) or not isinstance(registry.get("blockers"), list):
+        raise SystemExit("P0 blocker registry shape is invalid")
+    by_id: dict[str, dict[str, Any]] = {}
+    for item in registry["blockers"]:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("id"), str)
+            or not item["id"]
+            or not isinstance(item.get("closure_criteria"), (str, list, dict))
+            or item["id"] in by_id
+        ):
+            raise SystemExit("P0 blocker registry contains malformed or duplicate entries")
+        by_id[item["id"]] = item
     blocker_ids = options.blocker or list(
         TEST_BLOCKERS if options.role == "test" else REVIEW_BLOCKERS
     )
@@ -161,16 +182,23 @@ def main() -> None:
         .replace("+00:00", "Z")
     )
     run_uri = f"https://github.com/{repository}/actions/runs/{run_id}"
+    run_attempt = int(os.environ.get("GITHUB_RUN_ATTEMPT", "0"))
+    if run_attempt < 1:
+        raise SystemExit("GITHUB_RUN_ATTEMPT must be a positive integer")
     options.output_dir.mkdir(parents=True, exist_ok=True)
     content_type = CONTENT_TYPES[options.role]
     role = ROLES[options.role]
+    reports: list[tuple[pathlib.Path, bytes]] = []
     for blocker_id in blocker_ids:
-        item = by_id[blocker_id]
+        item = by_id.get(blocker_id)
+        if item is None:
+            raise SystemExit(f"P0 blocker registry entry is missing: {blocker_id}")
         report = {
             "schema_version": "1.0.0",
             "content_type": content_type,
             "commit_sha": options.commit_sha,
             "github_run_id": int(run_id),
+            "github_run_attempt": run_attempt,
             "verifier_role": role,
             "verified_at_utc": timestamp,
             "closure_criteria": item["closure_criteria"],
@@ -191,11 +219,19 @@ def main() -> None:
             )
             + b"\n"
         )
-        try:
+        if destination.exists():
+            raise SystemExit(f"refusing to overwrite immutable evidence: {destination}")
+        reports.append((destination, payload))
+    created: list[pathlib.Path] = []
+    try:
+        for destination, payload in reports:
             with destination.open("xb") as handle:
+                created.append(destination)
                 handle.write(payload)
-        except FileExistsError as error:
-            raise SystemExit(f"refusing to overwrite immutable evidence: {destination}") from error
+    except Exception as error:
+        for destination in created:
+            destination.unlink(missing_ok=True)
+        raise SystemExit(f"P0 evidence publication failed: {error}") from error
 
 
 if __name__ == "__main__":

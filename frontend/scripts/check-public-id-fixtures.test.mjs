@@ -95,6 +95,20 @@ describe('public-ID repository fixture scanner', () => {
     }
   });
 
+  it.each(['comment', 'comments', 'note', 'notes'])(
+    'does not treat %s as grammar prose outside manifest JSON',
+    (field) => {
+      for (const file of [
+        '/repo/backend/schema/section14.yaml',
+        '/repo/frontend/src/runtime.json',
+      ]) {
+        expect(scan(file, { [field]: `notation ${invalidStrategyId}@version` }), file).toEqual([
+          expect.stringContaining(`unmarked invalid public-ID fixture ${invalidStrategyId}`),
+        ]);
+      }
+    },
+  );
+
   it('rejects malformed IDs in prose unless the text explicitly denotes grammar', () => {
     expect(
       scan('/repo/backend/schema/section14_manifest.json', {
@@ -104,6 +118,11 @@ describe('public-ID repository fixture scanner', () => {
     ).toHaveLength(2);
     expect(scan('/repo/frontend/runtime.json', { id: `${invalidStrategyId}?` })).toHaveLength(1);
     expect(scan('/repo/frontend/runtime.json', { id: ['STRAT', ''].join('-') })).toHaveLength(1);
+    expect(
+      scan('/repo/backend/schema/section14_manifest.json', {
+        nested: [{ examples: { id: invalidStrategyId } }],
+      }),
+    ).toHaveLength(1);
   });
 
   it('requires every declared formal source to exist and records it as scanned', async () => {
@@ -178,6 +197,11 @@ describe('public-ID repository fixture scanner', () => {
       await symlink(outside, link, 'junction');
       await expect(
         collectFormalPublicIdFiles(root, [{ path: 'linked', kind: 'directory' }]),
+      ).rejects.toThrow('unsupported symlink');
+      await mkdir(join(root, 'nested'), { recursive: true });
+      await symlink(outside, join(root, 'nested/linked'), 'junction');
+      await expect(
+        collectFormalPublicIdFiles(root, [{ path: 'nested', kind: 'directory' }]),
       ).rejects.toThrow('unsupported symlink');
     } finally {
       await rm(root, { recursive: true, force: true });

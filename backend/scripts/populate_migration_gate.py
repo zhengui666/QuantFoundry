@@ -17,7 +17,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import MetaData, Table, create_engine, func, null, select
+from sqlalchemy import MetaData, Table, create_engine, func, null, select, text
+from sqlalchemy.engine import make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 GATE_MANIFEST_PATH = BACKEND_ROOT / "schema/populated_migration_gate.json"
@@ -175,6 +176,8 @@ def _clone(
         ).hexdigest()
     elif table.name == "validation_runs":
         values["validation_id"] = f"VAL-{_uuid()}"
+    elif table.name == "strategy_versions":
+        values["version"] = int(values.get("version") or 1) + index
     if "record_key" in values:
         values["kind"] = "artifact"
         values["record_key"] = f"ART-{_uuid()}"
@@ -189,6 +192,8 @@ def _clone(
             values["instance_id"] = f"instance-{_uuid()}"
     if table.name == "cost_model_versions" and "cost_model_id" in values:
         values["cost_model_id"] = f"COST-{_uuid()}"
+    if table.name == "users" and "email" in values:
+        values["email"] = f"qf-migration-gate-{index}@example.invalid"
     if "policy_id" in values:
         if not isinstance(values["policy_id"], uuid.UUID):
             values["policy_id"] = f"RP-{_uuid()}"
@@ -232,7 +237,8 @@ def _clone_gate_row(
     if table.name == "snapshot_partitions":
         values["id"] = f"SPART-{_uuid()}"
         values["artifact_id"] = f"ART-{_uuid()}"
-        values["partition"] = f"GATE-{index}"
+        if values.get("partition") not in {"RESEARCH", "VALIDATION", "HOLDOUT"}:
+            values["partition"] = "RESEARCH"
     if table.name == "holdout_exposures":
         workspace_id = values["workspace_id"]
 
@@ -420,10 +426,11 @@ def _ensure_workspace_dependency(
     source_where: Any = None,
 ) -> dict[str, Any]:
     table = metadata.tables[name]
+    statement = select(table).where(table.c.workspace_id == workspace_id)
+    if source_where is not None:
+        statement = statement.where(source_where)
     row = (
-        connection.execute(
-            select(table).where(table.c.workspace_id == workspace_id).limit(1)
-        )
+        connection.execute(statement.limit(1))
         .mappings()
         .first()
     )
@@ -435,6 +442,20 @@ def _ensure_workspace_dependency(
     )
     values = _clone(connection, table, source, stable_index)
     values["workspace_id"] = workspace_id
+    if name == "model_provider_connections" and "owner_actor_id" in table.c:
+        values["owner_actor_id"] = connection.execute(
+            select(metadata.tables["workspaces"].c.owner_id).where(
+                metadata.tables["workspaces"].c.id == workspace_id
+            )
+        ).scalar_one()
+    if name in {
+        "research_policy_versions",
+        "risk_policy_versions",
+        "cost_model_versions",
+    }:
+        values["status"] = "ACTIVE"
+        if "activated_at" in table.c:
+            values["activated_at"] = _now()
     _insert(connection, table, values)
     return values
 
@@ -577,6 +598,7 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             / "alembic/versions/0017_paper_scheduler_state_initialization.py"
         )
     )
+    affected_workspace_ids: set[Any] = set()
     # The repeated application suite intentionally emits multiple scheduler
     # evidence events. Rebuild this disposable evidence stream deterministically
     # so the migration's exactly-one baseline contract is testable.
@@ -590,13 +612,19 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
             audit_ids = []
             event_ids = []
             evidence_rows = connection.execute(
-                select(audit_table.c.id, audit_table.c.summary).where(
+                select(
+                    audit_table.c.id,
+                    audit_table.c.workspace_id,
+                    audit_table.c.summary,
+                ).where(
                     audit_table.c.action_type
                     == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
                     audit_table.c.object_type == "paper",
                 )
             ).mappings()
             for row in evidence_rows:
+                if row["workspace_id"] is not None:
+                    affected_workspace_ids.add(row["workspace_id"])
                 summary = row["summary"]
                 if isinstance(summary, str):
                     try:
@@ -643,7 +671,7 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
     watermarks = metadata.tables["event_stream_watermarks"]
     workspace_ids = {
         row[0] for row in connection.execute(select(deployments.c.workspace_id)).all()
-    }
+    } | affected_workspace_ids
     for workspace_id in workspace_ids:
         _rechain_audit_events(connection, audits)
         latest_audit = connection.execute(
@@ -909,6 +937,19 @@ def populate(database_url: str) -> dict[str, int]:
         raise RuntimeError(
             "migration gate fixture requires QF_ALLOW_MIGRATION_GATE_SEED=1"
         )
+    marker = os.getenv("QF_MIGRATION_GATE_MARKER")
+    expected_database = os.getenv("QF_PG18_CI_DATABASE_NAME")
+    parsed = make_url(database_url)
+    if not marker:
+        raise RuntimeError(
+            "QF_MIGRATION_GATE_MARKER is required; refusing destructive fixture mutation"
+        )
+    if parsed.drivername != "postgresql+psycopg":
+        raise RuntimeError("migration gate fixture requires PostgreSQL psycopg")
+    if expected_database and parsed.database != expected_database:
+        raise RuntimeError(
+            "migration gate fixture database identity does not match CI target"
+        )
     import json
 
     manifest = json.loads(GATE_MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -917,9 +958,21 @@ def populate(database_url: str) -> dict[str, int]:
     engine = create_engine(database_url)
     metadata = MetaData()
     try:
+        with engine.connect() as connection:
+            markers = connection.execute(
+                text(
+                    "SELECT marker FROM migration_gate_control.marker ORDER BY marker"
+                )
+            ).scalars().all()
+            if markers != [marker]:
+                raise RuntimeError("migration gate target marker does not match")
         with engine.begin() as connection:
             metadata.reflect(bind=connection)
             reflected = {name: metadata.tables[name] for name in TARGET_TABLES}
+            if "workspaces" in floors:
+                _ensure_rows(
+                    connection, metadata, "workspaces", int(floors["workspaces"])
+                )
             # Tables with no rows need valid workspace-bound dependencies first.
             workspaces = _workspaces(connection, metadata)
             if len(workspaces) < 2:

@@ -88,17 +88,25 @@ jobs:
           echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check --strict
           tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint
           sudo install --mode 0755 /tmp/actionlint /usr/local/bin/actionlint
+      - name: Recreate trusted verifier after candidate installation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 4ca07ed0232104a3feddc427a2632d4646ece5a
+          path: trusted-verifier
+          fetch-depth: 1
+          clean: true
+          persist-credentials: false
       - name: Run independent full test gate
         shell: bash
         env:
           QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-independent-test
         run: |
           set -euo pipefail
-          mkdir -p "$QF_CI_REPORT_DIR"
           trusted_root="$GITHUB_WORKSPACE/trusted-verifier"
-          trusted_commit="$(git -C "$trusted_root" rev-parse HEAD)"
-          QF_CI_TRUSTED_ROOT="$trusted_root" QF_CI_TRUSTED_COMMIT="$trusted_commit" \
-            scripts/ci/run-gate.sh main-full "$QF_CI_REPORT_DIR"
+          trusted_commit="4ca07ed0232104a3feddc427a2632d4646ece5a"
+          test "$(git -C "$trusted_root" rev-parse HEAD)" = "$trusted_commit"
+          QF_CI_REPO_ROOT="$GITHUB_WORKSPACE" QF_CI_TRUSTED_ROOT="$trusted_root" QF_CI_TRUSTED_COMMIT="$trusted_commit" \
+            "$trusted_root/scripts/ci/run-gate.sh" main-full "$QF_CI_REPORT_DIR"
       - name: Verify published release supply-chain evidence
         if: ${{ inputs.release_tag != '' }}
         shell: bash

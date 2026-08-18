@@ -117,6 +117,7 @@ def _atomic_write(path: Path, content: str) -> None:
         mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
     )
     temporary_path = Path(temporary.name)
+    commit_attempted = False
     try:
         with temporary:
             temporary.write(content)
@@ -450,14 +451,16 @@ def seed_local(
         ).scalar_one_or_none()
         if active_policy is None:
             raise RuntimeError("seeded research policy is not active")
+        commit_attempted = True
         session.commit()
     except Exception:
         session.rollback()
-        for path in reversed(created_paths):
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                pass
+        if not commit_attempted:
+            for path in reversed(created_paths):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
         raise
     finally:
         session.close()

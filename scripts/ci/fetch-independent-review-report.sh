@@ -3,18 +3,24 @@ set -euo pipefail
 
 commit="${1:-}"
 output="${2:-}"
+repo_root="${QF_CI_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'Expected commit must be a full lowercase SHA.' >&2; exit 2; }
 [[ -n "$output" ]] || { printf '%s\n' 'Output locator path is required.' >&2; exit 2; }
 [[ -n "${GITHUB_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || { printf '%s\n' 'GITHUB_TOKEN and GITHUB_REPOSITORY are required to fetch independent review evidence.' >&2; exit 2; }
 command -v gh >/dev/null || { printf '%s\n' 'gh is required to fetch independent review evidence.' >&2; exit 2; }
 
+if [[ "$output" != /* ]]; then
+  output="$repo_root/$output"
+fi
 mkdir -p "$(dirname "$output")"
-GITHUB_TOKEN="$GITHUB_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" python3 - "$commit" "$output" <<'PY'
+output="$(cd "$(dirname "$output")" && pwd)/$(basename "$output")"
+QF_CI_REPO_ROOT="$repo_root" GITHUB_TOKEN="$GITHUB_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" python3 - "$commit" "$output" <<'PY'
 import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -45,8 +51,11 @@ scope_paths = [
     "frontend/pnpm-lock.yaml",
     "frontend/src",
     "docs/Agent技术方案",
-    "docs/后端系统技术方案/contracts/tools",
+    "docs/后端系统技术方案/contracts",
     "docs/治理",
+    "backend/alembic",
+    "backend/alembic.ini",
+    "backend/alembic_control.ini",
     ".github/workflows",
     "scripts/ci",
     "scripts/ci.sh",
@@ -70,6 +79,20 @@ def gh_json(endpoint):
         return json.loads(completed.stdout)
     except json.JSONDecodeError as error:
         raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
+
+
+def gh_pages(endpoint, key):
+    items = []
+    separator = "&" if "?" in endpoint else "?"
+    for page in range(1, 101):
+        payload = gh_json(f"{endpoint}{separator}per_page=100&page={page}")
+        page_items = payload.get(key)
+        if not isinstance(page_items, list):
+            raise SystemExit(f"gh api response for {endpoint} has no {key} list")
+        items.extend(page_items)
+        if len(page_items) < 100:
+            return items
+    raise SystemExit(f"gh api pagination limit exceeded for {endpoint}")
 
 
 def read_archive(archive_path, max_report_bytes):
@@ -100,10 +123,11 @@ def read_archive(archive_path, max_report_bytes):
         raise SystemExit(f"independent review artifact report is not JSON: {error}") from error
     return archive_digest, payload, report
 
-runs = gh_json(
+runs = gh_pages(
     f"/repos/{repository}/actions/workflows/independent-agent-review.yml/runs"
-    f"?head_sha={commit}&status=completed&event=workflow_dispatch&per_page=100"
-).get("workflow_runs", [])
+    f"?head_sha={commit}&status=completed&event=workflow_dispatch",
+    "workflow_runs",
+)
 run = next((item for item in runs if item.get("head_sha") == commit and item.get("conclusion") == "success"), None)
 if not isinstance(run, dict) or not isinstance(run.get("id"), int):
     raise SystemExit("no successful independent-agent-review workflow run is bound to the current commit")
@@ -126,6 +150,9 @@ workflow_source = gh_json(
 if workflow_source.get("sha") != trusted_workflow_blob_sha:
     raise SystemExit("independent review workflow is not the trusted revision")
 run_id = run["id"]
+run_attempt = run.get("run_attempt")
+if not isinstance(run_attempt, int) or run_attempt < 1:
+    raise SystemExit("independent review run has no valid run_attempt")
 run_actor = run.get("actor", {}).get("login") if isinstance(run.get("actor"), dict) else None
 triggering_actor = (
     run.get("triggering_actor", {}).get("login") if isinstance(run.get("triggering_actor"), dict) else None
@@ -139,19 +166,29 @@ for field in ("author", "committer"):
     if not isinstance(item, dict) or not isinstance(item.get("login"), str) or not item["login"].strip():
         raise SystemExit(f"independent review commit {field} identity is unresolved")
     commit_authors.add(item["login"].casefold())
+message = commit_payload.get("commit", {}).get("message", "")
+if re.search(r"(?im)^Co-authored-by:", message):
+    raise SystemExit("independent review cannot resolve co-author identities fail-closed")
 if run_actor.casefold() in commit_authors or triggering_actor.casefold() in commit_authors:
     raise SystemExit("independent review actor must be independent from the reviewed commit")
-artifacts = gh_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts").get("artifacts", [])
-artifact = next(
-    (
-        item
-        for item in artifacts
-        if item.get("name") == f"independent-agent-review-{run_id}" and not item.get("expired") and isinstance(item.get("id"), int)
-    ),
-    None,
+artifacts = gh_pages(
+    f"/repos/{repository}/actions/runs/{run_id}/attempts/{run_attempt}/artifacts",
+    "artifacts",
 )
-if not isinstance(artifact, dict):
-    raise SystemExit("successful independent review run has no usable review artifact")
+matching_artifacts = [
+    item
+    for item in artifacts
+    if (
+        item.get("name") == f"independent-agent-review-{run_id}"
+        and not item.get("expired")
+        and isinstance(item.get("id"), int)
+        and isinstance(item.get("workflow_run"), dict)
+        and item["workflow_run"].get("id") == run_id
+    )
+]
+if len(matching_artifacts) != 1:
+    raise SystemExit("successful independent review attempt must have exactly one usable review artifact")
+artifact = matching_artifacts[0]
 if not isinstance(artifact.get("size_in_bytes"), int) or artifact["size_in_bytes"] > 100 * 1024 * 1024:
     raise SystemExit("independent review artifact exceeds the size limit")
 artifact_id = artifact["id"]
@@ -178,9 +215,6 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         raise SystemExit("independent review artifact report must be a JSON object")
     if report.get("schema_version") != "1.0.0" or report.get("content_type") != content_type:
         raise SystemExit("independent review artifact report schema or content_type is invalid")
-    run_attempt = run.get("run_attempt")
-    if not isinstance(run_attempt, int) or run_attempt < 1:
-        raise SystemExit("independent review run has no valid run_attempt")
     if report.get("commit") != commit or report.get("github_run_id") != run_id or report.get("github_run_attempt") != run_attempt:
         raise SystemExit("independent review artifact report is not bound to the selected run and commit")
     if report.get("actor") != run_actor or report.get("triggering_actor") != triggering_actor:

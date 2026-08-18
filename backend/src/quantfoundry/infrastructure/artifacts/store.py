@@ -25,6 +25,19 @@ class ArtifactStoreError(RuntimeError):
 logger = logging.getLogger(__name__)
 
 
+def _lock_artifact_mutations(session: Session) -> None:
+    """Serialize artifact-row publication and orphan reaping on PostgreSQL."""
+
+    if session.info.get("qf_artifact_mutation_lock"):
+        return
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+            {"key": "quantfoundry:artifact-mutation"},
+        )
+    session.info["qf_artifact_mutation_lock"] = True
+
+
 def _fsync_directory(path: Path) -> None:
     descriptor = os.open(path, os.O_RDONLY)
     try:
@@ -66,6 +79,7 @@ def _stage_bytes(
     *,
     object_key: str | None = None,
 ) -> tuple[str, str]:
+    _lock_artifact_mutations(session)
     session.connection()
     digest = hashlib.sha256(encoded).hexdigest()
     root = _root()
@@ -259,6 +273,7 @@ def reap_orphan_artifacts(
 
     instant = now or datetime.now(UTC)
     timestamp = instant.timestamp()
+    _lock_artifact_mutations(session)
     root = _root()
     referenced: dict[str, str] = {}
     finalized = removed = 0
