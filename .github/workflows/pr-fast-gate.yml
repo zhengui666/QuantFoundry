@@ -47,7 +47,7 @@ jobs:
           fi
           trap 'git worktree remove --force "$candidate_dir"' EXIT
           pnpm --dir "$candidate_dir/frontend" install --frozen-lockfile
-          pnpm --dir "$candidate_dir/frontend" exec playwright install --with-deps chromium
+          pnpm --dir "$candidate_dir/frontend" exec playwright install chromium
           pnpm --dir "$candidate_dir/frontend" exec playwright test e2e/visual.spec.ts --update-snapshots
           pnpm --dir "$candidate_dir/frontend" exec playwright test e2e/golden.spec.ts --grep 'P15 memo' --update-snapshots
           mkdir -p "$RUNNER_TEMP/qf-linux-snapshots"
