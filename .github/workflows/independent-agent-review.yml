@@ -179,7 +179,8 @@ jobs:
           set -euo pipefail
           export QF_RELEASE_REPO_ROOT="$GITHUB_WORKSPACE"
           export QF_RELEASE_TRUSTED_VERIFIER_ROOT="$GITHUB_WORKSPACE/trusted-verifier"
-          export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$(git -C "$QF_RELEASE_TRUSTED_VERIFIER_ROOT" rev-parse HEAD)"
+          trusted_verifier_commit="$(git -C "$QF_RELEASE_TRUSTED_VERIFIER_ROOT" rev-parse HEAD)"
+          export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_verifier_commit"
           release_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
           test "$release_commit" = "$GITHUB_SHA"
           "$GITHUB_WORKSPACE/trusted-verifier/scripts/ci/supply-chain-review.sh" "$RELEASE_TAG" "$release_commit"
