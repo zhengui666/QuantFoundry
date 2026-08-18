@@ -176,13 +176,16 @@ def record_heartbeat(
     now: datetime | None = None,
 ) -> None:
     timestamp = now or datetime.now(UTC)
-    updated = session.execute(
-        update(RuntimeHeartbeat)
-        .where(
-            RuntimeHeartbeat.component == component,
-            RuntimeHeartbeat.instance_id == instance_id,
-        )
-        .values(queue_name=queue_name, occurred_at=timestamp)
+    updated = cast(
+        CursorResult[Any],
+        session.execute(
+            update(RuntimeHeartbeat)
+            .where(
+                RuntimeHeartbeat.component == component,
+                RuntimeHeartbeat.instance_id == instance_id,
+            )
+            .values(queue_name=queue_name, occurred_at=timestamp)
+        ),
     )
     if updated.rowcount:
         return

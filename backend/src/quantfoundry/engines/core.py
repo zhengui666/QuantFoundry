@@ -1291,15 +1291,17 @@ def validation_checks(
     bounds_ok = parsed_periods is not None and all(
         start <= end for start, end in parsed_periods
     )
-    split_ok = (
-        bounds_ok
-        and parsed_periods is not None
-        and parsed_periods[0][1]
-        < parsed_periods[1][0]
-        <= parsed_periods[1][1]
-        < parsed_periods[2][0]
-    )
+    split_ok = False
+    if bounds_ok and parsed_periods is not None:
+        split_ok = (
+            parsed_periods[0][1]
+            < parsed_periods[1][0]
+            <= parsed_periods[1][1]
+            < parsed_periods[2][0]
+        )
     try:
+        if parsed_periods is None:
+            raise IndexError
         validation_start, validation_end = parsed_periods[1]
         row_bounds_ok = all(
             validation_start

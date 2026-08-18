@@ -5,11 +5,11 @@ from __future__ import annotations
 import inspect
 import json
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, cast
 
 import jsonschema
 from fastapi import HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from pydantic import ValidationError as PydanticValidationError
 
@@ -291,9 +291,14 @@ class CanonicalRoute(APIRoute):
                 media = declared_content["text/event-stream"]
                 schema = media.get("schema")
                 if schema:
-                    response.body_iterator = _validated_stream(
-                        response.body_iterator, schema, "text/event-stream", sse=True
+                    stream_response = cast(StreamingResponse, response)
+                    stream_response.body_iterator = _validated_stream(
+                        stream_response.body_iterator,
+                        schema,
+                        "text/event-stream",
+                        sse=True,
                     )
+                    response = stream_response
                 return response
             if not declared_content:
                 if hasattr(response, "body"):
@@ -314,9 +319,14 @@ class CanonicalRoute(APIRoute):
                     )
                 schema = declared_content[content_type].get("schema")
                 if schema:
-                    response.body_iterator = _validated_stream(
-                        response.body_iterator, schema, content_type, sse=False
+                    stream_response = cast(StreamingResponse, response)
+                    stream_response.body_iterator = _validated_stream(
+                        stream_response.body_iterator,
+                        schema,
+                        content_type,
+                        sse=False,
                     )
+                    response = stream_response
                 return response
             response_body = getattr(response, "body", b"")
             if isinstance(response_body, memoryview):
