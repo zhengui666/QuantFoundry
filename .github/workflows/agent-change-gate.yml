@@ -221,7 +221,7 @@ jobs:
           export "$review_attestation_var=$RUNNER_TEMP/qf-independent-review/independent-review-attestation.json"
           trusted_root="$GITHUB_WORKSPACE/trusted-gate"
           test "$(git -C "$trusted_root" rev-parse HEAD)" = "$QF_CI_TRUSTED_COMMIT"
-          "$QF_CI_TRUSTED_ROOT/scripts/ci/run-gate.sh" agent-change "$QF_CI_REPORT_DIR"
+          "$QF_CI_REPO_ROOT/scripts/ci/run-gate.sh" agent-change "$QF_CI_REPORT_DIR"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
