@@ -135,7 +135,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pip install --disable-pip-version-check uv==0.10.7
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
+          uv_source="$(command -v uv)"
+          sudo install --owner=root --group=root --mode=0755 "$uv_source" /usr/bin/uv
+          [[ "$uv_source" == /usr/bin/uv ]] || rm -f -- "$uv_source"
           corepack enable
           corepack prepare pnpm@10.32.1 --activate
           uv --directory backend sync --frozen --all-groups
@@ -189,7 +192,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pip install --disable-pip-version-check uv==0.10.7
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
+          uv_source="$(command -v uv)"
+          sudo install --owner=root --group=root --mode=0755 "$uv_source" /usr/bin/uv
+          [[ "$uv_source" == /usr/bin/uv ]] || rm -f -- "$uv_source"
           uv --directory trusted-gate sync --frozen --all-groups
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
