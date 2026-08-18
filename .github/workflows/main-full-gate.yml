@@ -72,8 +72,19 @@ jobs:
         run: |
           set -euo pipefail
           pip install --disable-pip-version-check uv==0.10.7
+          corepack_home="${COREPACK_HOME:-$HOME/.cache/node/corepack}"
+          export COREPACK_HOME="$corepack_home"
           corepack enable
           corepack prepare pnpm@10.32.1 --activate
+          for tool in uv node; do
+            source="$(command -v "$tool")"
+            sudo install --owner=root --group=root --mode=0755 "$source" "/usr/bin/$tool"
+          done
+          corepack_bin="$(command -v corepack)"
+          pnpm_wrapper="$RUNNER_TEMP/pnpm"
+          printf '%s\n' '#!/usr/bin/env bash' "exec \"$corepack_bin\" pnpm \"\$@\"" > "$pnpm_wrapper"
+          sudo install --owner=root --group=root --mode=0755 "$pnpm_wrapper" /usr/bin/pnpm
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
           uv --directory backend sync --frozen --all-groups
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend exec playwright install --with-deps chromium
