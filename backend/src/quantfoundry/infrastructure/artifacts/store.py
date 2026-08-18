@@ -8,11 +8,12 @@ import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pyarrow as pa
 import pyarrow.parquet as parquet
 from sqlalchemy import event, text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 
@@ -221,23 +222,27 @@ def _finalize_staged_artifacts(session: Session) -> None:
                 target.read_bytes()
             ).hexdigest() != digest:
                 raise ArtifactStoreError("committed artifact is missing or hash-invalid")
-            result = session.execute(
-                text(
-                    "UPDATE artifacts "
-                    "SET publication_state='PUBLISHED', "
-                    "publication_error=NULL, published_at=:published_at "
-                    "WHERE storage_key=:storage_key AND sha256=:digest "
-                    "AND publication_state='STAGED'"
+            result = cast(
+                CursorResult[Any],
+                session.execute(
+                    text(
+                        "UPDATE artifacts "
+                        "SET publication_state='PUBLISHED', "
+                        "publication_error=NULL, published_at=:published_at "
+                        "WHERE storage_key=:storage_key AND sha256=:digest "
+                        "AND publication_state='STAGED'"
+                    ),
+                    {
+                        "published_at": published_at,
+                        "storage_key": storage_key,
+                        "digest": digest,
+                    },
                 ),
-                {
-                    "published_at": published_at,
-                    "storage_key": storage_key,
-                    "digest": digest,
-                },
             )
             if result.rowcount != 1:
                 raise ArtifactStoreError("staged artifact metadata is missing")
         for artifact in session.identity_map.values():
+            artifact = cast(Any, artifact)
             if (
                 getattr(artifact, "storage_key", None),
                 getattr(artifact, "sha256", None),
