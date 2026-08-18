@@ -1992,7 +1992,7 @@ def test_agent_hard_budget_stops_before_another_model_or_tool_call(
     session.close()
 
 
-def test_openai_compatible_adapter_retries_real_http_and_sends_bearer(
+def test_openai_compatible_adapter_does_not_retry_real_http(
     monkeypatch: pytest.MonkeyPatch,
     local_provider: LocalProviderHarness,
 ) -> None:
@@ -2002,17 +2002,13 @@ def test_openai_compatible_adapter_retries_real_http_and_sends_bearer(
         failure_statuses=[503],
     )
     model = OpenAICompatibleModel(model_name="provider-model", timeout_seconds=7)
-    assert model.next_action({"safe": "context"}) == {
-        "type": "conclude",
-        "summary": "provider ok",
-        "input_tokens": 1,
-        "output_tokens": 1,
-    }
+    with pytest.raises(AgentRuntimeError, match="Remote Codex returned HTTP 503"):
+        model.next_action({"safe": "context"})
     posts = [entry for entry in provider.request_log if entry["method"] == "POST"]
-    assert len(posts) == 2
+    assert len(posts) == 1
     assert all(entry["authorized"] is True for entry in posts)
     assert all(entry["path"] == "/v1/chat/completions" for entry in posts)
-    assert posts[-1]["model"] == "provider-model"
+    assert posts[0]["model"] == "provider-model"
 
     monkeypatch.delenv("QF_OPENAI_API_KEY")
     with pytest.raises(AgentRuntimeError, match="credentials are absent"):

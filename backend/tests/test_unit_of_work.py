@@ -28,7 +28,11 @@ def test_success_commits_domain_audit_event_and_replay_result_together() -> None
     key = f"uow-success-{uuid.uuid4()}"
     response = TestClient(app).post(
         "/api/v1/research",
-        headers={"Authorization": "Bearer test", "Idempotency-Key": key},
+        headers={
+            "Authorization": "Bearer test",
+            "Idempotency-Key": key,
+            "X-CSRF-Token": "t" * 32,
+        },
         json={"title": "Atomic success", "original_user_prompt": "Prove commit"},
     )
     assert response.status_code == 201
