@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  nightly:
+  nightly-candidate:
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     services:
@@ -54,19 +54,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: 4ca07ed0232104a3feddc427a2632d4646ece5a9
-          path: trusted-gate
-          fetch-depth: 1
           persist-credentials: false
-      - name: Fresh clone from the checked-out commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          fresh_clone="$RUNNER_TEMP/qf-fresh-clone"
-          git clone --no-local "$GITHUB_WORKSPACE" "$fresh_clone"
-          test "$(git -C "$fresh_clone" rev-parse HEAD)" = "$GITHUB_SHA"
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: 3.14.0
@@ -74,7 +62,6 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Install committed environments and required host tooling
-        working-directory: ${{ runner.temp }}/qf-fresh-clone
         shell: bash
         run: |
           set -euo pipefail
@@ -82,25 +69,22 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.32.1 --activate
           uv --directory backend sync --frozen --all-groups
-          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend install --frozen-lockfile --ignore-scripts
           pnpm --dir frontend exec playwright install --with-deps chromium
           scripts/ci/install-shellcheck.sh
           curl --fail --location --silent --show-error --output /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check --strict
           tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint
           sudo install --mode 0755 /tmp/actionlint /usr/local/bin/actionlint
-      - name: Run PG18, Compose, restore, E2E, a11y, visual and budget gates
+      - name: Run candidate PG18, Compose, restore, E2E, a11y, visual and budget gates
         shell: bash
         env:
           QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
         run: |
           set -euo pipefail
-          export QF_TOOL_CONTRACT_PATH="$RUNNER_TEMP/qf-fresh-clone/docs/后端系统技术方案/contracts/tools/v1-p0.yaml"
-          trusted_root="$GITHUB_WORKSPACE/trusted-gate"
-          trusted_commit="4ca07ed0232104a3feddc427a2632d4646ece5a"
-          test "$(git -C "$trusted_root" rev-parse HEAD)" = "$trusted_commit"
-          QF_CI_REPO_ROOT="$RUNNER_TEMP/qf-fresh-clone" QF_CI_TRUSTED_ROOT="$trusted_root" QF_CI_TRUSTED_COMMIT="$trusted_commit" \
-            "$trusted_root/scripts/ci/run-gate.sh" nightly "$QF_CI_REPORT_DIR"
+          export QF_TOOL_CONTRACT_PATH="$GITHUB_WORKSPACE/docs/后端系统技术方案/contracts/tools/v1-p0.yaml"
+          export QF_CI_UNTRUSTED_CANDIDATE=1
+          scripts/ci/run-gate.sh nightly "$QF_CI_REPORT_DIR"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -108,3 +92,33 @@ jobs:
           path: ${{ runner.temp }}/qf-ci
           if-no-files-found: error
           retention-days: 7
+
+  nightly-trusted-verification:
+    needs: nightly-candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 4ca07ed0232104a3feddc427a2632d4646ece5a9
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: 3.14.0
+      - name: Install trusted verifier environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
+          uv --directory backend sync --frozen --all-groups
+      - name: Verify trusted nightly governance controls
+        shell: bash
+        env:
+          QF_RELEASE_GOVERNANCE_ROOT: ${{ github.workspace }}
+          QF_RELEASE_TRUSTED_VERIFIER_ROOT: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          scripts/ci/release-governance-static-gate.sh --skip-fixtures

@@ -18,6 +18,10 @@ usage() {
 }
 
 [[ "$gate" =~ ^(pr-fast|main-full|nightly|agent-change|rc)$ ]] || usage
+if [[ "${QF_CI_UNTRUSTED_CANDIDATE:-}" == 1 && "$gate" != nightly ]]; then
+  printf '%s\n' 'untrusted candidate mode is permitted only for the nightly gate' >&2
+  exit 2
+fi
 if [[ -n "${2:-}" ]]; then
   report_dir="$2"
 fi
@@ -522,7 +526,9 @@ if remote != expected:
   run_step release-input-snapshot scripts/release-evidence.sh collect-inputs "$report_dir"
 }
 
-require_trusted_orchestrator
+if [[ "${QF_CI_UNTRUSTED_CANDIDATE:-}" != 1 ]]; then
+  require_trusted_orchestrator
+fi
 
 case "$gate" in
   pr-fast) run_pr_fast ;;
