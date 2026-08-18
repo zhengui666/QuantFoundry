@@ -470,8 +470,8 @@ def _seed_gate_inputs(
             schema_name="snapshot_manifest",
             schema_version=1,
             metadata_json={"snapshot_id": str(snapshot_id)},
-            publication_state="PUBLISHED",
-            published_at=now,
+            publication_state="STAGED",
+            published_at=None,
             created_at=now,
             immutable=True,
         )
