@@ -44,10 +44,10 @@ reject_transport_overrides() {
     [[ -n "$key" ]] || continue
     lower="${key,,}"
     case "$lower" in
-      core.sshcommand|core.gitproxy|core.fsmonitor|core.hookspath|core.askpass|
-      credential.helper|credential.*.helper|include.*|url.*.insteadof|url.*.pushinsteadof|
-      remote.*.proxy|remote.*.proxyurl|http.proxy|http.sslverify|http.extraheader|
-      http.*.proxy|http.*.sslverify|http.*.extraheader|filter.*.process|filter.*.clean|
+      core.sshcommand|core.gitproxy|core.fsmonitor|core.hookspath|core.askpass|\
+      credential.helper|credential.*.helper|include.*|url.*.insteadof|url.*.pushinsteadof|\
+      remote.*.proxy|remote.*.proxyurl|http.proxy|http.sslverify|http.extraheader|\
+      http.*.proxy|http.*.sslverify|http.*.extraheader|filter.*.process|filter.*.clean|\
       filter.*.smudge|diff.*.command|mergetool.*.cmd|submodule.*.update)
         printf '%s\n' '{"result":"invalid","reason":"transport-affecting Git configuration is not allowed"}' >&2
         exit 1
@@ -254,7 +254,9 @@ uv_bin="$(command -v uv 2>/dev/null || true)"
 gh_bin="$(command -v gh 2>/dev/null || true)"
 assert_secure_tool "$uv_bin" || exit 1
 assert_secure_tool "$gh_bin" || exit 1
-export PATH="$(dirname "$uv_bin"):$(dirname "$gh_bin"):/usr/bin:/bin"
+uv_bin_dir="$(dirname "$uv_bin")"
+gh_bin_dir="$(dirname "$gh_bin")"
+export PATH="$uv_bin_dir:$gh_bin_dir:/usr/bin:/bin"
 export HOME="$snapshot_parent/home"
 export UV_CACHE_DIR="$snapshot_parent/uv-cache"
 export UV_PROJECT_ENVIRONMENT="$snapshot_parent/venv"

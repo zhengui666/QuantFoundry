@@ -12,7 +12,8 @@ while [[ "$uv_directory" != / ]]; do
   [[ ! -w "$uv_directory" ]] || { printf '%s\n' 'uv is located below a writable path.' >&2; exit 2; }
   uv_directory="$(dirname "$uv_directory")"
 done
-export PATH="$(dirname "$uv_bin"):/usr/local/bin:/usr/bin:/bin"
+uv_bin_dir="$(dirname "$uv_bin")"
+export PATH="$uv_bin_dir:/usr/local/bin:/usr/bin:/bin"
 
 [[ "$mode" == "--offline-report" || "$mode" == "--report" || "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]] || {
   printf 'Usage: %s [registry] [--offline-report|--report|--require-closed|--require-closed-except-supply-chain]\n' "$0" >&2
@@ -27,6 +28,7 @@ if [[ "$mode" == "--report" ]]; then
 fi
 
 strict_runtime_root=""
+# shellcheck disable=SC2317,SC2329 # invoked through the EXIT trap
 cleanup_strict_runtime() {
   local status=$?
   trap - EXIT
