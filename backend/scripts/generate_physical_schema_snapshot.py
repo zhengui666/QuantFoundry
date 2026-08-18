@@ -200,12 +200,7 @@ def _generation_spec(column: Any) -> dict[str, Any] | None:
     if computed is None:
         return None
     return {
-        "sqltext": str(
-            computed.sqltext.compile(
-                dialect=postgresql.dialect(),
-                compile_kwargs={"literal_binds": True},
-            )
-        ).strip(),
+        "sqltext": _compiled_sql(computed.sqltext),
         "persisted": True if getattr(computed, "persisted", None) is None else computed.persisted,
     }
 
@@ -269,11 +264,7 @@ def _autoincrement_spec(column: Any, *, reflected: bool = False) -> bool:
 
 
 def _index_key_spec(expression: Any) -> dict[str, Any]:
-    compiled = str(
-        expression.compile(
-            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
-        )
-    ).strip()
+    compiled = _compiled_sql(expression)
     match = _INDEX_SUFFIX.fullmatch(compiled)
     if match is None:
         raise ValueError(f"unsupported index expression rendering: {compiled}")
@@ -297,6 +288,8 @@ def _index_key_spec(expression: Any) -> dict[str, Any]:
 
 
 def _compiled_sql(expression: Any) -> str:
+    if isinstance(expression, str):
+        return expression.strip()
     return str(
         expression.compile(
             dialect=postgresql.dialect(),
