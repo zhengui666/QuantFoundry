@@ -4226,7 +4226,7 @@ def get_snapshot(
 
 @app.get("/api/v1/research")
 def list_research(
-    cursor: str | None = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    cursor: str = Query(None, pattern=r"^[0-9]+$", max_length=18),
     limit: int = Query(100, ge=1, le=100),
     actor: Actor = Depends(require_owner),
     s: Session = Depends(db),
@@ -4379,9 +4379,10 @@ def create_research(
 @app.get("/api/v1/research/{research_id}")
 def read_research(
     research_id: ResearchId,
-    tab: Literal["timeline", "experiments", "evidence", "artifacts", "audit"]
-    | None = Query(None),
-    cursor: str | None = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    tab: Literal["timeline", "experiments", "evidence", "artifacts", "audit"] = Query(
+        None
+    ),
+    cursor: str = Query(None, pattern=r"^[0-9]+$", max_length=18),
     limit: int = Query(100, ge=1, le=100),
     actor: Actor = Depends(require_owner),
     s: Session = Depends(db),
@@ -6019,7 +6020,7 @@ def export_memo(
 
 @app.get("/api/v1/approvals")
 def list_approvals(
-    cursor: str | None = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    cursor: str = Query(None, pattern=r"^[0-9]+$", max_length=18),
     limit: int = Query(100, ge=1, le=100),
     actor: Actor = Depends(require_owner),
     s: Session = Depends(db),
