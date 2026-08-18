@@ -128,10 +128,72 @@ def _default_matches(actual: object, expected: str) -> bool:
 
 
 def _normalize_sql(expression: object) -> str:
-    normalized = re.sub(r"\s+", "", str(expression)).lower()
-    while normalized.startswith("(") and normalized.endswith(")"):
-        normalized = normalized[1:-1]
-    return normalized
+    normalized = re.sub(r"\s+", " ", str(expression)).lower().strip()
+    normalized = re.sub(
+        r"::(?:pg_catalog\.)?[a-z_][a-z0-9_]*(?:\[\])?", "", normalized
+    )
+
+    def strip_groups(value: str) -> str:
+        result: list[str] = []
+        index = 0
+        while index < len(value):
+            if value[index] == "'":
+                end = index + 1
+                while end < len(value):
+                    if value[end] == "'":
+                        if end + 1 < len(value) and value[end + 1] == "'":
+                            end += 2
+                            continue
+                        end += 1
+                        break
+                    end += 1
+                result.append(value[index:end])
+                index = end
+                continue
+            if value[index] != "(":
+                result.append(value[index])
+                index += 1
+                continue
+            depth = 1
+            end = index + 1
+            while end < len(value) and depth:
+                if value[end] == "'":
+                    quote_end = end + 1
+                    while quote_end < len(value):
+                        if value[quote_end] == "'":
+                            if quote_end + 1 < len(value) and value[quote_end + 1] == "'":
+                                quote_end += 2
+                                continue
+                            quote_end += 1
+                            break
+                        quote_end += 1
+                    end = quote_end
+                    continue
+                if value[end] == "(":
+                    depth += 1
+                elif value[end] == ")":
+                    depth -= 1
+                end += 1
+            if depth:
+                return value
+            inner = strip_groups(value[index + 1 : end - 1])
+            previous = value[index - 1] if index else ""
+            token_match = re.search(r"[a-z_][a-z0-9_]*$", value[:index])
+            token = token_match.group(0) if token_match else ""
+            if previous and (previous.isalnum() or previous == "_") and token not in {
+                "and",
+                "or",
+                "not",
+                "in",
+                "is",
+            }:
+                result.append(f"({inner})")
+            else:
+                result.append(inner)
+            index = end
+        return "".join(result)
+
+    return re.sub(r"\s+", "", strip_groups(normalized))
 
 
 def _validate_section14_columns() -> None:
