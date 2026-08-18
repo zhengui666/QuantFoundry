@@ -264,7 +264,7 @@ from sqlalchemy.engine import make_url
 url = make_url(os.environ["QF_PG18_BASE_DATABASE_URL"])
 if url.get_backend_name() != "postgresql":
     raise SystemExit("QF_PG18_CI_BASE_DATABASE_URL must use PostgreSQL")
-print(url.set(database=sys.argv[2]).render_as_string(hide_password=False))
+print(url.set(database=sys.argv[1]).render_as_string(hide_password=False))
 PY
 )"
 export QF_ALEMBIC_URL="$QF_DATABASE_URL"
