@@ -33,7 +33,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo python -m pip install --disable-pip-version-check --require-hashes --prefix /usr/local -r scripts/ci/uv-bootstrap-requirements.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
+          sudo install --owner=root --group=root --mode=0755 "$(command -v uv)" /usr/local/bin/uv
           export PATH="/usr/local/bin:$PATH"
           printf '%s\n' /usr/local/bin >> "$GITHUB_PATH"
           uv --directory trusted-verifier/backend sync --frozen --all-groups
@@ -163,7 +164,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo python -m pip install --disable-pip-version-check --require-hashes --prefix /usr/local -r scripts/ci/uv-bootstrap-requirements.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
+          sudo install --owner=root --group=root --mode=0755 "$(command -v uv)" /usr/local/bin/uv
           export PATH="/usr/local/bin:$PATH"
           printf '%s\n' /usr/local/bin >> "$GITHUB_PATH"
           uv --directory trusted-verifier/backend sync --frozen --all-groups
