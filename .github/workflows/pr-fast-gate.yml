@@ -156,7 +156,7 @@ jobs:
           report_parent="$(mktemp -d "$RUNNER_TEMP/qf-ci-${{ github.run_id }}-${{ github.run_attempt }}.XXXXXX")"
           report_dir="$report_parent/report"
           trusted_root="$GITHUB_WORKSPACE/trusted-gate"
-          trusted_commit="4ca07ed0232104a3feddc427a2632d4646ece5a"
+          trusted_commit="4ca07ed0232104a3feddc427a2632d4646ece5a9"
           QF_CI_REPO_ROOT="$GITHUB_WORKSPACE" QF_CI_TRUSTED_ROOT="$trusted_root" QF_CI_TRUSTED_COMMIT="$trusted_commit" \
             "$GITHUB_WORKSPACE/scripts/ci/run-gate.sh" pr-fast "$report_dir"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
