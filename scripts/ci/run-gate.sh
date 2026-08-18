@@ -368,8 +368,8 @@ require_ci_environment() {
 }
 
 run_pr_fast() {
-  require_ci_environment
   require_common_tooling
+  require_ci_environment
   run_step governance make governance
   trusted_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step platform make platform
@@ -382,8 +382,8 @@ run_pr_fast() {
 }
 
 run_main_full() {
-  require_ci_environment
   require_common_tooling
+  require_ci_environment
   trusted_step p0-registry-snapshot env \
     QF_RELEASE_REPO_ROOT="$repo_root" \
     QF_RELEASE_TRUSTED_VERIFIER_ROOT="$orchestrator_root" \
@@ -405,8 +405,8 @@ run_main_full() {
 }
 
 run_nightly() {
-  require_ci_environment
   require_common_tooling
+  require_ci_environment
   run_step fresh-compose-roundtrip make fullstack
   run_step pg18-roundtrip make pg18
   run_step backup-restore bash -c 'cd backend && uv run --frozen pytest -q tests/test_event_migration_and_bootstrap.py -k "restore or roundtrip"'
@@ -416,8 +416,8 @@ run_nightly() {
 run_agent_change() {
   local review_token="${GITHUB_TOKEN:-}" review_gh_token="${GH_TOKEN:-}"
   unset GITHUB_TOKEN GH_TOKEN
-  require_ci_environment
   require_common_tooling
+  require_ci_environment
   run_step governance make governance
   trusted_step release-governance-static "$orchestrator_root/scripts/ci/release-governance-static-gate.sh"
   run_step tool-registry-exact make tools
