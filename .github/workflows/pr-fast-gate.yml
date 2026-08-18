@@ -164,6 +164,6 @@ jobs:
         if: always()
         with:
           name: pr-fast-report-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/qf-ci
+          path: ${{ runner.temp }}/qf-ci-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 7
