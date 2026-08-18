@@ -82,7 +82,7 @@ jobs:
           done
           corepack_bin="$(command -v corepack)"
           pnpm_wrapper="$RUNNER_TEMP/pnpm"
-          printf '%s\n' '#!/usr/bin/env bash' "exec \"$corepack_bin\" pnpm \"\$@\"" > "$pnpm_wrapper"
+          printf '%s\n' '#!/usr/bin/env bash' 'export COREPACK_DEFAULT_TO_LATEST=0 COREPACK_ENABLE_NETWORK=0' "exec \"$corepack_bin\" pnpm \"\$@\"" > "$pnpm_wrapper"
           sudo install --owner=root --group=root --mode=0755 "$pnpm_wrapper" /usr/bin/pnpm
           printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
           uv --directory backend sync --frozen --all-groups
