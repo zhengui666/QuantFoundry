@@ -34,10 +34,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
-          sudo install --owner=root --group=root --mode=0755 "$(command -v uv)" /usr/local/bin/uv
-          export PATH="/usr/local/bin:$PATH"
-          printf 'PATH=%s:%s\n' /usr/local/bin "$PATH" >> "$GITHUB_ENV"
-          printf '%s\n' /usr/local/bin >> "$GITHUB_PATH"
+          sudo install --owner=root --group=root --mode=0755 "$(command -v uv)" /usr/bin/uv
+          export PATH="/usr/bin:$PATH"
+          printf 'PATH=%s:%s\n' /usr/bin "$PATH" >> "$GITHUB_ENV"
+          printf '%s\n' /usr/bin >> "$GITHUB_PATH"
           uv --directory trusted-verifier/backend sync --frozen --all-groups
           "$GITHUB_WORKSPACE/trusted-verifier/scripts/ci/install-shellcheck.sh"
           curl --fail --location --silent --show-error --output /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
@@ -166,10 +166,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
-          sudo install --owner=root --group=root --mode=0755 "$(command -v uv)" /usr/local/bin/uv
-          export PATH="/usr/local/bin:$PATH"
-          printf 'PATH=%s:%s\n' /usr/local/bin "$PATH" >> "$GITHUB_ENV"
-          printf '%s\n' /usr/local/bin >> "$GITHUB_PATH"
+          sudo install --owner=root --group=root --mode=0755 "$(command -v uv)" /usr/bin/uv
+          export PATH="/usr/bin:$PATH"
+          printf 'PATH=%s:%s\n' /usr/bin "$PATH" >> "$GITHUB_ENV"
+          printf '%s\n' /usr/bin >> "$GITHUB_PATH"
           uv --directory trusted-verifier/backend sync --frozen --all-groups
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
