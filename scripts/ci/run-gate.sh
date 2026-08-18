@@ -364,7 +364,7 @@ require_ci_environment() {
     write_result ci-postgres 'QF_CI_DISPOSABLE_DATABASE/QF_DATABASE_URL/QF_ALEMBIC_URL/QF_SKIP_AUTO_CREATE are required' 2 'missing explicitly disposable real PostgreSQL CI configuration'
     exit 2
   fi
-  trusted_step ci-disposable-database "$orchestrator_root/scripts/ci/verify-disposable-ci-database.py" "$QF_DATABASE_URL"
+  run_step ci-disposable-database "$repo_root/scripts/ci/verify-disposable-ci-database.py" "$QF_DATABASE_URL"
 }
 
 run_pr_fast() {
