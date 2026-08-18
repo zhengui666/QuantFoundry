@@ -139,6 +139,8 @@ def _actual_type(value: Any, dialect: str) -> tuple[Any, ...]:
         "smallinteger": "smallint",
         "datetime": "timestamptz" if getattr(value, "timezone", False) else "timestamp",
         "uuid": "uuid",
+        "pguuid": "uuid",
+        "_psycopgnumeric": "numeric",
         "largebinary": "bytea",
         "json": "json" if dialect == "postgresql" else "jsonb",
         "text": "text",
