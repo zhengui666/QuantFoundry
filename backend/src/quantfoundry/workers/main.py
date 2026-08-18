@@ -330,6 +330,10 @@ def _run_once(
         return 1
     except Exception as error:  # noqa: BLE001 - worker boundary records arbitrary failures
         session.rollback()
+        logger.exception(
+            "worker execution failed",
+            extra={"job_id": lease.job_id, "queue": lease.queue_name},
+        )
         _mark_failed(lease, error)
         return 1
     finally:
