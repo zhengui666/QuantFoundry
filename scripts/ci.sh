@@ -246,12 +246,7 @@ openapi_check() {
     QF_ALLOW_EXTERNAL_TEST_DATABASE=1 \
     QF_ALLOW_TEST_SCHEMA_BOOTSTRAP=1 \
     pytest tests/contracts
-  run_frontend exec openapi-typescript "$repo_root/docs/后端系统技术方案/contracts/openapi-v1.yaml" --output "$ci_tmp/generated.ts"
-  if ! cmp -s "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts"; then
-    diff -u "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts" || true
-    printf '%s\n' 'Frontend generated OpenAPI types are stale.' >&2
-    exit 1
-  fi
+  run_frontend codegen:check
 }
 
 tool_check() {
