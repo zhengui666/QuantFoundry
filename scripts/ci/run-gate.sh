@@ -278,10 +278,14 @@ trusted_step() {
   local saved_verifier_root="${QF_RELEASE_TRUSTED_VERIFIER_ROOT-}"
   local saved_verifier_commit="${QF_RELEASE_TRUSTED_VERIFIER_COMMIT-}"
   local saved_uv_project_environment="${UV_PROJECT_ENVIRONMENT-}"
+  local saved_git_dir="${GIT_DIR-}"
   repo_root="$snapshot"
   export QF_RELEASE_TRUSTED_VERIFIER_ROOT="$snapshot"
   export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_commit"
   export UV_PROJECT_ENVIRONMENT="$report_dir/tmp/$name/venv"
+  local git_dir
+  git_dir="$(git -C "$orchestrator_root" rev-parse --absolute-git-dir)"
+  export GIT_DIR="$git_dir"
   local -a args=()
   local argument
   for argument in "$@"; do
@@ -313,6 +317,11 @@ trusted_step() {
     export UV_PROJECT_ENVIRONMENT="$saved_uv_project_environment"
   else
     unset UV_PROJECT_ENVIRONMENT
+  fi
+  if [[ -n "$saved_git_dir" ]]; then
+    export GIT_DIR="$saved_git_dir"
+  else
+    unset GIT_DIR
   fi
 }
 
