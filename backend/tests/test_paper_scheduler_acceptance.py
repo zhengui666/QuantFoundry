@@ -103,6 +103,8 @@ def pg18_session_factory() -> sessionmaker[Session]:
         if revision not in {
             "0017_paper_scheduler_state_init",
             "0018_ux001_runtime_snapshots",
+            "0019_strategy_candidate_evidence",
+            "0020_experiment_terminal_guard",
         }:
             pytest.fail(
                 "QF-PAPER-SCH requires the 0017 scheduler migration or a "
