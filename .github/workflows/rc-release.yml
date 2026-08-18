@@ -226,7 +226,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - id: resolve-existing-images
+        name: Reuse any immutable image already promoted by an earlier attempt
+        shell: bash
+        env:
+          IMAGE_PREFIX: ${{ steps.image.outputs.prefix }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          set -euo pipefail
+          resolve_digest() {
+            local image="$1" tag="$2" inspection digest
+            if inspection="$(docker buildx imagetools inspect "$image:$tag" 2>&1)"; then
+              digest="$(printf '%s\n' "$inspection" | awk '/^Digest:/ {print $2; exit}')"
+              [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+                printf 'existing %s:%s has no valid digest\n' "$image" "$tag" >&2
+                exit 1
+              }
+              printf '%s' "$digest"
+              return 0
+            fi
+            grep -Eqi 'manifest unknown|not found|404' <<<"$inspection" || {
+              printf 'cannot determine whether %s:%s exists: %s\n' "$image" "$tag" "$inspection" >&2
+              exit 1
+            }
+          }
+          for image in backend frontend; do
+            digest="$(resolve_digest "$IMAGE_PREFIX/$image" "$TAG")"
+            printf '%s_digest=%s\n' "$image" "$digest" >> "$GITHUB_OUTPUT"
+          done
       - id: backend
+        if: steps.resolve-existing-images.outputs.backend_digest == ''
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
@@ -241,6 +271,7 @@ jobs:
             org.opencontainers.image.revision=${{ needs.preflight.outputs.commit }}
             org.opencontainers.image.version=${{ needs.preflight.outputs.tag }}
       - id: frontend
+        if: steps.resolve-existing-images.outputs.frontend_digest == ''
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
@@ -255,14 +286,16 @@ jobs:
             org.opencontainers.image.revision=${{ needs.preflight.outputs.commit }}
             org.opencontainers.image.version=${{ needs.preflight.outputs.tag }}
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        if: steps.resolve-existing-images.outputs.backend_digest == ''
         with:
           subject-name: ${{ steps.image.outputs.prefix }}/backend
-          subject-digest: ${{ steps.backend.outputs.digest }}
+          subject-digest: ${{ steps.backend.outputs.digest || steps.resolve-existing-images.outputs.backend_digest }}
           push-to-registry: true
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        if: steps.resolve-existing-images.outputs.frontend_digest == ''
         with:
           subject-name: ${{ steps.image.outputs.prefix }}/frontend
-          subject-digest: ${{ steps.frontend.outputs.digest }}
+          subject-digest: ${{ steps.frontend.outputs.digest || steps.resolve-existing-images.outputs.frontend_digest }}
           push-to-registry: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -276,8 +309,8 @@ jobs:
           TAG: ${{ needs.preflight.outputs.tag }}
           COMMIT: ${{ needs.preflight.outputs.commit }}
           IMAGE_PREFIX: ${{ steps.image.outputs.prefix }}
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
-          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest || steps.resolve-existing-images.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest || steps.resolve-existing-images.outputs.frontend_digest }}
         run: |
           set -euo pipefail
           mkdir -p evidence/{attestations,provenance,signature-verification,sbom}
@@ -306,8 +339,8 @@ jobs:
           TAG: ${{ needs.preflight.outputs.tag }}
           COMMIT: ${{ needs.preflight.outputs.commit }}
           IMAGE_PREFIX: ${{ steps.image.outputs.prefix }}
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
-          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest || steps.resolve-existing-images.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest || steps.resolve-existing-images.outputs.frontend_digest }}
         run: |
           set -euo pipefail
           test -s evidence/release-assets/release-manifest.json

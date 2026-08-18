@@ -107,13 +107,17 @@ jobs:
               "reviewed_paths": reviewed_paths,
               "review_scope_sha256": hashlib.sha256(scope).hexdigest(),
               "blocker_results": {
-                  blocker: {"result": "pass", "basis": [command["command"] for command in report_commands]}
-                  for blocker in (
-                      "P0-PRODUCT-PAPER-DAILY-SCHEDULER", "P0-CONTRACT-OPENAPI-45",
-                      "P0-CONTRACT-TOOLS-13", "P0-SCHEMA-ALEMBIC-AUTHORITY",
-                      "P0-ARCHITECTURE-TARGET-LAYERS", "P0-CI-REPRODUCIBILITY",
-                      "P0-SECURITY-RESEARCH-INTEGRITY",
-                  )
+                  "P0-ARCHITECTURE-TARGET-LAYERS": {
+                      "result": "pass",
+                      "basis": ["scripts/ci/p0-architecture-review.sh"],
+                  },
+                  "P0-CI-REPRODUCIBILITY": {
+                      "result": "pass",
+                      "basis": [
+                          "scripts/ci/release-governance-static-gate.sh",
+                          "actionlint .github/workflows/*.yml",
+                      ],
+                  },
               },
               "commands": report_commands,
           }
@@ -203,8 +207,11 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          uv --directory trusted-verifier/backend run --frozen python trusted-verifier/scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
-            --result-file "$RUNNER_TEMP/qf-p0-review-evidence/gate-result.json"
+          for blocker in P0-ARCHITECTURE-TARGET-LAYERS P0-CI-REPRODUCIBILITY; do
+            uv --directory trusted-verifier/backend run --frozen python trusted-verifier/scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
+              --blocker "$blocker" \
+              --result-file "$RUNNER_TEMP/qf-p0-review-evidence/gate-result.json"
+          done
           if [[ -n "$RELEASE_TAG" ]]; then
             uv --directory trusted-verifier/backend run --frozen python trusted-verifier/scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \

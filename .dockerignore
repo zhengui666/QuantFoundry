@@ -53,3 +53,16 @@ docs/后端系统技术方案/contracts/**/credentials/**
 docs/后端系统技术方案/contracts/**/secrets/**
 docs/后端系统技术方案/contracts/**/*.pem
 docs/后端系统技术方案/contracts/**/*.key
+docs/后端系统技术方案/contracts/**/.env
+docs/后端系统技术方案/contracts/**/.env.*
+docs/后端系统技术方案/contracts/**/storage-state.json
+docs/后端系统技术方案/contracts/**/*.db
+docs/后端系统技术方案/contracts/**/*.sqlite
+docs/后端系统技术方案/contracts/**/*.sqlite3
+docs/后端系统技术方案/contracts/**/.venv
+docs/后端系统技术方案/contracts/**/venv
+docs/后端系统技术方案/contracts/**/node_modules
+docs/后端系统技术方案/contracts/**/dist
+docs/后端系统技术方案/contracts/**/.cache
+docs/后端系统技术方案/contracts/**/__pycache__
+docs/后端系统技术方案/contracts/**/*.py[cod]
