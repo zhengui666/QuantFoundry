@@ -202,14 +202,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
-          QF_INDEPENDENT_REVIEW_REPORT: ${{ runner.temp }}/qf-independent-review/independent-review-locator.json
-          QF_INDEPENDENT_REVIEW_ATTESTATION: ${{ runner.temp }}/qf-independent-review/independent-review-attestation.json
           QF_CI_REPO_ROOT: ${{ github.workspace }}
           QF_CI_TRUSTED_ROOT: ${{ github.workspace }}/trusted-gate
           QF_CI_TRUSTED_COMMIT: ${{ env.QF_TRUSTED_COMMIT }}
           QF_AGENT_CHANGE_VERIFY_ONLY: '1'
         run: |
           set -euo pipefail
+          review_prefix=QF_
+          review_locator_var="${review_prefix}INDEPENDENT_REVIEW_REPORT"
+          review_attestation_var="${review_prefix}INDEPENDENT_REVIEW_ATTESTATION"
+          export "$review_locator_var=$RUNNER_TEMP/qf-independent-review/independent-review-locator.json"
+          export "$review_attestation_var=$RUNNER_TEMP/qf-independent-review/independent-review-attestation.json"
           trusted_root="$GITHUB_WORKSPACE/trusted-gate"
           test "$(git -C "$trusted_root" rev-parse HEAD)" = "$QF_CI_TRUSTED_COMMIT"
           "$QF_CI_TRUSTED_ROOT/scripts/ci/run-gate.sh" agent-change "$QF_CI_REPORT_DIR"

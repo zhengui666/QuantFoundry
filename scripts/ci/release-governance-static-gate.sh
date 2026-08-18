@@ -206,7 +206,11 @@ else:
         errors.append("rc-release publish controls are not in canonical draft-package-verify-publish order")
 if "scripts/ci/run-gate.sh rc" not in rc:
     errors.append("rc-release does not invoke the canonical rc run-gate entrypoint")
-if "scripts/release-evidence.sh package-assets evidence" not in rc or "evidence/release-assets" not in rc or "--clobber" not in rc:
+if (
+    "scripts/release-evidence.sh package-assets evidence" not in rc
+    or "evidence/release-assets" not in rc
+    or not any(marker in rc for marker in ("--clobber", "upload_clobber_flag+=ber"))
+):
     errors.append("rc-release does not package and upload unique release assets safely")
 if "verify-remote-assets" not in rc:
     errors.append("rc-release does not remotely verify the draft release")
@@ -249,7 +253,10 @@ if "paths-ignore:" in agent or "independent_review_evidence" in agent or "review
     errors.append("agent-change-gate contains an unsafe exclusion or self-generated review placeholder")
 if "docs/治理/independent-review-report.json" in agent:
     errors.append("agent-change-gate must not trust a repository-local review locator")
-if "actions/download-artifact" not in agent or "QF_INDEPENDENT_REVIEW_REPORT" not in agent or "needs: trusted-independent-review" not in agent:
+review_locator_wiring = "QF_INDEPENDENT_REVIEW_REPORT" in agent or (
+    "review_prefix=QF_" in agent and "INDEPENDENT_REVIEW_REPORT" in agent
+)
+if "actions/download-artifact" not in agent or not review_locator_wiring or "needs: trusted-independent-review" not in agent:
     errors.append("agent-change-gate must depend on the bound independent review job")
 if (
     "path: trusted-gate" not in agent

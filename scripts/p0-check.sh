@@ -302,6 +302,8 @@ class RemoteVerifier:
             raise RuntimeError(f"gh api returned non-JSON for {endpoint}") from error
 
     def gh_download(self, endpoint):
+        if f"/repos/{self.repository}/releases/assets" in endpoint:
+            raise RuntimeError("P0 closure evidence must not use GitHub release assets")
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
             process = subprocess.Popen(

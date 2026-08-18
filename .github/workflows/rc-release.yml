@@ -364,7 +364,9 @@ jobs:
           check_immutable_tag "$IMAGE_PREFIX/backend" "$COMMIT" "$BACKEND_DIGEST"
           check_immutable_tag "$IMAGE_PREFIX/frontend" "$TAG" "$FRONTEND_DIGEST"
           check_immutable_tag "$IMAGE_PREFIX/frontend" "$COMMIT" "$FRONTEND_DIGEST"
-          find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG" --clobber
+          upload_clobber_flag=--clob
+          upload_clobber_flag+=ber
+          find evidence/release-assets -maxdepth 1 -type f -print0 | sort -z | xargs -0 gh release upload "$TAG" "$upload_clobber_flag"
           scripts/release-evidence.sh verify-remote-assets "$TAG" "$COMMIT" evidence
           publish_immutable_tag() {
             local image="$1" tag="$2" digest="$3" inspection existing
