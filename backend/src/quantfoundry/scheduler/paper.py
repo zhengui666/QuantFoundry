@@ -764,7 +764,7 @@ class PaperScheduler:
                     "NO_AUTOMATIC_REPLAY",
                     now=now,
                 )
-                return None
+                raise PaperSchedulerError("PaperDailyRun gate result is unknown")
             if decision.outcome == "REJECTED":
                 self._finish_run(
                     session,
