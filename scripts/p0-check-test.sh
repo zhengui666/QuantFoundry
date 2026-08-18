@@ -228,7 +228,7 @@ run_fixture() {
     GITHUB_TOKEN='fixture-token' \
     QF_RELEASE_REPO_ROOT="$repo_root" \
     QF_RELEASE_COMMIT="$commit_sha" \
-    "$trusted_root/scripts/p0-check.sh" "$fixture_dir/$name.yaml" --offline-report
+    "$trusted_root/scripts/p0-check.sh" "$fixture_dir/$name.yaml" --require-closed
 }
 
 write_fixture positive
