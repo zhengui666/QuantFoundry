@@ -295,6 +295,7 @@ run_managed .venv/bin/alembic check
 
 run_full_suite() {
   run_managed .venv/bin/pytest -q tests \
+    --maxfail=1 \
     -k 'not test_sqlite_foreign_keys_are_enforced_for_every_connection'
 }
 
