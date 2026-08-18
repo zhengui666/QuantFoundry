@@ -155,6 +155,9 @@ jobs:
           QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
+          bash --version | head -1
+          printf 'gate report dir: %s\n' "$QF_CI_REPORT_DIR"
+          test ! -e "$QF_CI_REPORT_DIR" && test ! -L "$QF_CI_REPORT_DIR"
           trusted_root="$GITHUB_WORKSPACE/trusted-gate"
           trusted_commit="4ca07ed0232104a3feddc427a2632d4646ece5a"
           test "$(git -C "$trusted_root" rev-parse HEAD)" = "$trusted_commit"
