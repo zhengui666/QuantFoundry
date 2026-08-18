@@ -334,7 +334,7 @@ require_command() {
 
 require_common_tooling() {
   require_command git
-  require_command python3.14
+  require_command /usr/bin/python3.12
   require_command uv
   require_command node
   require_command pnpm
