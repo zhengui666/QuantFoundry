@@ -197,7 +197,7 @@ for line in sys.stdin:
     QF_PG18_CI_BASE_DATABASE_URL QF_PG18_CI_CHILD_STOP_TIMEOUT_SECONDS \
     QF_PG18_CI_READINESS_TIMEOUT_SECONDS QF_RELEASE_COMMIT QF_RELEASE_GOVERNANCE_ROOT \
     QF_RELEASE_REPO_ROOT QF_RELEASE_TAG QF_RELEASE_TRUSTED_VERIFIER_COMMIT \
-    QF_RELEASE_TRUSTED_VERIFIER_ROOT QF_SKIP_AUTO_CREATE; do
+    QF_RELEASE_TRUSTED_VERIFIER_ROOT QF_SKIP_AUTO_CREATE UV_PROJECT_ENVIRONMENT; do
     if [[ -n "${!variable_name+x}" ]]; then
       isolated_env+=("$variable_name=${!variable_name}")
     fi
@@ -277,9 +277,11 @@ trusted_step() {
   local saved_repo_root="$repo_root"
   local saved_verifier_root="${QF_RELEASE_TRUSTED_VERIFIER_ROOT-}"
   local saved_verifier_commit="${QF_RELEASE_TRUSTED_VERIFIER_COMMIT-}"
+  local saved_uv_project_environment="${UV_PROJECT_ENVIRONMENT-}"
   repo_root="$snapshot"
   export QF_RELEASE_TRUSTED_VERIFIER_ROOT="$snapshot"
   export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$trusted_commit"
+  export UV_PROJECT_ENVIRONMENT="$report_dir/tmp/$name/venv"
   local -a args=()
   local argument
   for argument in "$@"; do
@@ -306,6 +308,11 @@ trusted_step() {
     export QF_RELEASE_TRUSTED_VERIFIER_COMMIT="$saved_verifier_commit"
   else
     unset QF_RELEASE_TRUSTED_VERIFIER_COMMIT
+  fi
+  if [[ -n "$saved_uv_project_environment" ]]; then
+    export UV_PROJECT_ENVIRONMENT="$saved_uv_project_environment"
+  else
+    unset UV_PROJECT_ENVIRONMENT
   fi
 }
 
