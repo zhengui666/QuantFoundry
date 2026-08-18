@@ -12,7 +12,11 @@ if ! QF_RELEASE_GOVERNANCE_ROOT="$repo_root" \
   exit 1
 fi
 
-git -C "$repo_root" archive --format=tar HEAD | tar --extract --file - --directory "$fixture_root"
+if git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$repo_root" archive --format=tar HEAD | tar --extract --file - --directory "$fixture_root"
+else
+  tar --create --file - --directory "$repo_root" . | tar --extract --file - --directory "$fixture_root"
+fi
 cp "$repo_root/.github/workflows/rc-release.yml" "$fixture_root/.github/workflows/rc-release.yml"
 for job in preflight rc; do
   python3 - "$fixture_root/.github/workflows/rc-release.yml" "$job" <<'PY'
