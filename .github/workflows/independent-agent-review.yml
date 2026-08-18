@@ -215,12 +215,12 @@ jobs:
         run: |
           set -euo pipefail
           for blocker in P0-ARCHITECTURE-TARGET-LAYERS P0-CI-REPRODUCIBILITY; do
-            uv --directory trusted-verifier/backend run --frozen python trusted-verifier/scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
+            uv --directory trusted-verifier/backend run --frozen python "$GITHUB_WORKSPACE/trusted-verifier/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker "$blocker" \
               --result-file "$RUNNER_TEMP/qf-p0-review-evidence/gate-result.json"
           done
           if [[ -n "$RELEASE_TAG" ]]; then
-            uv --directory trusted-verifier/backend run --frozen python trusted-verifier/scripts/ci/build-p0-evidence.py review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
+            uv --directory trusted-verifier/backend run --frozen python "$GITHUB_WORKSPACE/trusted-verifier/scripts/ci/build-p0-evidence.py" review "$GITHUB_SHA" "$RUNNER_TEMP/qf-p0-review-evidence" \
               --blocker P0-SUPPLY-CHAIN-RELEASE-EVIDENCE \
               --result-file "$RUNNER_TEMP/qf-p0-review-evidence/release-gate-result.json"
           fi
