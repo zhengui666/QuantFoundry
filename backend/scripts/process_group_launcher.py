@@ -27,24 +27,44 @@ def main() -> None:
     child_pid = os.fork()
     if child_pid == 0:
         os.close(read_fd)
+        received_signals: list[int] = []
+
+        def record_signal(signum: int, _frame: object) -> None:
+            received_signals.append(signum)
+
         for managed_signal in managed_signals:
-            signal.signal(managed_signal, signal.SIG_DFL)
-        try:
-            os.execvp(
-                "sh",
-                [
-                    "sh",
-                    "-c",
-                    "trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 131' QUIT; trap 'exit 143' TERM; \"$@\"; status=$?; exit \"$status\"",
-                    "process-group-launcher",
-                    *sys.argv[1:],
-                ],
-            )
-        except OSError:
+            signal.signal(managed_signal, record_signal)
+        command_pid = os.fork()
+        if command_pid == 0:
+            for managed_signal in managed_signals:
+                signal.signal(managed_signal, signal.SIG_DFL)
             try:
-                os.write(write_fd, b"!")
-            finally:
-                os._exit(127)
+                os.execvp(
+                    "sh",
+                    [
+                        "sh",
+                        "-c",
+                        'trap - HUP INT QUIT TERM; "$@"; status=$?; exit "$status"',
+                        "process-group-launcher",
+                        *sys.argv[1:],
+                    ],
+                )
+            except OSError:
+                try:
+                    os.write(write_fd, b"!")
+                finally:
+                    os._exit(127)
+        while True:
+            try:
+                _, status = os.waitpid(command_pid, 0)
+                break
+            except InterruptedError:
+                continue
+        if received_signals:
+            os._exit(128 + received_signals[-1])
+        if os.WIFEXITED(status):
+            os._exit(os.WEXITSTATUS(status))
+        os._exit(128 + os.WTERMSIG(status))
 
     os.close(write_fd)
     try:
