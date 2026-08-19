@@ -35,7 +35,7 @@ def main() -> None:
                 [
                     "sh",
                     "-c",
-                    'trap - HUP INT QUIT TERM; "$@"; status=$?; exit "$status"',
+                    "trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 131' QUIT; trap 'exit 143' TERM; \"$@\"; status=$?; exit \"$status\"",
                     "process-group-launcher",
                     *sys.argv[1:],
                 ],
