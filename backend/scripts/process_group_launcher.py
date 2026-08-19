@@ -19,14 +19,12 @@ def main() -> None:
         signal.SIGTERM,
     )
     os.setsid()
-    received_signal: int | None = None
 
-    def record_signal(signum: int, _frame: object) -> None:
-        nonlocal received_signal
-        received_signal = signum
+    def exit_on_signal(signum: int, _frame: object) -> None:
+        raise SystemExit(128 + signum)
 
     for managed_signal in managed_signals:
-        signal.signal(managed_signal, record_signal)
+        signal.signal(managed_signal, exit_on_signal)
     ready_path = os.environ.get("QF_PROCESS_GROUP_READY")
     read_fd, write_fd = os.pipe()
     os.set_inheritable(write_fd, False)
@@ -49,15 +47,6 @@ def main() -> None:
     finally:
         os.close(read_fd)
     finished_pid, status = os.waitpid(child_pid, os.WNOHANG)
-    if received_signal is not None:
-        if finished_pid != child_pid:
-            _, status = os.waitpid(child_pid, 0)
-        if ready_path:
-            try:
-                os.unlink(ready_path)
-            except FileNotFoundError:
-                pass
-        raise SystemExit(128 + received_signal)
     if exec_failed or (finished_pid == child_pid and not os.WIFEXITED(status)):
         if finished_pid != child_pid:
             _, status = os.waitpid(child_pid, 0)
