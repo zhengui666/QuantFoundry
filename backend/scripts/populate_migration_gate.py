@@ -711,10 +711,20 @@ def _repair_scheduler_fixture(connection: Any, metadata: MetaData) -> None:
                 watermarks.delete().where(watermarks.c.workspace_id == workspace_id)
             )
         else:
+            expired_through = connection.execute(
+                select(watermarks.c.expired_through_sequence)
+                .where(watermarks.c.workspace_id == workspace_id)
+                .scalar_one_or_none()
+            )
             result = connection.execute(
                 watermarks.update()
                 .where(watermarks.c.workspace_id == workspace_id)
-                .values(last_sequence=latest_event)
+                .values(
+                    last_sequence=latest_event,
+                    expired_through_sequence=min(
+                        int(expired_through or 0), int(latest_event)
+                    ),
+                )
             )
             if result.rowcount == 0:
                 connection.execute(
