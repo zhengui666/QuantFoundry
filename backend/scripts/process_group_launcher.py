@@ -56,12 +56,23 @@ def main() -> None:
                 finally:
                     os._exit(127)
         os.close(write_fd)
+        child_received_signals: list[int] = []
+        child_signal_received = threading.Event()
+
+        def wait_for_child_signal() -> None:
+            child_received_signals.append(signal.sigwait(managed_signals))
+            child_signal_received.set()
+
+        threading.Thread(target=wait_for_child_signal, daemon=True).start()
         while True:
             try:
                 _, status = os.waitpid(command_pid, 0)
                 break
             except InterruptedError:
                 continue
+        child_signal_received.wait(0.25)
+        if child_received_signals:
+            os._exit(128 + child_received_signals[-1])
         if os.WIFEXITED(status):
             os._exit(os.WEXITSTATUS(status))
         os._exit(128 + os.WTERMSIG(status))
