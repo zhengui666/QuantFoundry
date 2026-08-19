@@ -10,8 +10,8 @@ import sys
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("usage: process_group_launcher.py COMMAND [ARG ...]")
-    # POSIX shells start asynchronous commands with SIGINT/SIGQUIT ignored.
-    # Those dispositions survive exec unless explicitly restored.
+    # POSIX shells start asynchronous commands with these signals ignored or
+    # blocked. Those settings survive exec unless explicitly restored.
     managed_signals = (
         signal.SIGHUP,
         signal.SIGINT,
@@ -24,6 +24,7 @@ def main() -> None:
         parent_received_signals.append(signum)
 
     os.setsid()
+    signal.pthread_sigmask(signal.SIG_UNBLOCK, managed_signals)
     for managed_signal in managed_signals:
         signal.signal(managed_signal, signal.SIG_IGN)
     ready_path = os.environ.get("QF_PROCESS_GROUP_READY")
