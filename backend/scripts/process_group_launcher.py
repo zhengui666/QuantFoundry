@@ -54,17 +54,21 @@ def main() -> None:
                 finally:
                     os._exit(127)
         os.close(write_fd)
+        signal_received = threading.Event()
 
         def wait_for_signal() -> None:
             received_signals.append(signal.sigwait(managed_signals))
+            signal_received.set()
 
         threading.Thread(target=wait_for_signal, daemon=True).start()
         while True:
-            try:
-                _, status = os.waitpid(command_pid, 0)
+            finished_pid, status = os.waitpid(command_pid, os.WNOHANG)
+            if finished_pid == command_pid:
+                if not received_signals:
+                    signal_received.wait(0.25)
                 break
-            except InterruptedError:
-                continue
+            signal_received.wait(0.1)
+            signal_received.clear()
         if received_signals:
             os._exit(128 + received_signals[-1])
         if os.WIFEXITED(status):
