@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import signal
 import sys
-import threading
 
 
 def main() -> None:
@@ -19,6 +18,11 @@ def main() -> None:
         signal.SIGQUIT,
         signal.SIGTERM,
     )
+    parent_received_signals: list[int] = []
+
+    def record_parent_signal(signum: int, _frame: object) -> None:
+        parent_received_signals.append(signum)
+
     os.setsid()
     for managed_signal in managed_signals:
         signal.signal(managed_signal, signal.SIG_IGN)
@@ -28,7 +32,6 @@ def main() -> None:
     child_pid = os.fork()
     if child_pid == 0:
         os.close(read_fd)
-        received_signals: list[int] = []
         for managed_signal in managed_signals:
             signal.signal(managed_signal, signal.SIG_DFL)
         signal.pthread_sigmask(signal.SIG_BLOCK, managed_signals)
@@ -54,28 +57,19 @@ def main() -> None:
                 finally:
                     os._exit(127)
         os.close(write_fd)
-        signal_received = threading.Event()
-
-        def wait_for_signal() -> None:
-            received_signals.append(signal.sigwait(managed_signals))
-            signal_received.set()
-
-        threading.Thread(target=wait_for_signal, daemon=True).start()
         while True:
-            finished_pid, status = os.waitpid(command_pid, os.WNOHANG)
-            if finished_pid == command_pid:
-                if not received_signals:
-                    signal_received.wait(0.25)
+            try:
+                _, status = os.waitpid(command_pid, 0)
                 break
-            signal_received.wait(0.1)
-            signal_received.clear()
-        if received_signals:
-            os._exit(128 + received_signals[-1])
+            except InterruptedError:
+                continue
         if os.WIFEXITED(status):
             os._exit(os.WEXITSTATUS(status))
         os._exit(128 + os.WTERMSIG(status))
 
     os.close(write_fd)
+    for managed_signal in managed_signals:
+        signal.signal(managed_signal, record_parent_signal)
     try:
         exec_failed = os.read(read_fd, 1)
     finally:
@@ -94,7 +88,14 @@ def main() -> None:
         with open(ready_path, "x", encoding="utf-8"):
             pass
     if finished_pid != child_pid:
-        _, status = os.waitpid(child_pid, 0)
+        while True:
+            try:
+                _, status = os.waitpid(child_pid, 0)
+                break
+            except InterruptedError:
+                continue
+    if parent_received_signals:
+        raise SystemExit(128 + parent_received_signals[-1])
     if os.WIFEXITED(status):
         raise SystemExit(os.WEXITSTATUS(status))
     raise SystemExit(128 + os.WTERMSIG(status))
