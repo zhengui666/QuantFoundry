@@ -72,7 +72,12 @@ def main() -> None:
     for managed_signal in managed_signals:
         signal.signal(managed_signal, record_parent_signal)
     try:
-        exec_failed = os.read(read_fd, 1)
+        while True:
+            try:
+                exec_failed = os.read(read_fd, 1)
+                break
+            except InterruptedError:
+                continue
     finally:
         os.close(read_fd)
     finished_pid, status = os.waitpid(child_pid, os.WNOHANG)
