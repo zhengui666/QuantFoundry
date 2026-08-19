@@ -54,6 +54,7 @@ def main() -> None:
                     os.write(write_fd, b"!")
                 finally:
                     os._exit(127)
+        os.close(write_fd)
         while True:
             try:
                 _, status = os.waitpid(command_pid, 0)
