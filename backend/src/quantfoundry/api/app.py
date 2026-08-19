@@ -908,6 +908,7 @@ _SCHEDULER_STATE_EVIDENCE_KEYS = frozenset(
         "suppressed_since_utc",
         "resume_watermark_utc",
         "initialization_utc",
+        "domain_event_sequence",
         "revision",
         "reason_code",
         "actor",
@@ -2769,6 +2770,14 @@ def emit(
         "agent_run_id": agent_run_id,
         "tool_call_id": tool_call_id,
     }
+    if audit_summary is not None:
+        state_evidence = audit_summary.get(_SCHEDULER_STATE_EVIDENCE_SECTION)
+        if isinstance(state_evidence, dict):
+            audit_summary = dict(audit_summary)
+            audit_summary[_SCHEDULER_STATE_EVIDENCE_SECTION] = {
+                **state_evidence,
+                "domain_event_sequence": next_sequence,
+            }
     event_sha256 = content_hash(
         {
             "previous_sha256": previous_sha256,
