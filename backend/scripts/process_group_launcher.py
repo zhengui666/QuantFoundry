@@ -40,16 +40,7 @@ def main() -> None:
                 signal.signal(managed_signal, signal.SIG_DFL)
             signal.pthread_sigmask(signal.SIG_UNBLOCK, managed_signals)
             try:
-                os.execvp(
-                    "sh",
-                    [
-                        "sh",
-                        "-c",
-                        "trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 131' QUIT; trap 'exit 143' TERM; \"$@\"; status=$?; exit \"$status\"",
-                        "process-group-launcher",
-                        *sys.argv[1:],
-                    ],
-                )
+                os.execvp(sys.argv[1], sys.argv[1:])
             except OSError:
                 try:
                     os.write(write_fd, b"!")
