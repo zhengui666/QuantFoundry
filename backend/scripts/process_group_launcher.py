@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import sys
+import threading
 
 
 def main() -> None:
@@ -20,13 +21,10 @@ def main() -> None:
     )
     parent_received_signals: list[int] = []
 
-    def record_parent_signal(signum: int, _frame: object) -> None:
-        parent_received_signals.append(signum)
-
     os.setsid()
-    signal.pthread_sigmask(signal.SIG_UNBLOCK, managed_signals)
+    signal.pthread_sigmask(signal.SIG_BLOCK, managed_signals)
     for managed_signal in managed_signals:
-        signal.signal(managed_signal, signal.SIG_IGN)
+        signal.signal(managed_signal, signal.SIG_DFL)
     ready_path = os.environ.get("QF_PROCESS_GROUP_READY")
     read_fd, write_fd = os.pipe()
     os.set_inheritable(write_fd, False)
@@ -69,8 +67,13 @@ def main() -> None:
         os._exit(128 + os.WTERMSIG(status))
 
     os.close(write_fd)
-    for managed_signal in managed_signals:
-        signal.signal(managed_signal, record_parent_signal)
+    parent_signal_received = threading.Event()
+
+    def wait_for_parent_signal() -> None:
+        parent_received_signals.append(signal.sigwait(managed_signals))
+        parent_signal_received.set()
+
+    threading.Thread(target=wait_for_parent_signal, daemon=True).start()
     try:
         while True:
             try:
@@ -100,6 +103,7 @@ def main() -> None:
                 break
             except InterruptedError:
                 continue
+    parent_signal_received.wait(0.25)
     if parent_received_signals:
         raise SystemExit(128 + parent_received_signals[-1])
     if os.WIFEXITED(status):
