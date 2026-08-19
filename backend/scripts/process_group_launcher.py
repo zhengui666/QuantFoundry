@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import sys
+import threading
 
 
 def main() -> None:
@@ -28,16 +29,14 @@ def main() -> None:
     if child_pid == 0:
         os.close(read_fd)
         received_signals: list[int] = []
-
-        def record_signal(signum: int, _frame: object) -> None:
-            received_signals.append(signum)
-
         for managed_signal in managed_signals:
-            signal.signal(managed_signal, record_signal)
+            signal.signal(managed_signal, signal.SIG_DFL)
+        signal.pthread_sigmask(signal.SIG_BLOCK, managed_signals)
         command_pid = os.fork()
         if command_pid == 0:
             for managed_signal in managed_signals:
                 signal.signal(managed_signal, signal.SIG_DFL)
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, managed_signals)
             try:
                 os.execvp(
                     "sh",
@@ -55,6 +54,11 @@ def main() -> None:
                 finally:
                     os._exit(127)
         os.close(write_fd)
+
+        def wait_for_signal() -> None:
+            received_signals.append(signal.sigwait(managed_signals))
+
+        threading.Thread(target=wait_for_signal, daemon=True).start()
         while True:
             try:
                 _, status = os.waitpid(command_pid, 0)
