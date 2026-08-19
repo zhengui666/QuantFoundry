@@ -44,8 +44,10 @@ def main() -> None:
         os.close(write_fd)
         for managed_signal in managed_signals:
             signal.signal(managed_signal, signal.SIG_DFL)
-        while True:
-            signal.pause()
+        try:
+            os.execvp("sleep", ["sleep", "2147483647"])
+        except OSError:
+            os._exit(127)
 
     os.close(write_fd)
 
