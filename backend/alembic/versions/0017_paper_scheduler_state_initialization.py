@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import MetaData, Table, create_engine, select, text
+from sqlalchemy import MetaData, Table, Text, Uuid, create_engine, func, select, text
 from sqlalchemy.engine import Connection
 
 from alembic import op
@@ -42,6 +42,9 @@ _REQUIRED = {
         "suppressed_since_utc",
         "resume_watermark_utc",
         "revision",
+        "created_at",
+        "updated_at",
+        "last_eligible_trading_date",
     },
     "audit_events": {
         "id",
@@ -72,6 +75,11 @@ _REQUIRED = {
         "event_type",
         "object_type",
         "object_id",
+        "actor_id",
+        "object_version",
+        "object_revision",
+        "revision",
+        "schema_version",
         "payload",
         "occurred_at",
         "expires_at",
@@ -93,7 +101,9 @@ _EVIDENCE_FIELDS = {
     "effective_at_utc",
     "suppressed_since_utc",
     "resume_watermark_utc",
+    "previous_watermark",
     "initialization_utc",
+    "domain_event_sequence",
     "revision",
     "reason_code",
     "actor",
@@ -163,7 +173,7 @@ def _persist_quarantine(bind: Connection, error: SchedulerInitializationError) -
     own_connection = bind.dialect.name == "postgresql" or (
         bind.dialect.name == "sqlite" and ":memory:" not in str(bind.engine.url)
     )
-    engine = create_engine(str(bind.engine.url)) if own_connection else None
+    engine = create_engine(bind.engine.url) if own_connection else None
     connection = engine.connect() if engine is not None else bind
     table_name = _quarantine_table_name(bind)
     try:
@@ -319,12 +329,47 @@ def _closed_object(value: Any, fields: set[str], field: str) -> Mapping[str, Any
     return value
 
 
+def _json_column_value(table: Table, column: str, value: Mapping[str, Any]) -> Any:
+    return (
+        json.dumps(value, sort_keys=True, separators=(",", ":"))
+        if isinstance(table.c[column].type, Text)
+        else value
+    )
+
+
+def _uuid_column_value(table: Table, column: str, value: uuid.UUID) -> Any:
+    return value if isinstance(table.c[column].type, Uuid) else str(value)
+
+
+def _mapping_value(value: Any) -> Mapping[str, Any] | None:
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return decoded if isinstance(decoded, Mapping) else None
+    return None
+
+
+def _canonical_audit_hash_payload(
+    audit_events: Table, audit: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        column.name: audit.get(column.name)
+        for column in audit_events.columns
+        if column.name != "event_hash"
+    }
+
+
 def _validate_evidence(
     bind: Connection,
     audit_events: Table,
     domain_events: Table,
     event_stream_watermarks: Table,
     deployment: Mapping[str, Any],
+    baseline: Mapping[str, Any],
 ) -> None:
     audits = (
         bind.execute(
@@ -341,12 +386,25 @@ def _validate_evidence(
     )
     if len(audits) != 1:
         _block("missing or ambiguous scheduler initialization evidence", deployment)
-    summary = audits[0]["summary"]
-    if not isinstance(summary, Mapping) or set(summary) != {_EVIDENCE_KEY}:
+    summary = _mapping_value(audits[0]["summary"])
+    if summary is None or set(summary) != {_EVIDENCE_KEY}:
         _block("ambiguous scheduler initialization evidence", deployment)
     evidence = summary[_EVIDENCE_KEY]
     if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
         _block("ambiguous scheduler initialization evidence", deployment)
+    previous_watermark = evidence.get("previous_watermark")
+    if previous_watermark is not None and (
+        not isinstance(previous_watermark, Mapping)
+        or set(previous_watermark) != {"last_sequence", "expired_through_sequence"}
+        or any(
+            not isinstance(previous_watermark[name], int)
+            or isinstance(previous_watermark[name], bool)
+            or previous_watermark[name] < 0
+            for name in ("last_sequence", "expired_through_sequence")
+        )
+    ):
+        _block("ambiguous scheduler initialization watermark evidence", deployment)
+    audit = audits[0]
 
     effective = _utc_timestamp(bind, evidence["effective_at_utc"], "effective_at_utc")
     initialization = _utc_timestamp(
@@ -355,15 +413,55 @@ def _validate_evidence(
     evidence_watermark = _utc_timestamp(
         bind, evidence["resume_watermark_utc"], "resume_watermark_utc"
     )
+    baseline_watermark = _utc_timestamp(
+        bind, baseline["resume_watermark_utc"], "baseline resume_watermark_utc"
+    )
     evidence_suppressed = evidence["suppressed_since_utc"]
+    baseline_suppressed = baseline["suppressed_since_utc"]
+    baseline_suppressed_at = (
+        _utc_timestamp(bind, baseline_suppressed, "baseline suppressed_since_utc")
+        if baseline_suppressed is not None
+        else None
+    )
+    audit_occurred = _utc_timestamp(bind, audit["occurred_at"], "audit occurred_at")
+    expected_from_state = (
+        "STOPPED"
+        if deployment["status"] == "DISABLED" and evidence["from_state"] == "STOPPED"
+        else None
+        if deployment["status"] in {"ACTIVE", "PAUSED", "DISABLED"}
+        else str(deployment["status"])
+    )
+    legacy_status = str(expected_from_state or deployment["status"])
+    audit_valid = (
+        audit.get("actor_type") == "SYSTEM"
+        and audit.get("actor_id") == "alembic:0017"
+        and audit.get("result") == "SUCCESS"
+        and audit.get("object_type") == "paper"
+        and audit.get("object_id") == deployment["paper_id"]
+        and audit.get("object_version") is None
+        and audit.get("object_revision") == baseline["revision"]
+        and audit_occurred == initialization
+        and audit.get("detail_artifact_id") is None
+        and audit.get("before_hash") is None
+        and audit.get("input_hash")
+        == _hash({"paper_id": deployment["paper_id"], "status": legacy_status})
+        and audit.get("after_hash") == _hash(evidence)
+    )
+    if not audit_valid:
+        _block("ambiguous scheduler initialization audit envelope", deployment)
     valid = (
         isinstance(evidence["state_transition_id"], str)
         and is_public_id("domain_event", evidence["state_transition_id"])
         and str(evidence["workspace_id"]) == str(deployment["workspace_id"])
         and evidence["paper_id"] == deployment["paper_id"]
-        and evidence["from_state"] is None
-        and evidence["to_state"] in _STATUS_MAP.values()
-        and effective == initialization == evidence_watermark
+        and evidence["from_state"] == expected_from_state
+        and evidence["to_state"] == baseline["scheduler_status"]
+        and effective == initialization == evidence_watermark == baseline_watermark
+        and baseline.get("last_eligible_trading_date") is None
+        and _utc_timestamp(bind, baseline["created_at"], "baseline created_at")
+        == initialization
+        and _utc_timestamp(bind, baseline["updated_at"], "baseline updated_at")
+        == initialization
         and (
             (evidence["to_state"] == "ACTIVE" and evidence_suppressed is None)
             or (
@@ -371,11 +469,15 @@ def _validate_evidence(
                 and evidence_suppressed is not None
                 and _utc_timestamp(bind, evidence_suppressed, "suppressed_since_utc")
                 == effective
+                == baseline_suppressed_at
             )
         )
         and isinstance(evidence["revision"], int)
         and not isinstance(evidence["revision"], bool)
-        and evidence["revision"] >= 1
+        and evidence["revision"] == baseline["revision"]
+        and isinstance(evidence["domain_event_sequence"], int)
+        and not isinstance(evidence["domain_event_sequence"], bool)
+        and evidence["domain_event_sequence"] >= 1
         and evidence["reason_code"] == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY"
     )
     if not valid:
@@ -387,39 +489,57 @@ def _validate_evidence(
         {"commit_sha", "build_id"},
         "commit_build_locator",
     )
-    event_filters = [
-        domain_events.c.workspace_id == deployment["workspace_id"],
-        domain_events.c.event_id == evidence["state_transition_id"],
-        domain_events.c.event_type == "paper.updated",
-        domain_events.c.object_type == "paper",
-        domain_events.c.object_id == deployment["paper_id"],
-    ]
-    events = bind.execute(select(domain_events).where(*event_filters)).mappings().all()
-    audit_sequence = audits[0]["sequence"]
-    retention = (
+    if evidence["actor"] != {"type": "SYSTEM", "id": "alembic:0017"}:
+        _block("ambiguous scheduler initialization actor", deployment)
+    if evidence["system"] != {"service": "alembic", "instance_id": "0017"}:
+        _block("ambiguous scheduler initialization system", deployment)
+    if evidence["commit_build_locator"] != {
+        "commit_sha": "migration-0017",
+        "build_id": "alembic-0017",
+    }:
+        _block("ambiguous scheduler initialization build locator", deployment)
+    audit_sequence = audit.get("sequence")
+    if (
+        not isinstance(audit_sequence, int)
+        or isinstance(audit_sequence, bool)
+        or audit_sequence < 1
+    ):
+        _block("ambiguous scheduler initialization audit sequence", deployment)
+    previous_hash = bind.execute(
+        select(audit_events.c.event_hash)
+        .where(
+            audit_events.c.workspace_id == deployment["workspace_id"],
+            audit_events.c.sequence < audit_sequence,
+        )
+        .order_by(audit_events.c.sequence.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if audit.get("prev_event_hash") != previous_hash:
+        _block("ambiguous scheduler initialization audit chain", deployment)
+    canonical_audit = _canonical_audit_hash_payload(audit_events, audit)
+    canonical_audit["occurred_at"] = initialization
+    if audit.get("event_hash") != _hash(canonical_audit):
+        _block("ambiguous scheduler initialization audit hash", deployment)
+    events = (
         bind.execute(
-            select(event_stream_watermarks).where(
-                event_stream_watermarks.c.workspace_id == deployment["workspace_id"]
+            select(domain_events).where(
+                domain_events.c.workspace_id == deployment["workspace_id"],
+                domain_events.c.event_id == evidence["state_transition_id"],
             )
         )
         .mappings()
-        .one_or_none()
+        .all()
     )
-    expired_canonical_event = (
-        len(events) == 0
-        and isinstance(audit_sequence, int)
-        and not isinstance(audit_sequence, bool)
-        and retention is not None
-        and isinstance(retention["expired_through_sequence"], int)
-        and not isinstance(retention["expired_through_sequence"], bool)
-        and retention["expired_through_sequence"] >= audit_sequence
-    )
-    if expired_canonical_event:
-        return
     if len(events) != 1:
         _block("ambiguous scheduler initialization paper.updated event", deployment)
     event = events[0]
-    payload = event["payload"]
+    if (
+        event["event_type"] != "paper.updated"
+        or event["object_type"] != "paper"
+        or event["object_id"] != deployment["paper_id"]
+    ):
+        _block("ambiguous scheduler initialization paper.updated event", deployment)
+    payload = _mapping_value(event["payload"])
     event_instant = _utc_timestamp(bind, event["occurred_at"], "event occurred_at")
     closed = (
         isinstance(payload, Mapping)
@@ -429,9 +549,11 @@ def _validate_evidence(
         and event.get("object_version") is None
         and isinstance(event.get("object_revision"), int)
         and not isinstance(event.get("object_revision"), bool)
+        and event.get("object_revision") == evidence["revision"]
         and event.get("object_revision") >= 1
         and event.get("revision") == event.get("object_revision")
         and event.get("schema_version") == 1
+        and event.get("sequence") == evidence["domain_event_sequence"]
         and event_instant == initialization
         and _utc_timestamp(bind, event["expires_at"], "event expires_at")
         == initialization + timedelta(days=7)
@@ -489,12 +611,18 @@ def _validate_support_rows(
     if audit is None:
         head_valid = head is None
     else:
+        audit_count = bind.execute(
+            select(func.count())
+            .select_from(audit_events)
+            .where(audit_events.c.workspace_id == workspace_id)
+        ).scalar_one()
         head_valid = (
             head is not None
             and head["event_sha256"] == audit["event_hash"]
             and isinstance(head["revision"], int)
             and not isinstance(head["revision"], bool)
             and head["revision"] >= 1
+            and int(head["revision"]) == int(audit_count)
         )
     if event is None:
         watermark_valid = watermark is None or (
@@ -575,6 +703,7 @@ def _validate_baselines(bind: Connection) -> None:
             domain_events,
             watermarks,
             dict(deployment),
+            baseline,
         )
     for workspace_id in {row["workspace_id"] for row in rows}:
         _validate_support_rows(
@@ -582,11 +711,24 @@ def _validate_baselines(bind: Connection) -> None:
         )
 
 
-def _next_sequence(table: Table, bind: Connection, workspace_id: Any) -> int:
+def _next_sequence(
+    table: Table,
+    bind: Connection,
+    workspace_id: Any,
+    watermarks: Table | None = None,
+) -> int:
     values = bind.execute(
         select(table.c.sequence).where(table.c.workspace_id == workspace_id)
     ).scalars()
-    return max((int(value) for value in values), default=0) + 1
+    current = max((int(value) for value in values), default=0)
+    if watermarks is not None:
+        watermark = bind.execute(
+            select(watermarks.c.last_sequence).where(
+                watermarks.c.workspace_id == workspace_id
+            )
+        ).scalar_one_or_none()
+        current = max(current, int(watermark or 0))
+    return current + 1
 
 
 def _previous_audit_hash(
@@ -612,7 +754,6 @@ def _hash(value: Mapping[str, Any]) -> str:
 
 def _insert_baseline(
     bind: Connection,
-    deployments: Table,
     states: Table,
     audit_events: Table,
     domain_events: Table,
@@ -626,9 +767,40 @@ def _insert_baseline(
     paper_id = deployment["paper_id"]
     deployment_id = deployment["id"]
     revision = int(deployment["revision"])
+    legacy_status = str(deployment.get("_legacy_status", deployment["status"]))
     suppressed = instant if target != "ACTIVE" else None
+    if bind.dialect.name == "postgresql":
+        bind.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:workspace_id))"),
+            {"workspace_id": str(workspace_id)},
+        )
+    watermark = (
+        bind.execute(
+            select(event_stream_watermarks)
+            .where(event_stream_watermarks.c.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        .mappings()
+        .one_or_none()
+    )
+    previous_watermark = (
+        None
+        if watermark is None
+        else {
+            "last_sequence": int(watermark["last_sequence"]),
+            "expired_through_sequence": int(watermark["expired_through_sequence"]),
+        }
+    )
+    if watermark is None:
+        bind.execute(
+            event_stream_watermarks.insert().values(
+                workspace_id=workspace_id,
+                last_sequence=0,
+                expired_through_sequence=0,
+            )
+        )
     state = {
-        "id": str(uuid.uuid4()),
+        "id": _uuid_column_value(states, "id", uuid.uuid4()),
         "workspace_id": workspace_id,
         "paper_id": deployment_id,
         "scheduler_status": target,
@@ -641,17 +813,22 @@ def _insert_baseline(
     state_values = {key: value for key, value in state.items() if key in states.c}
     bind.execute(states.insert().values(**state_values))
 
+    domain_event_sequence = _next_sequence(
+        domain_events, bind, workspace_id, event_stream_watermarks
+    )
     state_transition_id = f"EVT-{uuid.uuid4()}"
     evidence = {
         "state_transition_id": state_transition_id,
         "workspace_id": str(workspace_id),
         "paper_id": paper_id,
-        "from_state": None,
+        "from_state": legacy_status if legacy_status != target else None,
         "to_state": target,
         "effective_at_utc": instant.isoformat(),
         "suppressed_since_utc": suppressed.isoformat() if suppressed else None,
         "resume_watermark_utc": instant.isoformat(),
+        "previous_watermark": previous_watermark,
         "initialization_utc": instant.isoformat(),
+        "domain_event_sequence": domain_event_sequence,
         "revision": revision,
         "reason_code": "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
         "actor": {"type": "SYSTEM", "id": "alembic:0017"},
@@ -662,8 +839,9 @@ def _insert_baseline(
         },
     }
     summary = {_EVIDENCE_KEY: evidence}
+    audit_id = uuid.uuid4()
     audit = {
-        "id": str(uuid.uuid4()),
+        "id": _uuid_column_value(audit_events, "id", audit_id),
         "event_id": f"AUD-{uuid.uuid4()}",
         "actor_type": "SYSTEM",
         "actor_id": "alembic:0017",
@@ -675,21 +853,19 @@ def _insert_baseline(
         "object_version": None,
         "object_revision": revision,
         "result": "SUCCESS",
-        "summary": summary,
+        "summary": _json_column_value(audit_events, "summary", summary),
         "detail_artifact_id": None,
         "prev_event_hash": _previous_audit_hash(audit_events, bind, workspace_id),
         "occurred_at": instant,
-        "input_hash": _hash(
-            {"paper_id": paper_id, "status": str(deployment["status"])}
-        ),
+        "input_hash": _hash({"paper_id": paper_id, "status": legacy_status}),
         "before_hash": None,
         "after_hash": _hash(evidence),
     }
-    audit["event_hash"] = _hash(audit)
+    audit["event_hash"] = _hash(_canonical_audit_hash_payload(audit_events, audit))
     bind.execute(audit_events.insert().values(**audit))
 
     event = {
-        "sequence": _next_sequence(domain_events, bind, workspace_id),
+        "sequence": domain_event_sequence,
         "event_id": state_transition_id,
         "workspace_id": workspace_id,
         "actor_id": "alembic:0017",
@@ -699,7 +875,7 @@ def _insert_baseline(
         "object_version": None,
         "object_revision": revision,
         "revision": revision,
-        "payload": {"status": target},
+        "payload": _json_column_value(domain_events, "payload", {"status": target}),
         "request_id": None,
         "correlation_id": None,
         "causation_id": None,
@@ -746,20 +922,11 @@ def _insert_baseline(
         .one_or_none()
     )
     event_sequence = event["sequence"]
-    if watermark is None:
-        bind.execute(
-            event_stream_watermarks.insert().values(
-                workspace_id=workspace_id,
-                last_sequence=event_sequence,
-                expired_through_sequence=0,
-            )
-        )
-    else:
-        bind.execute(
-            event_stream_watermarks.update()
-            .where(event_stream_watermarks.c.workspace_id == workspace_id)
-            .values(last_sequence=event_sequence)
-        )
+    bind.execute(
+        event_stream_watermarks.update()
+        .where(event_stream_watermarks.c.workspace_id == workspace_id)
+        .values(last_sequence=event_sequence)
+    )
 
 
 def _initialize_missing_baselines(bind: Connection) -> None:
@@ -803,16 +970,20 @@ def _initialize_missing_baselines(bind: Connection) -> None:
             deployment_mapping["workspace_id"],
         )
         if deployment_mapping["status"] == "STOPPED":
+            deployment_mapping["_legacy_status"] = "STOPPED"
+            deployment_mapping["revision"] = int(deployment_mapping["revision"]) + 1
             bind.execute(
                 deployments.update()
                 .where(deployments.c.id == deployment_mapping["id"])
                 .where(deployments.c.workspace_id == deployment_mapping["workspace_id"])
-                .values(status="DISABLED")
+                .values(
+                    status="DISABLED",
+                    revision=deployment_mapping["revision"],
+                )
             )
             deployment_mapping["status"] = "DISABLED"
         _insert_baseline(
             bind,
-            deployments,
             states,
             audit_events,
             domain_events,
@@ -833,7 +1004,12 @@ def _run_upgrade(bind: Connection) -> None:
     except SchedulerInitializationError as error:
         if transaction.is_active:
             transaction.rollback()
-        _persist_quarantine(bind, error)
+        if bind.dialect.name == "sqlite" and bind.in_transaction():
+            bind.rollback()
+        try:
+            _persist_quarantine(bind, error)
+        except BaseException as quarantine_error:  # noqa: BLE001 - quarantine failure must not hide the original migration failure
+            error.add_note(f"quarantine persistence failed: {quarantine_error!r}")
         raise
     except Exception:
         if transaction.is_active:
@@ -848,4 +1024,336 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """0017 changes data only; 0016 owns the table schema."""
+    """Remove only the baselines and evidence written by this revision."""
+    bind = op.get_bind()
+    deployments, states, audit_events, domain_events, heads, watermarks = _tables(bind)
+    _validate_baselines(bind)
+    owned_audits = (
+        bind.execute(
+            select(audit_events)
+            .where(
+                audit_events.c.actor_type == "SYSTEM",
+                audit_events.c.actor_id == "alembic:0017",
+                audit_events.c.action_type == "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+            )
+            .with_for_update()
+        )
+        .mappings()
+        .all()
+    )
+    if not owned_audits:
+        return
+
+    owned: list[tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]] = []
+    for audit in owned_audits:
+        summary = _mapping_value(audit.get("summary"))
+        evidence = summary.get(_EVIDENCE_KEY) if summary else None
+        if not isinstance(evidence, Mapping) or set(evidence) != _EVIDENCE_FIELDS:
+            raise RuntimeError("0017 downgrade found ambiguous scheduler evidence")
+        try:
+            evidence_workspace = _uuid_column_value(
+                deployments, "workspace_id", uuid.UUID(str(evidence["workspace_id"]))
+            )
+        except (ValueError, TypeError, AttributeError) as error:
+            raise RuntimeError(
+                "0017 downgrade found invalid workspace evidence"
+            ) from error
+        deployment_rows = (
+            bind.execute(
+                select(deployments).where(
+                    deployments.c.workspace_id == evidence_workspace,
+                    deployments.c.paper_id == evidence["paper_id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if len(deployment_rows) != 1:
+            raise RuntimeError("0017 downgrade found ambiguous paper deployment")
+        state_rows = (
+            bind.execute(
+                select(states).where(
+                    states.c.workspace_id == deployment_rows[0]["workspace_id"],
+                    states.c.paper_id == deployment_rows[0]["id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
+        event_rows = (
+            bind.execute(
+                select(domain_events).where(
+                    domain_events.c.workspace_id
+                    == _uuid_column_value(
+                        domain_events,
+                        "workspace_id",
+                        uuid.UUID(str(evidence["workspace_id"])),
+                    ),
+                    domain_events.c.event_id == evidence["state_transition_id"],
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if len(state_rows) != 1 or len(event_rows) != 1:
+            raise RuntimeError("0017 downgrade found incomplete scheduler evidence")
+        state = state_rows[0]
+        expected_status = str(evidence["from_state"] or evidence["to_state"])
+        if expected_status == "STOPPED":
+            expected_status = "DISABLED"
+        if (
+            state["workspace_id"] != deployment_rows[0]["workspace_id"]
+            or state["paper_id"] != deployment_rows[0]["id"]
+            or state["scheduler_status"] != evidence["to_state"]
+            or int(state["revision"]) != int(evidence["revision"])
+            or int(deployment_rows[0]["revision"]) != int(evidence["revision"])
+            or deployment_rows[0]["status"] != expected_status
+            or state.get("last_eligible_trading_date") is not None
+            or _utc_timestamp(
+                bind, state["resume_watermark_utc"], "state resume_watermark_utc"
+            )
+            != _utc_timestamp(
+                bind, evidence["resume_watermark_utc"], "resume_watermark_utc"
+            )
+            or (
+                state["suppressed_since_utc"] is None
+                and evidence["suppressed_since_utc"] is not None
+            )
+            or (
+                state["suppressed_since_utc"] is not None
+                and evidence["suppressed_since_utc"] is None
+            )
+            or (
+                state["suppressed_since_utc"] is not None
+                and _utc_timestamp(
+                    bind, state["suppressed_since_utc"], "state suppressed_since_utc"
+                )
+                != _utc_timestamp(
+                    bind, evidence["suppressed_since_utc"], "suppressed_since_utc"
+                )
+            )
+            or _utc_timestamp(bind, state["created_at"], "state created_at")
+            != _utc_timestamp(
+                bind, evidence["initialization_utc"], "initialization_utc"
+            )
+            or _utc_timestamp(bind, state["updated_at"], "state updated_at")
+            != _utc_timestamp(
+                bind, evidence["initialization_utc"], "initialization_utc"
+            )
+        ):
+            raise RuntimeError("0017 downgrade found modified scheduler state")
+        if evidence["from_state"] == "STOPPED" and (
+            deployment_rows[0]["status"] != "DISABLED"
+            or int(deployment_rows[0]["revision"]) != int(evidence["revision"])
+        ):
+            raise RuntimeError("0017 downgrade found modified STOPPED deployment")
+        owned.append((audit, evidence, deployment_rows[0]))
+
+    workspaces = {str(evidence["workspace_id"]) for _, evidence, _ in owned}
+    for workspace_id in workspaces:
+        typed_audit_workspace = _uuid_column_value(
+            audit_events, "workspace_id", uuid.UUID(workspace_id)
+        )
+        audit_rows = (
+            bind.execute(
+                select(audit_events.c.sequence)
+                .where(audit_events.c.workspace_id == typed_audit_workspace)
+                .order_by(audit_events.c.sequence.desc())
+            )
+            .scalars()
+            .all()
+        )
+        owned_audit_sequences = {
+            int(audit["sequence"])
+            for audit, evidence, _ in owned
+            if str(evidence["workspace_id"]) == workspace_id
+        }
+        if (
+            not audit_rows
+            or set(audit_rows[: len(owned_audit_sequences)]) != owned_audit_sequences
+        ):
+            raise RuntimeError(
+                "0017 downgrade requires migration audit events to be the tail"
+            )
+        typed_event_workspace = _uuid_column_value(
+            domain_events, "workspace_id", uuid.UUID(workspace_id)
+        )
+        event_rows = (
+            bind.execute(
+                select(domain_events.c.sequence)
+                .where(domain_events.c.workspace_id == typed_event_workspace)
+                .order_by(domain_events.c.sequence.desc())
+            )
+            .scalars()
+            .all()
+        )
+        owned_event_sequences = {
+            int(evidence["domain_event_sequence"])
+            for _, evidence, _ in owned
+            if str(evidence["workspace_id"]) == workspace_id
+        }
+        if (
+            not event_rows
+            or set(event_rows[: len(owned_event_sequences)]) != owned_event_sequences
+        ):
+            raise RuntimeError(
+                "0017 downgrade requires migration domain events to be the tail"
+            )
+    _drop_downgrade_guards(bind)
+    completed = False
+    try:
+        for audit, evidence, deployment in owned:
+            typed_domain_workspace = _uuid_column_value(
+                domain_events, "workspace_id", uuid.UUID(str(evidence["workspace_id"]))
+            )
+            typed_audit_workspace = _uuid_column_value(
+                audit_events, "workspace_id", uuid.UUID(str(evidence["workspace_id"]))
+            )
+            bind.execute(
+                states.delete().where(
+                    states.c.workspace_id == deployment["workspace_id"],
+                    states.c.paper_id == deployment["id"],
+                )
+            )
+            bind.execute(
+                domain_events.delete().where(
+                    domain_events.c.workspace_id == typed_domain_workspace,
+                    domain_events.c.event_id == evidence["state_transition_id"],
+                )
+            )
+            bind.execute(
+                audit_events.delete().where(
+                    audit_events.c.workspace_id == typed_audit_workspace,
+                    audit_events.c.sequence == audit["sequence"],
+                )
+            )
+            if evidence["from_state"] == "STOPPED":
+                bind.execute(
+                    deployments.update()
+                    .where(deployments.c.id == deployment["id"])
+                    .where(deployments.c.workspace_id == deployment["workspace_id"])
+                    .values(status="STOPPED", revision=int(deployment["revision"]) - 1)
+                )
+        for workspace_id in workspaces:
+            typed_audit_workspace = _uuid_column_value(
+                audit_events, "workspace_id", uuid.UUID(workspace_id)
+            )
+            remaining_audit = bind.execute(
+                select(audit_events.c.event_hash)
+                .where(audit_events.c.workspace_id == typed_audit_workspace)
+                .order_by(audit_events.c.sequence.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            head = (
+                bind.execute(
+                    select(heads).where(
+                        heads.c.workspace_id
+                        == _uuid_column_value(
+                            heads, "workspace_id", uuid.UUID(workspace_id)
+                        )
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if head is not None:
+                inserted = sum(
+                    1
+                    for _, evidence, _ in owned
+                    if str(evidence["workspace_id"]) == workspace_id
+                )
+                previous_revision = int(head["revision"]) - inserted
+                if remaining_audit is None and previous_revision <= 0:
+                    bind.execute(
+                        heads.delete().where(heads.c.workspace_id == workspace_id)
+                    )
+                else:
+                    bind.execute(
+                        heads.update()
+                        .where(heads.c.workspace_id == workspace_id)
+                        .values(
+                            event_sha256=remaining_audit,
+                            revision=max(1, previous_revision),
+                        )
+                    )
+            prior = min(
+                (
+                    evidence
+                    for _, evidence, _ in owned
+                    if str(evidence["workspace_id"]) == workspace_id
+                ),
+                key=lambda evidence: int(evidence["domain_event_sequence"]),
+            )["previous_watermark"]
+            watermark_workspace = _uuid_column_value(
+                watermarks, "workspace_id", uuid.UUID(workspace_id)
+            )
+            if prior is None:
+                bind.execute(
+                    watermarks.delete().where(
+                        watermarks.c.workspace_id == watermark_workspace
+                    )
+                )
+            else:
+                bind.execute(
+                    watermarks.update()
+                    .where(watermarks.c.workspace_id == watermark_workspace)
+                    .values(**dict(prior))
+                )
+        completed = True
+    finally:
+        if completed:
+            _restore_downgrade_guards(bind)
+
+
+def _drop_downgrade_guards(bind: Connection) -> None:
+    if bind.dialect.name == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS qf_audit_events_immutable ON audit_events")
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_domain_events_update_immutable ON domain_events"
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_domain_events_delete_immutable ON domain_events"
+        )
+    elif bind.dialect.name == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS qf_audit_events_update_immutable")
+        op.execute("DROP TRIGGER IF EXISTS qf_audit_events_delete_immutable")
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_delete_immutable")
+    else:
+        raise RuntimeError(
+            f"0017 downgrade does not support dialect {bind.dialect.name}"
+        )
+
+
+def _restore_downgrade_guards(bind: Connection) -> None:
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "CREATE TRIGGER qf_audit_events_immutable BEFORE UPDATE OR DELETE ON "
+            "audit_events FOR EACH ROW EXECUTE FUNCTION qf_reject_change()"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
+            "domain_events FOR EACH ROW EXECUTE FUNCTION qf_reject_change()"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_delete_immutable BEFORE DELETE ON "
+            "domain_events FOR EACH ROW EXECUTE FUNCTION qf_reject_unexpired_event_delete()"
+        )
+    else:
+        op.execute(
+            "CREATE TRIGGER qf_audit_events_update_immutable BEFORE UPDATE ON "
+            "audit_events BEGIN SELECT RAISE(ABORT, 'immutable evidence cannot be changed'); END"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_audit_events_delete_immutable BEFORE DELETE ON "
+            "audit_events BEGIN SELECT RAISE(ABORT, 'immutable evidence cannot be changed'); END"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
+            "domain_events BEGIN SELECT RAISE(ABORT, 'immutable evidence cannot be changed'); END"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_domain_events_delete_immutable BEFORE DELETE ON "
+            "domain_events WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN SELECT "
+            "RAISE(ABORT, 'unexpired event cannot be deleted'); END"
+        )

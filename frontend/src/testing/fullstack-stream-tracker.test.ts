@@ -46,4 +46,25 @@ describe('full-stack authenticated SSE lifecycle tracker', () => {
       ignoredRejectedTerminations: 0,
     });
   });
+
+  it('reconciles a successful response after the session cookie becomes available', () => {
+    let cookie = '';
+    const tracker = createAuthenticatedStreamTracker<object>(() => cookie);
+    const authenticated = {};
+    tracker.observeResponse({
+      request: authenticated,
+      path: '/api/v1/events/stream',
+      status: 200,
+      authorization: undefined,
+      cookie: 'qf_session=eventual-token',
+    });
+    tracker.observeTermination(authenticated);
+    expect(tracker.snapshot().authenticatedAccepted).toBe(false);
+    cookie = 'eventual-token';
+    expect(tracker.snapshot()).toEqual({
+      authenticatedAccepted: true,
+      authenticatedTerminated: true,
+      ignoredRejectedTerminations: 0,
+    });
+  });
 });

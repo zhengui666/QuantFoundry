@@ -1,5 +1,6 @@
 import type { components, operations } from './generated';
 import { operationMap, type CanonicalOperationId } from './generated/operation-map';
+import { transientStorage } from '../shared/transient-storage';
 import {
   ApiProblemSchema,
   ConfigurationCandidateRequestSchema,
@@ -93,27 +94,21 @@ export function isPublicId<T extends PublicIdType>(type: T, value: string): bool
 }
 
 const eventCursorPrefix = 'qf.sse.cursor:';
-const nextOpaqueScope = (): string => `owner:${crypto.randomUUID()}`;
-// The API module is also imported by Playwright's Node-side test discovery. Cursor
-// persistence is browser-only and must never make that import depend on DOM globals.
-const eventCursorStorage = (): Storage | undefined => {
-  if (typeof window === 'undefined') return undefined;
+const readEventCursor = (scope: string): bigint => {
+  const raw = transientStorage.get(`${eventCursorPrefix}${scope}`) ?? '0';
+  if (!/^\d+$/.test(raw)) return 0n;
   try {
-    return window.sessionStorage;
+    return BigInt(raw);
   } catch {
-    return undefined;
+    return 0n;
   }
 };
+const nextOpaqueScope = (): string => `owner:${crypto.randomUUID()}`;
 const clearEventCursor = (scope: string): void => {
-  eventCursorStorage()?.removeItem(`${eventCursorPrefix}${scope}`);
+  transientStorage.remove(`${eventCursorPrefix}${scope}`);
 };
 const clearStaleEventCursors = (): void => {
-  const storage = eventCursorStorage();
-  if (!storage) return;
-  for (let index = storage.length - 1; index >= 0; index -= 1) {
-    const key = storage.key(index);
-    if (key?.startsWith(eventCursorPrefix)) storage.removeItem(key);
-  }
+  transientStorage.removeByPrefix(eventCursorPrefix);
 };
 
 // A browser reload creates a fresh, non-reusable memory epoch. Persisted cursors from the
@@ -151,9 +146,14 @@ export const auth = {
   csrf() {
     return csrfToken;
   },
-  establish(session: Schema<'OwnerSessionView'>) {
+  establish(
+    session: Schema<'OwnerSessionView'>,
+    options: { expectedScope?: string; rotate?: boolean } = {},
+  ) {
+    if (options.expectedScope !== undefined && authScopeKey !== options.expectedScope) return false;
     csrfToken = session.csrf_token;
-    auth.set();
+    if (options.rotate ?? true) auth.set();
+    return true;
   },
 };
 
@@ -164,6 +164,9 @@ export const workspaceQueryKey = (...segments: readonly unknown[]): readonly unk
 
 export const idempotency = (): string => crypto.randomUUID();
 type OperationPathParams = Readonly<Record<string, string | number>>;
+export type PageQuery = Readonly<{ cursor?: string; limit?: number }>;
+export type ResearchDetailPageQuery = PageQuery &
+  Readonly<{ tab?: 'timeline' | 'experiments' | 'evidence' | 'artifacts' | 'audit' }>;
 
 function pathFor(operationId: CanonicalOperationId, pathParams: OperationPathParams = {}): string {
   const operation = operationMap[operationId];
@@ -175,7 +178,7 @@ function pathFor(operationId: CanonicalOperationId, pathParams: OperationPathPar
   });
   const query = new URLSearchParams();
   for (const parameter of operation.query) {
-    const value = parameter.value ?? pathParams[parameter.name];
+    const value = ('value' in parameter ? parameter.value : undefined) ?? pathParams[parameter.name];
     if (value === undefined && parameter.required)
       throw new ContractError(
         `Missing canonical query parameter ${parameter.name} for ${operationId}.`,
@@ -188,11 +191,15 @@ function pathFor(operationId: CanonicalOperationId, pathParams: OperationPathPar
 function headersFor(operationId: CanonicalOperationId, init: RequestInit) {
   const operation = operationMap[operationId];
   const headers = new Headers(init.headers);
-  const canonicalHeaders: readonly string[] = operation.headers;
+  const canonicalHeaders: readonly string[] = operation.headers.map(({ name }) => name);
   for (const header of ['If-Match', 'Idempotency-Key', 'Last-Event-ID'])
     if (headers.has(header) && !canonicalHeaders.includes(header))
       throw new ContractError(`${header} is not defined by canonical operation ${operationId}.`);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  const env = import.meta.env as { DEV?: boolean; VITE_E2E_MOCK_TOKEN?: unknown };
+  const e2eMockToken = env.VITE_E2E_MOCK_TOKEN;
+  if (env.DEV && typeof e2eMockToken === 'string' && e2eMockToken)
+    headers.set('X-QF-E2E-Mock-Token', e2eMockToken);
   if (init.body) headers.set('Content-Type', 'application/json');
   if (
     operation.authenticated &&
@@ -224,9 +231,10 @@ async function readProblem(response: Response): Promise<ApiProblem> {
   };
 }
 
-async function throwProblem(response: Response): Promise<never> {
+async function throwProblem(response: Response, requestScope: string): Promise<never> {
   const problem = await readProblem(response);
-  if (problem.status === 401 && problem.code === 'UNAUTHENTICATED') auth.clear();
+  if (problem.status === 401 && problem.code === 'UNAUTHENTICATED' && auth.scope() === requestScope)
+    auth.clear();
   throw new ApiError(problem);
 }
 
@@ -235,13 +243,14 @@ async function request<T>(
   init: RequestInit = {},
   pathParams: OperationPathParams = {},
 ): Promise<ApiResult<T>> {
+  const requestScope = auth.scope();
   const response = await fetch(pathFor(operationId, pathParams), {
     ...init,
     method: operationMap[operationId].method,
     headers: headersFor(operationId, init),
     credentials: 'include',
   });
-  if (!response.ok) return throwProblem(response);
+  if (!response.ok) return throwProblem(response, requestScope);
   return {
     body: (response.status === 204 ? undefined : await response.json()) as T,
     status: response.status,
@@ -256,6 +265,7 @@ async function requestText(
   pathParams: OperationPathParams,
   signal?: AbortSignal,
 ): Promise<ApiResult<string>> {
+  const requestScope = auth.scope();
   const init = { headers: { Accept: 'text/markdown' } };
   const response = await fetch(pathFor(operationId, pathParams), {
     method: operationMap[operationId].method,
@@ -263,7 +273,7 @@ async function requestText(
     credentials: 'include',
     signal: signal ?? null,
   });
-  if (!response.ok) return throwProblem(response);
+  if (!response.ok) return throwProblem(response, requestScope);
   return {
     body: await response.text(),
     status: response.status,
@@ -272,6 +282,16 @@ async function requestText(
     location: response.headers.get('Location'),
   };
 }
+
+let authMutationQueue: Promise<unknown> = Promise.resolve();
+const runSerializedAuthMutation = <T>(operation: () => Promise<T>): Promise<T> => {
+  const next = authMutationQueue.then(operation, operation);
+  authMutationQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+};
 
 function validateResult<T>(
   result: ApiResult<unknown>,
@@ -370,51 +390,74 @@ function validateStrategyDetail(
       strategy_id: body.strategy_id,
       version: body.version,
     });
-    let locationPath: string | null = canonical.contentLocation;
-    if (locationPath?.startsWith('http://') || locationPath?.startsWith('https://'))
-      locationPath = new URL(locationPath).pathname;
+    const locationPath = sameOriginPath(canonical.contentLocation);
     if (locationPath !== expectedPath)
       throw new ContractError('Strategy Content-Location does not match the resolved version.');
   }
   return canonical;
 }
 
+function sameOriginPath(value: string | null): string | null {
+  if (value === null) return null;
+  const origin = globalThis.location?.origin ?? 'http://localhost';
+  const normalized = new URL(value, origin);
+  if (normalized.origin !== origin)
+    throw new ContractError('Canonical resource location must be same-origin.');
+  return `${normalized.pathname}${normalized.search}`;
+}
+
 export const api = {
-  login: async (key: string) => {
-    const body = validateInput<Schema<'GeneralAccessKeyLoginRequest'>>(
-      { key },
-      GeneralAccessKeyLoginRequestSchema,
-      'GeneralAccessKeyLogin',
-    );
-    const result = validateResult<Schema<'SessionBootstrapResponse'>>(
-      await request<unknown>('loginWithGeneralAccessKey', { body: JSON.stringify(body) }),
-      SessionBootstrapResponseSchema,
-      'SessionBootstrapResponse',
-    );
-    auth.establish(result.body.session);
-    return result;
-  },
-  session: async (signal?: AbortSignal) => {
-    const result = validateResult<Schema<'OwnerSessionView'>>(
-      await request<unknown>('getCurrentOwnerSession', { signal: signal ?? null }),
-      OwnerSessionViewSchema,
-      'OwnerSessionView',
-    );
-    auth.establish(result.body);
-    return result;
-  },
-  logout: async () => {
-    const result = await request<undefined>('logoutOwnerSession');
-    auth.clear();
-    return result;
-  },
+  login: (key: string) =>
+    runSerializedAuthMutation(async () => {
+      const requestScope = auth.scope();
+      const body = validateInput<Schema<'GeneralAccessKeyLoginRequest'>>(
+        { key },
+        GeneralAccessKeyLoginRequestSchema,
+        'GeneralAccessKeyLogin',
+      );
+      const result = validateResult<Schema<'SessionBootstrapResponse'>>(
+        await request<unknown>('loginWithGeneralAccessKey', { body: JSON.stringify(body) }),
+        SessionBootstrapResponseSchema,
+        'SessionBootstrapResponse',
+      );
+      if (!auth.establish(result.body.session, { expectedScope: requestScope, rotate: true }))
+        throw new ContractError('Login response was superseded by an authorization change.');
+      return result;
+    }),
+  session: (signal?: AbortSignal) =>
+    runSerializedAuthMutation(async () => {
+      const requestScope = auth.scope();
+      const result = validateResult<Schema<'OwnerSessionView'>>(
+        await request<unknown>('getCurrentOwnerSession', { signal: signal ?? null }),
+        OwnerSessionViewSchema,
+        'OwnerSessionView',
+      );
+      if (
+        !auth.establish(result.body, {
+          expectedScope: requestScope,
+          rotate: !auth.get(),
+        })
+      )
+        throw new ContractError('Session response was superseded by an authorization change.');
+      return result;
+    }),
+  logout: () =>
+    runSerializedAuthMutation(async () => {
+      const requestScope = auth.scope();
+      const result = await request<undefined>('logoutOwnerSession');
+      if (auth.scope() === requestScope) auth.clear();
+      return result;
+    }),
   accessKeys: async (signal?: AbortSignal) =>
     validateResult<Schema<'GeneralAccessKeyList'>>(
       await request<unknown>('listGeneralAccessKeys', { signal: signal ?? null }),
       GeneralAccessKeyListSchema,
       'GeneralAccessKeyList',
     ),
-  createAccessKey: async (body: Schema<'GeneralAccessKeyCreateRequest'>) => {
+  createAccessKey: async (
+    body: Schema<'GeneralAccessKeyCreateRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'GeneralAccessKeyCreateRequest'>>(
       body,
       GeneralAccessKeyCreateRequestSchema,
@@ -422,7 +465,7 @@ export const api = {
     );
     return validateResult<Schema<'GeneralAccessKeyIssued'>>(
       await request<unknown>('createGeneralAccessKey', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       GeneralAccessKeyIssuedSchema,
@@ -448,11 +491,11 @@ export const api = {
       'GeneralAccessKeyMetadata',
     );
   },
-  rotateAccessKey: async (keyId: string, etag: string) =>
+  rotateAccessKey: async (keyId: string, etag: string, idempotencyKey = idempotency()) =>
     validateResult<Schema<'GeneralAccessKeyIssued'>>(
       await request<unknown>(
         'rotateGeneralAccessKey',
-        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() } },
+        { headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey } },
         { key_id: keyId },
       ),
       GeneralAccessKeyIssuedSchema,
@@ -485,6 +528,7 @@ export const api = {
   putConfigurationCandidate: async (
     body: Schema<'ConfigurationCandidateRequest'>,
     etag: string,
+    idempotencyKey = idempotency(),
   ) => {
     const canonicalBody = validateInput(
       body,
@@ -493,25 +537,25 @@ export const api = {
     );
     return validateResult<Schema<'ConfigurationCandidate'>>(
       await request<unknown>('putConfigurationCandidate', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       ConfigurationCandidateSchema,
       'ConfigurationCandidate',
     );
   },
-  validateConfigurationCandidate: async () =>
+  validateConfigurationCandidate: async (idempotencyKey = idempotency()) =>
     validateResult<Schema<'ConfigurationValidationResult'>>(
       await request<unknown>('validateConfigurationCandidate', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
       }),
       ConfigurationValidationResultSchema,
       'ConfigurationValidationResult',
     ),
-  activateConfiguration: async (revision: number, etag: string) =>
+  activateConfiguration: async (revision: number, etag: string, idempotencyKey = idempotency()) =>
     validateResult<Schema<'ConfigurationActive'>>(
       await request<unknown>('activateConfiguration', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ revision }),
       }),
       ConfigurationActiveSchema,
@@ -526,6 +570,7 @@ export const api = {
   putDatabaseConnectionCandidate: async (
     body: Schema<'DatabaseConnectionCandidateRequest'>,
     etag: string,
+    idempotencyKey = idempotency(),
   ) => {
     const canonicalBody = validateInput(
       body,
@@ -534,25 +579,39 @@ export const api = {
     );
     return validateResult<Schema<'DatabaseConnectionCandidate'>>(
       await request<unknown>('putDomainDatabaseConnectionCandidate', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       DatabaseConnectionCandidateSchema,
       'DatabaseConnectionCandidate',
     );
   },
-  validateDatabaseConnectionCandidate: async () =>
+  validateDatabaseConnectionCandidate: async (
+    candidateRevision: number,
+    idempotencyKey = idempotency(),
+  ) =>
     validateResult<Schema<'DatabaseConnectionValidationResult'>>(
       await request<unknown>('validateDomainDatabaseConnectionCandidate', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+          'X-Candidate-Revision': String(candidateRevision),
+        },
       }),
       DatabaseConnectionValidationResultSchema,
       'DatabaseConnectionValidationResult',
     ),
-  activateDatabaseConnection: async (etag: string) =>
+  activateDatabaseConnection: async (
+    etag: string,
+    candidateRevision: number,
+    idempotencyKey = idempotency(),
+  ) =>
     validateResult<Schema<'DatabaseConnectionStatus'>>(
       await request<unknown>('activateDomainDatabaseConnection', {
-        headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+        headers: {
+          'If-Match': etag,
+          'Idempotency-Key': idempotencyKey,
+          'X-Candidate-Revision': String(candidateRevision),
+        },
       }),
       DatabaseConnectionStatusSchema,
       'DatabaseConnectionStatus',
@@ -569,7 +628,10 @@ export const api = {
       SetupCapabilityCatalogSchema,
       'SetupCapabilityCatalog',
     ),
-  validateSetupConnection: async (body: Schema<'SetupProviderConnectionValidationRequest'>) => {
+  validateSetupConnection: async (
+    body: Schema<'SetupProviderConnectionValidationRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'SetupProviderConnectionValidationRequest'>>(
       body,
       SetupProviderConnectionValidationRequestSchema,
@@ -577,14 +639,17 @@ export const api = {
     );
     return validateResult<Schema<'SetupProviderConnectionValidationResult'>>(
       await request<unknown>('validateSetupProviderConnection', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       SetupProviderConnectionValidationResultSchema,
       'SetupProviderConnectionValidationResult',
     );
   },
-  validateLiveConnector: async (body: Schema<'LiveConnectorValidationRequest'>) => {
+  validateLiveConnector: async (
+    body: Schema<'LiveConnectorValidationRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'LiveConnectorValidationRequest'>>(
       body,
       LiveConnectorValidationRequestSchema,
@@ -592,7 +657,7 @@ export const api = {
     );
     return validateResult<Schema<'LiveConnectorValidationResult'>>(
       await request<unknown>('validateLiveConnector', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       LiveConnectorValidationResultSchema,
@@ -630,25 +695,29 @@ export const api = {
       DataCapabilityListSchema,
       'DataCapabilityList',
     ),
-  research: async (signal?: AbortSignal) =>
+  research: async (signal?: AbortSignal, page: PageQuery = {}) =>
     validateResult<Schema<'ResearchPage'>>(
-      await request<unknown>('listResearch', { signal: signal ?? null }),
+      await request<unknown>('listResearch', { signal: signal ?? null }, page),
       ResearchPageSchema,
       'ResearchPage',
     ),
-  researchDetail: async (id: string, signal?: AbortSignal) => {
+  researchDetail: async (
+    id: string,
+    signal?: AbortSignal,
+    page: ResearchDetailPageQuery = {},
+  ) => {
     const researchId = parsePublicId('research', id);
     return validateResult<Schema<'ResearchDetail'>>(
       await request<unknown>(
         'getResearch',
         { signal: signal ?? null },
-        { research_id: researchId },
+        { research_id: researchId, ...page },
       ),
       ResearchDetailSchema,
       'ResearchDetail',
     );
   },
-  createResearch: async (body: Schema<'ResearchCreateRequest'>) => {
+  createResearch: async (body: Schema<'ResearchCreateRequest'>, idempotencyKey = idempotency()) => {
     const canonicalBody = validateInput<Schema<'ResearchCreateRequest'>>(
       body,
       ResearchCreateRequestSchema,
@@ -656,14 +725,19 @@ export const api = {
     );
     return validateResult<Schema<'ResearchDetail'>>(
       await request<unknown>('createResearch', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       ResearchDetailSchema,
       'ResearchDetail',
     );
   },
-  startResearch: async (id: string, etag: string, body: Schema<'ResearchStartRequest'>) => {
+  startResearch: async (
+    id: string,
+    etag: string,
+    body: Schema<'ResearchStartRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const researchId = parsePublicId('research', id);
     const canonicalBody = validateInput<Schema<'ResearchStartRequest'>>(
       body,
@@ -674,7 +748,7 @@ export const api = {
       await request<unknown>(
         'startResearch',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { research_id: researchId },
@@ -695,7 +769,10 @@ export const api = {
       'ExperimentDetail',
     );
   },
-  createExperiment: async (body: Schema<'ExperimentCreateRequest'>) => {
+  createExperiment: async (
+    body: Schema<'ExperimentCreateRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'ExperimentCreateRequest'>>(
       body,
       ExperimentCreateRequestSchema,
@@ -703,7 +780,7 @@ export const api = {
     );
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>('createExperiment', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       JobAcceptedSchema,
@@ -735,13 +812,9 @@ export const api = {
     const parsed = ExperimentReproduceAcceptedSchema.safeParse(result.body);
     if (!parsed.success)
       throw new ContractError('Invalid canonical ExperimentReproduceAccepted response.');
-    const accepted = parsed.data as Schema<'ExperimentReproduceAccepted'>;
+    const accepted = parsed.data;
     const expectedLocation = pathFor('getExperiment', { experiment_id: accepted.resource_ref.id });
-    const locationPath = result.location
-      ? result.location.startsWith('http://') || result.location.startsWith('https://')
-        ? new URL(result.location).pathname
-        : result.location
-      : null;
+    const locationPath = sameOriginPath(result.location);
     if (
       locationPath !== expectedLocation ||
       accepted.resource_ref.type !== 'experiment' ||
@@ -781,7 +854,7 @@ export const api = {
       true,
     );
   },
-  createStrategy: async (body: Schema<'StrategyCreateRequest'>) => {
+  createStrategy: async (body: Schema<'StrategyCreateRequest'>, idempotencyKey = idempotency()) => {
     const canonicalBody = validateInput<Schema<'StrategyCreateRequest'>>(
       body,
       StrategyCreateRequestSchema,
@@ -789,7 +862,7 @@ export const api = {
     );
     return validateStrategyDetail(
       await request<unknown>('createStrategy', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
     );
@@ -799,6 +872,7 @@ export const api = {
     version: number,
     etag: string,
     body: Schema<'FreezeStrategyRequest'>,
+    idempotencyKey = idempotency(),
   ) => {
     const strategyId = parsePublicId('strategy', id);
     const strategyVersion = positiveVersion(version);
@@ -811,7 +885,7 @@ export const api = {
       await request<unknown>(
         'freezeStrategy',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { strategy_id: strategyId, version: strategyVersion },
@@ -820,7 +894,12 @@ export const api = {
       strategyVersion,
     );
   },
-  runFastBacktest: async (id: string, version: number, body: Schema<'BacktestRequest'>) => {
+  runFastBacktest: async (
+    id: string,
+    version: number,
+    body: Schema<'BacktestRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const strategyId = parsePublicId('strategy', id);
     const strategyVersion = positiveVersion(version);
     const canonicalBody = validateInput<Schema<'BacktestRequest'>>(
@@ -832,7 +911,7 @@ export const api = {
       await request<unknown>(
         'runFastBacktest',
         {
-          headers: { 'Idempotency-Key': idempotency() },
+          headers: { 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { strategy_id: strategyId, version: strategyVersion },
@@ -841,7 +920,10 @@ export const api = {
       'JobAccepted',
     );
   },
-  createValidation: async (body: Schema<'ValidationCreateRequest'>) => {
+  createValidation: async (
+    body: Schema<'ValidationCreateRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const canonicalBody = validateInput<Schema<'ValidationCreateRequest'>>(
       body,
       ValidationCreateRequestSchema,
@@ -849,7 +931,7 @@ export const api = {
     );
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>('createValidation', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       JobAcceptedSchema,
@@ -896,6 +978,7 @@ export const api = {
     id: string,
     etag: string,
     body: Schema<'HoldoutApprovalRequest'>,
+    idempotencyKey = idempotency(),
   ) => {
     const validationId = parsePublicId('validation', id);
     const canonicalBody = validateInput<Schema<'HoldoutApprovalRequest'>>(
@@ -907,7 +990,7 @@ export const api = {
       await request<unknown>(
         'requestHoldoutApproval',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { validation_id: validationId },
@@ -916,7 +999,12 @@ export const api = {
       'ApprovalDetail',
     );
   },
-  runHoldout: async (id: string, etag: string, body: Schema<'HoldoutRunRequest'>) => {
+  runHoldout: async (
+    id: string,
+    etag: string,
+    body: Schema<'HoldoutRunRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const validationId = parsePublicId('validation', id);
     const canonicalBody = validateInput<Schema<'HoldoutRunRequest'>>(
       body,
@@ -927,7 +1015,7 @@ export const api = {
       await request<unknown>(
         'runHoldout',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { validation_id: validationId },
@@ -936,9 +1024,9 @@ export const api = {
       'JobAccepted',
     );
   },
-  approvals: async (signal?: AbortSignal) =>
+  approvals: async (signal?: AbortSignal, page: PageQuery = {}) =>
     validateResult<Schema<'ApprovalPage'>>(
-      await request<unknown>('listApprovals', { signal: signal ?? null }),
+      await request<unknown>('listApprovals', { signal: signal ?? null }, page),
       ApprovalPageSchema,
       'ApprovalPage',
     ),
@@ -954,7 +1042,12 @@ export const api = {
       'ApprovalDetail',
     );
   },
-  approveApproval: async (id: string, etag: string, body: Schema<'ApprovalDecisionRequest'>) => {
+  approveApproval: async (
+    id: string,
+    etag: string,
+    body: Schema<'ApprovalDecisionRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const approvalId = parsePublicId('approval', id);
     const canonicalBody = validateInput<Schema<'ApprovalDecisionRequest'>>(
       body,
@@ -965,7 +1058,7 @@ export const api = {
       await request<unknown>(
         'approveApproval',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { approval_id: approvalId },
@@ -974,7 +1067,12 @@ export const api = {
       'ApprovalDecisionResult',
     );
   },
-  rejectApproval: async (id: string, etag: string, body: Schema<'ApprovalRejectRequest'>) => {
+  rejectApproval: async (
+    id: string,
+    etag: string,
+    body: Schema<'ApprovalRejectRequest'>,
+    idempotencyKey = idempotency(),
+  ) => {
     const approvalId = parsePublicId('approval', id);
     const canonicalBody = validateInput<Schema<'ApprovalRejectRequest'>>(
       body,
@@ -985,7 +1083,7 @@ export const api = {
       await request<unknown>(
         'rejectApproval',
         {
-          headers: { 'If-Match': etag, 'Idempotency-Key': idempotency() },
+          headers: { 'If-Match': etag, 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify(canonicalBody),
         },
         { approval_id: approvalId },
@@ -994,7 +1092,7 @@ export const api = {
       'ApprovalDecisionResult',
     );
   },
-  generateMemo: async (body: Schema<'MemoGenerateRequest'>) => {
+  generateMemo: async (body: Schema<'MemoGenerateRequest'>, idempotencyKey = idempotency()) => {
     const canonicalBody = validateInput<Schema<'MemoGenerateRequest'>>(
       body,
       MemoGenerateRequestSchema,
@@ -1002,7 +1100,7 @@ export const api = {
     );
     return validateResult<Schema<'JobAccepted'>>(
       await request<unknown>('generateMemo', {
-        headers: { 'Idempotency-Key': idempotency() },
+        headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(canonicalBody),
       }),
       JobAcceptedSchema,
@@ -1111,7 +1209,7 @@ export const EVENT_QUERY_RULES = {
   'research.updated': (event) =>
     plan([researchDetail(event.object_id), researchList(), overview()]),
   'research.conclusion.created': (event) =>
-    plan([researchDetail(event.object_id), researchList(), overview()]),
+    plan([...owningResearch(event), researchList(), overview()]),
   'experiment.created': (event) =>
     plan([
       ...owningResearch(event),
@@ -1162,10 +1260,10 @@ export const EVENT_QUERY_RULES = {
   'memo.created': (event) => plan([workspaceQueryKey('memo', event.object_id), overview()]),
   'memo.updated': (event) => plan([workspaceQueryKey('memo', event.object_id), overview()]),
   'setup.completed': () => plan([workspaceQueryKey('setup-status'), overview()]),
-  'configuration.updated': () => plan([workspaceQueryKey('settings'), overview()]),
-  'configuration.apply_failed': () => plan([workspaceQueryKey('settings')]),
-  'database.connection.updated': () => plan([workspaceQueryKey('settings')]),
-  'database.connection.failed': () => plan([workspaceQueryKey('settings')]),
+  'configuration.updated': () => plan([workspaceQueryKey('settings', 'active'), overview()]),
+  'configuration.apply_failed': () => plan([workspaceQueryKey('settings', 'active')]),
+  'database.connection.updated': () => plan([workspaceQueryKey('settings', 'database')]),
+  'database.connection.failed': () => plan([workspaceQueryKey('settings', 'database')]),
   'notification.created': () => plan([overview()]),
   'notification.updated': () => plan([overview()]),
   'system.health.updated': () => plan([workspaceQueryKey('system-health'), overview()]),
@@ -1235,7 +1333,7 @@ export const isSafeHoldoutNotification = (event: EventEnvelope): boolean => {
 
 /** A wire frame is not trusted until both the SSE cursor and generated envelope agree. */
 export type DecodedSseFrame = Readonly<{
-  cursor: number;
+  cursor: string;
   event: EventEnvelope;
 }>;
 
@@ -1245,9 +1343,9 @@ export function decodeCanonicalSseFrame(frame: string): DecodedSseFrame | undefi
   const dataLine = lines.find((line) => line.startsWith('data:'));
   if (!dataLine) return undefined; // heartbeat/comment-only frame
   if (!idLine) throw new ContractError('Canonical SSE data frame is missing its sequence cursor.');
-  const cursor = Number(idLine.slice(3).trim());
-  if (!Number.isSafeInteger(cursor) || cursor < 1)
-    throw new ContractError('Canonical SSE frame cursor is not a positive safe integer.');
+  const cursor = idLine.slice(3).trim();
+  if (!/^[1-9]\d*$/.test(cursor))
+    throw new ContractError('Canonical SSE frame cursor is not a positive decimal integer.');
   let decoded: unknown;
   try {
     decoded = JSON.parse(dataLine.slice(5).trim());
@@ -1279,34 +1377,52 @@ export function splitCanonicalSseFrames(buffer: string): {
 
 export function streamEvents(
   onEvent: (event: EventEnvelope) => void,
-  onResync: () => void,
+  onResync: () => void | Promise<void>,
   onState?: (state: EventStreamState) => void,
   onProblem?: (error: ApiError) => void,
 ): () => void {
   let streamScope = auth.scope();
-  const cursorKey = () => `qf.sse.cursor:${streamScope}`;
-  let last = Number(eventCursorStorage()?.getItem(cursorKey()) ?? '0');
+  let last = readEventCursor(streamScope);
   let active: AbortController | undefined;
   let stopped = false;
   let authorizationBlocked = false;
   let contractBlocked = false;
   let consecutiveContractSkews = 0;
   let attempts = 0;
+  let reconnectTimer: number | undefined;
+  const safeResync = async (): Promise<boolean> => {
+    try {
+      await onResync();
+      return true;
+    } catch {
+      onState?.('degraded');
+      return false;
+    }
+  };
   const reconnect = () => {
     if (stopped || authorizationBlocked || contractBlocked) return;
     active?.abort();
     active = new AbortController();
     const controller = active;
+    const connectionScope = streamScope;
+    const connectionCursorKey = `qf.sse.cursor:${connectionScope}`;
+    let connectionLast = last;
+    const current = () =>
+      !stopped &&
+      !controller.signal.aborted &&
+      active === controller &&
+      streamScope === connectionScope;
     void (async () => {
       try {
         const headers: Record<string, string> = { Accept: 'text/event-stream' };
-        if (last) headers['Last-Event-ID'] = String(last);
+        if (connectionLast > 0n) headers['Last-Event-ID'] = String(connectionLast);
         const response = await fetch(pathFor('streamEvents'), {
           method: operationMap.streamEvents.method,
           headers: headersFor('streamEvents', { headers }),
           credentials: 'include',
           signal: controller.signal,
         });
+        if (!current()) return;
         if (!response.ok) {
           const error = new ApiError(await readProblem(response));
           if (
@@ -1317,19 +1433,19 @@ export function streamEvents(
             onProblem?.(error);
             if (error.problem.status === 401) {
               onState?.('reauthentication-required');
-              auth.clear();
+              if (auth.scope() === connectionScope) auth.clear();
             } else onState?.('permission-denied');
             return;
           }
           throw error;
         }
         if (!response.body) throw new Error('event stream unavailable');
-        attempts = 0;
         onState?.('connected');
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = '';
-        while (!stopped && !controller.signal.aborted) {
+        streamLoop: while (current()) {
           const part = await reader.read();
+          if (!current()) return;
           if (part.done) break;
           buffer += part.value;
           const rawFrames = buffer.split(/\r?\n\r?\n/);
@@ -1340,7 +1456,8 @@ export function streamEvents(
               event = decodeCanonicalSseFrame(rawFrame)?.event;
             } catch {
               consecutiveContractSkews += 1;
-              onResync();
+              if (!(await safeResync())) break streamLoop;
+              if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
                 onState?.('client-update-required');
@@ -1350,9 +1467,11 @@ export function streamEvents(
               onState?.('resynchronizing');
               continue;
             }
-            if (!event || !isSafeHoldoutNotification(event)) {
+            if (!event) continue;
+            if (!isSafeHoldoutNotification(event)) {
               consecutiveContractSkews += 1;
-              onResync();
+              if (!(await safeResync())) break streamLoop;
+              if (!current()) return;
               if (consecutiveContractSkews >= 3) {
                 contractBlocked = true;
                 onState?.('client-update-required');
@@ -1363,35 +1482,69 @@ export function streamEvents(
               continue;
             }
             consecutiveContractSkews = 0;
-            if (event.sequence <= last) continue;
-            const hasGap = last > 0 && event.sequence > last + 1;
-            last = event.sequence;
-            eventCursorStorage()?.setItem(cursorKey(), String(last));
+            const eventCursor = BigInt(event.sequence);
+            if (eventCursor <= connectionLast) continue;
+            const hasGap = connectionLast > 0n && eventCursor > connectionLast + 1n;
             if (event.event_type === 'system.resync_required') {
-              onResync();
+              if (!(await safeResync())) break streamLoop;
+              if (!current()) return;
+              connectionLast = eventCursor;
+              last = connectionLast;
+              transientStorage.set(connectionCursorKey, String(connectionLast));
               continue;
             }
-            onEvent(event);
-            if (hasGap) onResync();
+            if (hasGap) {
+              if (!(await safeResync())) break streamLoop;
+              if (!current()) return;
+            }
+            try {
+              onEvent(event);
+            } catch {
+              contractBlocked = true;
+              onState?.('degraded');
+              return;
+            }
+            connectionLast = eventCursor;
+            last = connectionLast;
+            transientStorage.set(connectionCursorKey, String(connectionLast));
+            attempts = 0;
           }
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ApiError && !error.problem.retryable) {
+          onProblem?.(error);
+          onState?.('degraded');
+          return;
+        }
         if (!stopped && !controller.signal.aborted) {
           onState?.('degraded');
-          onResync();
+          await safeResync();
+          if (!current()) return;
         }
       }
-      if (!stopped && !authorizationBlocked && !contractBlocked && !controller.signal.aborted) {
+      if (current() && !authorizationBlocked && !contractBlocked) {
         attempts += 1;
         if (consecutiveContractSkews === 0) onState?.('reconnecting');
-        window.setTimeout(reconnect, Math.min(1000 * 2 ** Math.min(attempts, 5), 30_000));
+        reconnectTimer = window.setTimeout(
+          () => {
+            reconnectTimer = undefined;
+            reconnect();
+          },
+          Math.min(1000 * 2 ** Math.min(attempts, 5), 30_000),
+        );
       }
     })();
   };
   const unsubscribe = auth.subscribe(() => {
+    if (reconnectTimer !== undefined) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+    }
     active?.abort();
     streamScope = auth.scope();
-    last = Number(eventCursorStorage()?.getItem(cursorKey()) ?? '0');
+    last = readEventCursor(streamScope);
+    contractBlocked = false;
+    consecutiveContractSkews = 0;
     if (!auth.get()) return;
     authorizationBlocked = false;
     reconnect();
@@ -1400,6 +1553,7 @@ export function streamEvents(
   return () => {
     stopped = true;
     unsubscribe();
+    if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
     active?.abort();
   };
 }

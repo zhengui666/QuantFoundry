@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
+from quantfoundry.api.app import Base
 from quantfoundry.contracts.events.locator import (
     job_result_ref_valid,
     locator_quartet_valid,
@@ -19,11 +20,6 @@ from quantfoundry.contracts.events.locator import (
     register_sqlite_functions,
 )
 from quantfoundry.infrastructure.db.physical_schema import load_physical_metadata
-
-try:
-    from quantfoundry.api.app import Base
-except SyntaxError:
-    Base = None
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 UUID_SUFFIX = "550e8400-e29b-41d4-a716-446655440000"
@@ -33,8 +29,8 @@ def _frozen_locator_truth_table() -> dict[str, list[dict[str, str | int | None]]
     path = BACKEND_ROOT / "alembic/versions/0016_section14_physical.json"
     value = json.loads(path.read_text(encoding="utf-8"))
     truth_table = value["locator_helper_contract"]["truth_table"]
-    assert len(truth_table["valid"]) == 69
-    assert len(truth_table["invalid"]) == 76
+    assert len(truth_table["valid"]) == 140
+    assert len(truth_table["invalid"]) == 159
     return truth_table
 
 
@@ -66,8 +62,6 @@ def _catalog_check_sql(connection: Connection, table_name: str, check_name: str)
 
 
 def _check_sql(table_name: str, constraint_name: str) -> str:
-    if Base is None:
-        pytest.skip("app.main import is blocked by repository syntax errors")
     table = Base.metadata.tables[table_name]
     constraint = next(
         item for item in table.constraints if item.name == constraint_name
@@ -107,7 +101,7 @@ def test_dataset_id_exact_check_accepts_only_canonical_dsset() -> None:
         [{"dataset_id": f"DSSET-{UUID_SUFFIX}"}],
         [
             {"dataset_id": f"DS-{UUID_SUFFIX}"},
-            {"dataset_id": "DSSET-local-seed"},  # reject_fixture: noncanonical
+            {"dataset_id": "DSSET-local-seed"},  # reject_fixture DSSET-local-seed
             {"dataset_id": f"DSSET-{UUID_SUFFIX[:-2]}"},
         ],
     )
@@ -249,10 +243,14 @@ def test_locator_quartet_enforces_every_generated_branch(
         valid = [dict(row) for row in truth_table["valid"]]
         invalid = [dict(row) for row in truth_table["invalid"]]
         if allow_null:
-            valid.append(invalid.pop(2))
-            assert len(valid) == 70 and len(invalid) == 75
+            all_null = next(
+                row for row in invalid if all(value is None for value in row.values())
+            )
+            invalid.remove(all_null)
+            valid.append(all_null)
+            assert len(valid) == 141 and len(invalid) == 158
         else:
-            assert len(valid) == 69 and len(invalid) == 76
+            assert len(valid) == 140 and len(invalid) == 159
         for row in valid:
             connection.execute(statement, row)
         for row in invalid:
@@ -290,10 +288,16 @@ def test_locator_helpers_are_total_boolean_for_frozen_truth_table() -> None:
 def test_json_locator_surfaces_share_closed_total_boolean_contract() -> None:
     truth_table = _frozen_locator_truth_table()
     valid_locators = [dict(row) for row in truth_table["valid"]]
-    all_null = dict(truth_table["invalid"][2])
+    all_null = next(
+        dict(row)
+        for row in truth_table["invalid"]
+        if all(value is None for value in row.values())
+    )
     valid_locators.append(all_null)
     invalid_locators = [
-        dict(row) for index, row in enumerate(truth_table["invalid"]) if index != 2
+        dict(row)
+        for row in truth_table["invalid"]
+        if not all(value is None for value in row.values())
     ]
     for row in valid_locators:
         assert job_result_ref_valid({**row, "artifact_id": None})
@@ -493,6 +497,23 @@ def test_physical_snapshot_exact_diff_detects_nested_default_drift() -> None:
     assert errors == ['$.tables[0].columns[0].server_default:expected="0":actual="1"']
 
 
+def test_default_normalization_matches_postgres_catalog_rendering() -> None:
+    from scripts import schema_manifest_check
+
+    equivalent = (
+        ("TRUE", "true", "boolean"),
+        ("'{}'", "'{}'::jsonb", "jsonb"),
+        ("now()+interval '7 days'", "(now() + '7 days'::interval)", "timestamptz"),
+    )
+    for expected, actual, type_name in equivalent:
+        assert schema_manifest_check._normalized_default(expected, type_name) == (
+            schema_manifest_check._normalized_default(actual, type_name)
+        )
+    assert schema_manifest_check._normalized_default("0", "integer") != (
+        schema_manifest_check._normalized_default("1", "integer")
+    )
+
+
 def test_check_normalization_preserves_string_literal_case() -> None:
     from scripts import schema_manifest_check
 
@@ -501,6 +522,9 @@ def test_check_normalization_preserves_string_literal_case() -> None:
     )
     assert schema_manifest_check._normalized_check("value = 'A  B::text'") != (
         schema_manifest_check._normalized_check("value = 'A B'")
+    )
+    assert schema_manifest_check._normalized_check("value::text = 'A'") != (
+        schema_manifest_check._normalized_check("value = 'A'")
     )
 
 
@@ -687,7 +711,7 @@ def test_physical_snapshot_preserves_documented_composite_pk_order() -> None:
     ]
     assert specs["domain_events"]["primary_key"] == ["workspace_id", "sequence"]
 
-    metadata = load_physical_metadata(path)
+    metadata = load_physical_metadata(path, sqlite_compatibility=True)
     assert [
         column.name for column in metadata.tables["job_dependencies"].primary_key
     ] == ["workspace_id", "job_id", "depends_on_job_id"]
@@ -733,7 +757,7 @@ def test_records_and_setup_physical_shapes_are_exact() -> None:
     value = json.loads(path.read_text(encoding="utf-8"))
     assert value["table_count"] == 63
     assert value["column_count"] == 967
-    assert sum(len(table["checks"]) for table in value["tables"]) == 191
+    assert sum(len(table["checks"]) for table in value["tables"]) == 220
 
     specs = {table["name"]: table for table in value["tables"]}
     records = specs["records"]
@@ -744,9 +768,16 @@ def test_records_and_setup_physical_shapes_are_exact() -> None:
     assert record_id["type"] == {"name": "uuid"}
     assert record_id["server_default"] == "uuidv7()"
     assert records["unique_constraints"] == [
-        {"columns": ["workspace_id", "id"], "name": "uq_records_workspace_id_id"},
+        {
+            "columns": ["workspace_id", "id"],
+            "deferrable": None,
+            "initially": None,
+            "name": "uq_records_workspace_id_id",
+        },
         {
             "columns": ["workspace_id", "record_key"],
+            "deferrable": None,
+            "initially": None,
             "name": "uq_records_workspace_id_record_key",
         },
     ]

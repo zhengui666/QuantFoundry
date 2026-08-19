@@ -45,7 +45,10 @@ from quantfoundry.contracts.events.locator import (
     next_action_valid,
     register_sqlite_functions,
 )
-from quantfoundry.domain.value_objects.public_ids import is_public_id
+from quantfoundry.domain.value_objects.public_ids import (
+    PUBLIC_ID_PREFIXES,
+    is_public_id,
+)
 from quantfoundry.infrastructure.db.physical_schema import load_physical_metadata
 from quantfoundry.infrastructure.db.schema import (
     JSONTextCompat,
@@ -132,10 +135,9 @@ _PUBLIC_PREFIXES = {
     "NOTIF",
     "PROV",
 }
-_PUBLIC_UUID4 = re.compile(
-    r"^(?P<prefix>[A-Z]+)-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
-    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
+_PUBLIC_ID_KINDS_BY_PREFIX = {
+    prefix: kind for kind, prefix in PUBLIC_ID_PREFIXES.items()
+}
 
 
 class MigrationQuarantineError(RuntimeError):
@@ -207,12 +209,11 @@ def _workspace_uuid(value: Any) -> uuid.UUID:
 
 def _public_id(value: Any, default_prefix: str) -> str:
     raw = str(value or "")
-    match = _PUBLIC_UUID4.fullmatch(raw)
-    if match and match.group("prefix") in _PUBLIC_PREFIXES:
-        return raw
     candidate = raw.split("-", 1)[0]
-    prefix = candidate if candidate in _PUBLIC_PREFIXES else default_prefix
-    return f"{prefix}-{_deterministic_uuid4(prefix, raw)}"
+    kind = _PUBLIC_ID_KINDS_BY_PREFIX.get(candidate)
+    if kind is not None and candidate == default_prefix and is_public_id(kind, raw):
+        return raw
+    return f"{default_prefix}-{_deterministic_uuid4(default_prefix, raw)}"
 
 
 _PUBLIC_COLUMN_PREFIXES = {
@@ -365,6 +366,43 @@ def _application_table_names(bind: Any) -> list[str]:
     )
 
 
+def _lock_singleton_migration(bind: Any) -> None:
+    if bind.dialect.name != "postgresql":
+        return
+    bind.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended('qf-ux001-domain-migration', 0))"
+        )
+    )
+    for name in _application_table_names(bind):
+        bind.execute(text(f"LOCK TABLE {_quoted(bind, name)} IN ACCESS EXCLUSIVE MODE"))
+    tables = set(_application_table_names(bind))
+    if not {"users", "workspaces"}.issubset(tables):
+        return
+    row = bind.execute(
+        text(
+            "SELECT "
+            "(SELECT count(*) FROM users) AS users, "
+            "(SELECT count(*) FROM workspaces) AS workspaces, "
+            "(SELECT count(*) FROM users WHERE role = 'OWNER') AS owners, "
+            "(SELECT count(*) FROM workspaces w JOIN users u ON u.id = w.owner_id "
+            "WHERE u.role = 'OWNER') AS owner_workspaces"
+        )
+    ).one()
+    if (int(row.users), int(row.workspaces)) == (0, 0):
+        return
+    if not (
+        int(row.users) == 1
+        and int(row.workspaces) == 1
+        and int(row.owners) == 1
+        and int(row.owner_workspaces) == 1
+    ):
+        raise RuntimeError(
+            "0016 singleton domain migration requires one OWNER and one workspace"
+        )
+
+
 def _quoted(bind: Any, name: str) -> str:
     return bind.dialect.identifier_preparer.quote(name)
 
@@ -425,8 +463,8 @@ def _sqlite_source_schema(bind: Any) -> list[str]:
     rows = bind.execute(
         text(
             "SELECT type, name, sql FROM sqlite_master "
-            "WHERE sql IS NOT NULL AND type IN ('table', 'index') "
-            "ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, name"
+            "WHERE sql IS NOT NULL AND type IN ('table', 'index', 'trigger') "
+            "ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name"
         )
     ).mappings()
     return [
@@ -438,14 +476,36 @@ def _sqlite_source_schema(bind: Any) -> list[str]:
 
 
 def _restore_sqlite_source_schema(
-    bind: Any, statements: list[str], source_rows: dict[str, list[dict[str, Any]]]
+    bind: Any,
+    statements: list[str],
+    source_rows: dict[str, list[dict[str, Any]]],
+    *,
+    expected_foreign_key_violations: set[tuple[Any, ...]] | None = None,
 ) -> None:
     """Rebuild the captured source schema and restore its unmodified rows."""
+    trigger_statements = [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith("CREATE TRIGGER")
+    ]
     for statement in statements:
-        bind.execute(text(statement))
+        if statement not in trigger_statements:
+            bind.execute(text(statement))
+    bind.execute(text("PRAGMA defer_foreign_keys = ON"))
     metadata = MetaData()
     metadata.reflect(bind=bind)
     _restore_exact_source(bind, metadata, source_rows)
+    for statement in trigger_statements:
+        bind.execute(text(statement))
+    violations = list(bind.execute(text("PRAGMA foreign_key_check")))
+    actual_foreign_key_violations = {tuple(row) for row in violations}
+    expected_foreign_key_violations = expected_foreign_key_violations or set()
+    if actual_foreign_key_violations != expected_foreign_key_violations:
+        raise RuntimeError(
+            "0016 recovery foreign-key verification failed: "
+            f"expected={sorted(expected_foreign_key_violations)!r} "
+            f"actual={sorted(actual_foreign_key_violations)!r}"
+        )
 
 
 def _identity_seed(table_name: str, source: dict[str, Any], row_number: int) -> Any:
@@ -595,7 +655,12 @@ def _coerce_value(column: Any, value: Any, *, identity: Any) -> Any:
     if isinstance(column_type, Numeric) and not isinstance(value, Decimal):
         return Decimal(str(value))
     if isinstance(column_type, Boolean) and not isinstance(value, bool):
-        return bool(value)
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "f", "no", "n", "off"}:
+            return False
+        raise ValueError(f"0016 cannot coerce boolean {value!r}")
     if isinstance(column_type, LargeBinary) and isinstance(value, str):
         return value.encode()
     return value
@@ -696,7 +761,7 @@ def _ordinary_authority(
         ):
             revision = row.get("revision")
             matches.append((None, revision if isinstance(revision, int) else None))
-    return list(dict.fromkeys(matches))
+    return matches
 
 
 def _special_authority(
@@ -736,7 +801,7 @@ def _special_authority(
                 and role == object_id
             ):
                 matches.append((None, row.get("revision")))
-    return list(dict.fromkeys(matches))
+    return matches
 
 
 def _strategy_authority(
@@ -806,17 +871,27 @@ def _resolve_locator(
     }
     if all(value is None for value in values.values()):
         return None if allow_null else "mandatory locator is absent"
-    if any(values[name] is None for name in ("object_type", "object_id")):
-        return "locator type/id is partially null"
     if expected_object_type == "event_stream":
-        values = {
+        canonical_values = {
             "object_type": "event_stream",
             "object_id": row.get("event_id"),
             "object_version": None,
-            "object_revision": row.get("sequence") or row.get("revision"),
+            "object_revision": row.get("object_revision")
+            if row.get("object_revision") is not None
+            else row.get("revision"),
         }
+        if any(
+            values[name] is not None and values[name] != canonical_values[name]
+            for name in canonical_values
+        ):
+            return "event-stream locator disagrees with canonical event identity"
+        values = canonical_values
     elif expected_object_type is not None:
+        if values["object_type"] not in {None, expected_object_type}:
+            return "event locator object_type disagrees with event type"
         values["object_type"] = expected_object_type
+    if any(values[name] is None for name in ("object_type", "object_id")):
+        return "locator type/id is partially null"
     object_type = values["object_type"]
     object_id = values["object_id"]
     workspace_id = row.get("workspace_id")
@@ -826,24 +901,47 @@ def _resolve_locator(
         )
         if len(authority) != 1:
             return f"ordinary locator authority count is {len(authority)}"
+        expected_version, expected_revision = authority[0]
+        if (
+            values["object_version"] is not None
+            and values["object_version"] != expected_version
+        ):
+            return "ordinary locator version disagrees with authority"
+        if (
+            values["object_revision"] is not None
+            and values["object_revision"] != expected_revision
+        ):
+            return "ordinary locator revision disagrees with authority"
+        values["object_version"] = expected_version
+        values["object_revision"] = expected_revision
     elif object_type == "strategy_version":
         strategy_authority = _strategy_authority(
             source_rows, workspace_id, object_id, values["object_version"]
         )
         if len(strategy_authority) != 1:
             return f"strategy version authority count is {len(strategy_authority)}"
-        values["object_version"] = strategy_authority[0][0]
-        values["object_revision"] = (
-            values["object_revision"] or strategy_authority[0][1]
-        )
+        expected_version, expected_revision = strategy_authority[0]
+        if (
+            values["object_revision"] is not None
+            and values["object_revision"] != expected_revision
+        ):
+            return "strategy version locator revision disagrees with authority"
+        values["object_version"] = expected_version
+        values["object_revision"] = expected_revision
     elif object_type in {"settings", "provider_connection", "agent_config"}:
         authority = _special_authority(
             source_rows, workspace_id, str(object_type), object_id
         )
         if len(authority) != 1:
             return f"special locator authority count is {len(authority)}"
+        expected_revision = authority[0][1]
+        if (
+            values["object_revision"] is not None
+            and values["object_revision"] != expected_revision
+        ):
+            return "special locator revision disagrees with authority"
         values["object_version"] = None
-        values["object_revision"] = values["object_revision"] or authority[0][1]
+        values["object_revision"] = expected_revision
     elif object_type != "event_stream":
         return "locator object_type is not closed"
     if not locator_quartet_valid(
@@ -925,7 +1023,9 @@ def _backfill_closed_storage(
 
 def _defer_domain_locator_check(metadata: MetaData) -> Any:
     """Leave the retained-data locator check for PostgreSQL NOT VALID validation."""
-    table = metadata.tables["domain_events"]
+    table = metadata.tables.get("domain_events")
+    if table is None:
+        table = metadata.tables["public.domain_events"]
     constraint = next(
         item for item in table.constraints if item.name == _DOMAIN_LOCATOR_CHECK_NAME
     )
@@ -1074,7 +1174,10 @@ def _restore_all_tables(
     # Section-14 uses UUID workspace keys.  Apply one deterministic mapping to
     # every scoped row before restoring, including legacy text-backed schemas.
     # Keep generic helper callers unchanged when no workspace authority exists.
-    if "workspaces" in metadata.tables:
+    workspace_table = metadata.tables.get("workspaces")
+    if workspace_table is None:
+        workspace_table = metadata.tables.get("public.workspaces")
+    if workspace_table is not None:
         for rows in source_rows.values():
             for row in rows:
                 if row.get("workspace_id") is not None:
@@ -1082,7 +1185,10 @@ def _restore_all_tables(
         for row in source_rows.get("workspaces", []):
             if row.get("id") is not None:
                 row["id"] = str(_workspace_uuid(row["id"]))
-    if "users" in metadata.tables and "workspaces" in metadata.tables:
+    users_table = metadata.tables.get("users")
+    if users_table is None:
+        users_table = metadata.tables.get("public.users")
+    if users_table is not None and workspace_table is not None:
         referenced_workspaces = {
             _workspace_uuid(row["workspace_id"])
             for rows in source_rows.values()
@@ -1121,7 +1227,14 @@ def _restore_all_tables(
                     "revision": 1,
                 }
             )
-    pending = set(metadata.tables)
+    pending = {table.name for table in metadata.tables.values()}
+
+    def table_for(name: str) -> Table:
+        table = metadata.tables.get(name)
+        if table is not None:
+            return table
+        return metadata.tables[f"public.{name}"]
+
     ordered_tables: list[Table] = []
     while pending:
         ready = sorted(
@@ -1129,7 +1242,7 @@ def _restore_all_tables(
             for name in pending
             if not {
                 element.column.table.name
-                for constraint in metadata.tables[name].foreign_key_constraints
+                for constraint in table_for(name).foreign_key_constraints
                 if all(not element.parent.nullable for element in constraint.elements)
                 for element in constraint.elements
                 if element.column.table.name != name
@@ -1139,7 +1252,7 @@ def _restore_all_tables(
         if not ready:
             ready = [sorted(pending)[0]]
         for name in ready:
-            ordered_tables.append(metadata.tables[name])
+            ordered_tables.append(table_for(name))
             pending.remove(name)
     if bind.dialect.name == "sqlite":
         bind.execute(text("PRAGMA defer_foreign_keys = ON"))
@@ -1275,71 +1388,6 @@ def _restore_exact_source(
             )
 
 
-def _capture_domain_events(bind: Any) -> list[dict[str, Any]]:
-    if "domain_events" not in inspect(bind).get_table_names(schema=None):
-        return []
-    metadata = MetaData()
-    table = Table("domain_events", metadata, autoload_with=bind)
-    return [
-        dict(row)
-        for row in bind.execute(select(table).order_by(table.c.sequence)).mappings()
-    ]
-
-
-def _restore_domain_events(
-    bind: Any, metadata: MetaData, rows: list[dict[str, Any]]
-) -> None:
-    if not rows or "domain_events" not in metadata.tables:
-        return
-    target = metadata.tables["domain_events"]
-    workspace_ids = {_workspace_uuid(row.get("workspace_id")) for row in rows}
-    if "users" in metadata.tables and "workspaces" in metadata.tables:
-        users = metadata.tables["users"]
-        workspaces = metadata.tables["workspaces"]
-        for workspace_id in sorted(workspace_ids, key=str):
-            owner_id = f"migration-owner:{workspace_id}"
-            bind.execute(
-                users.insert().values(
-                    id=owner_id,
-                    email=f"migration-{workspace_id}@invalid.local",
-                    role="OWNER",
-                    revision=1,
-                )
-            )
-            bind.execute(
-                workspaces.insert().values(
-                    id=workspace_id,
-                    owner_id=owner_id,
-                    name="Migrated workspace",
-                    revision=1,
-                )
-            )
-    restored: list[dict[str, Any]] = []
-    for source in rows:
-        values = {key: value for key, value in source.items() if key in target.c}
-        if "schema_version" in target.c:
-            values.setdefault("schema_version", 1)
-        values["workspace_id"] = _workspace_uuid(values.get("workspace_id"))
-        values["event_id"] = _public_id(values.get("event_id"), "EVT")
-        values["object_id"] = _public_id(values.get("object_id"), "EVT")
-        for field, prefix in (
-            ("job_id", "JOB"),
-            ("agent_run_id", "ARUN"),
-            ("tool_call_id", "TCALL"),
-        ):
-            if values.get(field) is not None:
-                values[field] = _public_id(values[field], prefix)
-        for column in target.c:
-            if (
-                column.name in values
-                and isinstance(column.type, JSON)
-                and isinstance(values[column.name], str)
-            ):
-                values[column.name] = json.loads(values[column.name])
-        restored.append(values)
-    bind.execute(target.insert(), restored)
-
-
 def _drop_application_tables() -> None:
     bind = op.get_bind()
     names = _application_table_names(bind)
@@ -1359,6 +1407,10 @@ def _drop_application_tables() -> None:
               ) THEN
                 RAISE EXCEPTION 'invalid holdout state transition';
               END IF;
+              IF OLD.holdout_state <> 'LOCKED'
+                 AND NEW.strategy_version_id IS DISTINCT FROM OLD.strategy_version_id THEN
+                RAISE EXCEPTION 'holdout strategy binding is immutable after locking';
+              END IF;
               IF NEW.exposure_count <> (
                 CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END
               ) THEN
@@ -1366,23 +1418,33 @@ def _drop_application_tables() -> None:
               END IF;
               IF NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (
                 SELECT 1 FROM approval_requests a
-                WHERE a.validation_id = OLD.id AND a.status = 'PENDING'
+                JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id
+                WHERE a.validation_id = NEW.id AND a.status = 'PENDING'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'holdout approval evidence is missing';
               END IF;
               IF NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (
                 SELECT 1 FROM approval_requests a
-                WHERE a.validation_id = OLD.id AND a.status = 'APPROVED'
+                JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id
+                WHERE a.validation_id = NEW.id AND a.status = 'APPROVED'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'approved holdout evidence is missing';
               END IF;
               IF NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (
                 SELECT 1 FROM holdout_exposures e
-                WHERE e.validation_id = OLD.id
-                  AND e.strategy_version_public_id = OLD.strategy_version_id
+                JOIN approval_requests a ON a.id = e.approval_id
+                JOIN strategy_versions sv ON sv.id = e.strategy_version_id
+                WHERE e.validation_id = NEW.id
+                  AND e.strategy_version_public_id = NEW.strategy_version_id
+                  AND a.validation_id = NEW.id
+                  AND a.status = 'APPROVED'
+                  AND a.subject_spec_sha256 = sv.spec_sha256
               ) THEN
                 RAISE EXCEPTION 'holdout exposure evidence is missing';
               END IF;
+              IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
             END;
             $$ LANGUAGE plpgsql
@@ -1430,11 +1492,15 @@ def _drop_sqlite_guard_triggers() -> None:
     bind = op.get_bind()
     if bind.dialect.name != "sqlite":
         return
-    triggers = bind.execute(
-        text(
-            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'"
+    triggers = (
+        bind.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'qf_%'"
+            )
         )
-    ).scalars()
+        .scalars()
+        .all()
+    )
     preparer = bind.dialect.identifier_preparer
     for name in triggers:
         op.execute(text(f"DROP TRIGGER IF EXISTS {preparer.quote(name)}"))
@@ -1444,6 +1510,135 @@ def _install_guards() -> None:
     bind = op.get_bind()
     _drop_sqlite_guard_triggers()
     if bind.dialect.name == "postgresql":
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_validate_holdout_insert() RETURNS trigger AS $$
+            BEGIN
+              IF NEW.holdout_state <> 'LOCKED' OR NEW.exposure_count <> 0 THEN
+                RAISE EXCEPTION 'new holdout validation must start LOCKED with zero exposure';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_validations_holdout_insert ON validations"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_validations_holdout_insert BEFORE INSERT ON validations "
+            "FOR EACH ROW EXECUTE FUNCTION qf_validate_holdout_insert()"
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_terminal_approval_change() RETURNS trigger AS $$
+            BEGIN
+              IF OLD.status <> 'PENDING' THEN
+                RAISE EXCEPTION 'terminal approval cannot be changed';
+              END IF;
+              IF TG_OP = 'DELETE' THEN
+                IF EXISTS (
+                  SELECT 1 FROM validations v
+                  WHERE v.id = OLD.validation_id
+                    AND v.holdout_state IN ('APPROVAL_PENDING', 'FAILED')
+                ) THEN
+                  RAISE EXCEPTION 'active holdout approval evidence cannot be deleted';
+                END IF;
+                RETURN OLD;
+              END IF;
+              IF NEW.status <> 'PENDING' AND (
+                NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+              ) THEN
+                RAISE EXCEPTION 'approval evidence cannot change while resolving';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_pending_approval_evidence_change() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'UPDATE' AND (
+                NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+              ) THEN
+                RAISE EXCEPTION 'approval evidence cannot be changed';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_validate_strategy_transition() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'DELETE' THEN
+                IF OLD.state <> 'CANDIDATE' THEN
+                  RAISE EXCEPTION 'non-candidate strategy version cannot be deleted';
+                END IF;
+                RETURN OLD;
+              END IF;
+              IF (OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
+                   NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   ((OLD.state <> 'CANDIDATE' OR NEW.state = 'FROZEN') AND
+                    (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                     'latest_backtest' - 'validation_summary' - 'artifacts' -
+                     'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                     'action_capabilities') IS DISTINCT FROM
+                    (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                     'latest_backtest' - 'validation_summary' - 'artifacts' -
+                     'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                     'action_capabilities')) OR
+                   (OLD.state <> 'CANDIDATE' AND NEW.frozen_at IS DISTINCT FROM OLD.frozen_at) OR
+                   NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+              ) THEN
+                RAISE EXCEPTION 'frozen strategy specification is immutable';
+              END IF;
+              IF NEW.state = 'FROZEN' AND NEW.frozen_at IS NULL THEN
+                RAISE EXCEPTION 'frozen strategy requires frozen_at';
+              END IF;
+              IF OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND (
+                   NEW.strategy_public_id IS DISTINCT FROM OLD.strategy_public_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.detail IS DISTINCT FROM OLD.detail
+              ) THEN
+                RAISE EXCEPTION 'candidate strategy evidence must be append-only';
+              END IF;
+              IF NOT (
+                   NEW.state = OLD.state OR
+                   (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
+                   (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
+                   (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
+                   (OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR
+                   (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
+              ) THEN
+                RAISE EXCEPTION 'illegal strategy lifecycle transition';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
         for table in (
             "audit_events",
             "holdout_exposures",
@@ -1469,6 +1664,84 @@ def _install_guards() -> None:
             "qf_validate_strategy_transition()"
         )
         op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_completed_experiment_change() RETURNS trigger AS $$
+            BEGIN
+              IF OLD.immutable THEN
+                RAISE EXCEPTION 'completed experiment cannot be changed';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NOT NEW.immutable
+                 AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
+                   NEW.research_id IS DISTINCT FROM OLD.research_id OR
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   NEW.revision IS DISTINCT FROM OLD.revision
+                 ) THEN
+                RAISE EXCEPTION 'experiment evidence cannot change while completing';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
+                 AND NOT (
+                   NEW.id IS NOT DISTINCT FROM OLD.id AND
+                   NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
+                   NEW.experiment_id IS NOT DISTINCT FROM OLD.experiment_id AND
+                   NEW.workspace_id IS NOT DISTINCT FROM OLD.workspace_id AND
+                   NEW.revision = OLD.revision + 1 AND
+                   (NEW.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') IS NOT DISTINCT FROM
+                   (OLD.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') AND
+                   COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED' AND
+                   EXISTS (
+                     SELECT 1 FROM jobs j
+                     WHERE j.job_id = NEW.detail::jsonb ->> 'job_id'
+                       AND j.job_type = 'EXPERIMENT'
+                       AND j.status IN ('RUNNING', 'COMPLETED')
+                       AND j.input_payload::jsonb ->> 'experiment_id' = NEW.experiment_id
+                   )
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion is not bound to a running job';
+              END IF;
+              IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_reject_bound_experiment_job_change() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'DELETE' AND EXISTS (
+                   SELECT 1 FROM experiments e
+                   WHERE e.immutable AND e.detail::jsonb ->> 'job_id' = OLD.job_id
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion job binding cannot be deleted';
+              END IF;
+              IF TG_OP = 'UPDATE' AND (
+                   NEW.job_type IS DISTINCT FROM OLD.job_type OR
+                   NEW.input_payload IS DISTINCT FROM OLD.input_payload
+                 ) AND EXISTS (
+                   SELECT 1 FROM experiments e
+                   WHERE e.immutable AND e.detail::jsonb ->> 'job_id' = OLD.job_id
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion job binding cannot be changed';
+              END IF;
+              IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_jobs_bound_experiment_immutable BEFORE UPDATE OF "
+            "job_type, input_payload OR DELETE ON jobs FOR EACH ROW EXECUTE FUNCTION "
+            "qf_reject_bound_experiment_job_change()"
+        )
+        op.execute(
             "CREATE TRIGGER qf_experiments_immutable BEFORE UPDATE OR DELETE ON "
             "experiments FOR EACH ROW EXECUTE FUNCTION "
             "qf_reject_completed_experiment_change()"
@@ -1479,13 +1752,37 @@ def _install_guards() -> None:
             "qf_reject_terminal_approval_change()"
         )
         op.execute(
+            "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+            "ON approval_requests FOR EACH ROW EXECUTE FUNCTION "
+            "qf_reject_pending_approval_evidence_change()"
+        )
+        op.execute(
             "CREATE TRIGGER qf_records_immutable BEFORE UPDATE OR DELETE ON records "
             "FOR EACH ROW EXECUTE FUNCTION qf_reject_immutable_record_change()"
         )
         op.execute(
             "CREATE TRIGGER qf_validations_holdout_transition BEFORE UPDATE OF "
-            "holdout_state, exposure_count ON validations FOR EACH ROW EXECUTE "
+            "holdout_state, exposure_count, strategy_version_id ON validations FOR EACH ROW EXECUTE "
             "FUNCTION qf_validate_holdout_transition()"
+        )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION qf_holdout_contamination_monotonic() RETURNS trigger AS $$
+            BEGIN
+              IF OLD.contamination AND NOT NEW.contamination THEN
+                RAISE EXCEPTION 'holdout contamination cannot be cleared';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "DROP TRIGGER IF EXISTS qf_holdout_contamination_monotonic ON holdout_exposures"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_holdout_contamination_monotonic BEFORE UPDATE OF contamination "
+            "ON holdout_exposures FOR EACH ROW EXECUTE FUNCTION qf_holdout_contamination_monotonic()"
         )
         return
     for table in (
@@ -1501,6 +1798,12 @@ def _install_guards() -> None:
                 f"{action} ON {table} BEGIN SELECT RAISE(ABORT, "
                 "'immutable evidence cannot be changed'); END"
             )
+    op.execute("DROP TRIGGER IF EXISTS qf_holdout_contamination_monotonic")
+    op.execute(
+        "CREATE TRIGGER qf_holdout_contamination_monotonic BEFORE UPDATE OF contamination "
+        "ON holdout_exposures WHEN OLD.contamination = 1 AND NEW.contamination = 0 "
+        "BEGIN SELECT RAISE(ABORT, 'holdout contamination cannot be cleared'); END"
+    )
     op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     op.execute(
         "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
@@ -1513,10 +1816,147 @@ def _install_guards() -> None:
         "domain_events WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN SELECT "
         "RAISE(ABORT, 'unexpired event cannot be deleted'); END"
     )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE "
+        "ON strategy_versions WHEN OLD.state != 'CANDIDATE' BEGIN SELECT RAISE(ABORT, "
+        "'non-candidate strategy version cannot be deleted'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN "
+        "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND ("
+        "NEW.id IS NOT OLD.id OR "
+        "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
+        "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
+        "(OLD.state != 'CANDIDATE' AND NEW.frozen_at IS NOT OLD.frozen_at) OR "
+        "(OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND NEW.frozen_at IS NULL) OR "
+        "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
+        "((OLD.state != 'CANDIDATE' OR NEW.state = 'FROZEN') AND json_remove(NEW.detail, "
+        "'$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
+        "'$.validation_summary', '$.artifacts', '$.provenance', '$.frozen_at', "
+        "'$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
+        "json_remove(OLD.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', "
+        "'$.provenance', '$.frozen_at', '$.frozen_by', '$.revision', "
+        "'$.action_capabilities')))) OR "
+        "(OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
+        "NEW.id IS NOT OLD.id OR "
+        "NEW.strategy_public_id IS NOT OLD.strategy_public_id OR "
+        "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
+        "NEW.detail IS NOT OLD.detail)) OR NOT ("
+        "NEW.state = OLD.state OR "
+        "(OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
+        "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
+        "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
+        "(OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR "
+        "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) BEGIN SELECT RAISE(ABORT, "
+        "'illegal or mutable strategy transition'); END"
+    )
+    for table, predicate, message in (
+        (
+            "experiments",
+            "OLD.immutable = 1",
+            "completed experiment cannot be changed",
+        ),
+        (
+            "approval_requests",
+            "OLD.status != 'PENDING'",
+            "terminal approval cannot be changed",
+        ),
+    ):
+        for action in ("UPDATE", "DELETE"):
+            op.execute(
+                f"CREATE TRIGGER qf_{table}_{action.lower()}_immutable BEFORE {action} "
+                f"ON {table} WHEN {predicate} BEGIN SELECT RAISE(ABORT, "
+                f"'{message}'); END"
+            )
+    op.execute("DROP TRIGGER IF EXISTS qf_approval_requests_active_delete_immutable")
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_active_delete_immutable BEFORE DELETE "
+        "ON approval_requests WHEN OLD.status = 'PENDING' AND EXISTS ("
+        "SELECT 1 FROM validations v WHERE v.id = OLD.validation_id AND "
+        "v.holdout_state IN ('APPROVAL_PENDING', 'FAILED')) BEGIN SELECT RAISE(ABORT, "
+        "'active holdout approval evidence cannot be deleted'); END"
+    )
+    op.execute("DROP TRIGGER IF EXISTS qf_approval_requests_pending_evidence_immutable")
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+        "ON approval_requests WHEN NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR NEW.subject_type IS NOT OLD.subject_type OR "
+        "NEW.subject_id IS NOT OLD.subject_id OR NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256 BEGIN SELECT "
+        "RAISE(ABORT, 'approval evidence cannot be changed'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE ON "
+        "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
+        "NEW.id IS NOT OLD.id OR NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
+        "NEW.revision IS NOT OLD.revision) BEGIN SELECT RAISE(ABORT, "
+        "'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
+        "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
+        "NEW.id IS OLD.id AND NEW.research_id IS OLD.research_id AND "
+        "NEW.experiment_id IS OLD.experiment_id AND NEW.workspace_id IS OLD.workspace_id AND "
+        "NEW.revision = OLD.revision + 1 AND "
+        "json_remove(NEW.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') IS "
+        "json_remove(OLD.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') AND "
+        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE "
+        "j.job_id = json_extract(NEW.detail, '$.job_id') AND "
+        "j.job_type = 'EXPERIMENT' AND j.status IN ('RUNNING', 'COMPLETED') AND "
+        "json_extract(j.input_payload, '$.experiment_id') = NEW.experiment_id)) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_jobs_bound_experiment_immutable BEFORE UPDATE OF job_type, input_payload "
+        "ON jobs WHEN (NEW.job_type IS NOT OLD.job_type OR NEW.input_payload IS NOT OLD.input_payload) "
+        "AND EXISTS (SELECT 1 FROM experiments e WHERE e.immutable = 1 AND "
+        "json_extract(e.detail, '$.job_id') IS OLD.job_id) BEGIN SELECT RAISE(ABORT, "
+        "'experiment completion job binding cannot be changed'); END"
+    )
+    op.execute("DROP TRIGGER IF EXISTS qf_jobs_bound_experiment_delete_immutable")
+    op.execute(
+        "CREATE TRIGGER qf_jobs_bound_experiment_delete_immutable BEFORE DELETE ON jobs "
+        "WHEN EXISTS (SELECT 1 FROM experiments e WHERE e.immutable = 1 AND "
+        "json_extract(e.detail, '$.job_id') IS OLD.job_id) BEGIN SELECT RAISE(ABORT, "
+        "'experiment completion job binding cannot be deleted'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE ON "
+        "approval_requests WHEN OLD.status = 'PENDING' AND NEW.status != 'PENDING' AND ("
+        "NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR "
+        "NEW.subject_type IS NOT OLD.subject_type OR NEW.subject_id IS NOT OLD.subject_id OR "
+        "NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256) BEGIN SELECT RAISE(ABORT, "
+        "'approval evidence cannot change while resolving'); END"
+    )
+    for action in ("UPDATE", "DELETE"):
+        op.execute(
+            f"CREATE TRIGGER qf_records_{action.lower()}_immutable BEFORE {action} "
+            f"ON records WHEN OLD.kind IN ('artifact', 'provenance') BEGIN SELECT "
+            "RAISE(ABORT, 'immutable record cannot be changed'); END"
+        )
+    op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_insert")
+    op.execute(
+        "CREATE TRIGGER qf_validations_holdout_insert BEFORE INSERT ON validations "
+        "WHEN NEW.holdout_state != 'LOCKED' OR NEW.exposure_count != 0 BEGIN SELECT "
+        "RAISE(ABORT, 'new holdout validation must start LOCKED with zero exposure'); END"
+    )
     op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_transition")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_transition BEFORE UPDATE OF "
-        "holdout_state, exposure_count ON validations WHEN NOT ("
+        "holdout_state, exposure_count, strategy_version_id ON validations WHEN NOT ("
         "NEW.holdout_state = OLD.holdout_state OR "
         "(OLD.holdout_state = 'LOCKED' AND NEW.holdout_state = 'APPROVAL_PENDING') OR "
         "(OLD.holdout_state = 'APPROVAL_PENDING' AND NEW.holdout_state IN ('LOCKED', 'UNLOCKED')) OR "
@@ -1528,15 +1968,23 @@ def _install_guards() -> None:
     op.execute("DROP TRIGGER IF EXISTS qf_validations_holdout_binding")
     op.execute(
         "CREATE TRIGGER qf_validations_holdout_binding BEFORE UPDATE OF "
-        "holdout_state, exposure_count ON validations WHEN "
+        "holdout_state, exposure_count, strategy_version_id ON validations WHEN "
+        "(OLD.holdout_state != 'LOCKED' AND NEW.strategy_version_id IS NOT OLD.strategy_version_id) OR "
         "(NEW.exposure_count != CASE WHEN NEW.holdout_state = 'EXPOSED' THEN 1 ELSE 0 END) OR "
         "(NEW.holdout_state = 'APPROVAL_PENDING' AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'PENDING')) OR "
+        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id "
+        "WHERE a.validation_id = NEW.id AND a.status = 'PENDING' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state IN ('UNLOCKED', 'RUNNING') AND NOT EXISTS (SELECT 1 FROM "
-        "approval_requests a WHERE a.validation_id = OLD.id AND a.status = 'APPROVED')) OR "
+        "approval_requests a JOIN strategy_versions sv ON sv.legacy_id = NEW.strategy_version_id "
+        "WHERE a.validation_id = NEW.id AND a.status = 'APPROVED' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) OR "
         "(NEW.holdout_state = 'EXPOSED' AND NOT EXISTS (SELECT 1 FROM "
-        "holdout_exposures e WHERE e.validation_id = OLD.id AND "
-        "e.strategy_version_public_id = OLD.strategy_version_id)) BEGIN SELECT RAISE(ABORT, "
+        "holdout_exposures e JOIN approval_requests a ON a.id = e.approval_id "
+        "JOIN strategy_versions sv ON sv.id = e.strategy_version_id WHERE "
+        "e.validation_id = NEW.id AND e.strategy_version_public_id = NEW.strategy_version_id AND "
+        "a.validation_id = NEW.id AND a.status = 'APPROVED' AND "
+        "a.subject_spec_sha256 IS sv.spec_sha256)) BEGIN SELECT RAISE(ABORT, "
         "'holdout state lacks durable evidence'); END"
     )
 
@@ -1546,17 +1994,26 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
     if bind.dialect.name == "sqlite":
         register_sqlite_functions(bind.connection.driver_connection)
     target_is_current = snapshot == CURRENT
+    if target_is_current:
+        _lock_singleton_migration(bind)
+    # A downgrade snapshot is only a recovery aid.  The next upgrade must
+    # read the live downgraded tables so writes made between revisions survive.
     roundtrip_preexisting = bool(_backup_names(bind, _ROUNDTRIP_BACKUP_PREFIX))
+    if target_is_current and not roundtrip_preexisting:
+        _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)
     source_schema = _sqlite_source_schema(bind) if bind.dialect.name == "sqlite" else []
+    source_foreign_key_violations = (
+        {tuple(row) for row in bind.execute(text("PRAGMA foreign_key_check"))}
+        if bind.dialect.name == "sqlite"
+        else set()
+    )
     _backup_tables(bind, _SOURCE_BACKUP_PREFIX, replace=True)
     source_rows = _read_backup_rows(bind, _SOURCE_BACKUP_PREFIX)
     if not target_is_current:
         _backup_tables(bind, _ROUNDTRIP_BACKUP_PREFIX, replace=True)
-    restore_rows = (
-        _read_backup_rows(bind, _ROUNDTRIP_BACKUP_PREFIX)
-        if target_is_current and roundtrip_preexisting
-        else {name: [dict(row) for row in rows] for name, rows in source_rows.items()}
-    )
+    restore_rows = {
+        name: [dict(row) for row in rows] for name, rows in source_rows.items()
+    }
     if target_is_current and not roundtrip_preexisting:
         _backfill_closed_storage(restore_rows)
     _normalize_paper_deployment_statuses(
@@ -1567,11 +2024,12 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         return load_physical_metadata(
             path,
             include_checks=(bind.dialect.name == "postgresql"),
-            include_sqlite_partial_indexes=(bind.dialect.name == "postgresql"),
+            include_sqlite_null_ordering=(bind.dialect.name == "postgresql"),
             # The frozen physical authority requires records.id to retain its
             # PostgreSQL uuidv7() default.  SQLite deliberately omits it: its
             # compatibility path supplies explicit UUID values instead.
             include_server_defaults=(bind.dialect.name == "postgresql"),
+            sqlite_compatibility=(bind.dialect.name == "sqlite"),
         )
 
     try:
@@ -1614,9 +2072,10 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
             metadata.create_all(bind=bind)
         finally:
             if deferred_domain_locator_check is not None:
-                metadata.tables["domain_events"].constraints.add(
-                    deferred_domain_locator_check
-                )
+                domain_events = metadata.tables.get("domain_events")
+                if domain_events is None:
+                    domain_events = metadata.tables["public.domain_events"]
+                domain_events.constraints.add(deferred_domain_locator_check)
         _restore_all_tables(
             bind,
             metadata,
@@ -1639,9 +2098,12 @@ def _replace(snapshot: Path, *, guards: bool) -> None:
         # source schema from the untouched physical backup before re-raising.
         if bind.dialect.name == "sqlite":
             _drop_application_tables()
-            _restore_sqlite_source_schema(bind, source_schema, source_rows)
-            if guards:
-                _install_guards()
+            _restore_sqlite_source_schema(
+                bind,
+                source_schema,
+                source_rows,
+                expected_foreign_key_violations=source_foreign_key_violations,
+            )
             _drop_backup_set(bind, _SOURCE_BACKUP_PREFIX)
             if not target_is_current:
                 _drop_backup_set(bind, _ROUNDTRIP_BACKUP_PREFIX)

@@ -17,22 +17,22 @@ depends_on = None
 
 
 JOB_COLUMNS = (
-    sa.Column("input_payload", sa.Text(), nullable=False, server_default="{}"),
-    sa.Column("payload_sha256", sa.String(64), nullable=False, server_default="0" * 64),
-    sa.Column("queue_name", sa.String(), nullable=False, server_default="core"),
-    sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
+    sa.Column("input_payload", sa.Text(), nullable=False),
+    sa.Column("payload_sha256", sa.String(64), nullable=False),
+    sa.Column("queue_name", sa.String(), nullable=False),
+    sa.Column("priority", sa.Integer(), nullable=False),
     sa.Column("result_ref", sa.Text()),
     sa.Column("error_code", sa.String()),
     sa.Column("error_detail", sa.Text()),
-    sa.Column("attempt", sa.Integer(), nullable=False, server_default="0"),
-    sa.Column("max_attempts", sa.Integer(), nullable=False, server_default="3"),
+    sa.Column("attempt", sa.Integer(), nullable=False),
+    sa.Column("max_attempts", sa.Integer(), nullable=False),
     sa.Column("lease_owner", sa.String()),
     sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
     sa.Column("heartbeat_at", sa.DateTime(timezone=True)),
     sa.Column("cancel_requested_at", sa.DateTime(timezone=True)),
-    sa.Column("fencing_token", sa.Integer(), nullable=False, server_default="0"),
-    sa.Column("retry_safe", sa.Boolean(), nullable=False, server_default=sa.true()),
-    sa.Column("progress_mode", sa.String(), nullable=False, server_default="NONE"),
+    sa.Column("fencing_token", sa.Integer(), nullable=False),
+    sa.Column("retry_safe", sa.Boolean(), nullable=False),
+    sa.Column("progress_mode", sa.String(), nullable=False),
     sa.Column("completed_units", sa.Integer()),
     sa.Column("total_units", sa.Integer()),
     sa.Column("progress_unit", sa.String()),
@@ -42,12 +42,11 @@ JOB_COLUMNS = (
         "queued_at",
         sa.DateTime(timezone=True),
         nullable=False,
-        server_default=sa.text("CURRENT_TIMESTAMP"),
     ),
     sa.Column("started_at", sa.DateTime(timezone=True)),
     sa.Column("finished_at", sa.DateTime(timezone=True)),
-    sa.Column("created_by_type", sa.String(), nullable=False, server_default="USER"),
-    sa.Column("created_by_id", sa.String(), nullable=False, server_default="system"),
+    sa.Column("created_by_type", sa.String(), nullable=False),
+    sa.Column("created_by_id", sa.String(), nullable=False),
     sa.Column("correlation_id", sa.String()),
 )
 
@@ -61,17 +60,66 @@ EVENT_COLUMNS = (
 )
 
 APPROVAL_COLUMNS = (
-    sa.Column("subject_type", sa.String(), nullable=False, server_default="validation"),
-    sa.Column("subject_id", sa.String(), nullable=False, server_default=""),
+    sa.Column("subject_type", sa.String(), nullable=False),
+    sa.Column("subject_id", sa.String(), nullable=False),
     sa.Column("subject_version", sa.Integer()),
-    sa.Column("subject_revision", sa.Integer(), nullable=False, server_default="1"),
-    sa.Column(
-        "subject_spec_sha256", sa.String(64), nullable=False, server_default="0" * 64
-    ),
-    sa.Column(
-        "prerequisites_sha256", sa.String(64), nullable=False, server_default="0" * 64
-    ),
+    sa.Column("subject_revision", sa.Integer(), nullable=False),
+    sa.Column("subject_spec_sha256", sa.String(64), nullable=False),
+    sa.Column("prerequisites_sha256", sa.String(64), nullable=False),
 )
+
+
+def _add_columns(table: str, columns: tuple[sa.Column, ...]) -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        table_kwargs = (
+            {"sqlite_autoincrement": True} if table == "domain_events" else {}
+        )
+        with op.batch_alter_table(
+            table, recreate="always", table_kwargs=table_kwargs
+        ) as batch_op:
+            for column in columns:
+                batch_op.add_column(column)
+        return
+    for column in columns:
+        op.add_column(table, column)
+
+
+def _assert_integrity_backfill_is_mappable() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        bind.execute(
+            sa.text(
+                "LOCK TABLE jobs, domain_events, audit_events, approval_requests, "
+                "tool_calls IN ACCESS EXCLUSIVE MODE"
+            )
+        )
+    elif bind.dialect.name == "sqlite":
+        if bind.in_transaction():
+            bind.execute(sa.text("UPDATE jobs SET id = id WHERE 0"))
+        else:
+            bind.exec_driver_sql("BEGIN IMMEDIATE")
+    tables = (
+        "jobs",
+        "domain_events",
+        "audit_events",
+        "approval_requests",
+        "tool_calls",
+    )
+    counts = {
+        table: int(bind.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar_one())
+        for table in tables
+    }
+    null_events = int(
+        bind.execute(
+            sa.text("SELECT COUNT(*) FROM domain_events WHERE expires_at IS NULL")
+        ).scalar_one()
+    )
+    if any(counts.values()) or null_events:
+        detail = ", ".join(f"{table}={count}" for table, count in counts.items())
+        raise RuntimeError(
+            "0003 refuses to synthesize integrity evidence; manual backfill required "
+            f"({detail}, domain_events.expires_at_null={null_events})"
+        )
 
 
 def _create_immutability_guards() -> None:
@@ -120,8 +168,70 @@ def _create_immutability_guards() -> None:
             """
             CREATE FUNCTION qf_reject_frozen_strategy_change() RETURNS trigger AS $$
             BEGIN
-              IF OLD.state = 'FROZEN' THEN
+              IF TG_OP = 'INSERT' THEN
+                IF NEW.state <> 'CANDIDATE' THEN
+                  RAISE EXCEPTION 'strategy version must start as candidate';
+                END IF;
+                RETURN NEW;
+              END IF;
+              IF TG_OP = 'DELETE' AND OLD.state <> 'CANDIDATE' THEN
                 RAISE EXCEPTION 'frozen strategy version cannot be changed';
+              END IF;
+              IF TG_OP = 'UPDATE' AND OLD.state <> 'CANDIDATE' AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
+                   NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.frozen_at IS DISTINCT FROM OLD.frozen_at OR
+                   (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities') IS DISTINCT FROM
+                   (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities')
+              ) THEN
+                RAISE EXCEPTION 'frozen strategy specification is immutable';
+              END IF;
+              IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN'
+                 AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
+                   NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.frozen_at IS NULL OR
+                   (NEW.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities') IS DISTINCT FROM
+                   (OLD.detail::jsonb - 'lifecycle_state' - 'is_frozen' -
+                    'latest_backtest' - 'validation_summary' - 'artifacts' -
+                    'provenance' - 'frozen_at' - 'frozen_by' - 'revision' -
+                    'action_capabilities')
+                 ) THEN
+                RAISE EXCEPTION 'strategy evidence cannot change while freezing';
+              END IF;
+              IF TG_OP = 'UPDATE' AND OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE'
+                 AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
+                   NEW.strategy_id IS DISTINCT FROM OLD.strategy_id OR
+                   NEW.version IS DISTINCT FROM OLD.version OR
+                   NEW.spec_sha256 IS DISTINCT FROM OLD.spec_sha256 OR
+                   NEW.frozen_at IS DISTINCT FROM OLD.frozen_at OR
+                   NEW.detail IS DISTINCT FROM OLD.detail
+                 ) THEN
+                RAISE EXCEPTION 'candidate strategy evidence must be append-only';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT (
+                   NEW.state = OLD.state OR
+                   (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR
+                   (OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR
+                   (OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR
+                   (OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR
+                   (OLD.state = 'PAPER' AND NEW.state = 'RETIRED')
+              ) THEN
+                RAISE EXCEPTION 'illegal strategy lifecycle transition';
               END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
@@ -130,15 +240,54 @@ def _create_immutability_guards() -> None:
             """
         )
         op.execute(
-            "CREATE TRIGGER qf_strategy_versions_immutable BEFORE UPDATE OR DELETE "
+            "CREATE TRIGGER qf_strategy_versions_immutable BEFORE INSERT OR UPDATE OR DELETE "
             "ON strategy_versions FOR EACH ROW EXECUTE FUNCTION qf_reject_frozen_strategy_change()"
         )
         op.execute(
             """
             CREATE FUNCTION qf_reject_completed_experiment_change() RETURNS trigger AS $$
             BEGIN
+              IF TG_OP = 'INSERT' THEN
+                IF NEW.immutable THEN
+                  RAISE EXCEPTION 'experiment must start mutable';
+                END IF;
+                RETURN NEW;
+              END IF;
               IF OLD.immutable THEN
                 RAISE EXCEPTION 'completed experiment cannot be changed';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NOT NEW.immutable
+                 AND (
+                   NEW.id IS DISTINCT FROM OLD.id OR
+                   NEW.research_id IS DISTINCT FROM OLD.research_id OR
+                   NEW.detail IS DISTINCT FROM OLD.detail OR
+                   NEW.revision IS DISTINCT FROM OLD.revision
+                 ) THEN
+                RAISE EXCEPTION 'experiment evidence cannot change while completing';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NOT OLD.immutable AND NEW.immutable
+                 AND NOT (
+                   NEW.id IS NOT DISTINCT FROM OLD.id AND
+                   NEW.research_id IS NOT DISTINCT FROM OLD.research_id AND
+                   NEW.revision = OLD.revision + 1 AND
+                   (NEW.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') IS NOT DISTINCT FROM
+                   (OLD.detail::jsonb - 'status' - 'validity_state' - 'adapter' -
+                    'provenance' - 'metrics' - 'artifacts' - 'search_space' -
+                    'search_configuration' - 'search_result' - 'action_capabilities' -
+                    'started_at' - 'finished_at') AND
+                   COALESCE(NEW.detail::jsonb ->> 'status', '') = 'COMPLETED' AND
+                   EXISTS (
+                     SELECT 1 FROM jobs j
+                     WHERE j.id = NEW.detail::jsonb ->> 'job_id'
+                       AND j.job_type = 'EXPERIMENT'
+                       AND j.status IN ('RUNNING', 'COMPLETED')
+                       AND j.input_payload::jsonb ->> 'experiment_id' = NEW.id
+                   )
+                 ) THEN
+                RAISE EXCEPTION 'experiment completion is not bound to a running job';
               END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
@@ -147,15 +296,34 @@ def _create_immutability_guards() -> None:
             """
         )
         op.execute(
-            "CREATE TRIGGER qf_experiments_immutable BEFORE UPDATE OR DELETE ON experiments "
+            "CREATE TRIGGER qf_experiments_immutable BEFORE INSERT OR UPDATE OR DELETE ON experiments "
             "FOR EACH ROW EXECUTE FUNCTION qf_reject_completed_experiment_change()"
         )
         op.execute(
             """
             CREATE FUNCTION qf_reject_terminal_approval_change() RETURNS trigger AS $$
             BEGIN
+              IF TG_OP = 'INSERT' THEN
+                IF NEW.status <> 'PENDING' THEN
+                  RAISE EXCEPTION 'approval must start pending';
+                END IF;
+                RETURN NEW;
+              END IF;
               IF OLD.status <> 'PENDING' THEN
                 RAISE EXCEPTION 'terminal approval cannot be changed';
+              END IF;
+              IF TG_OP = 'UPDATE' AND NEW.status <> 'PENDING'
+                 AND (
+                   NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                   NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                   NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                   NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                   NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                   NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                   NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                   NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+                 ) THEN
+                RAISE EXCEPTION 'approval evidence cannot change while resolving';
               END IF;
               IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
               RETURN NEW;
@@ -164,8 +332,33 @@ def _create_immutability_guards() -> None:
             """
         )
         op.execute(
-            "CREATE TRIGGER qf_approval_requests_immutable BEFORE UPDATE OR DELETE "
+            "CREATE TRIGGER qf_approval_requests_immutable BEFORE INSERT OR UPDATE OR DELETE "
             "ON approval_requests FOR EACH ROW EXECUTE FUNCTION qf_reject_terminal_approval_change()"
+        )
+        op.execute(
+            """
+            CREATE FUNCTION qf_reject_pending_approval_evidence_change() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'UPDATE' AND (
+                NEW.validation_id IS DISTINCT FROM OLD.validation_id OR
+                NEW.subject_sha256 IS DISTINCT FROM OLD.subject_sha256 OR
+                NEW.subject_type IS DISTINCT FROM OLD.subject_type OR
+                NEW.subject_id IS DISTINCT FROM OLD.subject_id OR
+                NEW.subject_version IS DISTINCT FROM OLD.subject_version OR
+                NEW.subject_revision IS DISTINCT FROM OLD.subject_revision OR
+                NEW.subject_spec_sha256 IS DISTINCT FROM OLD.subject_spec_sha256 OR
+                NEW.prerequisites_sha256 IS DISTINCT FROM OLD.prerequisites_sha256
+              ) THEN
+                RAISE EXCEPTION 'approval evidence cannot be changed';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+            "ON approval_requests FOR EACH ROW EXECUTE FUNCTION qf_reject_pending_approval_evidence_change()"
         )
         return
 
@@ -189,12 +382,31 @@ def _create_immutability_guards() -> None:
         "WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN "
         "SELECT RAISE(ABORT, 'unexpired event cannot be deleted'); END"
     )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_delete_immutable BEFORE DELETE "
+        "ON strategy_versions WHEN OLD.state != 'CANDIDATE' BEGIN "
+        "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_insert_immutable BEFORE INSERT "
+        "ON strategy_versions WHEN NEW.state != 'CANDIDATE' BEGIN "
+        "SELECT RAISE(ABORT, 'strategy version must start as candidate'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_update_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN OLD.state != 'CANDIDATE' AND ("
+        "NEW.id IS NOT OLD.id OR "
+        "NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.frozen_at IS NOT OLD.frozen_at OR "
+        "json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', '$.provenance', "
+        "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
+        "json_remove(OLD.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', '$.provenance', "
+        "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities')) BEGIN "
+        "SELECT RAISE(ABORT, 'frozen strategy specification is immutable'); END"
+    )
     for action in ("UPDATE", "DELETE"):
-        op.execute(
-            f"CREATE TRIGGER qf_strategy_versions_{action.lower()}_immutable BEFORE {action} "
-            "ON strategy_versions WHEN OLD.state = 'FROZEN' BEGIN "
-            "SELECT RAISE(ABORT, 'frozen strategy version cannot be changed'); END"
-        )
         op.execute(
             f"CREATE TRIGGER qf_experiments_{action.lower()}_immutable BEFORE {action} "
             "ON experiments WHEN OLD.immutable = 1 BEGIN "
@@ -205,25 +417,105 @@ def _create_immutability_guards() -> None:
             "ON approval_requests WHEN OLD.status != 'PENDING' BEGIN "
             "SELECT RAISE(ABORT, 'terminal approval cannot be changed'); END"
         )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_insert_immutable BEFORE INSERT ON experiments "
+        "WHEN NEW.immutable = 1 BEGIN "
+        "SELECT RAISE(ABORT, 'experiment must start mutable'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_insert_immutable BEFORE INSERT "
+        "ON approval_requests WHEN NEW.status != 'PENDING' BEGIN "
+        "SELECT RAISE(ABORT, 'approval must start pending'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_freeze_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN' AND ("
+        "NEW.id IS NOT OLD.id OR NEW.strategy_id IS NOT OLD.strategy_id OR "
+        "NEW.version IS NOT OLD.version OR NEW.spec_sha256 IS NOT OLD.spec_sha256 OR "
+        "NEW.frozen_at IS NULL OR json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen', "
+        "'$.latest_backtest', '$.validation_summary', '$.artifacts', '$.provenance', "
+        "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities') IS NOT "
+        "json_remove(OLD.detail, '$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
+        "'$.validation_summary', '$.artifacts', '$.provenance', '$.frozen_at', '$.frozen_by', "
+        "'$.revision', '$.action_capabilities')) OR NOT ("
+        "NEW.state = OLD.state OR (OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
+        "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
+        "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
+        "(OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR "
+        "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) "
+        "BEGIN SELECT RAISE(ABORT, 'strategy evidence cannot change while freezing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_strategy_versions_candidate_immutable BEFORE UPDATE "
+        "ON strategy_versions WHEN OLD.state = 'CANDIDATE' AND NEW.state = 'CANDIDATE' AND ("
+        "NEW.id IS NOT OLD.id OR NEW.strategy_id IS NOT OLD.strategy_id OR NEW.version IS NOT OLD.version OR "
+        "NEW.spec_sha256 IS NOT OLD.spec_sha256 OR NEW.frozen_at IS NOT OLD.frozen_at OR "
+        "NEW.detail IS NOT OLD.detail) "
+        "BEGIN SELECT RAISE(ABORT, 'candidate strategy evidence must be append-only'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_immutable BEFORE UPDATE "
+        "ON experiments WHEN OLD.immutable = 0 AND NEW.immutable = 0 AND ("
+        "NEW.id IS NOT OLD.id OR NEW.research_id IS NOT OLD.research_id OR NEW.detail IS NOT OLD.detail OR "
+        "NEW.revision IS NOT OLD.revision) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment evidence cannot change while completing'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON experiments "
+        "WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
+        "NEW.id IS OLD.id AND NEW.research_id IS OLD.research_id AND NEW.revision = OLD.revision + 1 AND "
+        "json_remove(NEW.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') IS "
+        "json_remove(OLD.detail, '$.status', '$.validity_state', '$.adapter', '$.provenance', "
+        "'$.metrics', '$.artifacts', '$.search_space', '$.search_configuration', "
+        "'$.search_result', '$.action_capabilities', '$.started_at', '$.finished_at') AND "
+        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE "
+        "j.id = json_extract(NEW.detail, '$.job_id') AND "
+        "j.job_type = 'EXPERIMENT' AND "
+        "j.status IN ('RUNNING', 'COMPLETED') AND "
+        "json_extract(j.input_payload, '$.experiment_id') IS NEW.id)) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_pending_evidence_immutable BEFORE UPDATE "
+        "ON approval_requests WHEN NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR NEW.subject_type IS NOT OLD.subject_type OR "
+        "NEW.subject_id IS NOT OLD.subject_id OR NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256 BEGIN SELECT "
+        "RAISE(ABORT, 'approval evidence cannot be changed'); END"
+    )
+    op.execute(
+        "CREATE TRIGGER qf_approval_requests_resolve_immutable BEFORE UPDATE "
+        "ON approval_requests WHEN OLD.status = 'PENDING' AND NEW.status != 'PENDING' AND ("
+        "NEW.validation_id IS NOT OLD.validation_id OR "
+        "NEW.subject_sha256 IS NOT OLD.subject_sha256 OR "
+        "NEW.subject_type IS NOT OLD.subject_type OR NEW.subject_id IS NOT OLD.subject_id OR "
+        "NEW.subject_version IS NOT OLD.subject_version OR "
+        "NEW.subject_revision IS NOT OLD.subject_revision OR "
+        "NEW.subject_spec_sha256 IS NOT OLD.subject_spec_sha256 OR "
+        "NEW.prerequisites_sha256 IS NOT OLD.prerequisites_sha256) "
+        "BEGIN SELECT RAISE(ABORT, 'approval evidence cannot change while resolving'); END"
+    )
 
 
 def upgrade() -> None:
-    for column in JOB_COLUMNS:
-        op.add_column("jobs", column)
-    for column in EVENT_COLUMNS:
-        op.add_column("domain_events", column)
-    op.add_column("audit_events", sa.Column("previous_sha256", sa.String(64)))
-    op.add_column(
+    _assert_integrity_backfill_is_mappable()
+    _add_columns("jobs", JOB_COLUMNS)
+    _add_columns("domain_events", EVENT_COLUMNS)
+    _add_columns(
         "audit_events",
-        sa.Column(
-            "event_sha256", sa.String(64), nullable=False, server_default="0" * 64
+        (
+            sa.Column("previous_sha256", sa.String(64)),
+            sa.Column("event_sha256", sa.String(64), nullable=False),
         ),
     )
-    for column in APPROVAL_COLUMNS:
-        op.add_column("approval_requests", column)
-    op.add_column(
-        "tool_calls",
-        sa.Column("semantic_scope", sa.String(), nullable=False, server_default=""),
+    _add_columns("approval_requests", APPROVAL_COLUMNS)
+    _add_columns(
+        "tool_calls", (sa.Column("semantic_scope", sa.String(), nullable=False),)
     )
     op.create_index(
         "uq_tool_calls_active_semantic",
@@ -254,6 +546,13 @@ def upgrade() -> None:
         )
         batch_op.create_check_constraint(
             "jobs_total_units_check", "total_units IS NULL OR total_units >= 0"
+        )
+        batch_op.create_check_constraint(
+            "jobs_attempt_limit_check", "attempt <= max_attempts"
+        )
+        batch_op.create_check_constraint(
+            "jobs_progress_bounds_check",
+            "completed_units IS NULL OR total_units IS NULL OR completed_units <= total_units",
         )
     for name in ("correlation_id", "job_id", "agent_run_id", "tool_call_id"):
         op.create_index(f"ix_domain_events_{name}", "domain_events", [name])
@@ -349,6 +648,10 @@ def _drop_immutability_guards() -> None:
         op.execute("DROP FUNCTION qf_reject_completed_experiment_change()")
         op.execute("DROP FUNCTION qf_reject_unexpired_event_delete()")
         op.execute("DROP FUNCTION qf_reject_terminal_approval_change()")
+        op.execute(
+            "DROP TRIGGER qf_approval_requests_pending_evidence_immutable ON approval_requests"
+        )
+        op.execute("DROP FUNCTION qf_reject_pending_approval_evidence_change()")
         return
     for table in (
         "audit_events",
@@ -360,9 +663,18 @@ def _drop_immutability_guards() -> None:
             op.execute(f"DROP TRIGGER qf_{table}_{action}_immutable")
     op.execute("DROP TRIGGER qf_domain_events_update_immutable")
     op.execute("DROP TRIGGER qf_domain_events_delete_immutable")
+    op.execute("DROP TRIGGER qf_strategy_versions_insert_immutable")
     for table in ("strategy_versions", "experiments", "approval_requests"):
         for action in ("update", "delete"):
             op.execute(f"DROP TRIGGER qf_{table}_{action}_immutable")
+    op.execute("DROP TRIGGER qf_experiments_insert_immutable")
+    op.execute("DROP TRIGGER qf_approval_requests_insert_immutable")
+    op.execute("DROP TRIGGER qf_strategy_versions_freeze_immutable")
+    op.execute("DROP TRIGGER qf_strategy_versions_candidate_immutable")
+    op.execute("DROP TRIGGER qf_experiments_complete_immutable")
+    op.execute("DROP TRIGGER qf_experiments_complete_binding")
+    op.execute("DROP TRIGGER qf_approval_requests_pending_evidence_immutable")
+    op.execute("DROP TRIGGER qf_approval_requests_resolve_immutable")
 
 
 def downgrade() -> None:
@@ -384,6 +696,8 @@ def downgrade() -> None:
         batch_op.drop_constraint("jobs_fencing_token_check", type_="check")
         batch_op.drop_constraint("jobs_max_attempts_check", type_="check")
         batch_op.drop_constraint("jobs_attempt_check", type_="check")
+        batch_op.drop_constraint("jobs_attempt_limit_check", type_="check")
+        batch_op.drop_constraint("jobs_progress_bounds_check", type_="check")
         batch_op.drop_constraint("jobs_priority_check", type_="check")
     op.drop_index("ix_jobs_correlation_id", table_name="jobs")
     op.drop_index("ix_jobs_lease_expires_at", table_name="jobs")

@@ -10,7 +10,7 @@ import re
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -77,6 +77,29 @@ def _parse_timestamp(value: Any, field: str) -> datetime:
     if parsed.tzinfo is None:
         raise EngineInputError(f"{field} must include an explicit timezone")
     return parsed.astimezone(UTC)
+
+
+def _parse_date(value: Any, field: str) -> date:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise EngineInputError(f"invalid {field}")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise EngineInputError(f"invalid {field}: {value}") from error
+
+
+def _parse_bool(value: Any, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    raise EngineInputError(f"invalid {field}")
 
 
 def _dataset_paths(dataset_id: str) -> tuple[Path, Path]:
@@ -164,11 +187,17 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
                 "survivorship_policy": "POINT_IN_TIME_MEMBERSHIP_V1",
             }
         )
+    metadata_text: dict[str, str] = {}
+    for field in required_metadata | policy_metadata:
+        value = metadata.get(field)
+        if not isinstance(value, str) or not value:
+            raise EngineInputError(f"dataset metadata field is invalid: {field}")
+        metadata_text[field] = value
     try:
-        timezone = ZoneInfo(str(metadata["timezone"]))
+        timezone = ZoneInfo(metadata_text["timezone"])
     except ZoneInfoNotFoundError as error:
         raise EngineInputError("dataset timezone is unknown") from error
-    calendar = str(metadata["calendar"])
+    calendar = metadata_text["calendar"]
     if calendar not in {"WEEKDAY", "24X7"}:
         raise EngineInputError("unsupported dataset calendar")
     table = _read_table(source)
@@ -179,13 +208,19 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
         available_at = _parse_timestamp(raw["available_at"], "available_at")
         if available_at < event_time:
             raise EngineInputError("available_at cannot precede event_time")
-        symbol = str(raw["symbol"])
-        partition = str(raw["partition"])
+        symbol = raw["symbol"]
+        partition = raw["partition"]
+        if not isinstance(symbol, str) or not symbol:
+            raise EngineInputError("market row symbol is invalid")
+        if not isinstance(partition, str):
+            raise EngineInputError("market row partition is invalid")
         try:
             close = float(raw["close"])
             benchmark_close = float(raw["benchmark_close"])
-            split_factor = float(raw.get("split_factor") or 1.0)
-            dividend = float(raw.get("dividend") or 0.0)
+            split_factor = float(
+                1.0 if raw.get("split_factor") is None else raw["split_factor"]
+            )
+            dividend = float(0.0 if raw.get("dividend") is None else raw["dividend"])
         except (TypeError, ValueError) as error:
             raise EngineInputError("market prices must be numeric") from error
         local_date = event_time.astimezone(timezone).date().isoformat()
@@ -193,14 +228,14 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
             raise EngineInputError(f"off-calendar market row: {local_date}")
         if partition not in {"RESEARCH", "VALIDATION", "HOLDOUT"}:
             raise EngineInputError(f"invalid dataset partition: {partition}")
-        if not symbol or not all(
+        if not all(
             math.isfinite(value) and value > 0
             for value in (close, benchmark_close, split_factor)
         ):
             raise EngineInputError("market row symbol/price is invalid")
         if not math.isfinite(dividend) or dividend < 0:
             raise EngineInputError("market row dividend is invalid")
-        key = (event_time.isoformat(), symbol)
+        key = (local_date, symbol)
         if key in seen:
             raise EngineInputError(f"duplicate market row: {key}")
         seen.add(key)
@@ -215,8 +250,10 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
                 "partition": partition,
                 "split_factor": split_factor,
                 "dividend": dividend,
-                "in_universe": bool(
-                    True if raw.get("in_universe") is None else raw["in_universe"]
+                "in_universe": (
+                    True
+                    if raw.get("in_universe") is None
+                    else _parse_bool(raw["in_universe"], "in_universe")
                 ),
                 "sector": str(raw.get("sector") or "UNCLASSIFIED"),
             }
@@ -240,15 +277,15 @@ def load_dataset(dataset_id: str) -> DatasetBundle:
     ).hexdigest()
     return DatasetBundle(
         rows=rows,
-        provider_id=str(metadata["provider_id"]),
-        adapter_key=str(metadata["adapter_key"]),
-        adapter_version=str(metadata["adapter_version"]),
-        timezone=str(metadata["timezone"]),
+        provider_id=metadata_text["provider_id"],
+        adapter_key=metadata_text["adapter_key"],
+        adapter_version=metadata_text["adapter_version"],
+        timezone=metadata_text["timezone"],
         calendar=calendar,
         schema_sha256=schema_sha256,
-        pit_policy=str(metadata["pit_policy"]),
-        corporate_action_policy=str(metadata["corporate_action_policy"]),
-        survivorship_policy=str(metadata["survivorship_policy"]),
+        pit_policy=metadata_text["pit_policy"],
+        corporate_action_policy=metadata_text["corporate_action_policy"],
+        survivorship_policy=metadata_text["survivorship_policy"],
     )
 
 
@@ -288,7 +325,7 @@ def load_cost_model(cost_model_id: str) -> CostModel:
     return CostModel(cost_model_id, version, commission, slippage)
 
 
-def load_validation_policy(policy_id: str) -> ValidationPolicy:
+def _load_validation_policy_document(policy_id: str) -> dict[str, Any]:
     root_value = os.getenv("QF_POLICY_DIR")
     if not root_value:
         raise EngineInputError("QF_POLICY_DIR is not configured")
@@ -317,22 +354,39 @@ def load_validation_policy(policy_id: str) -> ValidationPolicy:
     data_quality = value["data_quality"]
     if not all(isinstance(item, dict) for item in (validation, holdout, data_quality)):
         raise EngineInputError("validation policy sections must be objects")
+    return value
+
+
+def _parse_validation_policy(policy_id: str, value: dict[str, Any]) -> ValidationPolicy:
+    validation = value["validation"]
+    holdout = value["holdout"]
+    data_quality = value["data_quality"]
+    integer_values = (
+        value.get("version"),
+        validation.get("min_observations"),
+        holdout.get("min_observations"),
+        value.get("multiple_testing_max_evaluations"),
+        data_quality.get("min_rows"),
+        data_quality.get("min_symbols"),
+    )
+    if any(
+        not isinstance(item, int) or isinstance(item, bool) for item in integer_values
+    ):
+        raise EngineInputError("validation policy integer values are invalid")
     try:
         policy = ValidationPolicy(
             policy_id=policy_id,
-            version=int(value["version"]),
-            validation_min_observations=int(validation["min_observations"]),
+            version=value["version"],
+            validation_min_observations=validation["min_observations"],
             validation_min_sharpe=float(validation["min_sharpe"]),
             validation_max_drawdown_floor=float(validation["max_drawdown_floor"]),
-            holdout_min_observations=int(holdout["min_observations"]),
+            holdout_min_observations=holdout["min_observations"],
             holdout_min_total_return=float(holdout["min_total_return"]),
             holdout_min_sharpe=float(holdout["min_sharpe"]),
             holdout_max_drawdown_floor=float(holdout["max_drawdown_floor"]),
-            multiple_testing_max_evaluations=int(
-                value["multiple_testing_max_evaluations"]
-            ),
-            data_min_rows=int(data_quality["min_rows"]),
-            data_min_symbols=int(data_quality["min_symbols"]),
+            multiple_testing_max_evaluations=value["multiple_testing_max_evaluations"],
+            data_min_rows=data_quality["min_rows"],
+            data_min_symbols=data_quality["min_symbols"],
             data_max_late_release_fraction=float(
                 data_quality["max_late_release_fraction"]
             ),
@@ -349,17 +403,48 @@ def load_validation_policy(policy_id: str) -> ValidationPolicy:
         or not 0 <= policy.data_max_late_release_fraction <= 1
         or not -1 <= policy.validation_max_drawdown_floor <= 0
         or not -1 <= policy.holdout_max_drawdown_floor <= 0
+        or not all(
+            math.isfinite(value)
+            for value in (
+                policy.validation_min_sharpe,
+                policy.holdout_min_total_return,
+                policy.holdout_min_sharpe,
+                policy.data_max_late_release_fraction,
+            )
+        )
     ):
         raise EngineInputError("validation policy thresholds are out of range")
     return policy
+
+
+def load_validation_policy_bundle(
+    policy_id: str,
+) -> tuple[ValidationPolicy, dict[str, Any]]:
+    document = _load_validation_policy_document(policy_id)
+    return _parse_validation_policy(policy_id, document), document
+
+
+def load_validation_policy(policy_id: str) -> ValidationPolicy:
+    return load_validation_policy_bundle(policy_id)[0]
+
+
+def load_validation_policy_document(policy_id: str) -> dict[str, Any]:
+    return load_validation_policy_bundle(policy_id)[1]
 
 
 def data_quality_profile(
     bundle: DatasetBundle, policy: ValidationPolicy
 ) -> dict[str, Any]:
     symbols = {row["symbol"] for row in bundle.rows}
+    timezone = ZoneInfo(bundle.timezone)
     late_release_count = sum(
-        1 for row in bundle.rows if row["available_at"][:10] > row["date"]
+        1
+        for row in bundle.rows
+        if _parse_timestamp(row["available_at"], "available_at")
+        .astimezone(timezone)
+        .date()
+        .isoformat()
+        > row["date"]
     )
     late_fraction = late_release_count / len(bundle.rows)
     failures = []
@@ -383,14 +468,30 @@ def data_quality_profile(
 def holdout_policy_result(
     metrics: dict[str, Any], policy: ValidationPolicy
 ) -> tuple[str, list[str]]:
+    try:
+        observations_value = metrics["observations"]
+        if not isinstance(observations_value, int) or isinstance(
+            observations_value, bool
+        ):
+            raise TypeError("observations must be an integer")
+        observations = observations_value
+        total_return = float(metrics["total_return"])
+        sharpe = float(metrics["sharpe"])
+        maximum_drawdown = float(metrics["maximum_drawdown"])
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise EngineInputError("holdout metrics are invalid") from error
+    if (
+        not all(
+            math.isfinite(value) for value in (total_return, sharpe, maximum_drawdown)
+        )
+        or not -1.0 <= maximum_drawdown <= 0.0
+    ):
+        raise EngineInputError("holdout metrics are invalid")
     checks = {
-        "MIN_OBSERVATIONS": int(metrics["observations"])
-        >= policy.holdout_min_observations,
-        "MIN_TOTAL_RETURN": float(metrics["total_return"])
-        >= policy.holdout_min_total_return,
-        "MIN_SHARPE": float(metrics["sharpe"]) >= policy.holdout_min_sharpe,
-        "MAX_DRAWDOWN": float(metrics["maximum_drawdown"])
-        >= policy.holdout_max_drawdown_floor,
+        "MIN_OBSERVATIONS": observations >= policy.holdout_min_observations,
+        "MIN_TOTAL_RETURN": total_return >= policy.holdout_min_total_return,
+        "MIN_SHARPE": sharpe >= policy.holdout_min_sharpe,
+        "MAX_DRAWDOWN": maximum_drawdown >= policy.holdout_max_drawdown_floor,
     }
     failures = [key for key, passed in checks.items() if not passed]
     return ("PASS" if not failures else "FAIL", failures)
@@ -431,10 +532,14 @@ def snapshot_rows(
     as_of_time: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     as_of = _parse_timestamp(as_of_time, "as_of_time")
+    start_date = _parse_date(start, "start")
+    end_date = _parse_date(end, "end")
+    if start_date > end_date:
+        raise EngineInputError("snapshot start must not follow end")
     selected = [
         row
         for row in bundle.rows
-        if start <= row["date"] <= end
+        if start_date <= _parse_date(row["date"], "date") <= end_date
         and _parse_timestamp(row["available_at"], "available_at") <= as_of
     ]
     public = [row for row in selected if row["partition"] != "HOLDOUT"]
@@ -449,10 +554,14 @@ def snapshot_rows(
 def date_range_rows(
     rows: list[dict[str, Any]], start: str, end: str, partition: str | None = None
 ) -> list[dict[str, Any]]:
+    start_date = _parse_date(start, "start")
+    end_date = _parse_date(end, "end")
+    if start_date > end_date:
+        raise EngineInputError("range start must not follow end")
     selected = [
         row
         for row in rows
-        if start <= row["date"] <= end
+        if start_date <= _parse_date(row["date"], "date") <= end_date
         and (partition is None or row["partition"] == partition)
     ]
     if not selected:
@@ -490,6 +599,36 @@ def _ranks(values: list[float]) -> list[float]:
     return ranks
 
 
+def _adjusted_price_map(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, float]]:
+    """Return split-adjusted total-return prices without resetting action state."""
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[row["symbol"]].append(row)
+    result: dict[str, dict[str, float]] = defaultdict(dict)
+    for symbol, history in grouped.items():
+        adjusted_level: float | None = None
+        previous_close: float | None = None
+        for row in sorted(history, key=lambda item: item["date"]):
+            close = float(row["close"])
+            split_factor = float(row.get("split_factor", 1.0))
+            dividend = float(row.get("dividend", 0.0))
+            if previous_close is None:
+                price = close + dividend
+            else:
+                gross_return = (close + dividend) * split_factor / previous_close
+                if not math.isfinite(gross_return) or gross_return <= 0:
+                    raise EngineInputError("adjusted market return is invalid")
+                price = (adjusted_level or previous_close) * gross_return
+            if not math.isfinite(price) or price <= 0:
+                raise EngineInputError("adjusted market price is invalid")
+            result[row["date"]][symbol] = price
+            adjusted_level = price
+            previous_close = close
+    return result
+
+
 def compute_factor_rows(
     rows: list[dict[str, Any]],
     expression: str,
@@ -501,7 +640,15 @@ def compute_factor_rows(
     for key, value in (parameters or {}).items():
         resolved = resolved.replace("{" + key + "}", value)
     if resolved == "close":
-        return [{**row, "factor_score": float(row["close"])} for row in rows]
+        calculated_close = [
+            {**row, "factor_score": float(row["close"])}
+            for row in rows
+            if _parse_timestamp(row["available_at"], "available_at")
+            <= _parse_timestamp(row["event_time"], "event_time")
+        ]
+        if not calculated_close:
+            raise EngineInputError("factor formula has no PIT-visible rows")
+        return calculated_close
     match = re.fullmatch(r"(momentum|return|mean_reversion)_(\d+)", resolved)
     if match is None:
         raise EngineInputError(f"unsupported factor expression: {expression}")
@@ -516,8 +663,35 @@ def compute_factor_rows(
     for history in by_symbol.values():
         for index in range(lookback, len(history)):
             current = history[index]
-            prior = history[index - lookback]
-            score = float(current["close"]) / float(prior["close"]) - 1.0
+            knowledge_time = _parse_timestamp(current["event_time"], "event_time")
+            if (
+                _parse_timestamp(current["available_at"], "available_at")
+                > knowledge_time
+            ):
+                continue
+            available_history = [
+                item
+                for item in history[:index]
+                if _parse_timestamp(item["available_at"], "available_at")
+                <= knowledge_time
+            ]
+            if len(available_history) < lookback:
+                continue
+            prior = available_history[-lookback]
+            unavailable_gap = any(
+                prior["date"] < item["date"] <= current["date"]
+                and _parse_timestamp(item["available_at"], "available_at")
+                > knowledge_time
+                for item in history[: index + 1]
+            )
+            if unavailable_gap:
+                raise EngineInputError(
+                    "factor history contains an unavailable corporate-action gap"
+                )
+            visible_prices = _adjusted_price_map([*available_history, current])
+            current_price = visible_prices[current["date"]][current["symbol"]]
+            prior_price = visible_prices[prior["date"]][prior["symbol"]]
+            score = current_price / prior_price - 1.0
             if operation == "mean_reversion":
                 score *= -1
             calculated.append({**current, "factor_score": score})
@@ -526,17 +700,26 @@ def compute_factor_rows(
     return sorted(calculated, key=lambda item: (item["date"], item["symbol"]))
 
 
-def factor_metrics(rows: list[dict[str, Any]], horizons: list[int]) -> dict[str, Any]:
+def factor_metrics(
+    rows: list[dict[str, Any]],
+    horizons: list[int],
+    *,
+    market_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     if not horizons or any(value < 1 for value in horizons):
         raise EngineInputError("factor horizons must be positive")
+    if len(horizons) != len(set(horizons)):
+        raise EngineInputError("factor horizons must be unique")
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
-    prices: dict[str, dict[str, float]] = defaultdict(dict)
     sectors: dict[str, dict[str, str]] = defaultdict(dict)
+    canonical_rows = rows if market_rows is None else market_rows
+    adjusted_prices = _adjusted_price_map(canonical_rows)
+    session_dates = sorted({row["date"] for row in canonical_rows})
+    session_indexes = {date: index for index, date in enumerate(session_dates)}
     for row in rows:
         by_date[row["date"]][row["symbol"]] = float(
             row.get("factor_score", row["close"])
         )
-        prices[row["date"]][row["symbol"]] = float(row["close"])
         sectors[row["date"]][row["symbol"]] = str(row.get("sector", "__all__"))
     dates = sorted(by_date)
     result: dict[str, Any] = {"horizons": {}}
@@ -548,10 +731,21 @@ def factor_metrics(rows: list[dict[str, Any]], horizons: list[int]) -> dict[str,
             by_date[day], key=lambda symbol: (-by_date[day][symbol], symbol)
         )
         memberships.append(set(ranked[: max(1, len(ranked) // 2)]))
-    turnover_values = [
-        len(previous.symmetric_difference(current)) / (2 * max(1, len(previous)))
-        for previous, current in zip(memberships, memberships[1:], strict=False)
-    ]
+    turnover_values = []
+    for previous, current in zip(memberships, memberships[1:], strict=False):
+        previous_weight = 1.0 / len(previous) if previous else 0.0
+        current_weight = 1.0 / len(current) if current else 0.0
+        universe = previous | current
+        turnover_values.append(
+            0.5
+            * sum(
+                abs(
+                    (current_weight if symbol in current else 0.0)
+                    - (previous_weight if symbol in previous else 0.0)
+                )
+                for symbol in universe
+            )
+        )
     for horizon in horizons:
         ic_values: list[float] = []
         rank_ic_values: list[float] = []
@@ -559,15 +753,23 @@ def factor_metrics(rows: list[dict[str, Any]], horizons: list[int]) -> dict[str,
         quantile_spreads: list[float] = []
         pairs = 0
         possible = 0
-        for index, day in enumerate(dates[:-horizon]):
-            future = dates[index + horizon]
-            symbols = sorted(set(by_date[day]) & set(by_date[future]))
+        for day in dates:
+            session_index = session_indexes.get(day)
+            if session_index is None or session_index + horizon >= len(session_dates):
+                continue
+            future = session_dates[session_index + horizon]
+            symbols = sorted(
+                set(by_date[day])
+                & set(adjusted_prices.get(day, {}))
+                & set(adjusted_prices.get(future, {}))
+            )
             possible += len(by_date[day])
             if len(symbols) < 2:
                 continue
             scores = [by_date[day][symbol] for symbol in symbols]
             forward = [
-                prices[future][symbol] / prices[day][symbol] - 1.0 for symbol in symbols
+                adjusted_prices[future][symbol] / adjusted_prices[day][symbol] - 1.0
+                for symbol in symbols
             ]
             ic_values.append(_pearson(scores, forward))
             rank_ic_values.append(_pearson(_ranks(scores), _ranks(forward)))
@@ -631,34 +833,68 @@ def _portfolio_returns(
     selection_count: int,
     cost: CostModel,
     strategy_spec: dict[str, Any] | None = None,
-) -> tuple[list[float], list[float], list[float], int, dict[str, float]]:
+    market_rows: list[dict[str, Any]] | None = None,
+) -> tuple[
+    list[float],
+    list[float],
+    list[float],
+    int,
+    dict[str, float],
+    list[float],
+    list[int],
+]:
     if selection_count < 1:
         raise EngineInputError("selection_count must be positive")
     by_date: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     for row in rows:
+        if row["symbol"] in by_date[row["date"]]:
+            raise EngineInputError(
+                "duplicate market row for local date and symbol: "
+                f"{row['date']}/{row['symbol']}"
+            )
         by_date[row["date"]][row["symbol"]] = row
-    dates = sorted(by_date)
+    canonical_rows = rows if market_rows is None else market_rows
+    market_by_date: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in canonical_rows:
+        if row["symbol"] in market_by_date[row["date"]]:
+            raise EngineInputError(
+                "duplicate market row for local date and symbol: "
+                f"{row['date']}/{row['symbol']}"
+            )
+        market_by_date[row["date"]][row["symbol"]] = row
+    dates = sorted(market_by_date)
     net_returns: list[float] = []
     benchmark_returns: list[float] = []
     turnovers: list[float] = []
     trade_count = 0
     previous_weights: dict[str, float] = {}
     final_weights: dict[str, float] = {}
+    exposures: list[float] = []
+    holding_periods: list[int] = []
+    holding_age: dict[str, int] = {}
     rules = (strategy_spec or {}).get("rules", {})
     universe_symbols = set((strategy_spec or {}).get("universe", {}).get("symbols", []))
     weighting = rules.get("weighting", "EQUAL")
     rebalance_frequency = rules.get("rebalance_frequency", "DAILY")
     long_short = bool(rules.get("long_short", False))
-    leverage_limit = float(rules.get("leverage_limit", 1))
-    position_limit = float(rules.get("position_limit", 1))
-    signal_scale = sum(
-        float(signal["weight"]) * (1 if signal["direction"] == "LONG" else -1)
-        for signal in (strategy_spec or {}).get(
+    try:
+        leverage_limit = float(rules.get("leverage_limit", 1))
+        position_limit = float(rules.get("position_limit", 1))
+        signals = (strategy_spec or {}).get(
             "signals", [{"weight": "1", "direction": "LONG"}]
         )
-    )
+        signal_scale = sum(
+            float(signal["weight"]) * (1 if signal["direction"] == "LONG" else -1)
+            for signal in signals
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise EngineInputError("strategy signal/leverage inputs are invalid") from error
+    uses_fallback_scores = any(row.get("strategy_score") is None for row in rows)
     if (
-        signal_scale == 0
+        (uses_fallback_scores and signal_scale == 0)
+        or not math.isfinite(signal_scale)
+        or not math.isfinite(leverage_limit)
+        or not math.isfinite(position_limit)
         or leverage_limit <= 0
         or not 0 < position_limit <= leverage_limit
     ):
@@ -668,7 +904,45 @@ def _portfolio_returns(
 
     def signal_score(row: dict[str, Any]) -> float:
         value = row.get("strategy_score")
-        return float(value) if value is not None else signal_scale * float(row["close"])
+        score = (
+            float(value) if value is not None else signal_scale * float(row["close"])
+        )
+        if not math.isfinite(score):
+            raise EngineInputError("strategy score must be finite")
+        return score
+
+    def raw_weights(symbols: list[str]) -> dict[str, float]:
+        if weighting == "SCORE":
+            raw = {symbol: abs(signal_score(today_rows[symbol])) for symbol in symbols}
+        elif weighting == "VOLATILITY":
+            raw = {}
+            for symbol in symbols:
+                history = price_history[symbol]
+                returns = [
+                    history[position] / history[position - 1] - 1
+                    for position in range(1, len(history))
+                ]
+                volatility = statistics.stdev(returns) if len(returns) > 1 else 1.0
+                raw[symbol] = 1.0 / max(volatility, 1e-12)
+        elif weighting == "EQUAL":
+            raw = dict.fromkeys(symbols, 1.0)
+        else:
+            raise EngineInputError("unsupported strategy weighting")
+        raw_total = sum(raw.values())
+        if not math.isfinite(raw_total) or raw_total <= 0:
+            raise EngineInputError("strategy weights must have a positive finite total")
+        return raw
+
+    def constrain_weights(weights: dict[str, float]) -> dict[str, float]:
+        capped = {
+            symbol: max(-position_limit, min(position_limit, float(weight)))
+            for symbol, weight in weights.items()
+        }
+        gross_exposure = sum(abs(weight) for weight in capped.values())
+        if gross_exposure > leverage_limit and gross_exposure > 0:
+            scale = leverage_limit / gross_exposure
+            capped = {symbol: weight * scale for symbol, weight in capped.items()}
+        return capped
 
     def rebalance_due(index: int) -> bool:
         if index == 0 or rebalance_frequency == "DAILY":
@@ -687,126 +961,184 @@ def _portfolio_returns(
         raise EngineInputError("unsupported rebalance frequency")
 
     price_history: dict[str, list[float]] = defaultdict(list)
+    adjusted_prices = _adjusted_price_map(canonical_rows)
     for index in range(len(dates) - 1):
         today, tomorrow = dates[index], dates[index + 1]
-        next_rows = by_date[tomorrow]
-        for symbol, market_row in by_date[today].items():
-            price_history[symbol].append(float(market_row["close"]))
+        # Valuation rows are ex-post observations. Only the signal information
+        # set is PIT-filtered; delayed closes remain valid for return marking.
+        next_rows = market_by_date[tomorrow]
+        today_market_rows = market_by_date[today]
+        missing_held_symbols = set(previous_weights) - set(today_market_rows)
+        if missing_held_symbols:
+            raise EngineInputError(
+                "held positions have no mark on the valuation date: "
+                + ", ".join(sorted(missing_held_symbols))
+            )
+        today_rows = {
+            symbol: row
+            for symbol, row in by_date.get(today, {}).items()
+            if _parse_timestamp(row["available_at"], "available_at")
+            <= _parse_timestamp(row["event_time"], "event_time")
+        }
+        for symbol in today_rows:
+            price_history[symbol].append(adjusted_prices[today][symbol])
         ranked = sorted(
             (
                 symbol
-                for symbol in by_date[today]
-                if symbol in next_rows
-                and bool(by_date[today][symbol].get("in_universe", True))
+                for symbol in today_rows
+                if _parse_bool(
+                    today_rows[symbol].get("in_universe", True), "in_universe"
+                )
                 and (not universe_symbols or symbol in universe_symbols)
             ),
             key=lambda symbol: (
-                -signal_score(by_date[today][symbol]),
+                -signal_score(today_rows[symbol]),
                 symbol,
             ),
         )
         selected = ranked[:selection_count]
-        if not selected:
-            continue
-        if not rebalance_due(index) and previous_weights:
-            target = {
-                symbol: weight
-                for symbol, weight in previous_weights.items()
-                if symbol in next_rows
-            }
-        else:
-            if weighting == "SCORE":
-                raw = {
-                    symbol: abs(signal_score(by_date[today][symbol]))
-                    for symbol in selected
+        if selected and long_short and len(ranked) < selection_count * 2:
+            raise EngineInputError(
+                "long-short simulation requires disjoint long and short selections"
+            )
+        if not today_rows or not selected:
+            target = constrain_weights(
+                {
+                    symbol: weight
+                    for symbol, weight in previous_weights.items()
+                    if symbol in today_market_rows
                 }
-            elif weighting == "VOLATILITY":
-                raw = {}
-                for symbol in selected:
-                    history = price_history[symbol]
-                    returns = [
-                        history[position] / history[position - 1] - 1
-                        for position in range(1, len(history))
-                    ]
-                    volatility = statistics.stdev(returns) if len(returns) > 1 else 1.0
-                    raw[symbol] = 1.0 / max(volatility, 1e-12)
-            elif weighting == "EQUAL":
-                raw = dict.fromkeys(selected, 1.0)
-            else:
-                raise EngineInputError("unsupported strategy weighting")
-            raw_total = sum(raw.values())
-            target = {
-                symbol: min(position_limit, leverage_limit * value / raw_total)
-                for symbol, value in raw.items()
-            }
+            )
+        elif not rebalance_due(index) and previous_weights:
+            target = constrain_weights(
+                {
+                    symbol: weight
+                    for symbol, weight in previous_weights.items()
+                    if symbol in today_market_rows
+                }
+            )
+        else:
             if long_short:
                 shorted = ranked[-selection_count:]
                 long_gross = leverage_limit / 2
                 short_gross = leverage_limit / 2
+                long_raw = raw_weights(selected)
+                short_raw = raw_weights(shorted)
                 target = {
-                    symbol: min(position_limit, long_gross / len(selected))
-                    for symbol in selected
+                    symbol: min(
+                        position_limit, long_gross * value / sum(long_raw.values())
+                    )
+                    for symbol, value in long_raw.items()
                 }
                 target.update(
                     {
-                        symbol: -min(position_limit, short_gross / len(shorted))
-                        for symbol in shorted
+                        symbol: -min(
+                            position_limit,
+                            short_gross * value / sum(short_raw.values()),
+                        )
+                        for symbol, value in short_raw.items()
                         if symbol not in target
                     }
                 )
+            else:
+                raw = raw_weights(selected)
+                raw_total = sum(raw.values())
+                target = {
+                    symbol: min(position_limit, leverage_limit * value / raw_total)
+                    for symbol, value in raw.items()
+                }
         universe = set(previous_weights) | set(target)
-        turnover = 0.5 * sum(
+        turnover = sum(
             abs(target.get(symbol, 0.0) - previous_weights.get(symbol, 0.0))
             for symbol in universe
         )
-        turnover += 0.5 * abs(
-            (1.0 - sum(target.values())) - (1.0 - sum(previous_weights.values()))
-        )
-        asset_returns = {
-            symbol: (
-                (
-                    float(next_rows[symbol]["close"])
-                    * float(next_rows[symbol].get("split_factor", 1.0))
-                    + float(next_rows[symbol].get("dividend", 0.0))
-                )
-                / float(by_date[today][symbol]["close"])
-                - 1.0
+        missing_prices = set(target) - set(next_rows)
+        if missing_prices:
+            raise EngineInputError(
+                "next-session PIT-visible prices are unavailable for held symbols: "
+                f"{sorted(missing_prices)}"
             )
+        asset_returns = {
+            symbol: adjusted_prices[tomorrow][symbol] / adjusted_prices[today][symbol]
+            - 1.0
             for symbol in target
         }
         gross = sum(weight * asset_returns[symbol] for symbol, weight in target.items())
         cost_rate = (cost.commission_bps + cost.slippage_bps) / 10_000
-        net_returns.append(gross - turnover * cost_rate)
-        benchmark_today = statistics.fmean(
-            float(value["benchmark_close"]) for value in by_date[today].values()
-        )
-        benchmark_tomorrow = statistics.fmean(
+        net = gross - turnover * cost_rate
+        if (
+            not math.isfinite(cost_rate)
+            or cost_rate < 0
+            or not math.isfinite(gross)
+            or not math.isfinite(net)
+            or gross <= -1
+            or net <= -1
+        ):
+            raise EngineInputError(
+                "simulation produced an insolvent or non-finite return"
+            )
+        net_returns.append(net)
+        if not next_rows:
+            raise EngineInputError("next-session benchmark data is unavailable")
+        benchmark_today_values = {
+            float(value["benchmark_close"]) for value in today_market_rows.values()
+        }
+        benchmark_tomorrow_values = {
             float(value["benchmark_close"]) for value in next_rows.values()
-        )
+        }
+        if len(benchmark_today_values) != 1 or len(benchmark_tomorrow_values) != 1:
+            raise EngineInputError("benchmark must have one level per session")
+        benchmark_today = benchmark_today_values.pop()
+        benchmark_tomorrow = benchmark_tomorrow_values.pop()
         benchmark_returns.append(benchmark_tomorrow / benchmark_today - 1.0)
         turnovers.append(turnover)
+        exposures.append(sum(abs(value) for value in target.values()))
+        for symbol in set(holding_age) | set(target):
+            prior = previous_weights.get(symbol, 0.0)
+            current = target.get(symbol, 0.0)
+            if abs(current) > 1e-12:
+                if prior * current < -(1e-12):
+                    if symbol in holding_age:
+                        holding_periods.append(holding_age[symbol])
+                    holding_age[symbol] = 1
+                else:
+                    holding_age[symbol] = holding_age.get(symbol, 0) + 1
+            elif symbol in holding_age:
+                holding_periods.append(holding_age.pop(symbol))
         trade_count += sum(
             1
             for symbol in universe
             if target.get(symbol, 0.0) != previous_weights.get(symbol, 0.0)
         )
         previous_weights = {
-            symbol: weight * (1.0 + asset_returns[symbol]) / (1.0 + gross)
+            symbol: weight * (1.0 + asset_returns[symbol]) / (1.0 + net)
             for symbol, weight in target.items()
         }
-        final_weights = target
+        final_weights = previous_weights.copy()
     if not net_returns:
         raise EngineInputError("simulation requires at least two comparable sessions")
-    return net_returns, benchmark_returns, turnovers, trade_count, final_weights
+    holding_periods.extend(holding_age.values())
+    return (
+        net_returns,
+        benchmark_returns,
+        turnovers,
+        trade_count,
+        final_weights,
+        exposures,
+        holding_periods,
+    )
 
 
 def _risk_contribution(
     rows: list[dict[str, Any]], weights: dict[str, float]
 ) -> dict[str, float]:
+    adjusted_prices = _adjusted_price_map(rows)
     by_symbol: dict[str, dict[str, float]] = defaultdict(dict)
     for row in rows:
         if row["symbol"] in weights:
-            by_symbol[row["symbol"]][row["date"]] = float(row["close"])
+            by_symbol[row["symbol"]][row["date"]] = adjusted_prices[row["date"]][
+                row["symbol"]
+            ]
     return_maps: dict[str, dict[str, float]] = {}
     for symbol, prices in by_symbol.items():
         dates = sorted(prices)
@@ -815,6 +1147,8 @@ def _risk_contribution(
             for index in range(1, len(dates))
         }
     symbols = sorted(weights)
+    if not symbols:
+        return {}
     common_dates = set.intersection(
         *(set(return_maps.get(symbol, {})) for symbol in symbols)
     )
@@ -843,10 +1177,18 @@ def simulation_metrics(
     selection_count: int,
     cost: CostModel,
     strategy_spec: dict[str, Any] | None = None,
+    calendar: str | None = None,
+    market_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    returns, benchmark, turnovers, trade_count, final_weights = _portfolio_returns(
-        rows, selection_count, cost, strategy_spec
-    )
+    (
+        returns,
+        benchmark,
+        turnovers,
+        trade_count,
+        final_weights,
+        exposures,
+        holding_periods,
+    ) = _portfolio_returns(rows, selection_count, cost, strategy_spec, market_rows)
     wealth = 1.0
     peak = 1.0
     maximum_drawdown = 0.0
@@ -861,14 +1203,34 @@ def simulation_metrics(
     downside_deviation = math.sqrt(
         statistics.fmean(value * value for value in downside)
     )
-    cagr = wealth ** (252 / periods) - 1.0
-    annualized_volatility = volatility_daily * math.sqrt(252)
-    sharpe = mean / volatility_daily * math.sqrt(252) if volatility_daily else 0.0
-    sortino = mean / downside_deviation * math.sqrt(252) if downside_deviation else 0.0
+    if calendar is None:
+        raise EngineInputError("simulation calendar is required")
+    if calendar not in {"WEEKDAY", "24X7"}:
+        raise EngineInputError("unsupported simulation calendar")
+    periods_per_year = 365 if calendar == "24X7" else 252
+    if not math.isfinite(wealth):
+        raise EngineInputError("simulation produced non-finite aggregate metrics")
+    try:
+        cagr = wealth ** (periods_per_year / periods) - 1.0
+    except OverflowError as error:
+        raise EngineInputError(
+            "simulation produced non-finite aggregate metrics"
+        ) from error
+    annualized_volatility = volatility_daily * math.sqrt(periods_per_year)
+    sharpe = (
+        mean / volatility_daily * math.sqrt(periods_per_year)
+        if volatility_daily
+        else 0.0
+    )
+    sortino = (
+        mean / downside_deviation * math.sqrt(periods_per_year)
+        if downside_deviation
+        else 0.0
+    )
     calmar = cagr / abs(maximum_drawdown) if maximum_drawdown else 0.0
     benchmark_wealth = math.prod(1.0 + value for value in benchmark)
     total_turnover = sum(turnovers)
-    return {
+    metrics = {
         "observations": periods,
         "total_return": wealth - 1.0,
         "benchmark_total_return": benchmark_wealth - 1.0,
@@ -880,17 +1242,25 @@ def simulation_metrics(
         "maximum_drawdown": maximum_drawdown,
         "turnover": total_turnover,
         "trade_count": trade_count,
-        "average_holding_period": periods / max(1, trade_count),
+        "average_holding_period": (
+            statistics.fmean(holding_periods) if holding_periods else 0.0
+        ),
         "commission": total_turnover * cost.commission_bps / 10_000,
         "slippage": total_turnover * cost.slippage_bps / 10_000,
-        "exposure": statistics.fmean(
-            sum(abs(value) for value in final_weights.values()) for _ in returns
-        ),
+        "exposure": statistics.fmean(exposures),
         "cash_weight": 1.0 - sum(final_weights.values()),
         "final_weights": final_weights,
-        "risk_contribution": _risk_contribution(rows, final_weights),
+        "risk_contribution": _risk_contribution(
+            rows if market_rows is None else market_rows, final_weights
+        ),
         "returns": returns,
     }
+    if not math.isfinite(benchmark_wealth) or any(
+        isinstance(value, float) and not math.isfinite(value)
+        for value in metrics.values()
+    ):
+        raise EngineInputError("simulation produced non-finite aggregate metrics")
+    return metrics
 
 
 def validation_checks(
@@ -900,20 +1270,84 @@ def validation_checks(
     robustness: dict[str, Any] | None = None,
     policy: ValidationPolicy | None = None,
 ) -> list[tuple[str, bool, str]]:
-    split_ok = (
-        periods["research_period"]["end"]
-        < periods["validation_period"]["start"]
-        <= periods["validation_period"]["end"]
-        < periods["holdout_period"]["start"]
+    research_period = periods.get("research_period")
+    validation_period = periods.get("validation_period")
+    holdout_period = periods.get("holdout_period")
+    period_values = [research_period, validation_period, holdout_period]
+    parsed_periods: list[tuple[date, date]] | None = None
+    try:
+        parsed_periods = [
+            (
+                _parse_date(period["start"], "period.start"),
+                _parse_date(period["end"], "period.end"),
+            )
+            for period in period_values
+            if isinstance(period, dict)
+        ]
+        if len(parsed_periods) != 3:
+            parsed_periods = None
+    except (KeyError, EngineInputError, TypeError):
+        parsed_periods = None
+    bounds_ok = parsed_periods is not None and all(
+        start <= end for start, end in parsed_periods
     )
+    split_ok = False
+    if bounds_ok and parsed_periods is not None:
+        split_ok = (
+            parsed_periods[0][1]
+            < parsed_periods[1][0]
+            <= parsed_periods[1][1]
+            < parsed_periods[2][0]
+        )
+    try:
+        if parsed_periods is None:
+            raise IndexError
+        validation_start, validation_end = parsed_periods[1]
+        row_bounds_ok = all(
+            validation_start
+            <= _parse_date(row.get("date"), "row.date")
+            <= validation_end
+            for row in rows
+        )
+    except (TypeError, IndexError, EngineInputError):
+        row_bounds_ok = False
+    split_ok = split_ok and row_bounds_ok
     leakage_ok = all(row["partition"] == "VALIDATION" for row in rows)
+    try:
+        if isinstance(metrics["observations"], bool):
+            raise TypeError("observations must be an integer")
+        observations = int(metrics["observations"])
+        maximum_drawdown = float(metrics["maximum_drawdown"])
+        turnover = float(metrics["turnover"])
+        commission = float(metrics["commission"])
+        slippage = float(metrics["slippage"])
+        sharpe = float(metrics["sharpe"])
+        total_return = float(metrics["total_return"])
+        returns = metrics["returns"]
+        if not isinstance(returns, list):
+            raise TypeError("returns must be a list")
+        parsed_returns = [float(value) for value in returns]
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise EngineInputError("validation metrics are malformed") from error
     numerical_ok = (
-        int(metrics["observations"]) >= 2
-        and -1.0 <= float(metrics["maximum_drawdown"]) <= 0.0
-        and float(metrics["turnover"]) >= 0.0
-        and float(metrics["commission"]) >= 0.0
-        and float(metrics["slippage"]) >= 0.0
-        and all(math.isfinite(float(value)) for value in metrics["returns"])
+        observations >= 2
+        and observations == len(parsed_returns)
+        and all(
+            math.isfinite(value)
+            for value in (
+                maximum_drawdown,
+                turnover,
+                commission,
+                slippage,
+                sharpe,
+                total_return,
+                *parsed_returns,
+            )
+        )
+        and -1.0 <= maximum_drawdown <= 0.0
+        and turnover >= 0.0
+        and commission >= 0.0
+        and slippage >= 0.0
     )
     checks = [
         (
@@ -933,18 +1367,17 @@ def validation_checks(
             [
                 (
                     "policy_min_observations",
-                    int(metrics["observations"]) >= policy.validation_min_observations,
+                    observations >= policy.validation_min_observations,
                     "Validation observation count meets the versioned policy",
                 ),
                 (
                     "policy_min_sharpe",
-                    float(metrics["sharpe"]) >= policy.validation_min_sharpe,
+                    sharpe >= policy.validation_min_sharpe,
                     "Validation Sharpe meets the versioned policy",
                 ),
                 (
                     "policy_max_drawdown",
-                    float(metrics["maximum_drawdown"])
-                    >= policy.validation_max_drawdown_floor,
+                    maximum_drawdown >= policy.validation_max_drawdown_floor,
                     "Validation drawdown meets the versioned policy",
                 ),
             ]
@@ -959,7 +1392,7 @@ def validation_checks(
             isinstance(cost_return, (int, float))
             and not isinstance(cost_return, bool)
             and math.isfinite(float(cost_return))
-            and float(cost_return) <= float(metrics["total_return"]) + 1e-12
+            and float(cost_return) <= total_return + 1e-12
         )
         parameter_ok = (
             isinstance(alternatives, list)

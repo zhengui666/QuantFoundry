@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
@@ -68,21 +68,44 @@ export function Capability({
   confirmationHandled = false,
 }: {
   item: Schema<'ActionCapability'>;
-  onClick?: (() => void) | undefined;
+  onClick?: (() => void | Promise<void>) | undefined;
   busy?: boolean;
   label?: string;
   confirmationHandled?: boolean;
 }) {
   const { t } = useTranslation();
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [confirmationPending, setConfirmationPending] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string>();
+  const inFlight = useRef(false);
   if (item.visibility === 'HIDE') return null;
   const executable = item.allowed && onClick !== undefined;
   const actionLabel = label ?? t(`action.${item.action}`, { defaultValue: item.action });
+  const run = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setConfirmationError(undefined);
+    try {
+      await onClick?.();
+    } catch (error) {
+      setConfirmationError(error instanceof Error ? error.message : t('error.connection'));
+    } finally {
+      setPending(false);
+      inFlight.current = false;
+    }
+  };
+  const runSafely = () => {
+    void run();
+  };
   const button = (
     <button
+      type="button"
       data-testid={`capability-action-${item.action}`}
       data-requires-confirmation={String(item.requires_confirmation)}
-      onClick={item.requires_confirmation && !confirmationHandled ? undefined : onClick}
-      disabled={!executable || busy}
+      onClick={item.requires_confirmation && !confirmationHandled ? undefined : runSafely}
+      disabled={!executable || busy || pending || confirmationPending}
       title={
         item.allowed
           ? onClick
@@ -95,26 +118,68 @@ export function Capability({
       {!item.allowed && ` · ${t('capability.unavailable')}`}
     </button>
   );
-  if (!executable || !item.requires_confirmation || confirmationHandled) return button;
+  if (!executable || !item.requires_confirmation || confirmationHandled)
+    return (
+      <>
+        {button}
+        {confirmationError && <State kind="error">{confirmationError}</State>}
+      </>
+    );
+  const confirm = async () => {
+    if (!onClick || inFlight.current) return;
+    inFlight.current = true;
+    setConfirmationPending(true);
+    setConfirmationError(undefined);
+    try {
+      await onClick();
+      setConfirmationOpen(false);
+    } catch (error) {
+      setConfirmationError(error instanceof Error ? error.message : t('error.connection'));
+    } finally {
+      setConfirmationPending(false);
+      inFlight.current = false;
+    }
+  };
   return (
-    <Dialog.Root>
+    <Dialog.Root
+      open={confirmationOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && confirmationPending) return;
+        setConfirmationOpen(nextOpen);
+      }}
+    >
       <Dialog.Trigger asChild>{button}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="decision-dialog" aria-describedby={undefined}>
+        <Dialog.Content
+          className="decision-dialog"
+          aria-describedby={undefined}
+          onEscapeKeyDown={(event) => {
+            if (confirmationPending) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (confirmationPending) event.preventDefault();
+          }}
+        >
           <Dialog.Title>{t('capability.confirm', { action: actionLabel })}</Dialog.Title>
           <p>
             {item.danger_level} · {item.result_mode}
             {item.if_match_required ? ` · ${t('capability.revisionProtected')}` : ''}
             {item.idempotency_required ? ` · ${t('capability.idempotentRequest')}` : ''}
           </p>
+          {confirmationError && <State kind="error">{confirmationError}</State>}
+          <button
+            type="button"
+            data-testid={`capability-confirm-${item.action}`}
+            onClick={() => void confirm()}
+            disabled={confirmationPending || busy}
+          >
+            {t('capability.confirmAction')}
+          </button>
           <Dialog.Close asChild>
-            <button data-testid={`capability-confirm-${item.action}`} onClick={onClick}>
-              {t('capability.confirmAction')}
+            <button type="button" className="secondary" disabled={confirmationPending}>
+              {t('common.cancel')}
             </button>
-          </Dialog.Close>
-          <Dialog.Close asChild>
-            <button className="secondary">{t('common.cancel')}</button>
           </Dialog.Close>
         </Dialog.Content>
       </Dialog.Portal>
@@ -190,7 +255,9 @@ export function Inspector({
           <Dialog.Title>{title}</Dialog.Title>
           {children}
           <Dialog.Close asChild>
-            <button className="secondary">{t('common.close')}</button>
+            <button type="button" className="secondary">
+              {t('common.close')}
+            </button>
           </Dialog.Close>
         </Dialog.Content>
       </Dialog.Portal>
@@ -294,7 +361,7 @@ export function Problem({ error }: { error: unknown }) {
   const problem = error.problem;
   return (
     <State kind={problem.status === 403 ? 'permission' : 'error'}>
-      {localizedErrorCopy(problem.code, t, i18n.language)} {problem.detail}{' '}
+      {localizedErrorCopy(problem.code, t, i18n.language)}{' '}
       <a href={`/activity?requestId=${encodeURIComponent(problem.request_id)}`}>
         {t('error.auditRequest', { requestId: problem.request_id })}
       </a>
@@ -302,7 +369,7 @@ export function Problem({ error }: { error: unknown }) {
         <ul>
           {problem.field_errors.map((field) => (
             <li key={`${field.field}:${field.code}`}>
-              {field.field}: {field.message}
+              {t('error.field', { field: field.field })}
             </li>
           ))}
         </ul>

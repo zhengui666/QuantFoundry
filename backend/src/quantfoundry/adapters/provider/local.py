@@ -7,6 +7,7 @@ import json
 import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Lock
 from typing import Any
 
 
@@ -18,10 +19,25 @@ class LocalProviderServer(ThreadingHTTPServer):
     model_name: str
     failure_statuses: list[int]
     request_log: list[dict[str, Any]]
+    state_lock: Lock
 
 
 class LocalProviderHandler(BaseHTTPRequestHandler):
     server: LocalProviderServer
+    _PRODUCERS = {
+        "factor": {"define_factor"},
+        "snapshot": {"create_data_snapshot"},
+        "experiment": {
+            "analyze_factor",
+            "calculate_factor",
+            "run_fast_backtest",
+            "run_parameter_sensitivity",
+        },
+    }
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(15.0)
 
     def _json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         encoded = json.dumps(payload, separators=(",", ":")).encode()
@@ -55,7 +71,12 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
     def _result_object_id(
         tool_results: list[dict[str, Any]], object_type: str
     ) -> str | None:
+        producers = LocalProviderHandler._PRODUCERS.get(object_type, set())
         for result in reversed(tool_results):
+            if result.get("tool_name") not in producers:
+                continue
+            if result.get("status") not in {"SUCCESS", "COMPLETED"}:
+                continue
             result_ref = result.get("result_ref")
             if (
                 isinstance(result_ref, dict)
@@ -74,6 +95,7 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                     and isinstance(ref.get("id"), str)
                 ):
                     return ref["id"]
+            continue
         return None
 
     def _deterministic_action(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -101,7 +123,15 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             # Invalid output is intentional here: the Agent boundary records a
             # durable failure instead of falsely completing without evidence.
             return {"type": "blocked", "reason": "LOCAL_RESEARCH_INPUT_MISSING"}
-        names = [str(item.get("tool_name")) for item in tool_results]
+        names = [
+            str(item.get("tool_name"))
+            for item in tool_results
+            if item.get("status") in {"SUCCESS", "COMPLETED"}
+            and (
+                isinstance(item.get("result_summary"), dict)
+                or isinstance(item.get("result_ref"), dict)
+            )
+        ]
         dataset_id = dataset_ids[0]
         if "validate_dataset" not in names:
             return {
@@ -193,10 +223,24 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            request = json.loads(self.rfile.read(length))
-        except (ValueError, json.JSONDecodeError):
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
+            raw_length = self.headers.get("Content-Length")
+            length = int(raw_length) if raw_length is not None else -1
+            if length < 0:
+                raise ValueError("Content-Length is required")
+            if length > 4 * 1024 * 1024:
+                self._json(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "body_too_large"}
+                )
+                return
+            body = self.rfile.read(length)
+            if len(body) != length:
+                raise ValueError("incomplete request body")
+            request = json.loads(body)
+        except (OSError, TimeoutError, ValueError):
+            try:
+                self._json(HTTPStatus.REQUEST_TIMEOUT, {"error": "request_timeout"})
+            except OSError:
+                pass
             return
         if not isinstance(request, dict) or not isinstance(request.get("model"), str):
             self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"})
@@ -221,28 +265,36 @@ class LocalProviderHandler(BaseHTTPRequestHandler):
                 }
             )
         self.server.request_log.append(request_log)
-        if self.server.failure_statuses:
-            failure_status = self.server.failure_statuses.pop(0)
+        failure_status: int | None = None
+        invalid_request = False
+        with self.server.state_lock:
+            if self.server.failure_statuses:
+                failure_status = self.server.failure_statuses.pop(0)
+            if self.server.deterministic_research_plan and not self.server.actions:
+                if failure_status is None:
+                    try:
+                        action = self._deterministic_action(request)
+                    except ValueError:
+                        invalid_request = True
+            else:
+                if failure_status is None:
+                    index = min(self.server.action_index, len(self.server.actions) - 1)
+                    action = self.server.actions[index]
+            if failure_status is None and not invalid_request:
+                self.server.action_index += 1
+                action_id = self.server.action_index
+        if failure_status is not None:
             self._json(
                 HTTPStatus(failure_status), {"error": "injected_provider_failure"}
             )
             return
-        if self.server.deterministic_research_plan and not self.server.actions:
-            try:
-                action = self._deterministic_action(request)
-            except (ValueError, json.JSONDecodeError):
-                self._json(
-                    HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"}
-                )
-                return
-        else:
-            index = min(self.server.action_index, len(self.server.actions) - 1)
-            action = self.server.actions[index]
-        self.server.action_index += 1
+        if invalid_request:
+            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"})
+            return
         self._json(
             HTTPStatus.OK,
             {
-                "id": f"local-{self.server.action_index}",
+                "id": f"local-{action_id}",
                 "object": "chat.completion",
                 "choices": [
                     {
@@ -287,14 +339,40 @@ def create_server(
         raise RuntimeError(
             "QF_LOCAL_PROVIDER_API_KEY must contain at least 20 characters"
         )
+    if host not in {"127.0.0.1", "::1", "localhost"}:
+        raise RuntimeError("local provider must bind to a loopback address")
+    if actions is not None and not actions:
+        raise ValueError("actions must be non-empty when explicitly configured")
+    statuses = list(failure_statuses or [])
+    for status in statuses:
+        try:
+            HTTPStatus(status)
+        except ValueError as error:
+            raise ValueError(f"invalid provider failure status: {status}") from error
+        if not 400 <= status <= 599:
+            raise ValueError("provider failure statuses must be HTTP 4xx/5xx")
+    if actions is None:
+        validated_actions = []
+    else:
+        try:
+            validated_actions = json.loads(json.dumps(actions, separators=(",", ":")))
+        except (TypeError, ValueError, RecursionError) as error:
+            raise ValueError(
+                "actions must be JSON-serializable dictionaries"
+            ) from error
+        if not isinstance(validated_actions, list) or not all(
+            isinstance(item, dict) for item in validated_actions
+        ):
+            raise ValueError("actions must be a list of JSON objects")
     server = LocalProviderServer((host, port), LocalProviderHandler)
     server.deterministic_research_plan = actions is None
-    server.actions = actions or []
+    server.actions = validated_actions
     server.action_index = 0
     server.api_key = effective_key
     server.model_name = model_name
-    server.failure_statuses = list(failure_statuses or [])
+    server.failure_statuses = statuses
     server.request_log = []
+    server.state_lock = Lock()
     return server
 
 

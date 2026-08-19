@@ -1,6 +1,6 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { extname, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { load } from 'js-yaml';
 
 const ignoredDirectories = new Set([
@@ -56,36 +56,65 @@ export const formalPublicIdSources = [
     path: 'docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md',
     kind: 'file',
   },
+  { path: 'docs/治理', kind: 'directory' },
+  {
+    path: 'docs/UI设计方案/QuantFoundry_UI_Interaction_Redesign_Brief_V1.0.0.md',
+    kind: 'file',
+  },
+  { path: 'docs/后端系统技术方案/contracts', kind: 'directory' },
   { path: 'docs/后端系统技术方案/contracts/openapi-v1.yaml', kind: 'file' },
   { path: 'docs/后端系统技术方案/contracts/tools', kind: 'directory' },
   { path: 'frontend', kind: 'directory' },
 ];
 const collect = async (path) => {
-  const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
-  if (!entries) return [path];
-  const nested = await Promise.all(
-    entries
-      .filter((entry) => !ignoredDirectories.has(entry.name))
-      .map((entry) => collect(resolve(path, entry.name))),
-  );
-  return nested.flat();
+  const entries = await readdir(path, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (ignoredDirectories.has(entry.name)) continue;
+    const child = resolve(path, entry.name);
+    if (entry.isFile()) files.push(child);
+    else if (entry.isDirectory()) files.push(...(await collect(child)));
+    else if (entry.isSymbolicLink())
+      throw new Error(`Formal public-ID source contains an unsupported symlink: ${child}`);
+  }
+  return files;
 };
 
 export const collectFormalPublicIdFiles = async (
   repositoryRoot,
   sources = formalPublicIdSources,
 ) => {
+  const root = resolve(repositoryRoot);
+  const canonicalRoot = await realpath(root);
   const files = new Set();
   const coverage = new Map();
 
+  const assertInsideRoot = async (candidate, sourcePath) => {
+    const canonicalCandidate = await realpath(candidate).catch(() => null);
+    const relativePath = canonicalCandidate
+      ? relative(canonicalRoot, canonicalCandidate)
+      : relative(root, candidate);
+    if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${sep}`))
+      throw new Error(`Formal public-ID source escapes repository root: ${sourcePath}`);
+  };
+
   for (const source of sources) {
-    const absolutePath = resolve(repositoryRoot, source.path);
-    const metadata = await stat(absolutePath).catch(() => null);
+    const absolutePath = resolve(root, source.path);
+    const relativePath = relative(root, absolutePath);
+    if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${sep}`))
+      throw new Error(`Formal public-ID source escapes repository root: ${source.path}`);
+    const metadata = await lstat(absolutePath).catch(() => null);
     if (!metadata) throw new Error(`Formal public-ID source is missing: ${source.path}`);
+    if (metadata.isSymbolicLink())
+      throw new Error(`Formal public-ID source contains an unsupported symlink: ${absolutePath}`);
+    await assertInsideRoot(absolutePath, source.path);
     if (source.kind === 'file' && !metadata.isFile())
       throw new Error(`Formal public-ID source is not a file: ${source.path}`);
     if (source.kind === 'directory' && !metadata.isDirectory())
       throw new Error(`Formal public-ID source is not a directory: ${source.path}`);
+    const resolvedPath = await realpath(absolutePath).catch(() => null);
+    if (!resolvedPath) throw new Error(`Formal public-ID source is missing: ${source.path}`);
+    await assertInsideRoot(resolvedPath, source.path);
 
     const candidates = source.kind === 'file' ? [absolutePath] : await collect(absolutePath);
     const scanned = candidates.filter(
@@ -99,24 +128,116 @@ export const collectFormalPublicIdFiles = async (
   return { files: [...files].sort(), coverage };
 };
 
-const tokenPattern = /\b(?:[A-Z][A-Z0-9]{1,7})-[A-Za-z0-9][A-Za-z0-9-]*\b/g;
-const intentionalRejection =
-  /reject_fixture|must reject|reject|invalid|illegal|wrong|legacy|禁止|非法|错误|不合法|必须拒绝|短\s*ID|旧(?:格式|前缀|日期|序号)/i;
+const tokenPattern = /\b([A-Za-z][A-Za-z0-9]*)-([A-Za-z0-9_-]+)/g;
+const assignmentPattern =
+  /(?:^|[\s,{(])[A-Za-z_$][A-Za-z0-9_$.-]*\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s,;}\])]+))/g;
+const emptyFixturePattern =
+  /(?:\b(?:fixture|example|value|id|token|input)\b|\b[A-Za-z_$][A-Za-z0-9_$]*(?:id|_id|Id|ID)\b)\s*[:=]\s*[`'"]([A-Za-z][A-Za-z0-9]*)-[`'"]/gi;
+const intentionalRejection = (token, context) => {
+  const normalized = token.toUpperCase();
+  const directivePattern =
+    /(?:reject_fixture|must\s+reject|public-id-prose)\s*:?[ \t]+([A-Za-z][A-Za-z0-9]*-[A-Za-z0-9_-]*)/gi;
+  return [...context.matchAll(directivePattern)].some((match) => {
+    const marker = match[1].toUpperCase();
+    return marker.endsWith('-')
+      ? normalized.startsWith(marker)
+      : normalized === marker || normalized.startsWith(`${marker}-`);
+  });
+};
 
-const schemaOrManifestJson = (file) =>
-  /(?:^|[/\\])schemas?(?:[/\\]|$)/i.test(file) || /(?:manifest|schema)[^/\\]*\.json$/i.test(file);
-const jsonProseKeys = new Set(['constraint', 'constraints', 'description', 'descriptions']);
+const grammarNotation = (token, context, file, key = '') => {
+  const proseDirectivePattern = /\bpublic-id-prose\s*:?\s+([A-Za-z][A-Za-z0-9]*-[A-Za-z0-9_-]*)/gi;
+  if (
+    [...context.matchAll(proseDirectivePattern)].some(
+      (match) => match[1].toUpperCase() === token.toUpperCase(),
+    )
+  )
+    return true;
+  if (
+    /\bpublic-id-prose\b/i.test(context) &&
+    !/\bpublic-id-prose\s*:?\s+[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9_-]*/i.test(context)
+  )
+    return true;
+  const extension = extname(file).toLowerCase();
+  const proseField = /^(?:description|constraint|constraints|comment|comments|note|notes)$/i.test(
+    key,
+  );
+  const proseSource = extension === '.md';
+  const structuredProse =
+    (extension === '.yaml' ||
+      extension === '.yml' ||
+      (extension === '.json' && /(?:manifest|schema)/i.test(file))) &&
+    proseField;
+  if (!proseSource && !structuredProse) return false;
+  if (proseSource && !/\b(?:grammar|notation|locator|prefix|placeholder)\b/i.test(context))
+    return false;
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (
+    new RegExp('(?:`' + escaped + '`|' + escaped + '@(?:[A-Za-z]|version)\\b)', 'i').test(
+      context,
+    ) || new RegExp(`\\b${escaped}\\b[^\\n]*(?:notation|grammar)`, 'i').test(context)
+  );
+};
 
-const invalidTokens = (text, context, location, matchers) => {
+const jsonIdKeys = /^(?:id|value|token|key|[A-Za-z][A-Za-z0-9]*(?:Id|ID|Ref|REF|Token|TOKEN|Key|KEY)|[a-z0-9]+_(?:id|ref|token|key))$/;
+
+const invalidTokens = (text, context, location, matchers, key = '', file = location) => {
   const failures = [];
-  for (const match of text.matchAll(tokenPattern)) {
-    const token = match[0];
-    const prefix = token.split('-')[0];
-    const canonical = matchers.get(prefix);
-    const recognized = canonical !== undefined || prefix === 'MEM';
-    if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
-    if (!intentionalRejection.test(context))
+  const reported = new Set();
+  const report = (token) => {
+    if (!reported.has(token) && !intentionalRejection(token, context)) {
+      reported.add(token);
       failures.push(`${location}: unmarked invalid public-ID fixture ${token}`);
+    }
+  };
+  if (jsonIdKeys.test(key)) {
+    const fieldMatch = text.match(/^\s*([A-Za-z][A-Za-z0-9]*)-/);
+    const canonical = fieldMatch && matchers.get(fieldMatch[1].toUpperCase());
+    if (canonical && !canonical.some((matcher) => matcher.test(text))) {
+      report(text);
+      return failures;
+    }
+  }
+  for (const match of text.matchAll(assignmentPattern)) {
+    const value = match.slice(1).find((candidate) => candidate !== undefined);
+    if (!value || !value.includes('-') || /[${}]/.test(value)) continue;
+    const assignmentKey = match[0].match(/(?:^|[\s,{(])([A-Za-z_$][A-Za-z0-9_$.-]*)\s*[:=]/)?.[1];
+    if (!assignmentKey || !jsonIdKeys.test(assignmentKey)) continue;
+    const rawPrefix = value.split('-', 1)[0];
+    const prefix = rawPrefix.toUpperCase();
+    const canonical = matchers.get(prefix);
+    const recognized = canonical !== undefined;
+    if (recognized && !canonical.some((matcher) => matcher.test(value))) report(value);
+  }
+  const matches = [
+    ...text.matchAll(tokenPattern),
+    ...text.matchAll(emptyFixturePattern).map((match) => {
+      match[0] = `${match[1]}-`;
+      match[2] = '';
+      return match;
+    }),
+  ];
+  for (const match of matches) {
+    const token = match[0];
+    const rawPrefix = match[1] ?? '';
+    const prefix = rawPrefix.toUpperCase();
+    const canonical = matchers.get(prefix);
+    const recognized =
+      canonical !== undefined ||
+      (prefix === 'MEM' && rawPrefix === prefix);
+    if (!recognized || canonical?.some((matcher) => matcher.test(token))) continue;
+    if (match[2] !== '' && grammarNotation(token, context, file, key)) continue;
+    report(token);
+  }
+  if (
+    jsonIdKeys.test(key) &&
+    /^([A-Za-z][A-Za-z0-9]*)-$/.test(text) &&
+    matchers.has(text.slice(0, -1).toUpperCase())
+  ) {
+    const token = text;
+    const prefix = token.slice(0, -1).toUpperCase();
+    const canonical = matchers.get(prefix);
+    if (canonical && !canonical.some((matcher) => matcher.test(token))) report(token);
   }
   return failures;
 };
@@ -124,9 +245,23 @@ const invalidTokens = (text, context, location, matchers) => {
 const scanLines = (file, content, matchers) => {
   const failures = [];
   const lines = content.split(/\r?\n/);
+  let marker = '';
   for (const [index, line] of lines.entries()) {
-    const context = lines.slice(Math.max(0, index - 1), index + 2).join(' ');
-    failures.push(...invalidTokens(line, context, `${file}:${index + 1}`, matchers));
+    failures.push(
+      ...invalidTokens(
+        line,
+        marker ? `${marker} ${line}` : line,
+        `${file}:${index + 1}`,
+        matchers,
+        '',
+        file,
+      ),
+    );
+    marker = /(?:reject_fixture|must\s+reject|public-id-prose)\s*:?\s+[A-Za-z][A-Za-z0-9]*-/i.test(
+      line,
+    )
+      ? line
+      : '';
   }
   return failures;
 };
@@ -140,24 +275,24 @@ const scanJson = (file, content, matchers) => {
   }
 
   const failures = [];
-  const skipProse = schemaOrManifestJson(file);
-  const visit = (node, path, parentContext) => {
+  const visit = (node, path, key = '') => {
     if (typeof node === 'string') {
-      failures.push(...invalidTokens(node, parentContext, `${file}:${path}`, matchers));
+      failures.push(
+        ...invalidTokens(node, `${key}: ${node}`, `${file}:${path}`, matchers, key, file),
+      );
       return;
     }
     if (Array.isArray(node)) {
-      node.forEach((entry, index) => visit(entry, `${path}[${index}]`, JSON.stringify(node)));
+      node.forEach((entry, index) => visit(entry, `${path}[${index}]`, String(index)));
       return;
     }
     if (!node || typeof node !== 'object') return;
-    const context = JSON.stringify(node);
     for (const [key, entry] of Object.entries(node)) {
-      if (skipProse && jsonProseKeys.has(key.toLowerCase())) continue;
-      visit(entry, `${path}.${key}`, context);
+      failures.push(...invalidTokens(key, key, `${file}:${path}.${key} (key)`, matchers, '', file));
+      visit(entry, `${path}.${key}`, key);
     }
   };
-  visit(value, '$', content);
+  visit(value, '$');
   return failures;
 };
 
@@ -177,7 +312,7 @@ export const scanFormalPublicIdSources = async ({ repositoryRoot, matchers, sour
 };
 
 const main = async () => {
-  const repositoryRoot = resolve(process.cwd(), '..');
+  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const contractPath = resolve(repositoryRoot, 'docs/后端系统技术方案/contracts/openapi-v1.yaml');
   const document = load(await readFile(contractPath, 'utf8'));
   const extension = document?.info?.['x-quantfoundry-public-id-schemas'];
@@ -186,14 +321,40 @@ const main = async () => {
   const schemas = Object.entries(extension).filter(([name]) => name !== 'any_public_semantic_id');
   if (schemas.length !== 34)
     throw new Error(`Expected 34 public-ID classes, found ${schemas.length}`);
-  const matchers = new Map(
-    schemas.map(([name, schema]) => {
-      const prefix = schema.examples?.[0]?.split('-')[0];
-      if (!prefix || schema.oneOf?.length !== 2)
-        throw new Error(`Malformed public-ID schema ${name}`);
-      return [prefix, schema.oneOf.map((branch) => new RegExp(branch.pattern))];
-    }),
-  );
+  const matchers = new Map();
+  for (const [name, schema] of schemas) {
+    const examples = schema.examples ?? [];
+    const prefixes = new Set(examples.map((example) => example.split('-')[0]));
+    const prefix = [...prefixes][0];
+    if (!prefix || examples.length !== 2 || schema.oneOf?.length !== 2)
+      throw new Error(`Malformed public-ID schema ${name}`);
+    if (
+      !/^[A-Z][A-Z0-9]*$/.test(prefix) ||
+      examples.some((example) => !example.startsWith(`${prefix}-`))
+    )
+      throw new Error(`Public-ID schema ${name} must use a canonical uppercase prefix`);
+    const patterns = schema.oneOf.map((branch) => {
+      if (
+        typeof branch.pattern !== 'string' ||
+        !branch.pattern.startsWith('^') ||
+        !branch.pattern.endsWith('$')
+      )
+        throw new Error(`Public-ID schema ${name} must use full-string patterns`);
+      return new RegExp(branch.pattern);
+    });
+    const matches = patterns.map(
+      (pattern) => examples.map((example) => pattern.test(example)).filter(Boolean).length,
+    );
+    if (prefixes.size !== 1 || matches.some((count) => count !== 1))
+      throw new Error(`Public-ID schema ${name} has inconsistent examples/patterns`);
+    const matchedExampleIndexes = patterns.map((pattern) =>
+      examples.findIndex((example) => pattern.test(example)),
+    );
+    if (new Set(matchedExampleIndexes).size !== examples.length)
+      throw new Error(`Public-ID schema ${name} has inconsistent examples/patterns`);
+    if (matchers.has(prefix)) throw new Error(`Duplicate public-ID prefix ${prefix}`);
+    matchers.set(prefix, patterns);
+  }
 
   const { failures, scannedFiles, coverage } = await scanFormalPublicIdSources({
     repositoryRoot,

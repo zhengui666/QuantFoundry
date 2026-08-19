@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import inspect
 import json
-from collections.abc import Callable
-from typing import Any
+from collections.abc import AsyncIterator, Callable
+from typing import Any, cast
 
 import jsonschema
-from fastapi import Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import HTTPException, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
+from pydantic import ValidationError as PydanticValidationError
 
 from quantfoundry.contracts.openapi.api_models import validate_schema
 from quantfoundry.contracts.openapi.runtime import (
@@ -32,6 +34,20 @@ def _resolve_header(header: dict[str, Any]) -> dict[str, Any]:
     return canonical_openapi()["components"]["headers"][name]
 
 
+def _resolve_response(response: dict[str, Any]) -> dict[str, Any]:
+    if "$ref" not in response:
+        return response
+    name = response["$ref"].rsplit("/", 1)[-1]
+    return canonical_openapi()["components"]["responses"][name]
+
+
+def _resolve_request_body(body: dict[str, Any]) -> dict[str, Any]:
+    if "$ref" not in body:
+        return body
+    name = body["$ref"].rsplit("/", 1)[-1]
+    return canonical_openapi()["components"]["requestBodies"][name]
+
+
 def _problem(request: Request, detail: str) -> JSONResponse:
     from quantfoundry.api.app import problem_payload
 
@@ -40,6 +56,60 @@ def _problem(request: Request, detail: str) -> JSONResponse:
         status_code=500,
         media_type="application/problem+json",
     )
+
+
+def _validate_declared_payload(schema: dict[str, Any], payload: Any) -> None:
+    reference = schema.get("$ref")
+    if reference:
+        validate_schema(reference.rsplit("/", 1)[-1], payload)
+    else:
+        validate_json_schema(schema, payload)
+
+
+async def _validated_stream(
+    iterator: Any,
+    schema: dict[str, Any],
+    content_type: str,
+    *,
+    sse: bool,
+) -> AsyncIterator[bytes]:
+    chunks: list[bytes] = []
+    total = 0
+    buffer = b""
+    async for chunk in iterator:
+        raw = chunk.encode("utf-8") if isinstance(chunk, str) else bytes(chunk)
+        total += len(raw)
+        if total > 4 * 1024 * 1024:
+            raise ValueError("streaming response exceeded contract validation limit")
+        if sse:
+            buffer += raw
+            while b"\n\n" in buffer:
+                frame, buffer = buffer.split(b"\n\n", 1)
+                data = b"\n".join(
+                    line[5:] for line in frame.splitlines() if line.startswith(b"data:")
+                ).strip()
+                if data:
+                    _validate_declared_payload(schema, json.loads(data))
+                yield frame + b"\n\n"
+        else:
+            chunks.append(raw)
+    if sse:
+        if buffer.strip():
+            data = b"\n".join(
+                line[5:] for line in buffer.splitlines() if line.startswith(b"data:")
+            ).strip()
+            if data:
+                _validate_declared_payload(schema, json.loads(data))
+            yield buffer
+    else:
+        body = b"".join(chunks)
+        if content_type.endswith("+json") or content_type == "application/json":
+            _validate_declared_payload(schema, json.loads(body))
+        else:
+            _validate_declared_payload(schema, body.decode("utf-8"))
+    if not sse:
+        for chunk in chunks:
+            yield chunk
 
 
 class CanonicalRoute(APIRoute):
@@ -57,7 +127,23 @@ class CanonicalRoute(APIRoute):
             if operation is None:
                 return await original(request)
             try:
-                for raw_parameter in operation.get("parameters", []):
+                path_item = canonical_openapi().get("paths", {}).get(path, {})
+
+                def parameter_key(raw_parameter: dict[str, Any]) -> tuple[str, str]:
+                    parameter = _resolve_parameter(raw_parameter)
+                    return parameter["name"], parameter["in"]
+
+                parameters = {
+                    parameter_key(parameter): parameter
+                    for parameter in path_item.get("parameters", [])
+                }
+                parameters.update(
+                    {
+                        parameter_key(parameter): parameter
+                        for parameter in operation.get("parameters", [])
+                    }
+                )
+                for raw_parameter in parameters.values():
                     parameter = _resolve_parameter(raw_parameter)
                     location = parameter["in"]
                     name = parameter["name"]
@@ -65,14 +151,44 @@ class CanonicalRoute(APIRoute):
                         value = request.path_params.get(name)
                     elif location == "query":
                         value = request.query_params.get(name)
-                    else:
+                    elif location == "header":
                         value = request.headers.get(name)
+                    elif location == "cookie":
+                        value = request.cookies.get(name)
+                    else:
+                        raise jsonschema.ValidationError(
+                            f"unsupported parameter location: {location}"
+                        )
                     if value is None:
                         if parameter.get("required"):
                             if location == "header" and name.lower() in {
                                 "idempotency-key",
                                 "if-match",
                             }:
+                                # Domain handlers own the canonical 428 response;
+                                # contract validation must not turn it into 422.
+                                continue
+                            if request.method.upper() in {
+                                "GET",
+                                "HEAD",
+                                "OPTIONS",
+                            } and (
+                                location == "header" and name.lower() == "x-csrf-token"
+                            ):
+                                continue
+                            if (
+                                location == "header"
+                                and name.lower() == "x-csrf-token"
+                                and getattr(
+                                    request.app.state,
+                                    "environment",
+                                    getattr(request.app.state, "environment", ""),
+                                )
+                                == "test"
+                                and request.headers.get("authorization", "").startswith(
+                                    "Bearer "
+                                )
+                            ):
                                 continue
                             raise jsonschema.ValidationError(f"{name} is required")
                         continue
@@ -85,66 +201,161 @@ class CanonicalRoute(APIRoute):
                                 f"{name} must be integer"
                             ) from error
                     validate_json_schema(schema, value)
-                body_schema = (
-                    operation.get("requestBody", {})
-                    .get("content", {})
-                    .get("application/json", {})
-                    .get("schema", {})
-                )
-                reference = body_schema.get("$ref")
-                if reference:
-                    validate_schema(reference.rsplit("/", 1)[-1], await request.json())
+                request_body = operation.get("requestBody")
+                if request_body is not None:
+                    request_body = _resolve_request_body(request_body)
+                    content = request_body.get("content", {})
+                    content_type = (
+                        request.headers.get("content-type", "")
+                        .split(";", 1)[0]
+                        .strip()
+                        .lower()
+                    )
+                    media = content.get(content_type)
+                    body = await request.body()
+                    if not body:
+                        if request_body.get("required", False):
+                            raise jsonschema.ValidationError("request body is required")
+                    elif media is None:
+                        raise jsonschema.ValidationError(
+                            "request body content type is not declared"
+                        )
+                    else:
+                        schema = media.get("schema", {})
+                        if (
+                            content_type.endswith("+json")
+                            or content_type == "application/json"
+                        ):
+                            payload = json.loads(body)
+                        else:
+                            payload = body.decode("utf-8")
+                        reference = schema.get("$ref")
+                        if reference:
+                            validate_schema(reference.rsplit("/", 1)[-1], payload)
+                        else:
+                            validate_json_schema(schema, payload)
             except (
                 json.JSONDecodeError,
                 jsonschema.ValidationError,
+                PydanticValidationError,
+                UnicodeDecodeError,
                 ValueError,
             ) as error:
                 from quantfoundry.api.app import invalid_request_response
 
                 return invalid_request_response(request, error)
 
-            response = await original(request)
-            if (
-                not 200 <= response.status_code < 300
-                or response.media_type == "text/event-stream"
-            ):
-                return response
-            declared = operation.get("responses", {}).get(str(response.status_code))
-            if declared is None:
-                return _problem(
-                    request, "handler returned an undocumented success status"
+            try:
+                response = await original(request)
+            except HTTPException as error:
+                exception_handler = request.app.exception_handlers.get(
+                    type(error), request.app.exception_handlers.get(HTTPException)
                 )
+                if exception_handler is None:
+                    raise
+                response = exception_handler(request, error)
+                if inspect.isawaitable(response):
+                    response = await response
+            raw_declared = operation.get("responses", {}).get(str(response.status_code))
+            if raw_declared is None:
+                return _problem(
+                    request, "handler returned an undocumented response status"
+                )
+            declared = _resolve_response(raw_declared)
             for header_name, raw_header in declared.get("headers", {}).items():
                 if header_name.lower() not in response.headers:
+                    if not _resolve_header(raw_header).get("required", False):
+                        continue
                     return _problem(
                         request, f"handler omitted required {header_name} header"
                     )
                 try:
-                    validate_json_schema(
-                        _resolve_header(raw_header)["schema"],
-                        response.headers[header_name],
-                    )
+                    header_schema = _resolve_header(raw_header)["schema"]
+                    header_value: Any = response.headers[header_name]
+                    if header_schema.get("type") == "integer":
+                        header_value = int(header_value)
+                    validate_json_schema(header_schema, header_value)
                 except jsonschema.ValidationError:
                     return _problem(
                         request, f"handler returned invalid {header_name} header"
                     )
+                except (TypeError, ValueError):
+                    return _problem(
+                        request, f"handler returned invalid {header_name} header"
+                    )
             content_type = response.headers.get("content-type", "").split(";", 1)[0]
-            media = declared.get("content", {}).get(content_type)
-            if media is None or content_type == "text/markdown":
+            declared_content = declared.get("content", {})
+            if response.media_type == "text/event-stream":
+                if "text/event-stream" not in declared_content:
+                    return _problem(
+                        request, "handler returned an undeclared SSE content type"
+                    )
+                media = declared_content["text/event-stream"]
+                schema = media.get("schema")
+                if schema:
+                    stream_response = cast(StreamingResponse, response)
+                    stream_response.body_iterator = _validated_stream(
+                        stream_response.body_iterator,
+                        schema,
+                        "text/event-stream",
+                        sse=True,
+                    )
+                    response = stream_response
                 return response
-            reference = media.get("schema", {}).get("$ref")
-            if reference and hasattr(response, "body"):
-                try:
-                    response_body = response.body
+            if not declared_content:
+                if hasattr(response, "body"):
+                    response_body = getattr(response, "body", b"")
                     if isinstance(response_body, memoryview):
                         response_body = response_body.tobytes()
-                    decoded_body = json.loads(response_body)
-                    validate_schema(reference.rsplit("/", 1)[-1], decoded_body)
-                    if operation.get("operationId") == "completeSetup":
-                        expected_etag = (
-                            f'W/"{decoded_body["settings_id"]}:'
-                            f'{decoded_body["revision"]}"'
+                    if response_body:
+                        return _problem(
+                            request,
+                            "handler returned content for a contentless response",
                         )
+                return response
+            if not hasattr(response, "body"):
+                if content_type not in declared_content:
+                    return _problem(
+                        request,
+                        "streaming response returned an undeclared content type",
+                    )
+                schema = declared_content[content_type].get("schema")
+                if schema:
+                    stream_response = cast(StreamingResponse, response)
+                    stream_response.body_iterator = _validated_stream(
+                        stream_response.body_iterator,
+                        schema,
+                        content_type,
+                        sse=False,
+                    )
+                    response = stream_response
+                return response
+            response_body = getattr(response, "body", b"")
+            if isinstance(response_body, memoryview):
+                response_body = response_body.tobytes()
+            if not response_body:
+                return _problem(request, "handler omitted declared response content")
+            media = declared_content.get(content_type)
+            if media is None:
+                return _problem(
+                    request, "handler returned an undeclared response content type"
+                )
+            schema = media.get("schema", {})
+            if schema and hasattr(response, "body"):
+                try:
+                    if (
+                        content_type.endswith("+json")
+                        or content_type == "application/json"
+                    ):
+                        decoded_body = json.loads(response_body)
+                    else:
+                        decoded_body = response_body.decode("utf-8")
+                    _validate_declared_payload(schema, decoded_body)
+                    if (
+                        200 <= response.status_code < 300
+                        and operation.get("operationId") == "completeSetup"
+                    ):
+                        expected_etag = f'W/"config:{decoded_body["active_revision"]}"'
                         if response.headers.get("etag") != expected_etag:
                             return _problem(
                                 request,
@@ -153,6 +364,8 @@ class CanonicalRoute(APIRoute):
                 except (
                     json.JSONDecodeError,
                     jsonschema.ValidationError,
+                    PydanticValidationError,
+                    UnicodeDecodeError,
                     ValueError,
                 ) as error:
                     return _problem(

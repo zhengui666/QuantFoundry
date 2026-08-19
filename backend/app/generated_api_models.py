@@ -133,7 +133,7 @@ class ConfigurationCatalogEntry(BaseModel):
     dependencies: list[Dependency]
     schema_: dict[str, Any] = Field(..., alias="schema")
     """
-    Closed JSON Schema for this key; it is immutable catalog data
+    Closed JSON Schema for this key; it is immutable catalog data, not a user-supplied override.
     """
     validator: str = Field(..., max_length=160, min_length=1)
     safe_range: dict[str, Any] | None = None
@@ -145,7 +145,7 @@ class ConfigurationValueWrite1(BaseModel):
     )
     key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
     value: str | float | bool | dict[str, Any] | list | None = None
-    secret: str | None = Field(default=None, max_length=16384, min_length=1)
+    secret: Any | None = None
 
 
 class ConfigurationValueWrite2(BaseModel):
@@ -153,19 +153,30 @@ class ConfigurationValueWrite2(BaseModel):
         extra="forbid",
     )
     key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
-    value: str | float | bool | dict[str, Any] | list | None = None
     secret: str = Field(..., max_length=16384, min_length=1)
+    value: Any | None = None
 
 
-class ConfigurationValueView(BaseModel):
+class ConfigurationValueView1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
     key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
-    sensitivity: Literal["PUBLIC", "MASKED", "SECRET"]
+    sensitivity: Literal["PUBLIC", "MASKED", "SECRET", "PUBLIC", "MASKED"]
     configured: bool
-    value: str | float | bool | dict[str, Any] | list | None
+    value: str | float | bool | dict[str, Any] | list | None = None
     masked_hint: str | None = Field(..., max_length=80)
+
+
+class ConfigurationValueView2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: str = Field(..., pattern="^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$")
+    sensitivity: Literal["SECRET"]
+    configured: bool
+    value: str | float | bool | dict[str, Any] | list | None = None
+    masked_hint: str = Field(..., max_length=80, min_length=1)
 
 
 class ConfigurationCandidateRequest(BaseModel):
@@ -188,7 +199,7 @@ class ConfigurationCandidate(BaseModel):
     ]
     base_revision: int = Field(..., ge=1)
     catalog_version: str
-    values: list[ConfigurationValueView]
+    values: list[ConfigurationValueView1 | ConfigurationValueView2]
     snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     created_at: AwareDatetime
 
@@ -233,7 +244,7 @@ class Connection(BaseModel):
     port: int = Field(..., ge=1, le=65535)
     database: str = Field(..., max_length=63, min_length=1)
     tls_mode: Literal["DISABLED", "VERIFY_CA", "VERIFY_FULL"]
-    username: str = Field(..., max_length=128, min_length=1)
+    username: str | None = Field(default=None, max_length=128, min_length=1)
     password: str | None = Field(default=None, max_length=4096, min_length=1)
     client_key_pem: str | None = Field(default=None, max_length=16384, min_length=1)
     ca_certificate_pem: str | None = Field(default=None, max_length=16384, min_length=1)
@@ -3068,7 +3079,9 @@ class ProblemContext(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -6735,7 +6748,9 @@ class ObjectRef(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -7109,7 +7124,9 @@ class PolicyRef(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -8499,7 +8516,9 @@ class SetupStatus(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -9593,50 +9612,6 @@ class CostModelId4(RootModel[str]):
     )
 
 
-class ExperimentCreateRequest(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    research_id: ResearchId6 | ResearchId7 = Field(
-        ...,
-        examples=[
-            "RSCH-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "RSCH-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    research_revision_no: int = Field(..., ge=1)
-    objective: str
-    hypothesis: str
-    experiment_type: Literal[
-        "FACTOR_ANALYSIS",
-        "FAST_BACKTEST",
-        "PARAMETER_SENSITIVITY",
-        "DATA_VALIDATION",
-        "STRICT_VALIDATION",
-    ]
-    data_snapshot_id: DataSnapshotId3 | DataSnapshotId4 = Field(
-        ...,
-        examples=[
-            "DS-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "DS-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    factor_id: FactorId | None = None
-    factor_version: int | None = Field(default=None, ge=1)
-    strategy_id: StrategyId | None = None
-    strategy_version: int | None = Field(default=None, ge=1)
-    cost_model_id: CostModelId3 | CostModelId4 = Field(
-        ...,
-        examples=[
-            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "COST-550e8400-e29b-41d4-a716-446655440000",
-        ],
-    )
-    parameters: list[Parameter]
-    engine_key: str
-    engine_version: str
-
-
 class ExperimentReproduceExecutionOverrides(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -9803,6 +9778,8 @@ class ExperimentSearchSetDimension(BaseModel):
                 raise ValueError(
                     "INTEGER set values must be numeric integers"
                 ) from error
+            if any(not value.is_finite() for value in values):
+                raise ValueError("INTEGER set values must be finite")
             if any(value != value.to_integral_value() for value in values):
                 raise ValueError("INTEGER set values must be integral")
         return self
@@ -12027,7 +12004,9 @@ class ApprovalSubject(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -14919,7 +14898,9 @@ class JobResultRef(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -20127,7 +20108,9 @@ class NextAction(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -20496,7 +20479,7 @@ class ConfigurationActive(BaseModel):
     active_revision: int = Field(..., ge=1)
     last_known_good_revision: int = Field(..., ge=1)
     catalog_version: str
-    values: list[ConfigurationValueView]
+    values: list[ConfigurationValueView1 | ConfigurationValueView2]
     snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
     consumer_states: list[ConfigurationConsumerState]
     updated_at: AwareDatetime
@@ -20840,8 +20823,245 @@ class SetupProviderConnectionValidationResult(
     ) = Field(..., discriminator="state")
 
 
-class SettingsDetail(RootModel[ConfigurationActive]):
-    root: ConfigurationActive
+class SettingsDetail(BaseModel):
+    """
+    Backward-compatible schema name for the active configuration projection. It is no longer an app_settings row and contains no user/workspace or file-backed value semantics.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "active_revision",
+                        "last_known_good_revision",
+                        "catalog_version",
+                        "values",
+                        "snapshot_sha256",
+                        "consumer_states",
+                        "updated_at",
+                    ],
+                    "properties": {
+                        "active_revision": {
+                            "type": "integer",
+                            "format": "int64",
+                            "minimum": 1,
+                        },
+                        "last_known_good_revision": {
+                            "type": "integer",
+                            "format": "int64",
+                            "minimum": 1,
+                        },
+                        "catalog_version": {"type": "string"},
+                        "values": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": [
+                                    "key",
+                                    "sensitivity",
+                                    "configured",
+                                    "value",
+                                    "masked_hint",
+                                ],
+                                "properties": {
+                                    "key": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$",
+                                    },
+                                    "sensitivity": {
+                                        "enum": ["PUBLIC", "MASKED", "SECRET"]
+                                    },
+                                    "configured": {"type": "boolean"},
+                                    "value": {
+                                        "anyOf": [
+                                            {"type": "string"},
+                                            {"type": "number"},
+                                            {"type": "boolean"},
+                                            {
+                                                "type": "object",
+                                                "additionalProperties": True,
+                                            },
+                                            {"type": "array"},
+                                            {"type": "null"},
+                                        ]
+                                    },
+                                    "masked_hint": {
+                                        "type": ["string", "null"],
+                                        "maxLength": 80,
+                                    },
+                                },
+                                "oneOf": [
+                                    {
+                                        "properties": {
+                                            "sensitivity": {
+                                                "enum": ["PUBLIC", "MASKED"]
+                                            }
+                                        },
+                                        "required": ["sensitivity", "value"],
+                                    },
+                                    {
+                                        "properties": {
+                                            "sensitivity": {"const": "SECRET"},
+                                            "value": {"type": "null"},
+                                            "masked_hint": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 80,
+                                            },
+                                        },
+                                        "required": [
+                                            "sensitivity",
+                                            "value",
+                                            "masked_hint",
+                                        ],
+                                    },
+                                ],
+                            },
+                        },
+                        "snapshot_sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$",
+                        },
+                        "consumer_states": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": [
+                                    "consumer",
+                                    "desired_revision",
+                                    "applied_revision",
+                                    "ack",
+                                    "error_code",
+                                    "heartbeat_at",
+                                ],
+                                "properties": {
+                                    "consumer": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                    },
+                                    "desired_revision": {
+                                        "type": "integer",
+                                        "format": "int64",
+                                        "minimum": 1,
+                                    },
+                                    "applied_revision": {
+                                        "type": ["integer", "null"],
+                                        "format": "int64",
+                                        "minimum": 1,
+                                    },
+                                    "ack": {"enum": ["PENDING", "ACKED", "FAILED"]},
+                                    "error_code": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string",
+                                                "enum": [
+                                                    "INVALID_REQUEST",
+                                                    "RESOURCE_NOT_FOUND",
+                                                    "PRECONDITION_REQUIRED",
+                                                    "REVISION_MISMATCH",
+                                                    "IDEMPOTENCY_CONFLICT",
+                                                    "IDEMPOTENCY_IN_PROGRESS",
+                                                    "RESOURCE_CONFLICT",
+                                                    "SERVICE_DEGRADED",
+                                                    "INTERNAL_ERROR",
+                                                    "UNAUTHENTICATED",
+                                                    "PERMISSION_DENIED",
+                                                    "HUMAN_APPROVAL_REQUIRED",
+                                                    "RESEARCH_NOT_MUTABLE",
+                                                    "RESEARCH_WAITING_USER",
+                                                    "EXPERIMENT_IMMUTABLE",
+                                                    "EXPERIMENT_INVALID",
+                                                    "NON_REPRODUCIBLE",
+                                                    "MULTIPLE_TESTING_LIMIT_REACHED",
+                                                    "STRATEGY_VERSION_FROZEN",
+                                                    "STRATEGY_VERSION_MISMATCH",
+                                                    "STRATEGY_NOT_FROZEN",
+                                                    "STRATEGY_NOT_VALIDATED",
+                                                    "VALIDATION_IN_PROGRESS",
+                                                    "VALIDATION_FAILED",
+                                                    "VALIDATION_PREREQUISITES_INCOMPLETE",
+                                                    "VALIDATION_TEST_BLOCKED",
+                                                    "HOLDOUT_LOCKED",
+                                                    "HOLDOUT_APPROVAL_REQUIRED",
+                                                    "HOLDOUT_PREREQUISITES_INCOMPLETE",
+                                                    "HOLDOUT_ALREADY_EXPOSED",
+                                                    "HOLDOUT_RESULT_FORBIDDEN",
+                                                    "APPROVAL_STALE",
+                                                    "APPROVAL_ALREADY_RESOLVED",
+                                                    "APPROVAL_PREREQUISITES_CHANGED",
+                                                    "APPROVAL_TYPE_MISMATCH",
+                                                    "DATA_CAPABILITY_MISSING",
+                                                    "DATA_QUALITY_BLOCKED",
+                                                    "DATA_SNAPSHOT_MISSING",
+                                                    "PIT_GUARANTEE_UNAVAILABLE",
+                                                    "STALE_DATA",
+                                                    "PROVIDER_UNAVAILABLE",
+                                                    "JOB_CONFLICT",
+                                                    "JOB_NOT_CANCELLABLE",
+                                                    "JOB_LEASE_LOST",
+                                                    "JOB_FAILED",
+                                                    "PAPER_APPROVAL_REQUIRED",
+                                                    "PAPER_RISK_BLOCKED",
+                                                    "PAPER_DATA_BLOCKED",
+                                                    "PAPER_DUPLICATE_RUN",
+                                                    "PAPER_VERSION_MISMATCH",
+                                                    "RISK_LIMIT_EXCEEDED",
+                                                    "AGENT_DISABLED",
+                                                    "AGENT_TOOL_FORBIDDEN",
+                                                    "AGENT_BUDGET_EXCEEDED",
+                                                    "AGENT_OUTPUT_INVALID",
+                                                    "AGENT_MODEL_UNAVAILABLE",
+                                                    "AGENT_RESUME_CONFLICT",
+                                                    "AGENT_CONTEXT_STALE",
+                                                    "AGENT_RETRY_EXHAUSTED",
+                                                    "TOOL_INPUT_INVALID",
+                                                    "TOOL_EXECUTION_FAILED",
+                                                    "CREDENTIAL_INVALID",
+                                                    "CREDENTIAL_NOT_CONFIGURED",
+                                                    "CONNECTION_VALIDATION_EXPIRED",
+                                                    "CONNECTION_KIND_MISMATCH",
+                                                    "LAST_ACTIVE_KEY_REQUIRED",
+                                                    "CONFIGURATION_VALIDATION_FAILED",
+                                                    "CONFIGURATION_APPLY_FAILED",
+                                                    "CONFIGURATION_RESTART_REQUIRED",
+                                                    "DATABASE_CONNECTION_FAILED",
+                                                    "DATABASE_SCHEMA_INCOMPATIBLE",
+                                                    "DATABASE_SWITCH_FAILED",
+                                                    "BOOTSTRAP_LOCKED",
+                                                    "DATABASE_DISCONNECTED",
+                                                    "CSRF_REQUIRED",
+                                                ],
+                                            },
+                                            {"type": "null"},
+                                        ]
+                                    },
+                                    "heartbeat_at": {
+                                        "type": "string",
+                                        "format": "date-time",
+                                    },
+                                },
+                            },
+                        },
+                        "updated_at": {"type": "string", "format": "date-time"},
+                    },
+                }
+            ]
+        },
+    )
+    active_revision: int = Field(..., ge=1)
+    last_known_good_revision: int = Field(..., ge=1)
+    catalog_version: str
+    values: list[ConfigurationValueView1 | ConfigurationValueView2]
+    snapshot_sha256: str = Field(..., pattern="^[0-9a-f]{64}$")
+    consumer_states: list[ConfigurationConsumerState]
+    updated_at: AwareDatetime
 
     @model_validator(mode="after")
     def validate_conditional_constraints(self):
@@ -20898,7 +21118,10 @@ class SettingsDetail(RootModel[ConfigurationActive]):
                                                 {"type": "string"},
                                                 {"type": "number"},
                                                 {"type": "boolean"},
-                                                {"type": "object"},
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": True,
+                                                },
                                                 {"type": "array"},
                                                 {"type": "null"},
                                             ]
@@ -20908,6 +21131,32 @@ class SettingsDetail(RootModel[ConfigurationActive]):
                                             "maxLength": 80,
                                         },
                                     },
+                                    "oneOf": [
+                                        {
+                                            "properties": {
+                                                "sensitivity": {
+                                                    "enum": ["PUBLIC", "MASKED"]
+                                                }
+                                            },
+                                            "required": ["sensitivity", "value"],
+                                        },
+                                        {
+                                            "properties": {
+                                                "sensitivity": {"const": "SECRET"},
+                                                "value": {"type": "null"},
+                                                "masked_hint": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 80,
+                                                },
+                                            },
+                                            "required": [
+                                                "sensitivity",
+                                                "value",
+                                                "masked_hint",
+                                            ],
+                                        },
+                                    ],
                                 },
                             },
                             "snapshot_sha256": {
@@ -21043,7 +21292,9 @@ class SettingsDetail(RootModel[ConfigurationActive]):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -21054,201 +21305,6 @@ class SettingsDetail(RootModel[ConfigurationActive]):
 class ResearchSummary(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={
-            "allOf": [
-                {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": [
-                        "active_revision",
-                        "last_known_good_revision",
-                        "catalog_version",
-                        "values",
-                        "snapshot_sha256",
-                        "consumer_states",
-                        "updated_at",
-                    ],
-                    "properties": {
-                        "active_revision": {
-                            "type": "integer",
-                            "format": "int64",
-                            "minimum": 1,
-                        },
-                        "last_known_good_revision": {
-                            "type": "integer",
-                            "format": "int64",
-                            "minimum": 1,
-                        },
-                        "catalog_version": {"type": "string"},
-                        "values": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "required": [
-                                    "key",
-                                    "sensitivity",
-                                    "configured",
-                                    "value",
-                                    "masked_hint",
-                                ],
-                                "properties": {
-                                    "key": {
-                                        "type": "string",
-                                        "pattern": "^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$",
-                                    },
-                                    "sensitivity": {
-                                        "enum": ["PUBLIC", "MASKED", "SECRET"]
-                                    },
-                                    "configured": {"type": "boolean"},
-                                    "value": {
-                                        "anyOf": [
-                                            {"type": "string"},
-                                            {"type": "number"},
-                                            {"type": "boolean"},
-                                            {"type": "object"},
-                                            {"type": "array"},
-                                            {"type": "null"},
-                                        ]
-                                    },
-                                    "masked_hint": {
-                                        "type": ["string", "null"],
-                                        "maxLength": 80,
-                                    },
-                                },
-                            },
-                        },
-                        "snapshot_sha256": {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{64}$",
-                        },
-                        "consumer_states": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "required": [
-                                    "consumer",
-                                    "desired_revision",
-                                    "applied_revision",
-                                    "ack",
-                                    "error_code",
-                                    "heartbeat_at",
-                                ],
-                                "properties": {
-                                    "consumer": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "maxLength": 80,
-                                    },
-                                    "desired_revision": {
-                                        "type": "integer",
-                                        "format": "int64",
-                                        "minimum": 1,
-                                    },
-                                    "applied_revision": {
-                                        "type": ["integer", "null"],
-                                        "format": "int64",
-                                        "minimum": 1,
-                                    },
-                                    "ack": {"enum": ["PENDING", "ACKED", "FAILED"]},
-                                    "error_code": {
-                                        "oneOf": [
-                                            {
-                                                "type": "string",
-                                                "enum": [
-                                                    "INVALID_REQUEST",
-                                                    "RESOURCE_NOT_FOUND",
-                                                    "PRECONDITION_REQUIRED",
-                                                    "REVISION_MISMATCH",
-                                                    "IDEMPOTENCY_CONFLICT",
-                                                    "IDEMPOTENCY_IN_PROGRESS",
-                                                    "RESOURCE_CONFLICT",
-                                                    "SERVICE_DEGRADED",
-                                                    "INTERNAL_ERROR",
-                                                    "UNAUTHENTICATED",
-                                                    "PERMISSION_DENIED",
-                                                    "HUMAN_APPROVAL_REQUIRED",
-                                                    "RESEARCH_NOT_MUTABLE",
-                                                    "RESEARCH_WAITING_USER",
-                                                    "EXPERIMENT_IMMUTABLE",
-                                                    "EXPERIMENT_INVALID",
-                                                    "NON_REPRODUCIBLE",
-                                                    "MULTIPLE_TESTING_LIMIT_REACHED",
-                                                    "STRATEGY_VERSION_FROZEN",
-                                                    "STRATEGY_VERSION_MISMATCH",
-                                                    "STRATEGY_NOT_FROZEN",
-                                                    "STRATEGY_NOT_VALIDATED",
-                                                    "VALIDATION_IN_PROGRESS",
-                                                    "VALIDATION_FAILED",
-                                                    "VALIDATION_PREREQUISITES_INCOMPLETE",
-                                                    "VALIDATION_TEST_BLOCKED",
-                                                    "HOLDOUT_LOCKED",
-                                                    "HOLDOUT_APPROVAL_REQUIRED",
-                                                    "HOLDOUT_PREREQUISITES_INCOMPLETE",
-                                                    "HOLDOUT_ALREADY_EXPOSED",
-                                                    "HOLDOUT_RESULT_FORBIDDEN",
-                                                    "APPROVAL_STALE",
-                                                    "APPROVAL_ALREADY_RESOLVED",
-                                                    "APPROVAL_PREREQUISITES_CHANGED",
-                                                    "APPROVAL_TYPE_MISMATCH",
-                                                    "DATA_CAPABILITY_MISSING",
-                                                    "DATA_QUALITY_BLOCKED",
-                                                    "DATA_SNAPSHOT_MISSING",
-                                                    "PIT_GUARANTEE_UNAVAILABLE",
-                                                    "STALE_DATA",
-                                                    "PROVIDER_UNAVAILABLE",
-                                                    "JOB_CONFLICT",
-                                                    "JOB_NOT_CANCELLABLE",
-                                                    "JOB_LEASE_LOST",
-                                                    "JOB_FAILED",
-                                                    "PAPER_APPROVAL_REQUIRED",
-                                                    "PAPER_RISK_BLOCKED",
-                                                    "PAPER_DATA_BLOCKED",
-                                                    "PAPER_DUPLICATE_RUN",
-                                                    "PAPER_VERSION_MISMATCH",
-                                                    "RISK_LIMIT_EXCEEDED",
-                                                    "AGENT_DISABLED",
-                                                    "AGENT_TOOL_FORBIDDEN",
-                                                    "AGENT_BUDGET_EXCEEDED",
-                                                    "AGENT_OUTPUT_INVALID",
-                                                    "AGENT_MODEL_UNAVAILABLE",
-                                                    "AGENT_RESUME_CONFLICT",
-                                                    "AGENT_CONTEXT_STALE",
-                                                    "AGENT_RETRY_EXHAUSTED",
-                                                    "TOOL_INPUT_INVALID",
-                                                    "TOOL_EXECUTION_FAILED",
-                                                    "CREDENTIAL_INVALID",
-                                                    "CREDENTIAL_NOT_CONFIGURED",
-                                                    "CONNECTION_VALIDATION_EXPIRED",
-                                                    "CONNECTION_KIND_MISMATCH",
-                                                    "LAST_ACTIVE_KEY_REQUIRED",
-                                                    "CONFIGURATION_VALIDATION_FAILED",
-                                                    "CONFIGURATION_APPLY_FAILED",
-                                                    "CONFIGURATION_RESTART_REQUIRED",
-                                                    "DATABASE_CONNECTION_FAILED",
-                                                    "DATABASE_SCHEMA_INCOMPATIBLE",
-                                                    "DATABASE_SWITCH_FAILED",
-                                                    "BOOTSTRAP_LOCKED",
-                                                    "DATABASE_DISCONNECTED",
-                                                    "CSRF_REQUIRED",
-                                                ],
-                                            },
-                                            {"type": "null"},
-                                        ]
-                                    },
-                                    "heartbeat_at": {
-                                        "type": "string",
-                                        "format": "date-time",
-                                    },
-                                },
-                            },
-                        },
-                        "updated_at": {"type": "string", "format": "date-time"},
-                    },
-                }
-            ]
-        },
     )
     research_id: ResearchId2 | ResearchId3 = Field(
         ...,
@@ -21452,6 +21508,60 @@ class ResearchPage(BaseModel):
     )
     items: list[ResearchSummary]
     page: PageInfo
+
+
+class ExperimentCreateRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    research_id: ResearchId6 | ResearchId7 = Field(
+        ...,
+        examples=[
+            "RSCH-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "RSCH-550e8400-e29b-41d4-a716-446655440000",
+        ],
+    )
+    research_revision_no: int = Field(..., ge=1)
+    objective: str
+    hypothesis: str
+    experiment_type: Literal[
+        "FACTOR_ANALYSIS",
+        "FAST_BACKTEST",
+        "PARAMETER_SENSITIVITY",
+        "DATA_VALIDATION",
+        "STRICT_VALIDATION",
+    ]
+    data_snapshot_id: DataSnapshotId3 | DataSnapshotId4 = Field(
+        ...,
+        examples=[
+            "DS-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "DS-550e8400-e29b-41d4-a716-446655440000",
+        ],
+    )
+    factor_id: FactorId | None = None
+    factor_version: int | None = Field(default=None, ge=1)
+    strategy_id: StrategyId | None = None
+    strategy_version: int | None = Field(default=None, ge=1)
+    cost_model_id: CostModelId3 | CostModelId4 = Field(
+        ...,
+        examples=[
+            "COST-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "COST-550e8400-e29b-41d4-a716-446655440000",
+        ],
+    )
+    parameters: list[Parameter]
+    search_space: list[
+        ExperimentSearchSetDimension | ExperimentSearchRangeDimension
+    ] = cast(list[ExperimentSearchSetDimension | ExperimentSearchRangeDimension], None)
+    """
+    Required for PARAMETER_SENSITIVITY; empty for other experiment types.
+    """
+    search_configuration: ExperimentSearchConfiguration | None = None
+    """
+    Required for PARAMETER_SENSITIVITY; null for other experiment types.
+    """
+    engine_key: str
+    engine_version: str
 
 
 class ExperimentReproduceAccepted(BaseModel):
@@ -22804,7 +22914,7 @@ class EventPayload(BaseModel):
         ]
         | None
     ) = None
-    resync_from_sequence: int | None = Field(default=None, ge=1)
+    resync_from_sequence: str | None = Field(default=None, pattern="^[1-9][0-9]*$")
     progress_mode: Literal["NONE", "UNITS"] | None = None
     completed_units: int | None = Field(default=None, ge=0)
     total_units: int | None = Field(default=None, ge=1)
@@ -23865,7 +23975,9 @@ class EventPayload(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -24821,7 +24933,7 @@ class SseEnvelope(BaseModel):
             "EVT-550e8400-e29b-41d4-a716-446655440000",
         ],
     )
-    sequence: int = Field(..., ge=1)
+    sequence: str = Field(..., pattern="^[1-9][0-9]*$")
     event_type: Literal[
         "job.updated",
         "research.created",
@@ -25902,7 +26014,9 @@ class SseEnvelope(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -27928,7 +28042,9 @@ class AgentRunDetail(BaseModel):
             }
         )
         errors = sorted(
-            validator.iter_errors(self.model_dump(mode="json")),
+            validator.iter_errors(
+                self.model_dump(mode="json", by_alias=True, exclude_unset=True)
+            ),
             key=lambda error: list(error.absolute_path),
         )
         if errors:
@@ -28252,6 +28368,45 @@ class ConfigurationValueWrite(
     RootModel[ConfigurationValueWrite1 | ConfigurationValueWrite2]
 ):
     root: ConfigurationValueWrite1 | ConfigurationValueWrite2
+
+
+class ConfigurationValueView(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "oneOf": [
+                {
+                    "properties": {"sensitivity": {"enum": ["PUBLIC", "MASKED"]}},
+                    "required": ["sensitivity", "value"],
+                },
+                {
+                    "properties": {
+                        "sensitivity": {"const": "SECRET"},
+                        "value": {"type": "null"},
+                        "masked_hint": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                        },
+                    },
+                    "required": ["sensitivity", "value", "masked_hint"],
+                },
+            ]
+        },
+    )
+    key: str = Field(..., pattern=r"^[a-z][a-z0-9]*(\.[a-z0-9_-]+)+$")
+    sensitivity: Literal["PUBLIC", "MASKED", "SECRET"]
+    configured: bool
+    value: str | float | bool | dict[str, Any] | list | None
+    masked_hint: str | None = Field(..., max_length=80)
+
+    @model_validator(mode="after")
+    def validate_secret_view(self):
+        if self.sensitivity == "SECRET" and (
+            self.value is not None or not self.masked_hint
+        ):
+            raise ValueError("secret configuration values must be masked")
+        return self
 
 
 class ExperimentSearchDimension(

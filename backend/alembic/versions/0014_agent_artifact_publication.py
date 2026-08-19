@@ -6,6 +6,8 @@ Revises: 0013_metadata_alignment
 
 from __future__ import annotations
 
+import uuid
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -23,24 +25,144 @@ def _json_type() -> sa.TypeEngine[object]:
     return sa.JSON()
 
 
-def upgrade() -> None:
+def _install_experiment_completion_binding() -> None:
+    if op.get_bind().dialect.name != "sqlite":
+        return
+    op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_binding")
+    op.execute(
+        "CREATE TRIGGER qf_experiments_complete_binding BEFORE UPDATE ON "
+        "experiments WHEN OLD.immutable = 0 AND NEW.immutable = 1 AND NOT ("
+        "NEW.id IS OLD.id AND NEW.research_id IS OLD.research_id AND "
+        "NEW.source_experiment_id IS OLD.source_experiment_id AND "
+        "NEW.revision = OLD.revision + 1 AND "
+        "json_remove(NEW.detail, '$.status', '$.validity_state', '$.adapter', "
+        "'$.provenance', '$.metrics', '$.artifacts', '$.search_space', "
+        "'$.search_configuration', '$.search_result', '$.action_capabilities', "
+        "'$.started_at', '$.finished_at') IS json_remove(OLD.detail, '$.status', "
+        "'$.validity_state', '$.adapter', '$.provenance', '$.metrics', '$.artifacts', "
+        "'$.search_space', '$.search_configuration', '$.search_result', "
+        "'$.action_capabilities', '$.started_at', '$.finished_at') AND "
+        "COALESCE(json_extract(NEW.detail, '$.status'), '') = 'COMPLETED' AND "
+        "EXISTS (SELECT 1 FROM jobs j WHERE j.id = json_extract(NEW.detail, '$.job_id') "
+        "AND j.job_type = 'EXPERIMENT' AND j.status IN ('RUNNING', 'COMPLETED') "
+        "AND json_extract(j.input_payload, '$.experiment_id') = NEW.id)) "
+        "BEGIN SELECT RAISE(ABORT, 'experiment completion is not bound to a running job'); END"
+    )
+
+
+def _install_artifact_immutability_guards() -> None:
     dialect = op.get_bind().dialect.name
     if dialect == "postgresql":
+        op.execute(
+            """
+            CREATE FUNCTION qf_reject_published_artifact_change() RETURNS trigger AS $$
+            BEGIN
+              IF TG_OP = 'DELETE' OR OLD.publication_state <> 'STAGED' THEN
+                RAISE EXCEPTION 'published artifact is immutable';
+              END IF;
+              IF NEW.id IS DISTINCT FROM OLD.id
+                 OR NEW.artifact_id IS DISTINCT FROM OLD.artifact_id
+                 OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+                 OR NEW.job_id IS DISTINCT FROM OLD.job_id
+                 OR NEW.kind IS DISTINCT FROM OLD.kind
+                 OR NEW.media_type IS DISTINCT FROM OLD.media_type
+                 OR NEW.storage_backend IS DISTINCT FROM OLD.storage_backend
+                 OR NEW.storage_key IS DISTINCT FROM OLD.storage_key
+                 OR NEW.size_bytes IS DISTINCT FROM OLD.size_bytes
+                 OR NEW.sha256 IS DISTINCT FROM OLD.sha256
+                 OR NEW.schema_name IS DISTINCT FROM OLD.schema_name
+                 OR NEW.schema_version IS DISTINCT FROM OLD.schema_version
+                 OR NEW.compression IS DISTINCT FROM OLD.compression
+                 OR NEW.metadata IS DISTINCT FROM OLD.metadata
+                 OR NEW.created_at IS DISTINCT FROM OLD.created_at
+                 OR NEW.immutable IS DISTINCT FROM OLD.immutable
+                 OR NEW.publication_state NOT IN ('PUBLISHED', 'FAILED') THEN
+                RAISE EXCEPTION 'artifact metadata is immutable';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_artifacts_immutable BEFORE UPDATE OR DELETE ON artifacts "
+            "FOR EACH ROW EXECUTE FUNCTION qf_reject_published_artifact_change()"
+        )
+        return
+    if dialect == "sqlite":
+        op.execute(
+            "CREATE TRIGGER qf_artifacts_immutable BEFORE UPDATE ON artifacts WHEN "
+            "OLD.publication_state != 'STAGED' OR NEW.id IS NOT OLD.id OR "
+            "NEW.artifact_id IS NOT OLD.artifact_id OR NEW.workspace_id IS NOT OLD.workspace_id OR "
+            "NEW.job_id IS NOT OLD.job_id OR NEW.kind IS NOT OLD.kind OR "
+            "NEW.media_type IS NOT OLD.media_type OR NEW.storage_backend IS NOT OLD.storage_backend OR "
+            "NEW.storage_key IS NOT OLD.storage_key OR NEW.size_bytes IS NOT OLD.size_bytes OR "
+            "NEW.sha256 IS NOT OLD.sha256 OR NEW.schema_name IS NOT OLD.schema_name OR "
+            "NEW.schema_version IS NOT OLD.schema_version OR NEW.compression IS NOT OLD.compression OR "
+            "NEW.metadata IS NOT OLD.metadata OR NEW.created_at IS NOT OLD.created_at OR "
+            "NEW.immutable IS NOT OLD.immutable OR NEW.publication_state NOT IN ('PUBLISHED', 'FAILED') "
+            "BEGIN SELECT RAISE(ABORT, 'artifact metadata is immutable'); END"
+        )
+        op.execute(
+            "CREATE TRIGGER qf_artifacts_delete_immutable BEFORE DELETE ON artifacts "
+            "BEGIN SELECT RAISE(ABORT, 'artifact is immutable'); END"
+        )
+        return
+    raise RuntimeError(f"0014 artifact guards do not support dialect {dialect}")
+
+
+def _drop_artifact_immutability_guards() -> None:
+    dialect = op.get_bind().dialect.name
+    if dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS qf_artifacts_immutable ON artifacts")
+        op.execute("DROP FUNCTION IF EXISTS qf_reject_published_artifact_change()")
+    elif dialect == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS qf_artifacts_immutable")
+        op.execute("DROP TRIGGER IF EXISTS qf_artifacts_delete_immutable")
+
+
+def upgrade() -> None:
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+    owns_checkpoint_schema = False
+    if dialect == "postgresql":
+        owns_checkpoint_schema = not bool(
+            bind.execute(
+                sa.text("SELECT to_regnamespace('agent_checkpoint') IS NOT NULL")
+            ).scalar_one()
+        )
         op.execute("CREATE SCHEMA IF NOT EXISTS agent_checkpoint")
-    uuid_default = (
-        sa.text("gen_random_uuid()")
-        if dialect == "postgresql"
-        else sa.text("lower(hex(randomblob(16)))")
-    )
+        if owns_checkpoint_schema:
+            op.execute("CREATE TABLE agent_checkpoint._qf_owned_0014 (marker integer)")
     op.add_column(
         "jobs",
         sa.Column(
             "internal_id",
             sa.Uuid(),
-            nullable=False,
-            server_default=uuid_default,
+            nullable=dialect == "sqlite",
+            server_default=sa.text("gen_random_uuid()")
+            if dialect == "postgresql"
+            else None,
         ),
     )
+    if dialect == "sqlite":
+        # SQLite rebuilds jobs for the NOT NULL backfill; a trigger on
+        # experiments that references jobs makes the temporary-table rename
+        # fail while jobs is absent.  Keep the unprotected interval limited
+        # to this rebuild and restore it even when the rebuild fails.
+        op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_binding")
+        try:
+            for job_id in bind.execute(sa.text("SELECT id FROM jobs")).scalars():
+                bind.execute(
+                    sa.text(
+                        "UPDATE jobs SET internal_id = :internal_id WHERE id = :id"
+                    ),
+                    {"id": job_id, "internal_id": uuid.uuid4().hex},
+                )
+            with op.batch_alter_table("jobs") as batch:
+                batch.alter_column("internal_id", nullable=False)
+        finally:
+            _install_experiment_completion_binding()
     op.create_index("uq_jobs_internal_id", "jobs", ["internal_id"], unique=True)
     op.add_column("jobs", sa.Column("resume_token_hash", sa.String(64)))
     op.create_index(
@@ -77,6 +199,48 @@ def upgrade() -> None:
         "job_dependencies",
         ["depends_on_job_id"],
     )
+    if dialect == "postgresql":
+        op.execute(
+            """
+            CREATE FUNCTION qf_reject_job_dependency_cycle() RETURNS trigger AS $$
+            BEGIN
+              IF EXISTS (
+                WITH RECURSIVE reachable(job_id) AS (
+                  SELECT NEW.depends_on_job_id
+                  UNION
+                  SELECT d.depends_on_job_id
+                  FROM job_dependencies d
+                  JOIN reachable r ON r.job_id = d.job_id
+                )
+                SELECT 1 FROM reachable WHERE job_id = NEW.job_id
+              ) THEN
+                RAISE EXCEPTION 'job dependency cycle is not allowed';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            "CREATE TRIGGER qf_job_dependency_cycle BEFORE INSERT OR UPDATE ON "
+            "job_dependencies FOR EACH ROW EXECUTE FUNCTION qf_reject_job_dependency_cycle()"
+        )
+    elif dialect == "sqlite":
+        op.execute(
+            """
+            CREATE TRIGGER qf_job_dependency_cycle BEFORE INSERT ON job_dependencies
+            WHEN EXISTS (
+              WITH RECURSIVE reachable(job_id) AS (
+                SELECT NEW.depends_on_job_id
+                UNION
+                SELECT d.depends_on_job_id FROM job_dependencies d
+                JOIN reachable r ON r.job_id = d.job_id
+              )
+              SELECT 1 FROM reachable WHERE job_id = NEW.job_id
+            )
+            BEGIN SELECT RAISE(ABORT, 'job dependency cycle is not allowed'); END
+            """
+        )
 
     op.add_column("agent_runs", sa.Column("checkpoint_thread_id", sa.String(128)))
     op.create_index(
@@ -115,7 +279,7 @@ def upgrade() -> None:
             server_default="LOCAL",
         ),
         sa.Column("storage_key", sa.Text(), nullable=False, unique=True),
-        sa.Column("size_bytes", sa.Integer(), nullable=False),
+        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
         sa.Column("sha256", sa.String(64), nullable=False),
         sa.Column("schema_name", sa.String(96)),
         sa.Column("schema_version", sa.Integer()),
@@ -140,6 +304,15 @@ def upgrade() -> None:
             "publication_state IN ('STAGED', 'PUBLISHED', 'FAILED')",
             name="artifacts_publication_state_check",
         ),
+        sa.CheckConstraint(
+            "(publication_state = 'STAGED' AND published_at IS NULL AND "
+            "publication_error IS NULL) OR "
+            "(publication_state = 'PUBLISHED' AND published_at IS NOT NULL AND "
+            "publication_error IS NULL) OR "
+            "(publication_state = 'FAILED' AND published_at IS NULL AND "
+            "publication_error IS NOT NULL)",
+            name="artifacts_publication_lifecycle_check",
+        ),
     )
     op.create_index("ix_artifacts_workspace_id", "artifacts", ["workspace_id"])
     op.create_index("ix_artifacts_job_id", "artifacts", ["job_id"])
@@ -148,9 +321,18 @@ def upgrade() -> None:
     op.create_index(
         "ix_artifacts_publication_state", "artifacts", ["publication_state"]
     )
+    _install_artifact_immutability_guards()
+    _install_experiment_completion_binding()
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS qf_job_dependency_cycle ON job_dependencies")
+        op.execute("DROP FUNCTION IF EXISTS qf_reject_job_dependency_cycle()")
+    elif bind.dialect.name == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS qf_job_dependency_cycle")
+    _drop_artifact_immutability_guards()
     op.drop_table("artifacts")
     op.drop_column("tool_calls", "input_payload")
     op.drop_index("uq_agent_runs_checkpoint_thread_id", table_name="agent_runs")
@@ -162,6 +344,31 @@ def downgrade() -> None:
     op.drop_column("jobs", "resume_fencing_token")
     op.drop_column("jobs", "resume_token_hash")
     op.drop_index("uq_jobs_internal_id", table_name="jobs")
-    op.drop_column("jobs", "internal_id")
-    if op.get_bind().dialect.name == "postgresql":
-        op.execute("DROP SCHEMA IF EXISTS agent_checkpoint")
+    if bind.dialect.name == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS qf_experiments_complete_binding")
+        try:
+            op.drop_column("jobs", "internal_id")
+        finally:
+            _install_experiment_completion_binding()
+    else:
+        op.drop_column("jobs", "internal_id")
+    if bind.dialect.name == "postgresql":
+        owns_marker = bool(
+            bind.execute(
+                sa.text(
+                    "SELECT to_regclass('agent_checkpoint._qf_owned_0014') IS NOT NULL"
+                )
+            ).scalar_one()
+        )
+        if owns_marker:
+            table_count = bind.execute(
+                sa.text(
+                    "SELECT count(*) FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'agent_checkpoint' AND c.relkind IN ('r', 'p') "
+                    "AND c.relname <> '_qf_owned_0014'"
+                )
+            ).scalar_one()
+            if table_count == 0:
+                op.execute("DROP TABLE agent_checkpoint._qf_owned_0014")
+                op.execute("DROP SCHEMA agent_checkpoint")

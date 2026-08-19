@@ -2,36 +2,99 @@ name: agent-change-gate
 
 on:
   pull_request:
-    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'backend/app/agent_runtime/**', 'backend/workers/**', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
+    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'Makefile', 'backend/app/agent_runtime.py', 'backend/app/agent_runtime/**', 'backend/src/quantfoundry/agents/**', 'backend/workers/**', 'backend/pyproject.toml', 'backend/uv.lock', 'frontend/package.json', 'frontend/pnpm-lock.yaml', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
   push:
     branches: [main]
-    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'backend/app/agent_runtime/**', 'backend/workers/**', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
+    paths: ['AGENTS.md', 'PROJECT_BACKGROUND.md', 'Makefile', 'backend/app/agent_runtime.py', 'backend/app/agent_runtime/**', 'backend/src/quantfoundry/agents/**', 'backend/workers/**', 'backend/pyproject.toml', 'backend/uv.lock', 'frontend/package.json', 'frontend/pnpm-lock.yaml', 'docs/Agent技术方案/**', 'docs/后端系统技术方案/contracts/tools/**', 'docs/治理/**', '.github/workflows/**', 'scripts/ci/**', 'scripts/ci.sh', 'scripts/release*', 'scripts/tool_contract_check.py']
+
+concurrency:
+  group: agent-change-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   actions: read
 
 jobs:
+  trusted-independent-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      QF_TRUSTED_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.QF_TRUSTED_COMMIT }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Fetch and verify independent review from trusted checkout
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          QF_REVIEW_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$QF_TRUSTED_COMMIT" =~ ^[0-9a-f]{40}$ && "$QF_TRUSTED_COMMIT" != "0000000000000000000000000000000000000000" ]]
+          git fetch --no-tags origin "$QF_REVIEW_COMMIT"
+          locator="$RUNNER_TEMP/independent-review-locator.json"
+          attestation="$RUNNER_TEMP/independent-review-attestation.json"
+          scripts/ci/fetch-independent-review-report.sh "$QF_REVIEW_COMMIT" "$locator"
+          scripts/ci/verify-independent-review-report.sh "$locator" "$QF_REVIEW_COMMIT"
+          python3 - "$locator" "$attestation" "$QF_REVIEW_COMMIT" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          locator, output, commit = map(pathlib.Path, sys.argv[1:])
+          payload = json.loads(locator.read_text(encoding="utf-8"))
+          if payload.get("commit") != str(commit):
+              raise SystemExit("trusted review locator commit mismatch")
+          pathlib.Path(output).write_text(json.dumps({
+              "schema_version": "1.0.0",
+              "commit": str(commit),
+              "locator_sha256": hashlib.sha256(locator.read_bytes()).hexdigest(),
+              "result": "verified",
+          }, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: independent-review-locator-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/independent-review-locator.json
+            ${{ runner.temp }}/independent-review-attestation.json
+          if-no-files-found: error
+          retention-days: 7
+
   agent-contract:
+    needs: trusted-independent-review
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     services:
       postgres:
         image: mirror.gcr.io/library/postgres:18.0-alpine3.22@sha256:48c8ad3a7284b82be4482a52076d47d879fd6fb084a1cbfccbd551f9331b0e40
-        env: {POSTGRES_DB: quantfoundry, POSTGRES_USER: quantfoundry, POSTGRES_PASSWORD: ci-only-not-a-secret}
+        env:
+          POSTGRES_DB: "qf_ci_${{ github.run_id }}_${{ github.run_attempt }}"
+          POSTGRES_USER: quantfoundry
+          POSTGRES_PASSWORD: ci-only-not-a-secret
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U quantfoundry -d quantfoundry"
+          --health-cmd "pg_isready -U quantfoundry -d qf_ci_${{ github.run_id }}_${{ github.run_attempt }}"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
+      QF_TRUSTED_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
       QF_ENV: test
       QF_ENVIRONMENT: test
-      QF_GIT_COMMIT: ${{ github.sha }}
+      QF_GIT_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       QF_BUILD_ID: agent-${{ github.run_id }}-${{ github.run_attempt }}
-      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
-      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/quantfoundry
+      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:ci-only-not-a-secret@localhost:5432/qf_ci_${{ github.run_id }}_${{ github.run_attempt }}
+      QF_CI_DISPOSABLE_DATABASE: '1'
       QF_SKIP_AUTO_CREATE: '1'
-      GITHUB_TOKEN: ${{ github.token }}
       QF_ARTIFACT_ROOT: /tmp/quantfoundry/artifacts
       QF_ARTIFACT_DIR: /tmp/quantfoundry/artifacts
       QF_DATA_ROOT: /tmp/quantfoundry/data
@@ -44,6 +107,7 @@ jobs:
       QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER: '1'
       QF_CREDENTIAL_ENCRYPTION_KEY_ID: ci-test-key-v1
       QF_CREDENTIAL_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      QF_CREDENTIAL_FINGERPRINT_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       PGHOST: 127.0.0.1
       PGPORT: '5432'
       PGUSER: quantfoundry
@@ -51,6 +115,16 @@ jobs:
       PGGSSENCMODE: disable
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.QF_TRUSTED_COMMIT }}
+          path: trusted-tooling
+          fetch-depth: 1
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: 3.14.0
@@ -61,27 +135,97 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pip install --disable-pip-version-check uv==0.10.7
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
+          uv_source="$(command -v uv)"
+          sudo install --owner=root --group=root --mode=0755 "$uv_source" /usr/bin/uv
+          [[ "$uv_source" == /usr/bin/uv ]] || rm -f -- "$uv_source"
           corepack enable
           corepack prepare pnpm@10.32.1 --activate
           uv --directory backend sync --frozen --all-groups
-          pnpm --dir frontend install --frozen-lockfile
-          scripts/ci/install-shellcheck.sh
+          pnpm --dir frontend install --frozen-lockfile --ignore-scripts
+          trusted-tooling/scripts/ci/install-shellcheck.sh
           curl --fail --location --silent --show-error --output /tmp/actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' | sha256sum --check --strict
           tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint
           sudo install --mode 0755 /tmp/actionlint /usr/local/bin/actionlint
-      - name: Run exact Tool and Agent contract gate
+      - name: Run candidate contract tests without credentials
         shell: bash
-        env:
-          QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
         run: |
           set -euo pipefail
-          scripts/ci/run-gate.sh agent-change "$QF_CI_REPORT_DIR"
+          mkdir -p "$RUNNER_TEMP/qf-candidate-report"
+          make governance
+          make tools
+          make backend-ci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: agent-change-report-${{ github.run_id }}-${{ github.run_attempt }}
+          name: agent-change-candidate-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qf-candidate-report
+          if-no-files-found: error
+          retention-days: 7
+
+  agent-contract-verification:
+    needs: [trusted-independent-review, agent-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    env:
+      QF_TRUSTED_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.QF_TRUSTED_COMMIT }}
+          path: trusted-gate
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: 3.14.0
+      - name: Install trusted verification environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --require-hashes -r scripts/ci/uv-bootstrap-requirements.txt
+          uv_source="$(command -v uv)"
+          sudo install --owner=root --group=root --mode=0755 "$uv_source" /usr/bin/uv
+          [[ "$uv_source" == /usr/bin/uv ]] || rm -f -- "$uv_source"
+          uv --directory trusted-gate sync --frozen --all-groups
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: independent-review-locator-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qf-independent-review
+      - name: Run trusted Tool and Agent verification gate
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          QF_CI_REPORT_DIR: ${{ runner.temp }}/qf-ci
+          QF_CI_REPO_ROOT: ${{ github.workspace }}
+          QF_CI_TRUSTED_ROOT: ${{ github.workspace }}/trusted-gate
+          QF_CI_TRUSTED_COMMIT: ${{ env.QF_TRUSTED_COMMIT }}
+          QF_AGENT_CHANGE_VERIFY_ONLY: '1'
+        run: |
+          set -euo pipefail
+          review_prefix=QF_
+          review_locator_var="${review_prefix}INDEPENDENT_REVIEW_REPORT"
+          review_attestation_var="${review_prefix}INDEPENDENT_REVIEW_ATTESTATION"
+          export "$review_locator_var=$RUNNER_TEMP/qf-independent-review/independent-review-locator.json"
+          export "$review_attestation_var=$RUNNER_TEMP/qf-independent-review/independent-review-attestation.json"
+          trusted_root="$GITHUB_WORKSPACE/trusted-gate"
+          test "$(git -C "$trusted_root" rev-parse HEAD)" = "$QF_CI_TRUSTED_COMMIT"
+          "$QF_CI_TRUSTED_ROOT/scripts/ci/run-gate.sh" agent-change "$QF_CI_REPORT_DIR"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: agent-change-verification-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/qf-ci
           if-no-files-found: error
           retention-days: 7

@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.orm import Session
 
 from quantfoundry.api.app import (
@@ -24,7 +24,7 @@ from quantfoundry.api.app import (
 )
 from quantfoundry.infrastructure.artifacts.store import publish_staged, stage_json
 
-TERMINAL = frozenset({"COMPLETED", "BLOCKED"})
+TERMINAL = frozenset({"COMPLETED", "BLOCKED", "FAILED", "CANCELLED"})
 ACTIVE_EXECUTION = frozenset({"QUEUED", "RUNNING"})
 ACTIVE = "ACTIVE"
 MAX_ATTEMPTS = 3
@@ -94,12 +94,18 @@ def _utc(value: datetime) -> datetime:
 
 def _parse_schedule(value: object) -> Schedule:
     if isinstance(value, str):
-        value = json.loads(value)
-    if not isinstance(value, dict) or set(value) < {
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError) as error:
+            raise InvalidExecutionAssumption(
+                "execution_assumption is not valid JSON"
+            ) from error
+    required = {
         "schedule_timezone",
         "daily_due_time",
         "trading_calendar",
-    }:
+    }
+    if not isinstance(value, dict) or not required.issubset(value):
         raise InvalidExecutionAssumption("execution_assumption is incomplete")
     timezone = value["schedule_timezone"]
     due = value["daily_due_time"]
@@ -115,9 +121,35 @@ def _parse_schedule(value: object) -> Schedule:
         raise InvalidExecutionAssumption(
             "schedule timezone/due-time is invalid"
         ) from error
+    if parsed_due.tzinfo is not None:
+        raise InvalidExecutionAssumption(
+            "daily_due_time must not contain a timezone offset"
+        )
     if parsed_due.second or parsed_due.microsecond:
         raise InvalidExecutionAssumption("daily_due_time must be minute-precise")
     return Schedule(timezone, parsed_due, calendar)
+
+
+def _invalid_schedule() -> Schedule:
+    return Schedule("UTC", time(0), "INVALID")
+
+
+def _wall_time_to_utc(day: date, due_time: time, timezone: str) -> datetime:
+    """Resolve exactly one valid local wall time; reject DST gaps/folds."""
+    zone = ZoneInfo(timezone)
+    local_naive = datetime.combine(day, due_time)
+    candidates = []
+    for fold in (0, 1):
+        local = local_naive.replace(tzinfo=zone, fold=fold)
+        instant = local.astimezone(UTC)
+        if instant.astimezone(zone).replace(tzinfo=None) == local_naive:
+            candidates.append(instant)
+    unique = sorted(set(candidates))
+    if len(unique) != 1:
+        raise InvalidExecutionAssumption(
+            "daily_due_time is nonexistent or ambiguous in schedule timezone"
+        )
+    return unique[0]
 
 
 def _calendar_label(schedule: Schedule, version: str) -> dict[str, str] | str:
@@ -243,6 +275,8 @@ class PaperScheduler:
         if not initialization and state is None:
             raise PaperSchedulerError("scheduler state is missing")
         from_state = None if state is None else state["scheduler_status"]
+        if state is not None and not initialization and from_state == to_state:
+            return
         suppressed = None if to_state == ACTIVE else timestamp
         values = {
             "scheduler_status": to_state,
@@ -393,9 +427,7 @@ class PaperScheduler:
         for _ in range(16):
             is_open, version = self._is_trading_day(schedule, probe)
             if is_open:
-                due_utc = datetime.combine(
-                    probe, schedule.due_time, ZoneInfo(schedule.timezone)
-                ).astimezone(UTC)
+                due_utc = _wall_time_to_utc(probe, schedule.due_time, schedule.timezone)
                 if due_utc <= _utc(watermark):
                     return None, version
                 existing = session.execute(
@@ -466,6 +498,7 @@ class PaperScheduler:
             "paper_id": deployment["paper_id"],
             "paper_run_id": run_id,
             "trading_date": day.isoformat(),
+            "trading_calendar": _calendar_label(schedule, calendar_version),
             "execution_assumption_revision": int(deployment["revision"]),
             "execution_assumption_sha256": content_hash(
                 deployment["execution_assumption"]
@@ -556,6 +589,7 @@ class PaperScheduler:
                 .where(
                     runs.c.workspace_id == job.workspace_id,
                     runs.c.paper_run_id == run_id,
+                    runs.c.job_id == job.internal_id,
                 )
                 .with_for_update()
             )
@@ -588,8 +622,10 @@ class PaperScheduler:
             raise PaperSchedulerError("PaperDailyRun deployment is missing")
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
-            _, calendar_version = self._is_trading_day(schedule, row["trading_date"])
-        except InvalidExecutionAssumption as error:
+            is_trading_day, calendar_version = self._is_trading_day(
+                schedule, row["trading_date"]
+            )
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError) as error:
             self._finish_run(
                 session,
                 deployment,
@@ -600,10 +636,41 @@ class PaperScheduler:
                 "UNKNOWN_POST_SIDE_EFFECT",
                 True,
                 "NO_AUTOMATIC_REPLAY",
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
             )
             raise PaperSchedulerError(
                 "PaperDailyRun configuration failed closed"
             ) from error
+        expected_calendar = inputs.get("trading_calendar")
+        if not is_trading_day:
+            self._finish_run(
+                session,
+                deployment,
+                row,
+                job,
+                "BLOCKED",
+                "NON_TRADING_DAY",
+                "NONE",
+                False,
+                "NOT_APPLICABLE",
+                block_reason_code="NON_TRADING_DAY",
+            )
+            return None
+        if expected_calendar != _calendar_label(schedule, calendar_version):
+            self._finish_run(
+                session,
+                deployment,
+                row,
+                job,
+                "BLOCKED",
+                "CALENDAR_VERSION_MISMATCH",
+                "NONE",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                block_reason_code="CALENDAR_VERSION_MISMATCH",
+            )
+            return None
         now = datetime.now(UTC)
         if row["status"] == "QUEUED":
             session.execute(
@@ -685,9 +752,19 @@ class PaperScheduler:
         )
         for decision in decisions:
             if decision.outcome == "UNKNOWN":
-                raise PaperSchedulerError(
-                    f"{decision.gate} returned unknown: {decision.reason_code}"
+                self._finish_run(
+                    session,
+                    deployment,
+                    row,
+                    job,
+                    "FAILED",
+                    decision.reason_code,
+                    "UNKNOWN_POST_SIDE_EFFECT",
+                    True,
+                    "NO_AUTOMATIC_REPLAY",
+                    now=now,
                 )
+                raise PaperSchedulerError("PaperDailyRun gate result is unknown")
             if decision.outcome == "REJECTED":
                 self._finish_run(
                     session,
@@ -749,8 +826,89 @@ class PaperScheduler:
     ) -> GateDecision:
         snapshots = Base.metadata.tables["dataset_snapshots"]
         quality = Base.metadata.tables["data_quality_runs"]
-        row = (
-            session.execute(
+        strategies = Base.metadata.tables["strategy_versions"]
+        strategy = session.execute(
+            select(strategies.c.required_dataset_refs).where(
+                strategies.c.workspace_id == deployment["workspace_id"],
+                strategies.c.id == deployment["strategy_version_id"],
+            )
+        ).scalar_one_or_none()
+        if strategy is None:
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "bound strategy version is unavailable",
+                {},
+            )
+        if isinstance(strategy, str):
+            try:
+                strategy = json.loads(strategy)
+            except json.JSONDecodeError:
+                strategy = None
+        if not isinstance(strategy, list):
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "required dataset references are invalid",
+                {},
+            )
+        required_refs = [
+            value
+            if isinstance(value, str)
+            else next(
+                (
+                    value.get(key)
+                    for key in ("dataset_id", "id", "public_id")
+                    if isinstance(value, dict) and isinstance(value.get(key), str)
+                ),
+                None,
+            )
+            for value in strategy
+        ]
+        if any(value is None for value in required_refs):
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "required dataset references are incomplete",
+                {},
+            )
+        required_refs = list(dict.fromkeys(cast(list[str], required_refs)))
+        datasets = Base.metadata.tables["datasets"]
+        if required_refs:
+            dataset_rows = session.execute(
+                select(datasets.c.id, datasets.c.dataset_id).where(
+                    datasets.c.workspace_id == deployment["workspace_id"]
+                )
+            ).mappings()
+            dataset_ids = [
+                row["id"]
+                for row in dataset_rows
+                if str(row["id"]) in required_refs
+                or str(row["dataset_id"]) in required_refs
+            ]
+            if len(dataset_ids) != len(required_refs):
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "REJECTED",
+                    "DATA_SNAPSHOT_MISSING",
+                    "a required dataset is not bound in the workspace",
+                    {"required_dataset_refs": required_refs},
+                )
+        else:
+            return GateDecision(
+                "DATA_QUALITY",
+                "UNKNOWN",
+                "STRATEGY_DATASET_BINDING_UNKNOWN",
+                "strategy has no explicit dataset binding",
+                {"required_dataset_refs": []},
+            )
+
+        rows = []
+        for dataset_id in dataset_ids:
+            statement = (
                 select(
                     snapshots.c.id.label("snapshot_internal_id"),
                     snapshots.c.snapshot_id.label("snapshot_public_id"),
@@ -773,65 +931,74 @@ class PaperScheduler:
                 )
                 .where(
                     snapshots.c.workspace_id == deployment["workspace_id"],
+                    snapshots.c.coverage_start <= run["trading_date"],
                     snapshots.c.coverage_end >= run["trading_date"],
                     snapshots.c.as_of_time <= now,
                 )
                 .order_by(
-                    snapshots.c.coverage_end.desc(), snapshots.c.as_of_time.desc()
+                    snapshots.c.coverage_end.desc(),
+                    snapshots.c.as_of_time.desc(),
+                    snapshots.c.id.desc(),
                 )
                 .limit(1)
             )
-            .mappings()
-            .one_or_none()
-        )
-        if row is None:
-            return GateDecision(
-                "DATA_QUALITY",
-                "REJECTED",
-                "DATA_SNAPSHOT_MISSING",
-                "no eligible snapshot",
-                {},
-            )
+            if dataset_id is not None:
+                statement = statement.where(snapshots.c.dataset_id == dataset_id)
+            row = session.execute(statement).mappings().one_or_none()
+            if row is None:
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "REJECTED",
+                    "DATA_SNAPSHOT_MISSING",
+                    "no eligible snapshot for every required dataset",
+                    {"required_dataset_refs": required_refs},
+                )
+            rows.append(row)
+
         values = {
-            "data_snapshot_id": row["snapshot_internal_id"],
-            "data_quality_run_id": row["quality_internal_id"],
-            "coverage_end": row["coverage_end"],
-            "as_of_time": row["as_of_time"],
-            "stale_data_detected": row["stale_data_detected"],
+            "data_snapshot_ids": [row["snapshot_internal_id"] for row in rows],
+            "data_quality_run_ids": [row["quality_internal_id"] for row in rows],
+            "data_snapshot_id": rows[0]["snapshot_internal_id"],
+            "data_quality_run_id": rows[0]["quality_internal_id"],
+            "coverage_end": min(row["coverage_end"] for row in rows),
+            "as_of_time": max(row["as_of_time"] for row in rows),
+            "stale_data_detected": any(row["stale_data_detected"] for row in rows),
+            "required_dataset_refs": required_refs,
         }
-        if row["quality_status"] != "COMPLETED" or row["result_state"] is None:
-            return GateDecision(
-                "DATA_QUALITY",
-                "UNKNOWN",
-                "DATA_QUALITY_RESULT_UNKNOWN",
-                "quality result is not terminal",
-                values,
-            )
-        if (
-            row["result_state"] == "BLOCKED"
-            or row["lookahead_detected"] is True
-            or row["survivorship_safe"] is False
-        ):
-            return GateDecision(
-                "DATA_QUALITY",
-                "REJECTED",
-                "DATA_QUALITY_BLOCKED",
-                "deterministic data-quality gate rejected",
-                values,
-            )
-        if row["result_state"] not in {"HEALTHY", "WARN"}:
-            return GateDecision(
-                "DATA_QUALITY",
-                "UNKNOWN",
-                "DATA_QUALITY_RESULT_UNKNOWN",
-                "quality result is not recognized",
-                values,
-            )
+        for row in rows:
+            if row["quality_status"] != "COMPLETED" or row["result_state"] is None:
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "UNKNOWN",
+                    "DATA_QUALITY_RESULT_UNKNOWN",
+                    "quality result is not terminal",
+                    values,
+                )
+            if (
+                row["result_state"] == "BLOCKED"
+                or row["lookahead_detected"] is True
+                or row["survivorship_safe"] is False
+            ):
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "REJECTED",
+                    "DATA_QUALITY_BLOCKED",
+                    "deterministic data-quality gate rejected",
+                    values,
+                )
+            if row["result_state"] not in {"HEALTHY", "WARN"}:
+                return GateDecision(
+                    "DATA_QUALITY",
+                    "UNKNOWN",
+                    "DATA_QUALITY_RESULT_UNKNOWN",
+                    "quality result is not recognized",
+                    values,
+                )
         return GateDecision(
             "DATA_QUALITY",
             "PASSED",
             "DATA_QUALITY_PASSED",
-            "quality result accepted",
+            "quality result accepted for every required dataset",
             values,
         )
 
@@ -998,6 +1165,22 @@ class PaperScheduler:
                 "risk inputs are incomplete",
                 {},
             )
+        if not all(
+            value.is_finite()
+            for value in (
+                max_weight,
+                gross_weight,
+                expected_turnover,
+                *limits.values(),
+            )
+        ) or any(value < 0 for value in (expected_turnover, *limits.values())):
+            return GateDecision(
+                "RISK",
+                "UNKNOWN",
+                "RISK_RESULT_UNKNOWN",
+                "risk inputs are non-finite",
+                {},
+            )
         violations = [
             name
             for name, actual, limit in (
@@ -1033,6 +1216,7 @@ class PaperScheduler:
         reason_code: str,
         now: datetime | None = None,
         lease_snapshot: LeaseSnapshot | None = None,
+        status: str = "FAILED",
     ) -> None:
         """Fail uncertain recovery closed; no automatic Paper replay is legal."""
         if job.job_type != "PAPER_DAILY_RUN":
@@ -1069,14 +1253,29 @@ class PaperScheduler:
         try:
             schedule = _parse_schedule(deployment["execution_assumption"])
             _, calendar_version = self._is_trading_day(schedule, row["trading_date"])
-        except InvalidExecutionAssumption:
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
+            self._finish_run(
+                session,
+                deployment,
+                row,
+                job,
+                status,
+                "CONFIGURATION_INVALID",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                now=now,
+                lease_snapshot=lease_snapshot,
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
+            )
             return
         self._finish_run(
             session,
             deployment,
             row,
             job,
-            "FAILED",
+            status,
             reason_code,
             "UNKNOWN_POST_SIDE_EFFECT",
             True,
@@ -1100,6 +1299,8 @@ class PaperScheduler:
         now: datetime | None = None,
         block_reason_code: str | None = None,
         lease_snapshot: LeaseSnapshot | None = None,
+        schedule: Schedule | None = None,
+        calendar_version: str | None = None,
     ) -> None:
         runs = Base.metadata.tables["paper_daily_runs"]
         now = now or datetime.now(UTC)
@@ -1114,14 +1315,22 @@ class PaperScheduler:
         )
         finished = dict(run)
         finished["status"] = status
+        schedule = schedule or _invalid_schedule()
+        if calendar_version is None:
+            try:
+                schedule = _parse_schedule(deployment["execution_assumption"])
+                calendar_version = self._is_trading_day(schedule, run["trading_date"])[
+                    1
+                ]
+            except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
+                schedule = _invalid_schedule()
+                calendar_version = "UNAVAILABLE"
         self._transition_evidence(
             session,
             deployment,
             finished,
-            _parse_schedule(deployment["execution_assumption"]),
-            self._is_trading_day(
-                _parse_schedule(deployment["execution_assumption"]), run["trading_date"]
-            )[1],
+            schedule,
+            calendar_version,
             run["trading_date"],
             now,
             status,
@@ -1141,6 +1350,7 @@ class PaperScheduler:
         *,
         now: datetime,
         safe_retry: bool,
+        cancellation_requested: bool = False,
         lease_snapshot: LeaseSnapshot,
     ) -> None:
         runs = Base.metadata.tables["paper_daily_runs"]
@@ -1168,11 +1378,51 @@ class PaperScheduler:
                 )
             )
             .mappings()
-            .one()
+            .one_or_none()
         )
+        if found_deployment is None:
+            deployment: Mapping[str, Any] = {
+                "workspace_id": job.workspace_id,
+                "paper_id": run["paper_id"],
+                "execution_assumption": None,
+            }
+            self._finish_run(
+                session,
+                deployment,
+                run,
+                job,
+                "FAILED",
+                "SCHEDULER_RECOVERY_INVALID",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                now=now,
+                lease_snapshot=lease_snapshot,
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
+            )
+            return
         deployment = cast(Mapping[str, Any], dict(found_deployment))
-        schedule = _parse_schedule(deployment["execution_assumption"])
-        _, calendar_version = self._is_trading_day(schedule, run["trading_date"])
+        try:
+            schedule = _parse_schedule(deployment["execution_assumption"])
+            _, calendar_version = self._is_trading_day(schedule, run["trading_date"])
+        except (InvalidExecutionAssumption, PaperSchedulerError, ValueError):
+            self._finish_run(
+                session,
+                deployment,
+                run,
+                job,
+                "FAILED",
+                "SCHEDULER_RECOVERY_INVALID",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
+                now=now,
+                lease_snapshot=lease_snapshot,
+                schedule=_invalid_schedule(),
+                calendar_version="UNAVAILABLE",
+            )
+            return
         self._transition_evidence(
             session,
             deployment,
@@ -1202,10 +1452,23 @@ class PaperScheduler:
                 "RETRY_SCHEDULED",
                 run["status"],
                 run["status"],
-                "JOB_LEASE_LOST",
+                "JOB_CANCELLED" if cancellation_requested else "JOB_LEASE_LOST",
                 "SAFE_PRE_ORDER",
                 False,
                 "SAFE_RETRY_SAME_RUN",
+                lease_snapshot=lease_snapshot,
+            )
+        elif cancellation_requested:
+            self._finish_run(
+                session,
+                deployment,
+                run,
+                job,
+                "CANCELLED",
+                "JOB_CANCELLED",
+                "UNKNOWN_POST_SIDE_EFFECT",
+                True,
+                "NO_AUTOMATIC_REPLAY",
                 lease_snapshot=lease_snapshot,
             )
         else:
@@ -1326,6 +1589,16 @@ class PaperScheduler:
         }
         if set(payload) != EVIDENCE_KEYS:
             raise PaperSchedulerError("scheduler evidence envelope is not closed")
+        session.flush()
+        audit_events = Base.metadata.tables["audit_events"]
+        previous_revision = session.scalar(
+            select(func.max(audit_events.c.object_revision)).where(
+                audit_events.c.workspace_id == deployment["workspace_id"],
+                audit_events.c.object_type == "paper_run",
+                audit_events.c.object_id == run["paper_run_id"],
+            )
+        )
+        object_revision = int(previous_revision or 0) + 1
         storage_key, digest = stage_json(
             session, payload, object_key=run["paper_run_id"]
         )
@@ -1337,7 +1610,14 @@ class PaperScheduler:
             kind="JSON",
             media_type="application/json",
             storage_key=storage_key,
-            size_bytes=len(json.dumps(payload, sort_keys=True).encode()),
+            size_bytes=len(
+                json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ),
             sha256=digest,
             schema_name="paper_scheduler_evidence",
             schema_version=1,
@@ -1348,8 +1628,7 @@ class PaperScheduler:
                 "transition": transition,
                 "reason_code": reason_code,
             },
-            publication_state="PUBLISHED",
-            published_at=now,
+            publication_state="STAGED",
             created_at=now,
             immutable=True,
         )
@@ -1359,7 +1638,7 @@ class PaperScheduler:
             session,
             "paper_run",
             run["paper_run_id"],
-            1,
+            object_revision,
             "paper.run.updated",
             payload={
                 "state": to_status,

@@ -2,7 +2,12 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-http_port="${QF_FULLSTACK_HTTP_PORT:-18080}"
+cd "$repo_root"
+if [[ -n "${QF_FULLSTACK_HTTP_PORT:-}" ]]; then
+  http_port="$QF_FULLSTACK_HTTP_PORT"
+else
+  http_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+fi
 case "$http_port" in
   '' | *[!0-9]*) printf '%s\n' 'QF_FULLSTACK_HTTP_PORT must be numeric.' >&2; exit 1 ;;
 esac
@@ -32,9 +37,15 @@ actual_pnpm_version="$(pnpm --version)"
 }
 
 fullstack_tmp="$(mktemp -d "${TMPDIR:-/tmp}/quantfoundry-fullstack.XXXXXX")"
+project_suffix="${fullstack_tmp##*.}"
+project_suffix="${project_suffix,,}"
+[[ "$project_suffix" =~ ^[a-z0-9]+$ ]] || {
+  printf '%s\n' 'Full-stack temporary directory suffix is not Compose-name safe.' >&2
+  exit 1
+}
+project_name="qf-fullstack-${project_suffix}"
 environment_file="$fullstack_tmp/local.env"
 seed_output="$fullstack_tmp/seed.json"
-project_name="qf-fullstack-$$"
 export COMPOSE_PROJECT_NAME="$project_name"
 keep_failed="${QF_FULLSTACK_KEEP_FAILED:-0}"
 
@@ -49,7 +60,7 @@ cleanup() {
       worker agent-worker scheduler api >&2 || true
     for service in worker agent-worker scheduler; do
       container_id="$(docker compose --project-name "$project_name" --profile local \
-        --env-file "$environment_file" ps -q "$service")"
+        --env-file "$environment_file" ps -q "$service" 2>/dev/null || true)"
       if [[ -n "$container_id" ]]; then
         docker inspect --format \
           "{{.Name}} health={{json .State.Health.Log}}" "$container_id" >&2 || true
@@ -69,11 +80,14 @@ cleanup() {
   esac
   exit "$status"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 umask 077
 QF_POSTGRES_PASSWORD="$(openssl rand -hex 24)"
 QF_CREDENTIAL_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')"
+QF_CREDENTIAL_FINGERPRINT_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')"
 QF_LOCAL_PROVIDER_API_KEY="$(openssl rand -hex 24)"
 QF_LOCAL_DATA_CREDENTIAL="$(openssl rand -hex 24)"
 QF_CODEX_API_KEY="$QF_LOCAL_PROVIDER_API_KEY"
@@ -85,6 +99,7 @@ export QF_POSTGRES_DB=quantfoundry
 export QF_POSTGRES_USER=quantfoundry
 export QF_POSTGRES_PASSWORD
 QF_FULLSTACK_DATABASE_URL="postgresql+psycopg://${QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB}"
+export QF_FULLSTACK_DATABASE_URL
 export QF_ARTIFACT_ROOT=/var/lib/quantfoundry/artifacts
 export QF_DATA_ROOT=/var/lib/quantfoundry/data
 export QF_AGENT_PROVIDER=remote-codex
@@ -98,9 +113,11 @@ export QF_CODEX_DISPLAY_NAME='QuantFoundry Remote Codex local transport'
 export QF_CODEX_API_KEY
 export QF_LOCAL_PROVIDER_API_KEY
 export QF_LOCAL_DATA_CREDENTIAL
+export QF_FULLSTACK_ALLOW_INSECURE_DB=1
 export QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER=1
 export QF_CREDENTIAL_ENCRYPTION_KEY_ID=fullstack-local-key-v1
 export QF_CREDENTIAL_ENCRYPTION_KEY
+export QF_CREDENTIAL_FINGERPRINT_KEY
 export QF_LOG_LEVEL=INFO
 export QF_HTTP_PORT="$http_port"
 
@@ -111,7 +128,7 @@ for name in \
   QF_CODEX_REMOTE_INSTANCE_ID QF_CODEX_BASE_URL QF_CODEX_MODEL \
   QF_CODEX_MODELS QF_CODEX_DISPLAY_NAME QF_CODEX_API_KEY QF_LOCAL_PROVIDER_API_KEY QF_LOCAL_DATA_CREDENTIAL \
   QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER QF_CREDENTIAL_ENCRYPTION_KEY_ID \
-  QF_CREDENTIAL_ENCRYPTION_KEY QF_LOG_LEVEL QF_HTTP_PORT; do
+  QF_CREDENTIAL_ENCRYPTION_KEY QF_CREDENTIAL_FINGERPRINT_KEY QF_LOG_LEVEL QF_HTTP_PORT; do
   printf '%s=%s\n' "$name" "${!name}" >> "$environment_file"
 done
 
@@ -125,13 +142,14 @@ general_key="$(QF_ENV_FILE="$environment_file" QF_BOOTSTRAP_KEY_LABEL=fullstack 
 export QF_FULLSTACK_GENERAL_KEY="$general_key"
 
 application_url="http://127.0.0.1:${http_port}"
-docker compose --project-name "$project_name" --profile local \
+  docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" exec -T \
-  -e QF_FULLSTACK_GENERAL_KEY="$general_key" \
-  -e QF_FULLSTACK_DATABASE_URL="$QF_FULLSTACK_DATABASE_URL" \
-  -e QF_CODEX_BASE_URL="$QF_CODEX_BASE_URL" \
-  -e QF_CODEX_MODEL="$QF_CODEX_MODEL" \
-  -e QF_LOCAL_PROVIDER_API_KEY="$QF_LOCAL_PROVIDER_API_KEY" api \
+  -e QF_FULLSTACK_GENERAL_KEY \
+  -e QF_FULLSTACK_DATABASE_URL \
+  -e QF_FULLSTACK_ALLOW_INSECURE_DB \
+  -e QF_CODEX_BASE_URL \
+  -e QF_CODEX_MODEL \
+  -e QF_LOCAL_PROVIDER_API_KEY api \
   python /workspace/scripts/fullstack_seed.py \
   --prepare-only \
   --application-url "$application_url"
@@ -142,11 +160,12 @@ docker compose --project-name "$project_name" --profile local \
 
 docker compose --project-name "$project_name" --profile local \
   --env-file "$environment_file" exec -T \
-  -e QF_FULLSTACK_GENERAL_KEY="$general_key" \
-  -e QF_FULLSTACK_DATABASE_URL="$QF_FULLSTACK_DATABASE_URL" \
-  -e QF_CODEX_BASE_URL="$QF_CODEX_BASE_URL" \
-  -e QF_CODEX_MODEL="$QF_CODEX_MODEL" \
-  -e QF_LOCAL_PROVIDER_API_KEY="$QF_LOCAL_PROVIDER_API_KEY" api \
+  -e QF_FULLSTACK_GENERAL_KEY \
+  -e QF_FULLSTACK_DATABASE_URL \
+  -e QF_FULLSTACK_ALLOW_INSECURE_DB \
+  -e QF_CODEX_BASE_URL \
+  -e QF_CODEX_MODEL \
+  -e QF_LOCAL_PROVIDER_API_KEY api \
   python /workspace/scripts/fullstack_seed.py \
   --application-url "$application_url" \
   > "$seed_output"

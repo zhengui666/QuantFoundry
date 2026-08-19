@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from jsonschema import ValidationError
 from sqlalchemy import func
 
 from app.contract_route import CanonicalRoute
@@ -58,7 +58,11 @@ def test_complete_setup_etag_corruption_fails_closed(etag: str | None) -> None:
 
     response = TestClient(invalid_app).post(
         "/api/v1/setup/complete",
-        headers={"Idempotency-Key": "etag-corruption-proof"},
+        headers={
+            "Idempotency-Key": "etag-corruption-proof",
+            "If-Match": 'W/"config:1"',
+            "X-CSRF-Token": "t" * 32,
+        },
         json={"configuration_revision": 1},
     )
     assert response.status_code == 500
@@ -86,7 +90,7 @@ def test_request_models_enforce_required_enum_pattern_and_additional_properties(
             },
         ),
         (
-            "/api/v1/data/datasets/DSSET-valid/validate",  # reject_fixture: noncanonical
+            "/api/v1/data/datasets/DSSET-valid/validate",  # reject_fixture DSSET-valid
             auth | {"Idempotency-Key": "test-api-key-unavailable"},
             {"check_profile": "NOT_CANONICAL"},
         ),

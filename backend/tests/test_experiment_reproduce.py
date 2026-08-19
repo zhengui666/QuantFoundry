@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -21,6 +22,7 @@ from quantfoundry.api.app import (
     app,
 )
 from quantfoundry.application.jobs.effects import _memo_experiment_evidence
+from quantfoundry.infrastructure.artifacts.store import read_bytes
 from quantfoundry.workers.main import run_once
 
 OWNER = {"Authorization": "Bearer test"}
@@ -48,6 +50,28 @@ def _drain(job_id: str) -> JobRow:
     raise AssertionError(f"job did not terminate: {job_id}")
 
 
+def _published_output(session, job_id: str) -> tuple[str, str, bytes]:
+    job = session.get(JobRow, job_id)
+    assert job is not None and job.status == "COMPLETED"
+    result_ref = json.loads(job.result_ref or "{}")
+    artifact_id = result_ref.get("artifact_id")
+    assert isinstance(artifact_id, str)
+    artifact = (
+        session.query(ArtifactRow)
+        .filter_by(
+            workspace_id="test-workspace",
+            artifact_id=artifact_id,
+            job_id=job_id,
+            publication_state="PUBLISHED",
+            immutable=True,
+        )
+        .one()
+    )
+    payload = read_bytes(artifact.storage_key, artifact.sha256)
+    assert hashlib.sha256(payload).hexdigest() == artifact.sha256
+    return artifact_id, artifact.sha256, payload
+
+
 @pytest.fixture(scope="module")
 def reproducible_source() -> dict[str, str]:
     client = TestClient(app)
@@ -66,7 +90,7 @@ def reproducible_source() -> dict[str, str]:
     (root / f"{dataset_id}.csv").write_text(
         "event_time,available_at,symbol,close,benchmark_close,partition\n"
         + "\n".join(
-            f"{day}T21:00:00Z,{day}T21:01:00Z,{symbol},{close},{benchmark},RESEARCH"
+            f"{day}T21:01:00Z,{day}T21:01:00Z,{symbol},{close},{benchmark},RESEARCH"
             for day, symbol, close, benchmark in rows
         ),
         encoding="utf-8",
@@ -271,6 +295,17 @@ def test_exact_reproduction_is_idempotent_immutable_and_deterministic(
     assert child_detail["source_experiment_id"] == source_id
     assert child_detail["provenance"]["source_experiment_id"] == source_id
     assert child_detail["provenance"]["output_sha256"] == source_output
+    source_artifact_id, source_artifact_sha256, source_payload = _published_output(
+        session, source_detail["job_id"]
+    )
+    child_artifact_id, child_artifact_sha256, child_payload = _published_output(
+        session, child_detail["job_id"]
+    )
+    assert child_artifact_id != source_artifact_id
+    assert source_payload == child_payload
+    assert source_artifact_sha256 == child_artifact_sha256
+    assert source_artifact_sha256 == source_output
+    assert child_artifact_sha256 == child_detail["provenance"]["output_sha256"]
     reproduce_capability = child_detail["action_capabilities"][0]
     assert reproduce_capability["action"] == "reproduce"
     assert reproduce_capability["idempotency_required"] is True

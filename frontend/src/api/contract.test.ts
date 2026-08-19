@@ -14,6 +14,7 @@ import {
 import { errorCopy } from '../ui';
 import {
   CanonicalErrorCodeSchema,
+  ConfigurationValueWriteSchema,
   ExperimentSearchDimensionSchema,
   ExperimentSearchResultSchema,
   EventObjectExamples,
@@ -154,7 +155,7 @@ const eventEnvelope = (
   return {
     schema_version: 1,
     event_id: 'EVT-7BSW7QFNPFN7FGSNW2WW07V82M',
-    sequence: 1,
+    sequence: '1',
     occurred_at: '2026-08-10T00:00:00Z',
     object_type: objectType,
     ...EventObjectExamples[objectType],
@@ -169,6 +170,23 @@ const eventEnvelope = (
 };
 
 describe('canonical transport', () => {
+  it('enforces exactly one configuration value source', () => {
+    expect(
+      ConfigurationValueWriteSchema.safeParse({ key: 'runtime.mode', value: 'paper' }).success,
+    ).toBe(true);
+    expect(
+      ConfigurationValueWriteSchema.safeParse({ key: 'runtime.mode', secret: 'encrypted' }).success,
+    ).toBe(true);
+    expect(
+      ConfigurationValueWriteSchema.safeParse({
+        key: 'runtime.mode',
+        value: 'paper',
+        secret: 'encrypted',
+      }).success,
+    ).toBe(false);
+    expect(ConfigurationValueWriteSchema.safeParse({ key: 'runtime.mode' }).success).toBe(false);
+  });
+
   it.each(setupStatusMatrix)('SetupStatus cases 01-20: %s', (_name, value, valid) => {
     expect(SetupStatusSchema.safeParse(value).success).toBe(valid);
   });
@@ -244,11 +262,11 @@ describe('canonical transport', () => {
 
   it('uses the production generated decoder for the exact wire cursor and rejects drift', () => {
     const event = eventEnvelope('research.updated', {
-      sequence: 19,
+      sequence: '19',
       object_id: 'RSCH-5TVAJ93EJMXJXPPKEHE7YJGFVF',
     });
     expect(decodeCanonicalSseFrame(`id: 19\ndata: ${JSON.stringify(event)}`)).toEqual({
-      cursor: 19,
+      cursor: '19',
       event,
     });
     expect(() => decodeCanonicalSseFrame(`id: 20\ndata: ${JSON.stringify(event)}`)).toThrow(
@@ -467,6 +485,16 @@ describe('canonical transport', () => {
       { ...validDimensions[0], values: ['20', '20'] },
       { ...validDimensions[0], minimum: '1' },
       { ...validDimensions[1], minimum: '0.5', maximum: '0.1' },
+      {
+        ...validDimensions[1],
+        minimum: '100000000000000000000.1',
+        maximum: '100000000000000000000.01',
+      },
+      {
+        ...validDimensions[1],
+        minimum: '0.00000000000000000002',
+        maximum: '0.00000000000000000002',
+      },
       { ...validDimensions[1], step: '0' },
       { ...validDimensions[2], step: '0.5' },
       { ...validDimensions[2], values: ['20'] },

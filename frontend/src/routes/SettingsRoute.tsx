@@ -26,41 +26,77 @@ export function SettingsPage() {
     queryFn: ({ signal }) => api.databaseConnection(signal),
   });
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
-  const [draftInitialized, setDraftInitialized] = useState(false);
+  const [draftIdentity, setDraftIdentity] = useState<string>();
+  const [draftBaselineFingerprint, setDraftBaselineFingerprint] = useState<string>();
+  const [draftBaseline, setDraftBaseline] = useState<{ etag: string; revision: number }>();
   const [configurationMessage, setConfigurationMessage] = useState<string>();
+  const draftDirty =
+    draftBaselineFingerprint !== undefined &&
+    JSON.stringify(draftValues) !== draftBaselineFingerprint;
   useEffect(() => {
-    if (!active.data || draftInitialized) return;
+    if (!active.data?.etag) return;
+    const identity = `${active.data.etag}:${active.data.body.active_revision}`;
+    if (draftIdentity === identity || draftDirty) return;
     const next: Record<string, string> = {};
     for (const value of active.data.body.values)
       if (value.sensitivity !== 'SECRET' && value.value !== null)
         next[value.key] = JSON.stringify(value.value, null, 2);
     setDraftValues(next);
-    setDraftInitialized(true);
-  }, [active.data, draftInitialized]);
+    setDraftBaselineFingerprint(JSON.stringify(next));
+    setDraftIdentity(identity);
+    setDraftBaseline({ etag: active.data.etag, revision: active.data.body.active_revision });
+  }, [active.data, draftDirty, draftIdentity]);
+  const configurationBaselineChanged = Boolean(
+    draftDirty &&
+    draftBaseline &&
+    active.data &&
+    (draftBaseline.etag !== active.data.etag ||
+      draftBaseline.revision !== active.data.body.active_revision),
+  );
   const saveConfiguration = useMutation({
     mutationFn: async () => {
-      const etag = active.data?.etag;
       const activeBody = active.data?.body;
-      if (!etag || !activeBody) throw new Error('Active configuration ETag is unavailable.');
+      if (!activeBody || !draftBaseline)
+        throw new Error('Active configuration baseline is unavailable.');
+      if (
+        draftBaseline.etag !== active.data?.etag ||
+        draftBaseline.revision !== activeBody.active_revision
+      )
+        throw new Error(t('settings.conflict'));
+      const submittedDraftValues = { ...draftValues };
       const values: Schema<'ConfigurationCandidateRequest'>['values'] =
         catalog.data?.body.entries.flatMap<
           Schema<'ConfigurationCandidateRequest'>['values'][number]
         >((entry) => {
-          const raw = draftValues[entry.key]?.trim();
+          const input = submittedDraftValues[entry.key] ?? '';
+          const raw = input.trim();
           if (!raw) return [];
-          if (entry.sensitivity === 'SECRET') return [{ key: entry.key, secret: raw }];
-          return [{ key: entry.key, value: JSON.parse(raw) }];
+          if (entry.sensitivity === 'SECRET') return [{ key: entry.key, secret: input }];
+          return [
+            {
+              key: entry.key,
+              value: JSON.parse(raw) as Schema<'ConfigurationValueView'>['value'],
+            },
+          ];
         }) ?? [];
       const candidate = await api.putConfigurationCandidate(
-        { base_revision: activeBody.active_revision, values },
-        etag,
+        { base_revision: draftBaseline.revision, values },
+        draftBaseline.etag,
       );
       const validation = await api.validateConfigurationCandidate();
+      if (validation.body.revision !== candidate.body.revision)
+        throw new Error('Configuration candidate changed during validation; retry.');
       if (validation.body.status !== 'VALID') throw new Error(t('settings.validationFailed'));
-      return api.activateConfiguration(candidate.body.revision, etag);
+      return {
+        result: await api.activateConfiguration(candidate.body.revision, draftBaseline.etag),
+        submittedDraftValues,
+      };
     },
-    onSuccess: () => {
+    onSuccess: ({ result, submittedDraftValues }) => {
       setConfigurationMessage(t('settings.saved'));
+      setDraftBaselineFingerprint(JSON.stringify(submittedDraftValues));
+      if (result.etag)
+        setDraftBaseline({ etag: result.etag, revision: result.body.active_revision });
       void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'active') });
     },
     onError: (error) =>
@@ -70,47 +106,177 @@ export function SettingsPage() {
     host: '',
     port: '5432',
     database: '',
+    tls_mode: 'VERIFY_FULL' as 'DISABLED' | 'VERIFY_CA' | 'VERIFY_FULL',
     username: '',
     password: '',
   });
+  const [dbDraftIdentity, setDbDraftIdentity] = useState<string>();
+  const [dbSavedFingerprint, setDbSavedFingerprint] = useState<string>();
+  const [dbBaseline, setDbBaseline] = useState<{ etag: string; activeRevision: number }>();
+  const [dbCandidateRevision, setDbCandidateRevision] = useState<number>();
+  const [dbValidatedRevision, setDbValidatedRevision] = useState<number>();
+  const [dbValidatedBaseline, setDbValidatedBaseline] = useState<{
+    etag: string;
+    activeRevision: number;
+  }>();
+  const serverCandidateRevision = database.data?.body.candidate?.revision;
+  const serverCandidateState = database.data?.body.candidate?.state;
+  useEffect(() => {
+    if (!database.data) return;
+    if (serverCandidateRevision === undefined) {
+      setDbCandidateRevision(undefined);
+      setDbValidatedRevision(undefined);
+      setDbValidatedBaseline(undefined);
+      return;
+    }
+    setDbCandidateRevision(serverCandidateRevision);
+    setDbValidatedRevision(
+      serverCandidateState === 'VALIDATED' ? serverCandidateRevision : undefined,
+    );
+    if (serverCandidateState === 'VALIDATED' && database.data.etag && database.data.body.active_revision !== null)
+      setDbValidatedBaseline({
+        etag: database.data.etag,
+        activeRevision: database.data.body.active_revision,
+      });
+    else setDbValidatedBaseline(undefined);
+  }, [database.data, serverCandidateRevision, serverCandidateState]);
+  const persistedValidatedRevision =
+    database.data?.body.candidate?.state === 'VALIDATED'
+      ? database.data.body.candidate.revision
+      : undefined;
+  const validatedRevision =
+    dbValidatedRevision ??
+    (dbCandidateRevision === undefined ? persistedValidatedRevision : undefined);
+  const dbFingerprint = (value: typeof dbForm) =>
+    JSON.stringify({
+      host: value.host.trim(),
+      port: value.port,
+      database: value.database.trim(),
+      tls_mode: value.tls_mode,
+      username: value.username.trim(),
+      password: value.password,
+    });
+  const dbFormDirty =
+    dbSavedFingerprint !== undefined && dbFingerprint(dbForm) !== dbSavedFingerprint;
+  const dbBaselineChanged = Boolean(
+    dbFormDirty &&
+    dbBaseline &&
+    database.data &&
+    (dbBaseline.etag !== database.data.etag ||
+      dbBaseline.activeRevision !== database.data.body.active_revision),
+  );
+  const dbFormSource = database.data?.body.candidate ?? database.data?.body.active;
+  useEffect(() => {
+    const current = dbFormSource;
+    if (!current) return;
+    const identity = `${database.data?.etag}:${current.state}:${current.revision}`;
+    if (dbDraftIdentity === identity || dbFormDirty) return;
+    const nextForm = {
+      host: current.host,
+      port: String(current.port),
+      database: current.database,
+      tls_mode: current.tls_mode,
+      username: '',
+      password: '',
+    };
+    setDbForm(nextForm);
+    setDbSavedFingerprint(JSON.stringify(nextForm));
+    setDbDraftIdentity(identity);
+    setDbBaseline({
+      etag: database.data?.etag ?? '',
+      activeRevision: database.data?.body.active_revision ?? 0,
+    });
+  }, [database.data, dbDraftIdentity, dbFormDirty, dbFormSource]);
   const saveDatabase = useMutation({
-    mutationFn: () => {
-      const etag = database.data?.etag;
-      if (!etag) throw new Error('Database connection ETag is unavailable.');
-      return api.putDatabaseConnectionCandidate(
+    mutationFn: async () => {
+      if (!database.data || !dbBaseline?.etag)
+        throw new Error('Database connection baseline is unavailable.');
+      if (
+        dbBaseline.etag !== database.data.etag ||
+        dbBaseline.activeRevision !== database.data.body.active_revision
+      )
+        throw new Error(t('settings.conflict'));
+      const port = Number(dbForm.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535)
+        throw new Error('Database port must be an integer between 1 and 65535.');
+      const submittedForm = { ...dbForm };
+      const result = await api.putDatabaseConnectionCandidate(
         {
-          base_revision: database.data?.body.active_revision ?? 1,
+          base_revision: dbBaseline.activeRevision,
           connection: {
-            host: dbForm.host.trim(),
-            port: Number(dbForm.port),
-            database: dbForm.database.trim(),
-            tls_mode: 'VERIFY_FULL',
-            username: dbForm.username.trim(),
-            ...(dbForm.password ? { password: dbForm.password } : {}),
+            host: submittedForm.host.trim(),
+            port,
+            database: submittedForm.database.trim(),
+            tls_mode: submittedForm.tls_mode,
+            ...(submittedForm.username.trim() ? { username: submittedForm.username.trim() } : {}),
+            ...(submittedForm.password ? { password: submittedForm.password } : {}),
           },
         },
-        etag,
+        dbBaseline.etag,
       );
+      return { result, submittedForm };
     },
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') }),
+    onSuccess: ({ result: { body }, submittedForm }) => {
+      setDbCandidateRevision(body.revision);
+      setDbValidatedRevision(undefined);
+      setDbValidatedBaseline(undefined);
+      setDbSavedFingerprint(dbFingerprint(submittedForm));
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
+    },
   });
   const validateDatabase = useMutation({
-    mutationFn: () => api.validateDatabaseConnectionCandidate(),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') }),
+    mutationFn: async () => {
+      const current = database.data;
+      const revision = dbCandidateRevision ?? current?.body.candidate?.revision;
+      if (!revision) throw new Error('Database candidate revision is unavailable.');
+      if (!current?.etag || current.body.active_revision === null)
+        throw new Error('Database connection baseline is unavailable.');
+      const baseline = { etag: current.etag, activeRevision: current.body.active_revision };
+      const result = await api.validateDatabaseConnectionCandidate(revision);
+      if (result.body.status !== 'VALID') {
+        throw new Error('Database connection validation failed.');
+      }
+      if (result.body.revision !== revision)
+        throw new Error('Database candidate changed during validation; retry.');
+      return { result, baseline };
+    },
+    onSuccess: ({ result: { body }, baseline }) => {
+      setDbValidatedRevision(body.revision);
+      setDbValidatedBaseline(baseline);
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
+    },
   });
   const activateDatabase = useMutation({
     mutationFn: () => {
-      const etag = database.data?.etag;
-      if (!etag) throw new Error('Database connection ETag is unavailable.');
-      return api.activateDatabaseConnection(etag);
+      const current = database.data;
+      const etag = current?.etag;
+      if (!current || !etag) throw new Error('Database connection ETag is unavailable.');
+      if (!validatedRevision) throw new Error('Validated database candidate is unavailable.');
+      if (
+        current.body.candidate?.revision !== validatedRevision ||
+        current.body.candidate?.state !== 'VALIDATED' ||
+        !dbValidatedBaseline ||
+        dbValidatedBaseline.etag !== etag ||
+        dbValidatedBaseline.activeRevision !== current.body.active_revision
+      )
+        throw new Error('Database candidate changed after validation; validate it again.');
+      return api.activateDatabaseConnection(etag, validatedRevision);
     },
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') }),
+    onSuccess: () => {
+      setDbCandidateRevision(undefined);
+      setDbValidatedRevision(undefined);
+      setDbValidatedBaseline(undefined);
+      setDbSavedFingerprint(undefined);
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey('settings', 'database') });
+    },
   });
   const [keyForm, setKeyForm] = useState(initialSecret);
   const [issuedSecret, setIssuedSecret] = useState<string>();
+  useEffect(() => {
+    if (!issuedSecret) return;
+    const timer = window.setTimeout(() => setIssuedSecret(undefined), 60_000);
+    return () => window.clearTimeout(timer);
+  }, [issuedSecret]);
   const issue = useMutation({
     mutationFn: () => api.createAccessKey({ label: keyForm.label.trim() }),
     onSuccess: ({ body }) => {
@@ -146,6 +312,9 @@ export function SettingsPage() {
       });
     },
   });
+  const keyMutationPending = issue.isPending || keyAction.isPending;
+  const databaseWorkflowPending =
+    saveDatabase.isPending || validateDatabase.isPending || activateDatabase.isPending;
   if (catalog.isLoading || active.isLoading || keys.isLoading || database.isLoading)
     return <State kind="loading" />;
   if (catalog.error) return <Problem error={catalog.error} />;
@@ -258,7 +427,12 @@ export function SettingsPage() {
               </label>
             );
           })}
-          <button disabled={saveConfiguration.isPending || !active.data?.etag}>
+          {configurationBaselineChanged && <State kind="error">{t('settings.conflict')}</State>}
+          <button
+            disabled={
+              saveConfiguration.isPending || configurationBaselineChanged || !active.data?.etag
+            }
+          >
             {saveConfiguration.isPending ? t('common.saving') : t('settings.saveConfiguration')}
           </button>
           {configurationMessage && (
@@ -285,7 +459,7 @@ export function SettingsPage() {
               onChange={(event) => setKeyForm({ label: event.target.value })}
             />
           </label>
-          <button disabled={issue.isPending || !keyForm.label.trim()}>
+          <button disabled={keyMutationPending || !keyForm.label.trim()}>
             {t('settings.createKey')}
           </button>
         </form>
@@ -319,7 +493,7 @@ export function SettingsPage() {
                         <button
                           type="button"
                           className="secondary"
-                          disabled={keyAction.isPending}
+                          disabled={keyMutationPending}
                           onClick={() => keyAction.mutate({ action: 'rotate', key })}
                         >
                           {t('settings.rotate')}
@@ -327,7 +501,7 @@ export function SettingsPage() {
                         <button
                           type="button"
                           className="secondary"
-                          disabled={keyAction.isPending}
+                          disabled={keyMutationPending}
                           onClick={() => {
                             if (window.confirm(t('settings.revokeConfirm', { label: key.label })))
                               keyAction.mutate({ action: 'revoke', key });
@@ -360,8 +534,11 @@ export function SettingsPage() {
             <label key={field}>
               {t(`settings.${field === 'database' ? 'databaseName' : field}`)}
               <input
-                required={field !== 'password'}
+                required={
+                  field !== 'password' && (field !== 'username' || !database.data?.body.active)
+                }
                 type={field === 'password' ? 'password' : field === 'port' ? 'number' : 'text'}
+                {...(field === 'port' ? { min: 1, max: 65535, step: 1 } : {})}
                 value={dbForm[field]}
                 onChange={(event) =>
                   setDbForm((current) => ({ ...current, [field]: event.target.value }))
@@ -369,18 +546,23 @@ export function SettingsPage() {
               />
             </label>
           ))}
-          <button disabled={saveDatabase.isPending || !database.data?.etag}>
+          {dbBaselineChanged && <State kind="error">{t('settings.conflict')}</State>}
+          <button disabled={databaseWorkflowPending || dbBaselineChanged || !database.data?.etag}>
             {t('settings.saveCandidate')}
           </button>
         </form>
         {saveDatabase.error && <Problem error={saveDatabase.error} />}
-        {database.data?.body.candidate?.state === 'CANDIDATE' && (
-          <button disabled={validateDatabase.isPending} onClick={() => validateDatabase.mutate()}>
+        {(database.data?.body.candidate?.state === 'CANDIDATE' ||
+          (dbCandidateRevision !== undefined && dbValidatedRevision === undefined)) && (
+          <button
+            disabled={databaseWorkflowPending || dbFormDirty}
+            onClick={() => validateDatabase.mutate()}
+          >
             {t('settings.validateDatabase')}
           </button>
         )}
-        {database.data?.body.candidate?.state === 'VALIDATED' && (
-          <button disabled={activateDatabase.isPending} onClick={() => activateDatabase.mutate()}>
+        {validatedRevision !== undefined && !dbFormDirty && (
+          <button disabled={databaseWorkflowPending} onClick={() => activateDatabase.mutate()}>
             {t('settings.activateDatabase')}
           </button>
         )}

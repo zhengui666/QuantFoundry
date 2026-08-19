@@ -18,6 +18,8 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import CheckConstraint, MetaData, create_engine, text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import SQLAlchemyError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -42,7 +44,6 @@ from scripts.generate_schema_manifest import DEFAULT_DOCUMENT, extract_manifest
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PHYSICAL_PATH = BACKEND_ROOT / "alembic/versions/0016_section14_physical.json"
 _TYPE_ARGS = re.compile(r"^(varchar|char|numeric)\((\d+)(?:,(\d+))?\)$")
-_UNIQUE_COLUMNS = re.compile(r"UNIQUE\(([^)]+)\)", re.IGNORECASE)
 _FK = re.compile(r"FK\s+([a-z0-9_]+)\(([^)]+)\)", re.IGNORECASE)
 _COMPOSITE_FK = re.compile(
     r"FK\s*\(([^)]+)\)\s*(?:->|→)\s*([a-z0-9_]+)\(([^)]+)\)",
@@ -123,20 +124,25 @@ def _actual_type(value: Any, dialect: str) -> tuple[Any, ...]:
         return ("daterange",) if dialect == "postgresql" else ("varchar", None)
     if value.__class__.__name__ == "JSONTextCompat":
         return ("jsonb",)
-    if isinstance(value, postgresql.JSONB):
+    effective = (
+        value.dialect_impl(postgresql.dialect()) if dialect == "postgresql" else value
+    )
+    if isinstance(effective, postgresql.JSONB):
         return ("jsonb",)
-    if isinstance(value, postgresql.DATERANGE):
+    if isinstance(effective, postgresql.DATERANGE):
         return ("daterange",)
-    if isinstance(value, postgresql.TIMESTAMP):
-        return ("timestamptz",) if value.timezone else ("timestamp",)
-    name = value.__class__.__name__.lower()
+    if isinstance(effective, postgresql.TIMESTAMP):
+        return ("timestamptz",) if effective.timezone else ("timestamp",)
+    name = effective.__class__.__name__.lower()
     aliases = {
         "biginteger": "bigint",
         "smallinteger": "smallint",
-        "datetime": "timestamptz",
+        "datetime": "timestamptz" if getattr(value, "timezone", False) else "timestamp",
         "uuid": "uuid",
+        "pguuid": "uuid",
+        "_psycopgnumeric": "numeric",
         "largebinary": "bytea",
-        "json": "jsonb" if dialect == "postgresql" else "jsonb",
+        "json": "json" if dialect == "postgresql" else "jsonb",
         "text": "text",
         "date": "date",
         "boolean": "boolean",
@@ -148,12 +154,12 @@ def _actual_type(value: Any, dialect: str) -> tuple[Any, ...]:
     }
     normalized = aliases.get(name, name)
     if normalized in {"varchar", "char"}:
-        return normalized, getattr(value, "length", None)
+        return normalized, getattr(effective, "length", None)
     if normalized == "numeric":
         return (
             normalized,
-            getattr(value, "precision", None),
-            getattr(value, "scale", None),
+            getattr(effective, "precision", None),
+            getattr(effective, "scale", None),
         )
     return (normalized,)
 
@@ -201,58 +207,6 @@ def _type_matches(expected: str, actual: Any, dialect: str) -> bool:
     return wanted == got
 
 
-def _expected_primary_key(table_spec: dict[str, Any]) -> tuple[str, ...]:
-    columns: list[str] = []
-    for column in table_spec["columns"]:
-        constraints = column["constraints"]
-        if constraints == "PK" or constraints.startswith("PK "):
-            columns.append(column["name"])
-        composite = re.search(r"PK\(([^)]+)\)", constraints)
-        if composite:
-            columns.extend(item.strip() for item in composite.group(1).split(","))
-    return tuple(dict.fromkeys(columns))
-
-
-def _expected_unique_constraints(
-    table_spec: dict[str, Any],
-) -> set[tuple[str, ...]]:
-    result: set[tuple[str, ...]] = set()
-    for column in table_spec["columns"]:
-        constraints = column["constraints"]
-        for match in _UNIQUE_COLUMNS.finditer(constraints):
-            if constraints[match.end() :].lstrip().upper().startswith("WHERE "):
-                continue
-            result.add(tuple(item.strip() for item in match.group(1).split(",")))
-        if (
-            not _UNIQUE_COLUMNS.search(constraints)
-            and re.search(r"(?:^|,\s*)UNIQUE(?:,|$)", constraints)
-            and "partial unique" not in constraints.lower()
-        ):
-            result.add((column["name"],))
-    return result
-
-
-def _expected_indexes(
-    table_spec: dict[str, Any],
-) -> set[tuple[tuple[str, ...], bool]]:
-    result: set[tuple[tuple[str, ...], bool]] = set()
-    for column in table_spec["columns"]:
-        constraints = column["constraints"]
-        index = re.search(r"INDEX(?:\(([^)]+)\))?", constraints, re.IGNORECASE)
-        if index:
-            columns = (
-                tuple(item.strip() for item in index.group(1).split(","))
-                if index.group(1)
-                else (column["name"],)
-            )
-            result.add((columns, False))
-        for match in _UNIQUE_COLUMNS.finditer(constraints):
-            if constraints[match.end() :].lstrip().upper().startswith("WHERE "):
-                columns = tuple(item.strip() for item in match.group(1).split(","))
-                result.add((columns, True))
-    return result
-
-
 def _expected_foreign_keys(
     table_spec: dict[str, Any],
     manifest_tables: Mapping[str, dict[str, Any]] | set[str],
@@ -298,57 +252,31 @@ def _expected_foreign_keys(
 
 def _constraint_shapes(
     table: Any,
-) -> tuple[
-    set[tuple[str | None, tuple[str, ...]]],
-    set[
-        tuple[
-            str | None,
-            tuple[str, ...],
-            tuple[str, ...],
-            str | None,
-        ]
-    ],
-    set[
-        tuple[
-            str | None,
-            str,
-            tuple[tuple[str | None, str, str, str], ...],
-            tuple[str, ...],
-            bool,
-            str | None,
-        ]
-    ],
-    dict[str, str],
-]:
-    unique: set[tuple[str | None, tuple[str, ...]]] = {
+) -> tuple[set[Any], set[Any], set[Any], dict[str, str]]:
+    unique: set[tuple[str | None, tuple[str, ...], Any, Any]] = {
         (
             cast(str | None, constraint.name),
             tuple(str(column.name) for column in constraint.columns),
+            getattr(constraint, "deferrable", None),
+            getattr(constraint, "initially", None),
         )
         for constraint in table.constraints
         if constraint.__class__.__name__ == "UniqueConstraint"
     }
-    foreign_keys: set[
-        tuple[str | None, tuple[str, ...], tuple[str, ...], str | None]
-    ] = {
+    foreign_keys: set[tuple[Any, ...]] = {
         (
             cast(str | None, constraint.name),
             tuple(str(element.parent.name) for element in constraint.elements),
             tuple(str(element.target_fullname) for element in constraint.elements),
             cast(str | None, constraint.ondelete),
+            cast(str | None, constraint.onupdate),
+            getattr(constraint, "deferrable", None),
+            getattr(constraint, "initially", None),
+            cast(str | None, constraint.match),
         )
         for constraint in table.foreign_key_constraints
     }
-    indexes: set[
-        tuple[
-            str | None,
-            str,
-            tuple[tuple[str | None, str, str, str], ...],
-            tuple[str, ...],
-            bool,
-            str | None,
-        ]
-    ] = {
+    indexes: set[tuple[Any, ...]] = {
         (
             cast(str | None, index.name),
             str(index.dialect_options["postgresql"].get("using") or "btree"),
@@ -368,6 +296,12 @@ def _constraint_shapes(
                 if index.dialect_options["sqlite"].get("where") is not None
                 else None
             ),
+            _operator_class_signature(
+                index.dialect_options["postgresql"].get("ops") or {}
+            ),
+            index.dialect_options["postgresql"].get("nulls_not_distinct"),
+            _index_with_signature(index.dialect_options["postgresql"].get("with")),
+            cast(str | None, index.dialect_options["postgresql"].get("tablespace")),
         )
         for index in table.indexes
     }
@@ -383,6 +317,47 @@ def _column_default_signature(column: Any) -> str | None:
     server_default = getattr(column, "server_default", None)
     arg = getattr(server_default, "arg", None) if server_default is not None else None
     return str(arg) if arg is not None else None
+
+
+def _normalized_default(value: str | None, type_name: str) -> str | None:
+    if value is None:
+        return None
+    result = _normalized_sql_layout(value)
+    while _has_single_wrapping_parentheses(result):
+        result = result[1:-1].strip()
+    result = re.sub(
+        r"now\(\)\s*\+\s*'((?:''|[^'])*)'::interval$",
+        r"now() + interval '\1'",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(
+        r"now\(\)\s*\+\s*interval\s+'((?:''|[^'])*)'$",
+        r"now() + interval '\1'",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(
+        r"::(?:pg_catalog\.)?(?:jsonb|json|text|character varying|varchar|bpchar|char)$",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    ).strip()
+    if result.lower() in {"true", "false"}:
+        return result.upper()
+    if type_name in {"json", "jsonb"}:
+        match = re.fullmatch(r"'((?:''|[^'])*)'", result)
+        if match is not None:
+            try:
+                parsed = json.loads(match.group(1).replace("''", "'"))
+            except json.JSONDecodeError:
+                pass
+            else:
+                encoded = json.dumps(
+                    parsed, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                )
+                return "'" + encoded.replace("'", "''") + "'"
+    return result
 
 
 def _column_generation_signature(column: Any) -> dict[str, Any] | None:
@@ -425,6 +400,29 @@ def _index_key_tuple(
         direction,
         str(nulls).upper(),
     )
+
+
+def _index_with_signature(value: Any) -> tuple[tuple[str, str], ...]:
+    if not value:
+        return ()
+    if value == "{}":
+        return ()
+    if not isinstance(value, Mapping):
+        raise RuntimeError(f"index storage parameters are not a mapping: {value!r}")
+    return tuple(sorted((str(key), str(item)) for key, item in value.items()))
+
+
+def _operator_class_signature(value: Any) -> tuple[tuple[str, str], ...]:
+    if not value:
+        return ()
+    if isinstance(value, Mapping):
+        return tuple(sorted((str(key), str(item)) for key, item in value.items()))
+    try:
+        return tuple(sorted((str(item[0]), str(item[1])) for item in value))
+    except (IndexError, TypeError) as error:
+        raise RuntimeError(
+            f"invalid PostgreSQL operator-class mapping: {value!r}"
+        ) from error
 
 
 def _legacy_index_key(value: str) -> dict[str, str]:
@@ -482,8 +480,11 @@ def _expected_constraint_name(
     columns: tuple[str, ...],
     name: str | None,
     label: str,
+    dialect: str,
 ) -> str | None:
-    if name is not None or label != "database":
+    if label == "orm" and name is None:
+        return None
+    if name is not None or dialect != "postgresql":
         return name
     return _postgres_generated_constraint_name(kind, table_name, columns)
 
@@ -495,9 +496,9 @@ def _physical_contract(
     if (
         value.get("table_count") != 63
         or value.get("column_count") != 967
-        or sum(len(table["checks"]) for table in value["tables"]) != 191
+        or sum(len(table["checks"]) for table in value["tables"]) != 220
     ):
-        raise RuntimeError("physical schema is not canonical 63/967/191")
+        raise RuntimeError("physical schema is not canonical 63/967/220")
     documented = _manifest_named_checks(manifest)
     if documented != _DOCUMENTED_NAMED_CHECKS:
         raise RuntimeError(
@@ -520,10 +521,10 @@ def _physical_contract(
     if hashlib.sha256(helper_sql.encode()).hexdigest() != helper_contract["sha256"]:
         raise RuntimeError("physical locator helper contract hash is invalid")
     if (
-        len(helper_contract["truth_table"]["valid"]) != 69
-        or len(helper_contract["truth_table"]["invalid"]) != 76
+        len(helper_contract["truth_table"]["valid"]) != 140
+        or len(helper_contract["truth_table"]["invalid"]) != 159
     ):
-        raise RuntimeError("physical locator truth table is not canonical 69/76")
+        raise RuntimeError("physical locator truth table is not canonical 140/159")
     contract = {table["name"]: table for table in value["tables"]}
     manifest_specs = {table["name"]: table for table in manifest["tables"]}
     for table_spec in manifest["tables"]:
@@ -574,7 +575,7 @@ def _check_postgres_helpers(
                     "FROM pg_proc p "
                     "JOIN pg_namespace n ON n.oid=p.pronamespace "
                     "JOIN pg_language l ON l.oid=p.prolang "
-                    "WHERE n.nspname=current_schema() AND p.proname = ANY(:names)"
+                    "WHERE n.nspname='public' AND p.proname = ANY(:names)"
                 ),
                 {
                     "names": [
@@ -583,11 +584,11 @@ def _check_postgres_helpers(
                     ]
                 },
             ).all()
-            actual = {str(row[0]): row for row in rows}
+            actual = {(str(row[0]), str(row[1])): row for row in rows}
             expected_comment = f"qf-contract-sha256:{helper_contract['sha256']}"
             for function in helper_contract["functions"]:
                 name = str(function["name"])
-                row = actual.get(name)
+                row = actual.get((name, str(function["identity_arguments"])))
                 if row is None:
                     errors.append(f"database:missing-helper:{name}")
                     continue
@@ -685,10 +686,6 @@ def _normalized_sql_layout(value: str) -> str:
         if char.isspace():
             pending_space = True
             index += 1
-            continue
-        cast = re.match(r"::\s*text\b", value[index:], re.IGNORECASE)
-        if cast is not None:
-            index += cast.end()
             continue
         dollar = re.match(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$", value[index:])
         if char in {"'", '"'} or dollar is not None:
@@ -802,12 +799,21 @@ def _check_metadata(
         physical_table = physical_contract[table_name]
         physical_columns = {item["name"]: item for item in physical_table["columns"]}
         for name, physical_column in physical_columns.items():
+            if name not in table.c:
+                errors.append(f"{label}:missing-physical-column:{table_name}.{name}")
+                continue
             column = table.c[name]
-            actual_default = _column_default_signature(column)
-            if actual_default != physical_column.get("server_default"):
+            type_name = str(physical_column["type"]["name"])
+            actual_default = _normalized_default(
+                _column_default_signature(column), type_name
+            )
+            expected_default = _normalized_default(
+                physical_column.get("server_default"), type_name
+            )
+            if actual_default != expected_default:
                 errors.append(
                     f"{label}:default:{table_name}.{name}:"
-                    f"expected={physical_column.get('server_default')}:actual={actual_default}"
+                    f"expected={expected_default}:actual={actual_default}"
                 )
             actual_generation = _column_generation_signature(column)
             if actual_generation != physical_column.get("generation"):
@@ -842,8 +848,11 @@ def _check_metadata(
                     tuple(constraint["columns"]),
                     constraint["name"],
                     label,
+                    dialect,
                 ),
                 tuple(constraint["columns"]),
+                constraint.get("deferrable"),
+                constraint.get("initially"),
             )
             for constraint in physical_table["unique_constraints"]
         }
@@ -855,10 +864,15 @@ def _check_metadata(
                     tuple(constraint["columns"]),
                     constraint["name"],
                     label,
+                    dialect,
                 ),
                 tuple(constraint["columns"]),
                 tuple(constraint["targets"]),
                 constraint["ondelete"],
+                constraint.get("onupdate"),
+                constraint.get("deferrable"),
+                constraint.get("initially"),
+                constraint.get("match"),
             )
             for constraint in physical_table["foreign_keys"]
         }
@@ -872,6 +886,10 @@ def _check_metadata(
                 (parsed_expected_indexes or {}).get(
                     (table_name, index["name"]), index["where"]
                 ),
+                _operator_class_signature(index.get("operator_classes")),
+                index.get("nulls_not_distinct"),
+                _index_with_signature(index.get("with")),
+                index.get("tablespace"),
             )
             for index in physical_table["indexes"]
         }
@@ -886,24 +904,43 @@ def _check_metadata(
                 include,
                 unique,
                 (parsed_actual_indexes or {}).get((table_name, str(name)), where),
+                operator_classes,
+                nulls_not_distinct,
+                _index_with_signature(index_with),
+                tablespace,
             )
-            for name, method, keys, include, unique, where in actual_indexes
+            for (
+                name,
+                method,
+                keys,
+                include,
+                unique,
+                where,
+                operator_classes,
+                nulls_not_distinct,
+                index_with,
+                tablespace,
+            ) in actual_indexes
         }
-        for unique_shape in sorted(expected_unique - actual_unique):
+        for unique_shape in sorted(expected_unique - actual_unique, key=repr):
             errors.append(f"{label}:missing-unique:{table_name}:{unique_shape}")
-        for unique_shape in sorted(actual_unique - expected_unique):
+        for unique_shape in sorted(actual_unique - expected_unique, key=repr):
             errors.append(f"{label}:unexpected-unique:{table_name}:{unique_shape}")
-        for foreign_key_shape in sorted(expected_foreign_keys - actual_foreign_keys):
+        for foreign_key_shape in sorted(
+            expected_foreign_keys - actual_foreign_keys, key=repr
+        ):
             errors.append(
                 f"{label}:missing-foreign-key:{table_name}:{foreign_key_shape}"
             )
-        for foreign_key_shape in sorted(actual_foreign_keys - expected_foreign_keys):
+        for foreign_key_shape in sorted(
+            actual_foreign_keys - expected_foreign_keys, key=repr
+        ):
             errors.append(
                 f"{label}:unexpected-foreign-key:{table_name}:{foreign_key_shape}"
             )
-        for index_shape in sorted(expected_indexes - actual_indexes):
+        for index_shape in sorted(expected_indexes - actual_indexes, key=repr):
             errors.append(f"{label}:missing-index:{table_name}:{index_shape}")
-        for index_shape in sorted(actual_indexes - expected_indexes):
+        for index_shape in sorted(actual_indexes - expected_indexes, key=repr):
             errors.append(f"{label}:unexpected-index:{table_name}:{index_shape}")
         expected_checks = {
             str(constraint["name"]): str(constraint["sql"])
@@ -944,7 +981,10 @@ def _database_metadata(database_url: str) -> tuple[MetaData, str]:
     engine = create_engine(database_url)
     try:
         metadata = MetaData()
-        metadata.reflect(bind=engine)
+        with engine.connect() as connection:
+            if connection.dialect.name == "postgresql":
+                connection.execute(text("SET search_path TO public"))
+            metadata.reflect(bind=connection)
         return metadata, engine.dialect.name
     finally:
         engine.dispose()
@@ -960,6 +1000,8 @@ def _postgres_parsed_expected_checks(
     try:
         with engine.connect() as connection:
             preparer = connection.dialect.identifier_preparer
+            connection.execute(text("SET search_path TO pg_temp, public"))
+            connection.commit()
             transaction = connection.begin()
             try:
                 for offset, (table_name, table) in enumerate(
@@ -1017,7 +1059,7 @@ def _postgres_actual_checks(database_url: str) -> dict[tuple[str, str], str]:
                     "JOIN pg_class t ON t.oid = c.conrelid "
                     "JOIN pg_namespace n ON n.oid = t.relnamespace "
                     "WHERE c.contype = 'c' "
-                    "AND n.nspname = current_schema()"
+                    "AND n.nspname = 'public'"
                 )
             )
             return {
@@ -1038,6 +1080,8 @@ def _postgres_parsed_expected_indexes(
     try:
         with engine.connect() as connection:
             preparer = connection.dialect.identifier_preparer
+            connection.execute(text("SET search_path TO pg_temp, public"))
+            connection.commit()
             transaction = connection.begin()
             try:
                 for offset, (table_name, table) in enumerate(
@@ -1072,8 +1116,11 @@ def _postgres_parsed_expected_indexes(
                         parsed = connection.execute(
                             text(
                                 "SELECT pg_get_expr(i.indpred, i.indrelid) "
-                                "FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid "
-                                "WHERE c.relname=:index_name"
+                                "FROM pg_index i "
+                                "JOIN pg_class c ON c.oid=i.indexrelid "
+                                "JOIN pg_namespace n ON n.oid=c.relnamespace "
+                                "WHERE c.relname=:index_name "
+                                "AND n.oid=pg_my_temp_schema()"
                             ),
                             {"index_name": temporary_index},
                         ).scalar_one()
@@ -1100,7 +1147,7 @@ def _postgres_actual_indexes(database_url: str) -> dict[tuple[str, str], str]:
                     "JOIN pg_class t ON t.oid=i.indrelid "
                     "JOIN pg_class c ON c.oid=i.indexrelid "
                     "JOIN pg_namespace n ON n.oid=t.relnamespace "
-                    "WHERE i.indpred IS NOT NULL AND n.nspname=current_schema()"
+                    "WHERE i.indpred IS NOT NULL AND n.nspname='public'"
                 )
             )
             return {
@@ -1121,12 +1168,27 @@ def _normalized_physical_snapshot(
 
     normalized = deepcopy(value)
     for table in normalized["tables"]:
+        table.setdefault("schema", "public")
         table_name = str(table["name"])
+        primary_key = table.get("primary_key_constraint")
+        if primary_key is not None and primary_key.get("name") is None:
+            primary_key["name"] = f"{table_name}_pkey"[:63]
         for column in table.get("columns", []):
             column.setdefault("generation", None)
             column.setdefault("identity", None)
+            column["server_default"] = _normalized_default(
+                column.get("server_default"), str(column["type"]["name"])
+            )
         for kind, prefix in (("unique_constraints", "uq"), ("foreign_keys", "fk")):
             for constraint in table[kind]:
+                if kind == "unique_constraints":
+                    constraint.setdefault("deferrable", None)
+                    constraint.setdefault("initially", None)
+                else:
+                    constraint.setdefault("onupdate", None)
+                    constraint.setdefault("deferrable", None)
+                    constraint.setdefault("initially", None)
+                    constraint.setdefault("match", None)
                 if constraint["name"] is None:
                     constraint["name"] = _postgres_generated_constraint_name(
                         prefix, table_name, tuple(constraint["columns"])
@@ -1139,6 +1201,10 @@ def _normalized_physical_snapshot(
                 )
             constraint["sql"] = parsed_checks.get((table_name, name), constraint["sql"])
         for index in table["indexes"]:
+            index.setdefault("operator_classes", [])
+            index.setdefault("nulls_not_distinct", None)
+            index.setdefault("with", None)
+            index.setdefault("tablespace", None)
             name = str(index["name"])
             index["method"] = str(index.get("method") or "btree").lower()
             index["include"] = list(index.get("include") or ())
@@ -1240,7 +1306,7 @@ def _alembic_revisions(database_url: str) -> tuple[str | None, str | None]:
     return expected, actual
 
 
-def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
+def _check_impl(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
     manifest = load_manifest()
     current = extract_manifest(DEFAULT_DOCUMENT)
     errors: list[str] = []
@@ -1253,7 +1319,7 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
 
         orm_table_count = len(Base.metadata.tables)
         orm_dialect = (
-            "postgresql" if database_url and "postgresql" in database_url else "sqlite"
+            make_url(database_url).get_backend_name() if database_url else "sqlite"
         )
         errors.extend(
             _check_metadata(
@@ -1275,18 +1341,23 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
         database_table_count = database_catalog_table_count - len(
             database_internal_tables
         )
-        parsed_expected_checks = (
-            _postgres_parsed_expected_checks(database_url, physical_contract)
-            if dialect == "postgresql"
-            else None
-        )
+        missing_expected_tables = set(physical_contract) - set(database_metadata.tables)
+        parsed_expected_checks = None
+        parsed_expected_indexes = None
+        if dialect == "postgresql" and not missing_expected_tables:
+            try:
+                parsed_expected_checks = _postgres_parsed_expected_checks(
+                    database_url, physical_contract
+                )
+                parsed_expected_indexes = _postgres_parsed_expected_indexes(
+                    database_url, physical_contract
+                )
+            except SQLAlchemyError as exc:
+                errors.append(
+                    f"database:expected-expression-parse:{type(exc).__name__}:{exc}"
+                )
         parsed_actual_checks = (
             _postgres_actual_checks(database_url) if dialect == "postgresql" else None
-        )
-        parsed_expected_indexes = (
-            _postgres_parsed_expected_indexes(database_url, physical_contract)
-            if dialect == "postgresql"
-            else None
         )
         parsed_actual_indexes = (
             _postgres_actual_indexes(database_url) if dialect == "postgresql" else None
@@ -1336,6 +1407,33 @@ def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
         "alembic_actual": actual_revision,
         "errors": errors,
     }
+
+
+def check(database_url: str | None, *, orm: bool = True) -> dict[str, Any]:
+    try:
+        return _check_impl(database_url, orm=orm)
+    except Exception as error:  # noqa: BLE001 - CLI contract must remain structured
+        try:
+            manifest = load_manifest()
+            manifest_tables = manifest["table_count"]
+            manifest_columns = manifest["column_count"]
+        except Exception:  # noqa: BLE001 - preserve the same structured failure
+            manifest_tables = manifest_columns = None
+        return {
+            "ok": False,
+            "manifest_path": str(MANIFEST_PATH),
+            "manifest_tables": manifest_tables,
+            "manifest_columns": manifest_columns,
+            "locator_helper_sha256": None,
+            "orm_tables": None,
+            "database_tables": None,
+            "database_catalog_tables": None,
+            "database_internal_tables": None,
+            "physical_snapshot_exact": None,
+            "alembic_expected": None,
+            "alembic_actual": None,
+            "errors": [f"inspection:{type(error).__name__}:{error}"],
+        }
 
 
 def main() -> int:

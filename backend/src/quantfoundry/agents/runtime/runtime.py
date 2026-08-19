@@ -23,9 +23,10 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, interrupt
+from langgraph.types import interrupt
 from psycopg.rows import dict_row
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from quantfoundry.api.app import (
@@ -57,6 +58,10 @@ from quantfoundry.infrastructure.crypto.provider_credentials import (
     credential_aad,
     decrypt_credential,
 )
+from quantfoundry.infrastructure.jobs.queue import (
+    JobNotCancellable,
+    request_cancellation,
+)
 
 DEFAULT_MAX_STEPS = 25
 DEFAULT_MAX_TOOL_CALLS = 50
@@ -79,6 +84,7 @@ class ToolExecutionFailure(AgentRuntimeError):
         tool_call_id: str,
         tool_name: str,
         tool_version: str,
+        input_payload: str,
         input_sha256: str,
         semantic_scope: str,
         agent_run_id: str,
@@ -93,6 +99,7 @@ class ToolExecutionFailure(AgentRuntimeError):
         self.tool_call_id = tool_call_id
         self.tool_name = tool_name
         self.tool_version = tool_version
+        self.input_payload = input_payload
         self.input_sha256 = input_sha256
         self.semantic_scope = semantic_scope
         self.agent_run_id = agent_run_id
@@ -161,8 +168,13 @@ class CodexRuntimeConfig:
             parsed_url = urlsplit(base_url)
         except ValueError as error:
             raise AgentRuntimeError("Remote Codex endpoint is invalid") from error
+        is_local_http = parsed_url.scheme == "http" and parsed_url.hostname in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }
         if (
-            parsed_url.scheme not in {"http", "https"}
+            (parsed_url.scheme != "https" and not is_local_http)
             or not parsed_url.netloc
             or parsed_url.username is not None
             or parsed_url.password is not None
@@ -264,58 +276,56 @@ class RemoteCodexModel:
                 },
             ],
         }
-        attempts = self.runtime.max_attempts
-        last_error: Exception | None = None
-        for _attempt in range(attempts):
-            try:
-                response = httpx.post(
-                    self.runtime.url,
-                    headers={
-                        "Authorization": f"Bearer {self.runtime.api_key}",
-                        "X-QF-Codex-Runtime": self.runtime.runtime_key,
-                        "X-QF-Codex-Instance": self.runtime.remote_instance_id,
-                        "X-QF-Codex-Invocation": invocation_id,
-                    },
-                    json=request,
-                    timeout=self.runtime.timeout_seconds,
+        try:
+            response = httpx.post(
+                self.runtime.url,
+                headers={
+                    "Authorization": f"Bearer {self.runtime.api_key}",
+                    "X-QF-Codex-Runtime": self.runtime.runtime_key,
+                    "X-QF-Codex-Instance": self.runtime.remote_instance_id,
+                    "X-QF-Codex-Invocation": invocation_id,
+                },
+                json=request,
+                timeout=self.runtime.timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            response_instance = response.headers.get("X-QF-Codex-Instance")
+            if (
+                response_instance
+                and response_instance != self.runtime.remote_instance_id
+            ):
+                raise AgentRuntimeError(
+                    "Remote Codex instance identity changed during invocation"
                 )
-                response.raise_for_status()
-                payload = response.json()
-                response_instance = response.headers.get("X-QF-Codex-Instance")
-                if (
-                    response_instance
-                    and response_instance != self.runtime.remote_instance_id
-                ):
-                    raise AgentRuntimeError(
-                        "Remote Codex instance identity changed during invocation"
-                    )
-                content = payload["choices"][0]["message"]["content"]
-                action = json.loads(content)
-                break
-            except (
-                httpx.HTTPError,
-                KeyError,
-                IndexError,
-                TypeError,
-                json.JSONDecodeError,
-            ) as error:
-                last_error = error
-        else:
+            content = payload["choices"][0]["message"]["content"]
+            action = json.loads(content)
+        except httpx.HTTPStatusError as error:
             raise AgentRuntimeError(
-                f"Remote Codex failed after {self.runtime.max_attempts} attempts"
-            ) from last_error
+                f"Remote Codex returned HTTP {error.response.status_code}"
+            ) from error
+        except (httpx.TimeoutException, httpx.NetworkError) as error:
+            raise AgentRuntimeError(
+                "Remote Codex invocation outcome is unknown; retry requires reconciliation"
+            ) from error
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise AgentRuntimeError("Remote Codex response is invalid") from error
         if not isinstance(action, dict):
             raise AgentRuntimeError("Remote Codex action is not a JSON object")
         usage = payload.get("usage") if isinstance(payload, dict) else None
-        if isinstance(usage, dict):
-            action.setdefault(
-                "input_tokens",
-                usage.get("prompt_tokens", usage.get("input_tokens", 0)),
-            )
-            action.setdefault(
-                "output_tokens",
-                usage.get("completion_tokens", usage.get("output_tokens", 0)),
-            )
+        if not isinstance(usage, dict):
+            raise AgentRuntimeError("Remote Codex usage metadata is missing")
+        input_tokens = usage.get("prompt_tokens", usage.get("input_tokens", 0))
+        output_tokens = usage.get("completion_tokens", usage.get("output_tokens", 0))
+        if any(
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not 0 <= value <= 10_000_000
+            for value in (input_tokens, output_tokens)
+        ):
+            raise AgentRuntimeError("Remote Codex usage metadata is invalid")
+        action["input_tokens"] = input_tokens
+        action["output_tokens"] = output_tokens
         return action
 
 
@@ -328,7 +338,9 @@ class LocalDeterministicModel(DeterministicModel):
     """Explicit non-production adapter used only when configured by name."""
 
 
-def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | None:
+def _active_setup_provider(
+    session: Session, config: AgentConfigRow
+) -> tuple[str, str] | None:
     binding = session.get(SetupBindingRow, config.workspace_id)
     if binding is None:
         return None
@@ -349,7 +361,6 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
         or connection.validation_state != "SUCCESS"
         or connection.status != "ACTIVE"
         or (expires_at is not None and expires_at <= datetime.now(UTC))
-        or connection.model_name != (os.getenv("QF_CODEX_MODEL") or config.model_name)
     ):
         return None
     aad = credential_aad(
@@ -360,8 +371,11 @@ def _active_setup_api_key(session: Session, config: AgentConfigRow) -> str | Non
         model_name=connection.model_name,
     )
     try:
-        return decrypt_credential(
-            connection.ciphertext, connection.nonce, connection.key_id, aad=aad
+        return (
+            decrypt_credential(
+                connection.ciphertext, connection.nonce, connection.key_id, aad=aad
+            ),
+            connection.model_name,
         )
     except CredentialConfigurationError as error:
         raise AgentRuntimeError(
@@ -415,13 +429,30 @@ def configured_model(config: AgentConfigRow, session: Session | None = None) -> 
     )
     if remote_mode or config.model_provider in {"openai-compatible", "remote-codex"}:
         control = _active_control_plane_connection()
-        api_key = (
-            _active_setup_api_key(session, config) if session is not None else None
+        setup_provider = (
+            _active_setup_provider(session, config) if session is not None else None
         )
+        api_key = setup_provider[0] if setup_provider is not None else None
         if control is not None:
             api_key = control["credential"]
+        elif (
+            session is not None
+            and not api_key
+            and not (
+                os.getenv("QF_ENV") == "test" and os.getenv("QF_TEST_RUNTIME_ROOT")
+            )
+        ):
+            raise AgentRuntimeError(
+                "workspace provider credential is unavailable; refusing process fallback"
+            )
         return RemoteCodexModel(
-            model_name=control["model"] if control is not None else config.model_name,
+            model_name=(
+                control["model"]
+                if control is not None
+                else setup_provider[1]
+                if setup_provider is not None
+                else config.model_name
+            ),
             timeout_seconds=config.tool_timeout_seconds,
             api_key=api_key,
             base_url=control["endpoint"] if control is not None else None,
@@ -455,6 +486,8 @@ class AgentGraphState(TypedDict, total=False):
     action: dict[str, Any]
     wait: dict[str, Any]
     resume_result: dict[str, Any]
+    resume_job_id: str
+    model_action_index: int
 
 
 @contextmanager
@@ -511,7 +544,10 @@ def _compiled_graph(model: Model, saver: BaseCheckpointSaver[str]) -> Any:
             resumed = interrupt(state["wait"])
             if not isinstance(resumed, dict):
                 raise AgentRuntimeError("Agent resume payload is invalid")
-            return {"resume_result": resumed}
+            job_id = resumed.get("job_id")
+            if not isinstance(job_id, str) or not job_id:
+                raise AgentRuntimeError("Agent resume job identity is invalid")
+            return {"resume_result": resumed, "resume_job_id": job_id}
         raise AgentRuntimeError("Agent graph phase is invalid")
 
     builder = StateGraph(AgentGraphState)
@@ -528,9 +564,22 @@ def _graph_action(
     row.checkpoint_thread_id = thread_id
     with _checkpoint_saver() as saver:
         graph = _compiled_graph(model, saver)
+        config = {"configurable": {"thread_id": thread_id}}
+        saved = graph.get_state(config)
+        values = saved.values if saved is not None else {}
+        if (
+            isinstance(values, dict)
+            and values.get("model_action_index") == checkpoint.get("model_action_index")
+            and isinstance(values.get("action"), dict)
+        ):
+            return values["action"]
         result = graph.invoke(
-            {"phase": "MODEL", "checkpoint": checkpoint},
-            {"configurable": {"thread_id": thread_id}},
+            {
+                "phase": "MODEL",
+                "checkpoint": checkpoint,
+                "model_action_index": checkpoint.get("model_action_index", 0),
+            },
+            config,
         )
     action = result.get("action")
     if not isinstance(action, dict):
@@ -538,44 +587,13 @@ def _graph_action(
     return action
 
 
-def _graph_interrupt_for_job(
-    row: AgentRunRow,
-    checkpoint: dict[str, Any],
-    *,
-    tool_call_id: str,
-    awaited_job_id: str,
-) -> None:
-    thread_id = row.checkpoint_thread_id or f"agent:{row.id}"
-    row.checkpoint_thread_id = thread_id
-    with _checkpoint_saver() as saver:
-        graph = _compiled_graph(DeterministicModel(), saver)
-        graph.invoke(
-            {
-                "phase": "WAITING_JOB",
-                "checkpoint": checkpoint,
-                "wait": {
-                    "reason": "INTERNAL_JOB_WAIT",
-                    "tool_call_id": tool_call_id,
-                    "awaited_job_id": awaited_job_id,
-                },
-            },
-            {"configurable": {"thread_id": thread_id}},
-        )
-
-
 def _graph_resume(row: AgentRunRow, result: dict[str, Any]) -> dict[str, Any]:
-    if not row.checkpoint_thread_id:
-        raise AgentRuntimeError("Agent checkpoint thread is missing")
-    with _checkpoint_saver() as saver:
-        graph = _compiled_graph(DeterministicModel(), saver)
-        resumed = graph.invoke(
-            Command(resume=result),
-            {"configurable": {"thread_id": row.checkpoint_thread_id}},
-        )
-    value = resumed.get("resume_result")
-    if not isinstance(value, dict):
-        raise AgentRuntimeError("Agent graph resume result is missing")
-    return value
+    checkpoint = _checkpoint(row)
+    if row.status in {"COMPLETED", "CANCELLED", "FAILED"} or checkpoint.get(
+        "pending_job_id"
+    ) != result.get("job_id"):
+        raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
+    return result
 
 
 class ToolRegistry:
@@ -731,7 +749,10 @@ class ToolRegistry:
         definition = self.definition(name)
         if role not in definition["allowed_agent_roles"]:
             raise ToolPolicyDenied(f"{role} is not allowed to call {name}")
-        Draft202012Validator(definition["input_schema"]).validate(arguments)
+        Draft202012Validator(
+            definition["input_schema"],
+            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        ).validate(arguments)
         missing = set(definition["requires_policy_checks"]) - passed_policy_checks
         if missing:
             raise ToolPolicyDenied(f"missing policy checks: {sorted(missing)}")
@@ -792,28 +813,44 @@ class ToolRegistry:
             ).scalar_one_or_none()
             if version is None:
                 return set()
-            candidates = session.execute(
+            version_detail = json.loads(version.detail)
+            latest_backtest = version_detail.get("latest_backtest")
+            result = (
+                latest_backtest.get("result")
+                if isinstance(latest_backtest, dict)
+                else None
+            )
+            experiment = result.get("experiment") if isinstance(result, dict) else None
+            job_id = experiment.get("id") if isinstance(experiment, dict) else None
+            if not isinstance(job_id, str):
+                return set()
+            candidate = session.execute(
                 select(JobRow).where(
+                    JobRow.id == job_id,
                     JobRow.workspace_id == workspace_id,
                     JobRow.job_type == "FAST_BACKTEST",
                     JobRow.status == "COMPLETED",
                 )
-            ).scalars()
-            for candidate in candidates:
-                inputs = json.loads(candidate.input_payload)
-                snapshot_id = inputs.get("snapshot_id")
-                if (
-                    inputs.get("strategy_version_id") == version.id
-                    and inputs.get("strategy_spec_sha256") == version.spec_sha256
-                    and isinstance(snapshot_id, str)
-                ):
-                    return {snapshot_id}
+            ).scalar_one_or_none()
+            if candidate is None:
+                return set()
+            inputs = json.loads(candidate.input_payload)
+            snapshot_id = inputs.get("snapshot_id")
+            if (
+                inputs.get("strategy_version_id") == version.id
+                and inputs.get("strategy_spec_sha256") == version.spec_sha256
+                and isinstance(snapshot_id, str)
+            ):
+                return {snapshot_id}
         return set()
 
     def validate_output(
         self, definition: dict[str, Any], output: dict[str, Any]
     ) -> None:
-        Draft202012Validator(definition["output_schema"]).validate(output)
+        Draft202012Validator(
+            definition["output_schema"],
+            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        ).validate(output)
 
 
 REGISTRY = ToolRegistry.load()
@@ -1104,27 +1141,29 @@ def _require_research_completion_evidence(session: Session, row: AgentRunRow) ->
 
     if row.role != "RESEARCH_DIRECTOR" or row.research_id is None:
         return
-    experiment = (
-        session.execute(
-            select(ExperimentRow).where(
-                ExperimentRow.workspace_id == row.workspace_id,
-                ExperimentRow.research_id == row.research_id,
-                ExperimentRow.immutable.is_(True),
-            )
+    experiments = session.execute(
+        select(ExperimentRow).where(
+            ExperimentRow.workspace_id == row.workspace_id,
+            ExperimentRow.research_id == row.research_id,
+            ExperimentRow.immutable.is_(True),
         )
-        .scalars()
-        .first()
+    ).scalars()
+    found = False
+    for experiment in experiments:
+        found = True
+        detail = json.loads(experiment.detail)
+        if (
+            detail.get("status") == "COMPLETED"
+            and detail.get("validity_state") == "VALID"
+            and detail.get("artifacts")
+            and isinstance(detail.get("provenance"), dict)
+        ):
+            return
+    raise AgentRuntimeError(
+        "RESEARCH_COMPLETION_EVIDENCE_INVALID"
+        if found
+        else "RESEARCH_COMPLETION_EVIDENCE_MISSING"
     )
-    if experiment is None:
-        raise AgentRuntimeError("RESEARCH_COMPLETION_EVIDENCE_MISSING")
-    detail = json.loads(experiment.detail)
-    if (
-        detail.get("status") != "COMPLETED"
-        or detail.get("validity_state") != "VALID"
-        or not detail.get("artifacts")
-        or not isinstance(detail.get("provenance"), dict)
-    ):
-        raise AgentRuntimeError("RESEARCH_COMPLETION_EVIDENCE_INVALID")
 
 
 def _suspend_for_child_job(
@@ -1188,6 +1227,7 @@ def _suspend_for_child_job(
             "pending_tool_call_id": tool_call.id,
             "pending_job_id": child_job_id,
             "pending_resume_job_id": resume_job.id,
+            "pending_owner_job_id": parent_job.id,
             "resume_fencing_token": row.resume_fencing_token,
             "checkpointed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
@@ -1195,12 +1235,6 @@ def _suspend_for_child_job(
     row.checkpoint = json.dumps(checkpoint)
     row.status = "RUNNING"
     row.revision += 1
-    _graph_interrupt_for_job(
-        row,
-        checkpoint,
-        tool_call_id=tool_call.id,
-        awaited_job_id=child_job_id,
-    )
     emit(
         session,
         "agent_run",
@@ -1230,6 +1264,8 @@ def _consume_resume(
     row: AgentRunRow,
     checkpoint: dict[str, Any],
 ) -> AgentStep | None:
+    if row.status in {"COMPLETED", "CANCELLED", "FAILED"}:
+        raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
     inputs = json.loads(resume_job.input_payload)
     token_hash = inputs.get("resume_token_hash")
     fencing_token = inputs.get("resume_fencing_token")
@@ -1239,6 +1275,9 @@ def _consume_resume(
         or row.pending_resume_token_hash != token_hash
         or row.resume_fencing_token != fencing_token
         or checkpoint.get("resume_fencing_token") != fencing_token
+        or checkpoint.get("pending_resume_job_id") != resume_job.id
+        or checkpoint.get("pending_tool_call_id") != inputs.get("tool_call_id")
+        or checkpoint.get("pending_job_id") != inputs.get("awaited_job_id")
     ):
         raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
     tool_call = session.execute(
@@ -1258,7 +1297,12 @@ def _consume_resume(
         )
         .with_for_update()
     ).scalar_one_or_none()
-    if tool_call is None or child is None or tool_call.status != "RUNNING":
+    if (
+        tool_call is None
+        or child is None
+        or tool_call.status != "RUNNING"
+        or tool_call.job_id != child.id
+    ):
         raise AgentRuntimeError("AGENT_RESUME_CONFLICT")
     if child.status not in {"COMPLETED", "FAILED", "CANCELLED"}:
         raise AgentRuntimeError("Agent child job is not terminal")
@@ -1363,6 +1407,17 @@ def _consume_resume(
         research.detail = json.dumps(
             validated_payload("ResearchDetail", research_detail)
         )
+        emit(
+            session,
+            "research",
+            research.id,
+            research.revision,
+            "research.updated",
+            payload={"state": research.status, "status": research.status},
+            job_id=child.id,
+            agent_run_id=row.id,
+            correlation_id=resume_job.correlation_id,
+        )
         refreshed_context = _context_pack(session, row)
         refreshed_context_sha256 = content_hash(refreshed_context)
         row.context_sha256 = refreshed_context_sha256
@@ -1374,6 +1429,7 @@ def _consume_resume(
     checkpoint.pop("pending_tool_call_id", None)
     checkpoint.pop("pending_job_id", None)
     checkpoint.pop("pending_resume_job_id", None)
+    checkpoint.pop("pending_owner_job_id", None)
     checkpoint["graph_status"] = "RUNNING"
     checkpoint["safe_checkpoint"] = "AFTER_TOOL"
     checkpoint["checkpointed_at"] = now.isoformat().replace("+00:00", "Z")
@@ -1461,12 +1517,29 @@ def advance_agent_run(
     now = datetime.now(UTC)
     row.status = "RUNNING"
     row.started_at = row.started_at or now
+    expected_revision = row.revision
+    session.flush()
+    # Hold the row lock across the model call; committing here permits two
+    # workers to issue the same paid invocation before the revision fence.
+    # ponytail: one row lock is sufficient for this single-run execution lane.
     action = _graph_action(configured_model(config, session), row, checkpoint)
+    session.refresh(row, with_for_update=True)
+    if row.revision != expected_revision:
+        raise AgentRuntimeError("AGENT_CONTEXT_STALE")
     action_type = action.get("type")
     row.model_call_count += 1
     row.step_count += 1
-    row.input_tokens += int(action.get("input_tokens", 0))
-    row.output_tokens += int(action.get("output_tokens", 0))
+    input_tokens = action.get("input_tokens", 0)
+    output_tokens = action.get("output_tokens", 0)
+    if any(
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 0 <= value <= 10_000_000
+        for value in (input_tokens, output_tokens)
+    ):
+        raise AgentRuntimeError("model usage accounting is invalid")
+    row.input_tokens += input_tokens
+    row.output_tokens += output_tokens
     checkpoint["model_action_index"] += 1
     if action_type == "conclude":
         _require_research_completion_evidence(session, row)
@@ -1508,22 +1581,103 @@ def advance_agent_run(
         if row.research_id is not None
         else f"run:{row.id}"
     )
+
+    def replay(existing: ToolCallRow) -> None:
+        summary = json.loads(existing.result_summary or "{}")
+        checkpoint["semantic_call_hashes"].append(semantic_hash)
+        checkpoint["result_refs"].append(summary)
+        if {"job_id", "status", "result_ref"} <= set(summary):
+            checkpoint["tool_results"].append(
+                {"tool_name": existing.tool_name, **summary}
+            )
+        else:
+            checkpoint["tool_results"].append(
+                {"tool_name": existing.tool_name, "result_summary": summary}
+            )
+
+    def wait_for(existing: ToolCallRow) -> AgentStep | None:
+        if not existing.job_id:
+            raise AgentRuntimeError("active semantic tool call has no child job")
+        waiting_call = existing
+        if existing.agent_run_id != row.id:
+            wait_scope = f"wait:{row.id}:{semantic_hash[:12]}"
+            waiting_call = session.execute(
+                select(ToolCallRow)
+                .where(
+                    ToolCallRow.workspace_id == row.workspace_id,
+                    ToolCallRow.agent_run_id == row.id,
+                    ToolCallRow.semantic_scope == wait_scope,
+                    ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
+                )
+                .with_for_update()
+            ).scalar_one_or_none()
+            if waiting_call is None:
+                waiting_call = ToolCallRow(
+                    id=new_id("TCALL"),
+                    workspace_id=row.workspace_id,
+                    agent_run_id=row.id,
+                    tool_name=name,
+                    tool_version=definition["version"],
+                    status="RUNNING",
+                    input_payload=json.dumps(arguments),
+                    input=arguments,
+                    input_sha256=semantic_hash,
+                    semantic_scope=wait_scope,
+                    objective=row.objective,
+                    research_id=row.research_id,
+                    policy_version_ref=policy_version_ref,
+                    job_id=existing.job_id,
+                    warnings=json.dumps([{"code": "SEMANTIC_DEDUP_WAIT"}]),
+                    started_at=now,
+                )
+                try:
+                    with session.begin_nested():
+                        session.add(waiting_call)
+                        session.flush()
+                except IntegrityError:
+                    waiting_call = session.execute(
+                        select(ToolCallRow)
+                        .where(
+                            ToolCallRow.workspace_id == row.workspace_id,
+                            ToolCallRow.agent_run_id == row.id,
+                            ToolCallRow.semantic_scope == wait_scope,
+                            ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
+                        )
+                        .with_for_update()
+                    ).scalar_one()
+            if waiting_call.status == "SUCCESS":
+                replay(waiting_call)
+                return None
+        row.tool_call_count += 1
+        return _suspend_for_child_job(
+            session,
+            job,
+            row,
+            waiting_call,
+            checkpoint,
+            existing.job_id,
+        )
+
     prior = session.execute(
         select(ToolCallRow).where(
             ToolCallRow.workspace_id == row.workspace_id,
             ToolCallRow.semantic_scope == semantic_scope,
             ToolCallRow.tool_name == name,
             ToolCallRow.input_sha256 == semantic_hash,
-            ToolCallRow.status == "SUCCESS",
+            ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
         )
     ).scalar_one_or_none()
-    if prior is not None:
-        checkpoint["semantic_call_hashes"].append(semantic_hash)
-        checkpoint["result_refs"].append(json.loads(prior.result_summary or "{}"))
+    tool_call: ToolCallRow | None = None
+    if prior is not None and prior.status == "SUCCESS":
+        replay(prior)
+    elif prior is not None:
+        step = wait_for(prior)
+        if step is not None:
+            return step
     else:
         from quantfoundry.agents.tools.executors import execute_tool
 
-        tool_call = ToolCallRow(
+        candidate = ToolCallRow(
             id=new_id("TCALL"),
             workspace_id=row.workspace_id,
             agent_run_id=row.id,
@@ -1531,6 +1685,7 @@ def advance_agent_run(
             tool_version=definition["version"],
             status="RUNNING",
             input_payload=json.dumps(arguments),
+            input=arguments,
             input_sha256=semantic_hash,
             semantic_scope=semantic_scope,
             objective=row.objective,
@@ -1539,8 +1694,37 @@ def advance_agent_run(
             warnings="[]",
             started_at=now,
         )
-        session.add(tool_call)
+        try:
+            with session.begin_nested():
+                session.add(candidate)
+                session.flush()
+        except IntegrityError:
+            winner = session.execute(
+                select(ToolCallRow)
+                .where(
+                    ToolCallRow.workspace_id == row.workspace_id,
+                    ToolCallRow.semantic_scope == semantic_scope,
+                    ToolCallRow.tool_name == name,
+                    ToolCallRow.input_sha256 == semantic_hash,
+                    ToolCallRow.status.in_({"RUNNING", "SUCCESS"}),
+                )
+                .with_for_update()
+            ).scalar_one_or_none()
+            if winner is None:
+                raise
+            if winner.status == "SUCCESS":
+                replay(winner)
+            else:
+                step = wait_for(winner)
+                if step is not None:
+                    return step
+        else:
+            tool_call = candidate
+    if tool_call is not None:
+        expected_revision = row.revision
         session.flush()
+        # Keep the claimed ToolCall and AgentRun lock private until execute_tool
+        # assigns the child job, so contenders cannot observe an incomplete call.
         try:
             output = execute_tool(
                 session,
@@ -1555,11 +1739,15 @@ def advance_agent_run(
                 },
             )
             REGISTRY.validate_output(definition, output)
+            session.refresh(row, with_for_update=True)
+            if row.revision != expected_revision:
+                raise AgentRuntimeError("AGENT_CONTEXT_STALE")
         except Exception as error:
             raise ToolExecutionFailure(
                 tool_call_id=tool_call.id,
                 tool_name=name,
                 tool_version=definition["version"],
+                input_payload=json.dumps(arguments, sort_keys=True),
                 input_sha256=semantic_hash,
                 semantic_scope=semantic_scope,
                 agent_run_id=row.id,
@@ -1586,8 +1774,8 @@ def advance_agent_run(
             {
                 "type": key.removesuffix("_id"),
                 "id": value,
-                "version": None,
-                "revision": 1,
+                "version": output.get("version"),
+                "revision": output.get("revision", 1),
             }
             for key, value in output.items()
             if key.endswith("_id") and isinstance(value, str)
@@ -1597,7 +1785,11 @@ def advance_agent_run(
             for key, value in output.items()
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         ]
-        result_summary = {"object_refs": object_refs, "metric_keys": metric_keys}
+        result_summary = {
+            "output": output,
+            "object_refs": object_refs,
+            "metric_keys": metric_keys,
+        }
         provenance = create_provenance(
             session,
             input_value={"tool_name": name, "arguments": arguments},
@@ -1617,7 +1809,7 @@ def advance_agent_run(
         checkpoint["semantic_call_hashes"].append(semantic_hash)
         checkpoint["result_refs"].append(result_summary)
         checkpoint["tool_results"].append(
-            {"tool_name": name, "result_summary": result_summary}
+            {"tool_name": name, "status": "SUCCESS", "result_summary": result_summary}
         )
         emit(
             session,
@@ -1661,6 +1853,41 @@ def advance_agent_run(
     return AgentStep(False, None)
 
 
+def _revoke_pending_jobs(
+    session: Session, row: AgentRunRow, now: datetime, *, owner_job_id: str
+) -> None:
+    checkpoint = _checkpoint(row)
+    pending_ids = {
+        checkpoint.get("pending_job_id"),
+        checkpoint.get("pending_resume_job_id"),
+    }
+    for pending_id in pending_ids:
+        if not isinstance(pending_id, str):
+            continue
+        pending = session.execute(
+            select(JobRow).where(
+                JobRow.id == pending_id,
+                JobRow.workspace_id == row.workspace_id,
+            )
+        ).scalar_one_or_none()
+        if pending is None or pending.status not in {"QUEUED", "RUNNING"}:
+            continue
+        try:
+            pending_inputs = json.loads(pending.input_payload)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if pending_id == checkpoint.get("pending_job_id"):
+            expected_owner = checkpoint.get("pending_owner_job_id") or owner_job_id
+            if pending_inputs.get("parent_job_id") != expected_owner:
+                continue
+        elif pending_inputs.get("agent_run_id") != row.id:
+            continue
+        try:
+            request_cancellation(session, pending.id, now=now)
+        except JobNotCancellable:
+            continue
+
+
 def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     inputs = json.loads(job.input_payload)
     run_id = inputs.get("agent_run_id")
@@ -1675,11 +1902,12 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     if (
         row is None
         or row.workspace_id != job.workspace_id
-        or row.status in {"COMPLETED", "CANCELLED", "FAILED"}
+        or row.status in {"COMPLETED", "CANCELLED", "FAILED", "WAITING_USER"}
     ):
         return
     now = datetime.now(UTC)
     failure = type(error).__name__
+    reason_code = _agent_failure_reason(error)
     checkpoint = _checkpoint(row)
     checkpoint.update(
         {
@@ -1693,7 +1921,14 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
     row.decision_summary = failure
     row.ended_at = now
     row.revision += 1
-    _research_status(session, row, "WAITING_USER")
+    row.pending_resume_token_hash = None
+    _revoke_pending_jobs(session, row, now, owner_job_id=job.id)
+    if (
+        row.role == "RESEARCH_DIRECTOR"
+        and row.parent_agent_run_id is None
+        and row.root_agent_run_id is None
+    ):
+        _research_status(session, row, "WAITING_USER")
     running_calls = (
         session.execute(
             select(ToolCallRow).where(
@@ -1727,7 +1962,84 @@ def fail_agent_run(session: Session, job: JobRow, error: Exception) -> None:
         payload={
             "state": "FAILED",
             "status": "FAILED",
-            "reason_code": "AGENT_OUTPUT_INVALID",
+            "reason_code": reason_code,
+        },
+        job_id=job.id,
+        agent_run_id=row.id,
+        correlation_id=job.correlation_id,
+    )
+
+
+def _agent_failure_reason(error: Exception) -> str:
+    if isinstance(error, ToolExecutionFailure):
+        return "TOOL_EXECUTION_FAILED"
+    if isinstance(error, ToolPolicyDenied):
+        return "AGENT_TOOL_FORBIDDEN"
+    message = str(error)
+    if "AGENT_RESUME_CONFLICT" in message:
+        return "AGENT_RESUME_CONFLICT"
+    if "AGENT_CONTEXT_STALE" in message or "context changed" in message:
+        return "AGENT_CONTEXT_STALE"
+    if "budget" in message.lower():
+        return "AGENT_BUDGET_EXCEEDED"
+    if "Remote Codex" in message or "provider" in message.lower():
+        return "AGENT_MODEL_UNAVAILABLE"
+    if "tool arguments" in message or "tool input" in message.lower():
+        return "TOOL_INPUT_INVALID"
+    return "AGENT_OUTPUT_INVALID"
+
+
+def cancel_agent_run(session: Session, job: JobRow) -> None:
+    """Close an agent run when its owning job is cancelled."""
+    inputs = json.loads(job.input_payload)
+    run_id = inputs.get("agent_run_id")
+    row = session.execute(
+        select(AgentRunRow)
+        .where(
+            AgentRunRow.id == run_id,
+            AgentRunRow.workspace_id == job.workspace_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if row is None or row.status in {"COMPLETED", "CANCELLED", "FAILED"}:
+        return
+    now = datetime.now(UTC)
+    checkpoint = _checkpoint(row)
+    checkpoint.update(
+        {
+            "safe_checkpoint": "CANCELLED",
+            "checkpointed_at": now.isoformat().replace("+00:00", "Z"),
+        }
+    )
+    row.checkpoint = json.dumps(checkpoint)
+    row.status = "CANCELLED"
+    row.decision_summary = "JOB_CANCELLED"
+    row.ended_at = now
+    row.revision += 1
+    row.pending_resume_token_hash = None
+    _revoke_pending_jobs(session, row, now, owner_job_id=job.id)
+    if row.role == "RESEARCH_DIRECTOR" and row.parent_agent_run_id is None:
+        _research_status(session, row, "WAITING_USER")
+    for tool_call in session.execute(
+        select(ToolCallRow).where(
+            ToolCallRow.agent_run_id == row.id,
+            ToolCallRow.workspace_id == row.workspace_id,
+            ToolCallRow.status == "RUNNING",
+        )
+    ).scalars():
+        tool_call.status = "ERROR"
+        tool_call.warnings = json.dumps([{"code": "JOB_CANCELLED"}])
+        tool_call.finished_at = now
+    emit(
+        session,
+        "agent_run",
+        row.id,
+        row.revision,
+        "agent.run.updated",
+        payload={
+            "state": "CANCELLED",
+            "status": "CANCELLED",
+            "reason_code": "JOB_CANCELLED",
         },
         job_id=job.id,
         agent_run_id=row.id,
@@ -1743,29 +2055,42 @@ def persist_tool_failure(
     if error.workspace_id != job.workspace_id:
         raise AgentRuntimeError("tool failure crossed a workspace boundary")
     finished = datetime.now(UTC)
-    session.add(
-        ToolCallRow(
+    tool_call = session.execute(
+        select(ToolCallRow).where(
+            ToolCallRow.id == error.tool_call_id,
+            ToolCallRow.workspace_id == error.workspace_id,
+        )
+    ).scalar_one_or_none()
+    if tool_call is None:
+        tool_call = ToolCallRow(
             id=error.tool_call_id,
             workspace_id=error.workspace_id,
             agent_run_id=error.agent_run_id,
             tool_name=error.tool_name,
             tool_version=error.tool_version,
             status="ERROR",
-            input_payload="{}",
+            input_payload=error.input_payload,
+            input=json.loads(error.input_payload),
             input_sha256=error.input_sha256,
             semantic_scope=error.semantic_scope,
             objective=error.objective,
             research_id=error.research_id,
             policy_version_ref=error.policy_version_ref,
-            warnings=json.dumps(
-                [{"code": "TOOL_EXECUTION_FAILED", "detail": error.cause_type}]
-            ),
+            warnings="[]",
             started_at=error.started_at,
-            finished_at=finished,
-            duration_ms=max(
-                0, int((finished - error.started_at).total_seconds() * 1000)
-            ),
         )
+        session.add(tool_call)
+    else:
+        if tool_call.agent_run_id != error.agent_run_id:
+            raise AgentRuntimeError("tool failure crossed an agent-run boundary")
+    tool_call.job_id = job.id
+    tool_call.status = "ERROR"
+    tool_call.warnings = json.dumps(
+        [{"code": "TOOL_EXECUTION_FAILED", "detail": error.cause_type}]
+    )
+    tool_call.finished_at = finished
+    tool_call.duration_ms = max(
+        0, int((finished - error.started_at).total_seconds() * 1000)
     )
     emit(
         session,

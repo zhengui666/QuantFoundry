@@ -31,6 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          find frontend/e2e -type f -name '*-linux.png' -delete
           pnpm --dir frontend exec playwright test e2e/visual.spec.ts --update-snapshots
           pnpm --dir frontend exec playwright test e2e/golden.spec.ts --grep 'P15 memo' --update-snapshots
           test -n "$(find frontend/e2e -type f -name '*-linux.png' -print -quit)"
@@ -61,7 +62,7 @@ jobs:
           )
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
+        if: success()
         with:
           name: visual-baseline-bootstrap-${{ github.run_id }}
           path: |

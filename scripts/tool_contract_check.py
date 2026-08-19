@@ -14,7 +14,11 @@ from jsonschema import Draft202012Validator
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--schema-out", required=True, type=Path)
-    parser.add_argument("--validate-instance", action="store_true")
+    parser.add_argument(
+        "--validate-instance",
+        action="store_true",
+        help="retained for CLI compatibility; instance validation is always enabled",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -30,18 +34,42 @@ def main() -> None:
         "properties",
     )
     registry_schema = {key: document[key] for key in schema_keys if key in document}
+    registry_schema.setdefault("type", "object")
     registry_data = {key: document[key] for key in document["required"]}
 
     Draft202012Validator.check_schema(registry_schema)
-    if args.validate_instance:
-        Draft202012Validator(registry_schema).validate(registry_data)
+    Draft202012Validator(registry_schema).validate(registry_data)
 
     tools = registry_data["tools"]
-    identities = [(tool["name"], tool["version"]) for tool in tools]
+    identities = {(tool["name"], tool["version"]) for tool in tools}
+    expected_identities = {
+        (name, "1.0")
+        for name in (
+            "get_market_data",
+            "validate_dataset",
+            "create_data_snapshot",
+            "define_factor",
+            "analyze_factor",
+            "calculate_factor",
+            "compare_factors",
+            "define_strategy",
+            "run_fast_backtest",
+            "compare_backtests",
+            "run_parameter_sensitivity",
+            "freeze_strategy",
+            "run_validation_suite",
+        )
+    }
     if len(tools) != 13:
         raise SystemExit(f"Expected 13 staged tools, found {len(tools)}")
-    if len(set(identities)) != len(identities):
+    if len(identities) != len(tools):
         raise SystemExit("Tool name@version identities must be unique")
+    if identities != expected_identities:
+        missing = sorted(expected_identities - identities)
+        extra = sorted(identities - expected_identities)
+        raise SystemExit(
+            f"Tool identity set mismatch: missing={missing}, extra={extra}"
+        )
 
     for tool in tools:
         Draft202012Validator.check_schema(tool["input_schema"])
@@ -51,7 +79,7 @@ def main() -> None:
         json.dumps(registry_schema, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    mode = "schema and instance" if args.validate_instance else "schema"
+    mode = "schema and instance"
     print(
         f"OK: {len(tools)} unique tools; embedded schemas and registry {mode} validate"
     )

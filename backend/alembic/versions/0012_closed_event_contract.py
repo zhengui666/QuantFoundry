@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 
 from alembic import op
+from quantfoundry.contracts.events.event_contract import validate_event_payload
+from quantfoundry.domain.value_objects.public_ids import is_public_id
 
 revision = "0012_closed_events"
 down_revision = "0011_provider_credentials"
@@ -57,13 +60,150 @@ EVENT_TYPES = (
     "system.resync_required",
 )
 
+EVENT_OBJECT_TYPES = {
+    "job.updated": "job",
+    "research.created": "research",
+    "research.updated": "research",
+    "research.conclusion.created": "conclusion",
+    "experiment.created": "experiment",
+    "experiment.updated": "experiment",
+    "factor.updated": "factor",
+    "strategy.created": "strategy_version",
+    "strategy.updated": "strategy_version",
+    "validation.created": "validation",
+    "validation.updated": "validation",
+    "validation.holdout.updated": "validation",
+    "approval.created": "approval",
+    "approval.updated": "approval",
+    "paper.created": "paper",
+    "paper.updated": "paper",
+    "paper.run.updated": "paper_run",
+    "review.created": "review",
+    "review.updated": "review",
+    "data.provider.updated": "provider_connection",
+    "data.capability.updated": "capability",
+    "data.quality.updated": "snapshot",
+    "agent.run.updated": "agent_run",
+    "tool.call.updated": "tool_call",
+    "memo.created": "memo",
+    "memo.updated": "memo",
+    "setup.completed": "settings",
+    "configuration.updated": "settings",
+    "configuration.apply_failed": "settings",
+    "database.connection.updated": "provider_connection",
+    "database.connection.failed": "provider_connection",
+    "notification.created": "notification",
+    "notification.updated": "agent_config",
+    "system.health.updated": "event_stream",
+    "system.resync_required": "event_stream",
+}
 
-def _migrated_public_id(prefix: str, sequence: int) -> str:
-    digest = hashlib.sha256(f"{prefix}:{sequence}".encode()).hexdigest()
+_EVENT_PAYLOAD_FIELDS = {
+    "status",
+    "state",
+    "reason_code",
+    "resync_from_sequence",
+    "progress_mode",
+    "completed_units",
+    "total_units",
+    "current_step_key",
+    "agent_run_id",
+    "role",
+    "objective",
+    "research_id",
+    "object_type",
+    "object_id",
+    "object_version",
+    "object_revision",
+    "waiting_on",
+}
+
+
+def _migrated_public_id(prefix: str, workspace_id: str, sequence: int) -> str:
+    digest = hashlib.sha256(f"{prefix}:{workspace_id}:{sequence}".encode()).hexdigest()
     uuid4 = (
         f"{digest[:8]}-{digest[8:12]}-4{digest[13:16]}-8{digest[17:20]}-{digest[20:32]}"
     )
     return f"{prefix}-{uuid4}"
+
+
+def _fallback_object_id(object_type: str, workspace_id: str, sequence: int) -> str:
+    prefixes = {
+        "job": "JOB",
+        "research": "RSCH",
+        "conclusion": "CONC",
+        "experiment": "EXP",
+        "factor": "FAC",
+        "strategy_version": "STRAT",
+        "validation": "VAL",
+        "approval": "APR",
+        "paper": "PAPER",
+        "paper_run": "PRUN",
+        "review": "REV",
+        "capability": "CAP",
+        "snapshot": "DS",
+        "agent_run": "ARUN",
+        "tool_call": "TCALL",
+        "memo": "MEMO",
+        "notification": "NOTIF",
+        "event_stream": "EVT",
+    }
+    if object_type == "settings":
+        return "SETTINGS-DEFAULT"
+    if object_type == "agent_config":
+        return "RESEARCH_DIRECTOR"
+    if object_type == "provider_connection":
+        return _migrated_public_id("CONN", workspace_id, sequence).removeprefix("CONN-")
+    return _migrated_public_id(prefixes[object_type], workspace_id, sequence)
+
+
+_OBJECT_ID_KINDS = {
+    "job": "job",
+    "research": "research",
+    "conclusion": "conclusion",
+    "experiment": "experiment",
+    "factor": "factor",
+    "strategy_version": "strategy",
+    "validation": "validation",
+    "approval": "approval",
+    "paper": "paper",
+    "paper_run": "paper_run",
+    "review": "performance_review",
+    "capability": "capability",
+    "snapshot": "snapshot",
+    "agent_run": "agent_run",
+    "tool_call": "tool_call",
+    "memo": "memo",
+    "notification": "notification",
+}
+
+
+def _valid_existing_object_id(object_type: str, value: str | None) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if object_type == "settings":
+        return value == "SETTINGS-DEFAULT"
+    if object_type == "agent_config":
+        return value in {
+            "RESEARCH_DIRECTOR",
+            "FACTOR_SCIENTIST",
+            "STRATEGY_SCIENTIST",
+            "PORTFOLIO_ANALYST",
+            "RED_TEAM_RESEARCHER",
+            "PERFORMANCE_ANALYST",
+        }
+    if object_type == "provider_connection":
+        return (
+            re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                value,
+            )
+            is not None
+        )
+    if object_type == "event_stream":
+        return is_public_id("domain_event", value)
+    kind = _OBJECT_ID_KINDS.get(object_type)
+    return kind is not None and is_public_id(kind, value)
 
 
 def _canonical_event_type(value: str | None) -> str:
@@ -114,38 +254,80 @@ def _canonical_event_type(value: str | None) -> str:
     return "system.resync_required"
 
 
+def _preserved_payload(raw: object) -> str | None:
+    try:
+        value = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(value, dict) or not set(value).issubset(_EVENT_PAYLOAD_FIELDS):
+        return None
+    try:
+        value = validate_event_payload(value)
+    except (TypeError, ValueError):
+        return None
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
 def upgrade() -> None:
     connection = op.get_bind()
     dialect = connection.dialect.name
     if dialect == "postgresql":
+        connection.execute(sa.text("LOCK TABLE domain_events IN ACCESS EXCLUSIVE MODE"))
         op.execute(
             "DROP TRIGGER IF EXISTS qf_domain_events_update_immutable ON domain_events"
         )
     else:
+        if dialect == "sqlite":
+            if connection.in_transaction():
+                connection.execute(
+                    sa.text("UPDATE domain_events SET sequence = sequence WHERE 0")
+                )
+            else:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
         op.execute("DROP TRIGGER IF EXISTS qf_domain_events_update_immutable")
     now = datetime.now(UTC)
-    occurred_at_value = now.isoformat() if dialect == "sqlite" else now
+    occurred_at_value = (
+        now.strftime("%Y-%m-%d %H:%M:%S") if dialect == "sqlite" else now
+    )
     expires_at_value = (
-        (now + timedelta(days=7)).isoformat()
+        (now + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         if dialect == "sqlite"
         else now + timedelta(days=7)
     )
     rows = (
         connection.execute(
-            sa.text("SELECT sequence, event_id, event_type FROM domain_events")
+            sa.text(
+                "SELECT workspace_id, sequence, event_id, event_type, object_id, "
+                "object_type, payload "
+                "FROM domain_events"
+            )
         )
         .mappings()
         .all()
     )
     for row in rows:
         event_type = _canonical_event_type(row["event_type"])
+        object_type = EVENT_OBJECT_TYPES[event_type]
+        event_id = (
+            row["event_id"]
+            if is_public_id("domain_event", row["event_id"] or "")
+            else _migrated_public_id("EVT", row["workspace_id"], row["sequence"])
+        )
+        if event_type == "system.resync_required":
+            object_id = event_id
+        elif _valid_existing_object_id(object_type, row["object_id"]):
+            object_id = row["object_id"]
+        else:
+            event_type = "system.resync_required"
+            object_type = EVENT_OBJECT_TYPES[event_type]
+            object_id = event_id
         payload = (
             json.dumps(
                 {"state": "RESYNC_REQUIRED", "status": None},
                 separators=(",", ":"),
             )
             if event_type == "system.resync_required"
-            else "{}"
+            else (_preserved_payload(row["payload"]) or "{}")
         )
         connection.execute(
             sa.text(
@@ -153,20 +335,22 @@ def upgrade() -> None:
                 UPDATE domain_events
                 SET event_id = :event_id,
                     event_type = :event_type,
-                    object_type = COALESCE(object_type, 'event_stream'),
-                    object_id = COALESCE(object_id, 'events'),
+                    object_type = :object_type,
+                    object_id = :object_id,
                     payload = :payload,
                     request_id = COALESCE(request_id, :request_id),
                     occurred_at = COALESCE(occurred_at, :occurred_at),
                     expires_at = COALESCE(expires_at, :expires_at)
-                WHERE sequence = :sequence
+                WHERE workspace_id = :workspace_id AND sequence = :sequence
                 """
             ),
             {
+                "workspace_id": row["workspace_id"],
                 "sequence": row["sequence"],
-                "event_id": row["event_id"]
-                or _migrated_public_id("EVT", row["sequence"]),
+                "event_id": event_id,
                 "event_type": event_type,
+                "object_type": object_type,
+                "object_id": object_id,
                 "payload": payload,
                 "request_id": f"REQ-MIGRATED-{row['sequence']}",
                 "occurred_at": occurred_at_value,
@@ -189,9 +373,18 @@ def upgrade() -> None:
         batch.alter_column(
             "expires_at", existing_type=sa.DateTime(timezone=True), nullable=False
         )
+        batch.alter_column("request_id", existing_type=sa.String(), nullable=False)
         batch.create_check_constraint(
             "domain_events_event_type_check",
             f"event_type IN ({quoted})",
+        )
+        object_mapping = " OR ".join(
+            f"(event_type = '{event_type}' AND object_type = '{object_type}')"
+            for event_type, object_type in EVENT_OBJECT_TYPES.items()
+        )
+        batch.create_check_constraint(
+            "domain_events_event_object_type_check",
+            object_mapping,
         )
     if dialect == "postgresql":
         op.execute(
@@ -199,6 +392,7 @@ def upgrade() -> None:
             "domain_events FOR EACH ROW EXECUTE FUNCTION qf_reject_change()"
         )
     else:
+        op.execute("DROP TRIGGER IF EXISTS qf_domain_events_delete_immutable")
         op.execute(
             "CREATE TRIGGER qf_domain_events_update_immutable BEFORE UPDATE ON "
             "domain_events BEGIN SELECT RAISE(ABORT, "
@@ -206,7 +400,7 @@ def upgrade() -> None:
         )
         op.execute(
             "CREATE TRIGGER qf_domain_events_delete_immutable BEFORE DELETE ON "
-            "domain_events WHEN OLD.expires_at > CURRENT_TIMESTAMP BEGIN "
+            "domain_events WHEN datetime(OLD.expires_at) > datetime('now') BEGIN "
             "SELECT RAISE(ABORT, 'unexpired event cannot be deleted'); END"
         )
 

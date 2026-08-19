@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -38,10 +38,13 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    literal_column,
     text,
 )
 from sqlalchemy.dialects.postgresql import DATERANGE, JSONB
 from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.schema import ColumnDefault, DefaultClause
+from sqlalchemy.sql.elements import ClauseElement
 from sqlalchemy.types import TypeDecorator
 
 from quantfoundry.contracts.events.locator import (
@@ -84,8 +87,6 @@ _NON_BASELINE_AUTO_CHECKS = frozenset(
         "ck_snapshot_partitions_row_count_valid",
         "ck_strategies_status_valid",
         "ck_strategy_versions_state_valid",
-        "ck_users_revision_valid",
-        "ck_users_role_valid",
         "ck_validations_exposure_count_valid",
         "ck_validations_holdout_state_valid",
         "ck_validations_id_valid",
@@ -212,6 +213,28 @@ def _compile_sqlite_contract_check(
     return f"CONSTRAINT {name} CHECK ({constraint.sqlite_sql})"
 
 
+class _DialectServerDefault(ClauseElement):
+    inherit_cache = True
+
+    def __init__(self, postgresql: str, sqlite: str) -> None:
+        self.postgresql = postgresql
+        self.sqlite = sqlite
+
+
+@compiles(_DialectServerDefault)
+def _compile_server_default(
+    element: _DialectServerDefault, _compiler: Any, **_: Any
+) -> str:
+    return element.postgresql
+
+
+@compiles(_DialectServerDefault, "sqlite")
+def _compile_sqlite_server_default(
+    element: _DialectServerDefault, _compiler: Any, **_: Any
+) -> str:
+    return element.sqlite
+
+
 class DateRangeCompat(TypeDecorator[Any]):
     """Native PostgreSQL daterange with JSON-compatible SQLite values."""
 
@@ -227,23 +250,53 @@ class DateRangeCompat(TypeDecorator[Any]):
         if value is None:
             return None
         if isinstance(value, str):
-            if not value:
-                return None
             if value.startswith("{"):
-                value = json.loads(value)
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError as error:
+                    raise ValueError("date range JSON is invalid") from error
+            else:
+                match = re.fullmatch(
+                    r"\[(\d{4}-\d{2}-\d{2}),(\d{4}-\d{2}-\d{2})\)",
+                    value,
+                )
+                if match is None:
+                    raise ValueError("date range must use canonical half-open syntax")
+                start = date.fromisoformat(match.group(1))
+                end = date.fromisoformat(match.group(2))
+                if start >= end:
+                    raise ValueError("date range start must precede end")
+                if dialect.name == "postgresql":
+                    return Range(start, end, bounds="[)")
+                return json.dumps(
+                    {"start": start.isoformat(), "end": end.isoformat()},
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
         if isinstance(value, dict):
+            if set(value) != {"start", "end"}:
+                raise ValueError("date range must contain only start and end")
+            if not isinstance(value.get("start"), str) or not isinstance(
+                value.get("end"), str
+            ):
+                raise ValueError("date range bounds must be ISO dates")
             start = date.fromisoformat(value["start"])
             end = date.fromisoformat(value["end"])
+            if start >= end:
+                raise ValueError("date range bounds are invalid")
             if dialect.name == "postgresql":
-                return Range(start, end, bounds="[]")
+                return Range(start, end, bounds="[)")
             return json.dumps(value, separators=(",", ":"), sort_keys=True)
         return value
 
     def process_result_value(self, value: Any, _dialect: Any) -> Any:
         if isinstance(value, Range):
+            if getattr(value, "isempty", False):
+                return None
+            upper = value.upper
             return {
                 "start": value.lower.isoformat() if value.lower is not None else None,
-                "end": value.upper.isoformat() if value.upper is not None else None,
+                "end": upper.isoformat() if upper is not None else None,
             }
         if isinstance(value, str) and value.startswith("{"):
             return json.loads(value)
@@ -342,47 +395,85 @@ def _existing_contract_type(current: Any, pg_type: str) -> Any:
 def _default_value(column: dict[str, Any]) -> Any:
     raw = column["default"]
     pg_type = column["postgres_type"]
-    constraints = column["constraints"]
-    if raw in {"NULL", "-"} and column["nullable"]:
+    if raw in {"NULL", "-"}:
         return None
-    if raw in {"uuidv7()", "identity"} or pg_type == "uuid":
-        return uuid.uuid4
-    if raw == "now()" or pg_type == "timestamptz":
+    if raw == "uuidv7()":
+        uuid7 = getattr(uuid, "uuid7", None)
+        if uuid7 is None:
+            raise RuntimeError("uuid.uuid7 is required by the section-14 contract")
+        return uuid7
+    if raw == "now()":
         return lambda: datetime.now(UTC)
-    if pg_type == "date":
-        return date(1970, 1, 1)
-    if pg_type == "daterange":
-        return None
-    if pg_type == "jsonb":
-        return list if raw == "[]" else dict
-    if pg_type == "boolean":
-        return raw.lower() != "false"
-    if pg_type in {"integer", "bigint", "smallint"}:
-        try:
-            return int(raw)
-        except ValueError:
-            return 1 if "> 0" in constraints or ">0" in constraints else 0
+    if raw == "now()+interval '7 days'":
+        return lambda: datetime.now(UTC) + timedelta(days=7)
+    if raw == "'[]'":
+        return list
+    if raw == "'{}'":
+        return dict
+    if raw == "zero hash":
+        return "0" * 64
+    if raw.lower() in {"true", "false"}:
+        return raw.lower() == "true"
+    if re.fullmatch(r"-?\d+", raw):
+        return int(raw)
     if pg_type.startswith("numeric"):
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return (
-                Decimal("1")
-                if "> 0" in constraints or ">0" in constraints
-                else Decimal("0")
-            )
-    if pg_type == "bytea":
-        return b""
+        except InvalidOperation as error:
+            raise ValueError(f"unsupported manifest default {raw!r}") from error
     if raw.startswith("'") and raw.endswith("'"):
         return raw[1:-1]
     if raw not in {"", "-"}:
         return raw
-    return ""
+    raise ValueError(f"unsupported manifest default {raw!r}")
+
+
+def _server_default_value(column: dict[str, Any]) -> str | None:
+    raw = column["default"]
+    if raw in {"NULL", "-", "workspace sequence allocator"}:
+        return None
+    if raw == "now()":
+        return "CURRENT_TIMESTAMP"
+    if raw == "zero hash":
+        return "'" + ("0" * 64) + "'"
+    if raw.lower() in {"true", "false"}:
+        return raw.upper()
+    if raw in {"uuidv7()", "now()+interval '7 days'"}:
+        return raw
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", raw):
+        return raw
+    if raw.startswith("'") and raw.endswith("'"):
+        return raw
+    return "'" + raw.replace("'", "''") + "'"
+
+
+def _server_default_clause(column: dict[str, Any]) -> DefaultClause | None:
+    if column["default"] == "now()+interval '7 days'":
+        return DefaultClause(
+            _DialectServerDefault(
+                "now()+interval '7 days'",
+                "datetime(CURRENT_TIMESTAMP, '+7 days')",
+            )
+        )
+    value = _server_default_value(column)
+    return DefaultClause(literal_column(value)) if value is not None else None
 
 
 def _constraint_name(table: str, suffix: str) -> str:
     value = re.sub(r"[^a-z0-9_]+", "_", suffix.lower()).strip("_")
     return f"ck_{table}_{value}"[:63]
+
+
+def _primary_key_token(constraints: str) -> bool:
+    return re.match(r"^PK(?:\s|,|$)", constraints) is not None
+
+
+def _lower_hex_sha256_check(name: str, nullable: bool) -> str:
+    residue = name
+    for character in "0123456789abcdef":
+        residue = f"replace({residue}, '{character}', '')"
+    body = f"length({name}) = 64 AND lower({name}) = {name} AND {residue} = ''"
+    return f"{name} IS NULL OR ({body})" if nullable else body
 
 
 def _public_id_check_sql(name: str, prefix: str) -> str:
@@ -440,6 +531,12 @@ def _typed_public_id_check_sql(
 def _check_sql(column: dict[str, Any]) -> str | None:
     name = column["name"]
     text = re.sub(r",\s*INDEX(?:\([^)]*\))?\s*$", "", column["constraints"]).strip()
+    check_position = text.find("CHECK")
+    if check_position > 0:
+        text = text[check_position:]
+    text = re.sub(r",\s*UNIQUE\([^)]*\)\s*$", "", text).strip()
+    if "CHECK lowercase hex SHA-256" in text:
+        return _lower_hex_sha256_check(name, bool(column.get("nullable")))
     enum = _CHECK_IN.search(text)
     if enum:
         values = ", ".join(f"'{item}'" for item in enum.group(1).split("|"))
@@ -458,22 +555,70 @@ def _check_sql(column: dict[str, Any]) -> str | None:
         return f"{name} >= 0"
     if "CHECK >=1" in text:
         return f"{name} >= 1"
-    exact = re.search(r"CHECK = ([A-Z][A-Z0-9_]*)", text)
-    if exact:
-        return f"{name} = '{exact.group(1)}'"
     if "CHECK = false" in text:
         return f"{name} = FALSE"
+    if "CHECK = true" in text:
+        return f"{name} = TRUE"
+    exact = re.search(r"CHECK\s*=\s*([A-Za-z][A-Za-z0-9_]*)", text)
+    if exact:
+        return f"{name} = '{exact.group(1)}'"
     exact_id = re.search(r"CHECK exact (?:R2 DatasetId|([A-Z]+)) grammar", text)
     if exact_id:
         prefix = exact_id.group(1) or "DSSET"
         if prefix in PUBLIC_ID_PREFIXES.values():
             return _public_id_check_sql(name, prefix)
+    single_value = re.fullmatch(r"CHECK\s+([A-Z][A-Z0-9_]*)", text)
+    if single_value:
+        return f"{name} = '{single_value.group(1)}'"
+    if "CHECK revision=1" in text:
+        return f"{name} = 1"
+    if "CHECK immutable=true" in text:
+        return f"{name} = TRUE"
+    if "CHECK completed terminal rows=true" in text:
+        return "status NOT IN ('COMPLETED', 'INVALID', 'CANCELLED') OR immutable = TRUE"
+    if "CHECK PUBLISHED iff non-null" in text:
+        return (
+            "(publication_state = 'PUBLISHED' AND published_at IS NOT NULL) OR "
+            "(publication_state <> 'PUBLISHED' AND published_at IS NULL)"
+        )
+    if "CHECK 0<=expired<=last_sequence" in text:
+        return "expired_through_sequence >= 0 AND expired_through_sequence <= last_sequence"
+    if "CHECK equals `object_revision`" in text:
+        return (
+            "(revision IS NULL AND object_revision IS NULL) OR "
+            "(revision IS NOT NULL AND object_revision IS NOT NULL AND "
+            "revision = object_revision)"
+        )
+    if "CHECK false→true monotonic" in text:
+        return None
+    if "CHECK normalized email" in text:
+        return f"{name} = lower(trim({name}))"
+    if "CHECK parses canonical half-open date range" in text:
+        return None
+    if "CHECK" in text and any(
+        marker in text
+        for marker in (
+            "closed ",
+            "schema before write",
+            "schema before enqueue",
+            "job-type input",
+            "canonical `EventType`",
+            "state invariant",
+            "EXPOSED iff",
+            "deployed component allowlist",
+            "normalized email",
+            "cross-column",
+            "exact public semantic ID",
+            "`ck_",
+        )
+    ):
+        return None
+    if "CHECK" in text:
+        raise ValueError(f"unsupported section-14 CHECK constraint: {text}")
     return None
 
 
-def _append_contract_constraints(
-    table: Table, spec: dict[str, Any], *, workspace_scoped: bool
-) -> None:
+def _append_contract_constraints(table: Table, spec: dict[str, Any]) -> None:
     replaced_checks = {
         "agent_runs": "ck_agent_runs_object_id_type_prefix",
         "notifications": "ck_notifications_object_id_type_prefix",
@@ -498,6 +643,37 @@ def _append_contract_constraints(
         for constraint in table.constraints
         if isinstance(constraint, UniqueConstraint)
     }
+    existing_indexes = {
+        str(index.name) for index in table.indexes if index.name is not None
+    }
+    for column in spec["columns"]:
+        if "CHECK parses canonical half-open date range" in column["constraints"]:
+            name = column["name"]
+            constraint_name = _constraint_name(table.name, f"{name}_valid")
+            if constraint_name not in existing_names:
+                postgres_sql = (
+                    f"{name} ~ '^\\[[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}},"
+                    f"[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}\\)$' AND "
+                    f"make_date(CAST(substr({name},2,4) AS INTEGER), "
+                    f"CAST(substr({name},7,2) AS INTEGER), CAST(substr({name},10,2) AS INTEGER)) < "
+                    f"make_date(CAST(substr({name},13,4) AS INTEGER), "
+                    f"CAST(substr({name},18,2) AS INTEGER), CAST(substr({name},21,2) AS INTEGER))"
+                )
+                sqlite_sql = (
+                    f"length({name}) = 23 AND substr({name},1,1) = '[' AND "
+                    f"substr({name},12,1) = ',' AND substr({name},23,1) = ')' AND "
+                    f"strftime('%Y-%m-%d', substr({name},2,10)) = substr({name},2,10) AND "
+                    f"strftime('%Y-%m-%d', substr({name},13,10)) = substr({name},13,10) AND "
+                    f"date(substr({name},2,10)) < date(substr({name},13,10))"
+                )
+                table.append_constraint(
+                    ContractCheckConstraint(
+                        postgres_sql,
+                        sqlite_sql=sqlite_sql,
+                        name=constraint_name,
+                    )
+                )
+                existing_names.add(constraint_name)
     for column in spec["columns"]:
         constraints = column["constraints"]
         check_sql = _check_sql(column)
@@ -591,6 +767,17 @@ def _append_contract_constraints(
                 table.append_constraint(UniqueConstraint(column["name"], name=name))
                 existing_names.add(name)
                 existing_unique_columns.add((column["name"],))
+        partial_index = re.search(r"INDEX\s+WHERE\s+(.+)$", constraints, re.IGNORECASE)
+        if partial_index and column["name"] in table.c:
+            name = f"ix_{table.name}_{column['name']}"[:63]
+            if name not in existing_indexes:
+                Index(
+                    name,
+                    table.c[column["name"]],
+                    sqlite_where=text(partial_index.group(1)),
+                    postgresql_where=text(partial_index.group(1)),
+                )
+                existing_indexes.add(name)
     typed_public_id_checks: dict[str, str] = {}
     if table.name == "portfolio_scenarios":
         typed_public_id_checks["baseline_ref"] = (
@@ -677,14 +864,39 @@ def _append_contract_constraints(
             )
         )
     for constraint in closed_checks:
-        constraint_name = constraint.name
-        if constraint_name is not None and constraint_name not in existing_names:
+        closed_constraint_name = (
+            str(constraint.name) if constraint.name is not None else None
+        )
+        if (
+            closed_constraint_name is not None
+            and closed_constraint_name not in existing_names
+        ):
             table.append_constraint(constraint)
-            existing_names.add(constraint_name)
+            existing_names.add(closed_constraint_name)
+    if table.name == "paper_scheduler_states":
+        invariant = (
+            "((scheduler_status = 'ACTIVE' AND suppressed_since_utc IS NULL) OR "
+            "(scheduler_status IN ('PAUSED', 'DISABLED') AND suppressed_since_utc IS NOT NULL)) "
+            "AND resume_watermark_utc IS NOT NULL"
+        )
+        name = "ck_paper_scheduler_states_state_invariant"
+        if name not in existing_names:
+            table.append_constraint(CheckConstraint(invariant, name=name))
+            existing_names.add(name)
+    if table.name == "validations":
+        invariant = (
+            "exposure_count >= 0 AND ((holdout_state = 'EXPOSED' AND "
+            "exposure_count = 1) OR (holdout_state <> 'EXPOSED' AND "
+            "exposure_count = 0))"
+        )
+        name = "ck_validations_exposure_state_invariant"
+        if name not in existing_names:
+            table.append_constraint(CheckConstraint(invariant, name=name))
+            existing_names.add(name)
     pk_columns: list[str] = []
     for column in spec["columns"]:
         constraints = column["constraints"]
-        if constraints == "PK" or constraints.startswith("PK "):
+        if _primary_key_token(constraints):
             pk_columns.append(column["name"])
         composite = re.search(r"PK\(([^)]+)\)", constraints)
         if composite:
@@ -705,12 +917,11 @@ def _append_contract_constraints(
             )
         )
 
-    existing_indexes = {
-        str(index.name) for index in table.indexes if index.name is not None
-    }
     for column in spec["columns"]:
         constraints = column["constraints"]
-        if "INDEX" not in constraints:
+        if "INDEX" not in constraints or re.search(
+            r"INDEX\s+WHERE\s+", constraints, re.IGNORECASE
+        ):
             continue
         columns = [column["name"]]
         composite = re.search(r"INDEX\(([^)]+)\)", constraints)
@@ -734,16 +945,23 @@ def augment_section14_metadata(metadata: MetaData) -> None:
         for column in spec["columns"]:
             name = column["name"]
             if name in table.c:
-                current_type = table.c[name].type
-                table.c[name].type = (
+                existing = table.c[name]
+                current_type = existing.type
+                existing.type = (
                     WorkspaceScopeId()
                     if name == "workspace_id"
                     else _existing_contract_type(current_type, column["postgres_type"])
                 )
-                table.c[name].nullable = column["nullable"]
+                existing.nullable = column["nullable"]
+                default = _default_value(column)
+                existing.default = (
+                    ColumnDefault(default) if default is not None else None
+                )
+                existing.server_default = _server_default_clause(column)
+                existing.info = {"section14": column}
                 continue
             constraints = column["constraints"]
-            is_primary = constraints == "PK" or constraints.startswith("PK ")
+            is_primary = _primary_key_token(constraints)
             table.append_column(
                 Column(
                     name,
@@ -752,7 +970,8 @@ def augment_section14_metadata(metadata: MetaData) -> None:
                     else sqlalchemy_type(column["postgres_type"]),
                     primary_key=is_primary,
                     nullable=False if is_primary else column["nullable"],
-                    default=None if column["nullable"] else _default_value(column),
+                    default=_default_value(column),
+                    server_default=_server_default_clause(column),
                     info={"section14": column},
                 )
             )
@@ -811,9 +1030,7 @@ def augment_section14_metadata(metadata: MetaData) -> None:
     # Constraints are appended after all targets exist, including cyclic FKs.
     for table_name, spec in specs.items():
         table = metadata.tables[table_name]
-        _append_contract_constraints(
-            table, spec, workspace_scoped="workspace_id" in table.c
-        )
+        _append_contract_constraints(table, spec)
 
 
 def section14_table_names() -> frozenset[str]:

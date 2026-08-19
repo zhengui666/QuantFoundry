@@ -3,8 +3,12 @@
   --qf-space-2: 0.5rem;
   --qf-space-3: 0.75rem;
   --qf-space-4: 1rem;
+  --qf-space-5: 1.25rem;
   --qf-space-6: 1.5rem;
   --qf-space-8: 2rem;
+  --qf-space-10: 2.5rem;
+  --qf-space-12: 3rem;
+  --qf-space-16: 4rem;
 }
 
 @theme inline {
@@ -12,6 +16,10 @@
   --spacing-qf-2: var(--qf-space-2);
   --spacing-qf-3: var(--qf-space-3);
   --spacing-qf-4: var(--qf-space-4);
+  --spacing-qf-5: var(--qf-space-5);
   --spacing-qf-6: var(--qf-space-6);
   --spacing-qf-8: var(--qf-space-8);
+  --spacing-qf-10: var(--qf-space-10);
+  --spacing-qf-12: var(--qf-space-12);
+  --spacing-qf-16: var(--qf-space-16);
 }

@@ -1,14 +1,20 @@
 import { useEffect, useRef } from 'react';
 import { LineChart } from 'echarts/charts';
 import { AriaComponent, GridComponent, MarkAreaComponent } from 'echarts/components';
-import { init, use } from 'echarts/core';
+import { init, use as registerChartComponents } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { useTranslation } from 'react-i18next';
 import type { Schema } from './api/client';
 import { formatCanonicalDecimal } from './format';
 import { Provenance } from './ui';
 
-use([LineChart, AriaComponent, GridComponent, MarkAreaComponent, CanvasRenderer]);
+registerChartComponents([
+  LineChart,
+  AriaComponent,
+  GridComponent,
+  MarkAreaComponent,
+  CanvasRenderer,
+]);
 
 export default function CanonicalChart({ chart }: { chart: Schema<'ChartAggregate'> }) {
   const { i18n, t } = useTranslation();
@@ -28,7 +34,14 @@ export default function CanonicalChart({ chart }: { chart: Schema<'ChartAggregat
     instance.setOption({
       animation: false,
       aria: { enabled: true, description: ariaDescription, decal: { show: true } },
-      xAxis: { type: chart.x_axis.kind === 'TIME' ? 'time' : 'category' },
+      xAxis: {
+        type:
+          chart.x_axis.kind === 'TIME'
+            ? 'time'
+            : chart.x_axis.kind === 'NUMERIC'
+              ? 'value'
+              : 'category',
+      },
       yAxis: { type: 'value' },
       series: chart.series.map((series, index) => ({
         name: series.display_label,
@@ -94,32 +107,34 @@ export default function CanonicalChart({ chart }: { chart: Schema<'ChartAggregat
       <Provenance value={chart.provenance} />
       <details>
         <summary>{t('chart.dataTable')}</summary>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{t('chart.series')}</th>
-              <th scope="col">{t('chart.x')}</th>
-              <th scope="col">{t('chart.y')}</th>
-              <th scope="col">{t('chart.unit')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {chart.series.flatMap((series) =>
-              series.points.map((point) => (
-                <tr key={`${series.series_id}:${point.x}`}>
-                  <td>{series.display_label}</td>
-                  <td>{point.x}</td>
-                  <td>
-                    {point.y === null
-                      ? t('chart.gap')
-                      : formatDecimal(point.y, series.value_format.precision)}
-                  </td>
-                  <td>{series.unit}</td>
-                </tr>
-              )),
-            )}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{t('chart.series')}</th>
+                <th scope="col">{t('chart.x')}</th>
+                <th scope="col">{t('chart.y')}</th>
+                <th scope="col">{t('chart.unit')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chart.series.flatMap((series) =>
+                series.points.map((point) => (
+                  <tr key={`${series.series_id}:${point.x}`}>
+                    <td>{series.display_label}</td>
+                    <td>{point.x}</td>
+                    <td>
+                      {point.y === null
+                        ? t('chart.gap')
+                        : formatDecimal(point.y, series.value_format.precision)}
+                    </td>
+                    <td>{series.unit}</td>
+                  </tr>
+                )),
+              )}
+            </tbody>
+          </table>
+        </div>
       </details>
     </figure>
   );

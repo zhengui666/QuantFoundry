@@ -8,16 +8,30 @@ import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pyarrow as pa
 import pyarrow.parquet as parquet
-from sqlalchemy import event
+from sqlalchemy import event, text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 
 class ArtifactStoreError(RuntimeError):
     pass
+
+
+def _lock_artifact_mutations(session: Session) -> None:
+    """Serialize artifact-row publication and orphan reaping on PostgreSQL."""
+
+    if session.info.get("qf_artifact_mutation_lock"):
+        return
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+            {"key": "quantfoundry:artifact-mutation"},
+        )
+    session.info["qf_artifact_mutation_lock"] = True
 
 
 def _fsync_directory(path: Path) -> None:
@@ -61,6 +75,7 @@ def _stage_bytes(
     *,
     object_key: str | None = None,
 ) -> tuple[str, str]:
+    _lock_artifact_mutations(session)
     session.connection()
     digest = hashlib.sha256(encoded).hexdigest()
     root = _root()
@@ -82,7 +97,7 @@ def _stage_bytes(
 
 
 def publish_staged(session: Session, storage_key: str, expected_sha256: str) -> None:
-    """Finalize and read-back a stage before its DB reference may commit."""
+    """Validate a stage and publish its DB row in the enclosing transaction."""
 
     root = _root().resolve()
     target = (root / storage_key).resolve()
@@ -95,25 +110,36 @@ def publish_staged(session: Session, storage_key: str, expected_sha256: str) -> 
     if target.exists():
         if hashlib.sha256(target.read_bytes()).hexdigest() != expected_sha256:
             raise ArtifactStoreError("published artifact hash mismatch")
-        for temporary, _target, _digest in matching:
-            temporary.unlink(missing_ok=True)
-            stages.remove((temporary, _target, _digest))
-        return
-    if len(matching) != 1:
+    elif len(matching) != 1:
         raise ArtifactStoreError("artifact stage is missing")
-    temporary, _target, digest = matching[0]
-    if digest != expected_sha256:
+    elif matching[0][2] != expected_sha256:
         raise ArtifactStoreError("artifact stage hash does not match metadata")
-    if os.getenv("QF_ARTIFACT_FAULT") == "before_publish":
+    if os.getenv("QF_ARTIFACT_FAULT") in {"before_publish", "after_publish"}:
         raise ArtifactStoreError("injected artifact publication failure")
-    target.parent.mkdir(mode=0o750, exist_ok=True)
-    temporary.replace(target)
-    _fsync_directory(target.parent)
-    if hashlib.sha256(target.read_bytes()).hexdigest() != expected_sha256:
-        raise ArtifactStoreError("artifact read-back verification failed")
-    stages.remove(matching[0])
-    if os.getenv("QF_ARTIFACT_FAULT") == "after_publish":
-        raise ArtifactStoreError("injected post-publication failure")
+    session.info.setdefault("qf_artifact_publications", set()).add(
+        (storage_key, expected_sha256)
+    )
+
+
+def staged_artifact_is_available(
+    session: Session, storage_key: str, expected_sha256: str
+) -> bool:
+    """Allow the creating transaction to consume its still-staged artifact."""
+
+    root = _root().resolve()
+    target = (root / storage_key).resolve()
+    if root not in target.parents:
+        return False
+    if target.is_file():
+        return hashlib.sha256(target.read_bytes()).hexdigest() == expected_sha256
+    return any(
+        temporary.is_file()
+        and staged_target.resolve() == target
+        and digest == expected_sha256
+        for temporary, staged_target, digest in session.info.get(
+            "qf_artifact_stages", []
+        )
+    )
 
 
 def put_json(value: dict[str, Any]) -> tuple[str, str]:
@@ -171,9 +197,12 @@ def stage_parquet(
     return storage_key, digest, schema_sha256, len(encoded)
 
 
-@event.listens_for(Session, "after_commit")
+@event.listens_for(Session, "before_commit")
 def _finalize_staged_artifacts(session: Session) -> None:
-    stages = session.info.pop("qf_artifact_stages", [])
+    stages = session.info.get("qf_artifact_stages", [])
+    publications = session.info.get("qf_artifact_publications", set())
+    if not stages and not publications:
+        return
     for temporary, target, digest in stages:
         if target.exists():
             if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
@@ -182,13 +211,75 @@ def _finalize_staged_artifacts(session: Session) -> None:
             continue
         temporary.replace(target)
         _fsync_directory(target.parent)
+        if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            raise ArtifactStoreError("committed artifact read-back mismatch")
+    if publications:
+        session.flush()
+        published_at = datetime.now(UTC)
+        for storage_key, digest in publications:
+            target = (_root().resolve() / storage_key).resolve()
+            if (
+                not target.is_file()
+                or hashlib.sha256(target.read_bytes()).hexdigest() != digest
+            ):
+                raise ArtifactStoreError(
+                    "committed artifact is missing or hash-invalid"
+                )
+            result = cast(
+                CursorResult[Any],
+                session.execute(
+                    text(
+                        "UPDATE artifacts "
+                        "SET publication_state='PUBLISHED', "
+                        "publication_error=NULL, published_at=:published_at "
+                        "WHERE storage_key=:storage_key AND sha256=:digest "
+                        "AND publication_state='STAGED'"
+                    ),
+                    {
+                        "published_at": published_at,
+                        "storage_key": storage_key,
+                        "digest": digest,
+                    },
+                ),
+            )
+            if result.rowcount != 1:
+                state = session.execute(
+                    text(
+                        "SELECT publication_state FROM artifacts "
+                        "WHERE storage_key=:storage_key AND sha256=:digest"
+                    ),
+                    {"storage_key": storage_key, "digest": digest},
+                ).scalar_one_or_none()
+                if state != "PUBLISHED":
+                    raise ArtifactStoreError("staged artifact metadata is missing")
+        for artifact in session.identity_map.values():
+            artifact = cast(Any, artifact)
+            if (
+                getattr(artifact, "storage_key", None),
+                getattr(artifact, "sha256", None),
+            ) in publications:
+                artifact.publication_state = "PUBLISHED"
+                artifact.publication_error = None
+                artifact.published_at = published_at
+
+
+@event.listens_for(Session, "after_commit")
+def _clear_staged_artifact_state(session: Session) -> None:
+    session.info.pop("qf_artifact_stages", None)
+    session.info.pop("qf_artifact_publications", None)
 
 
 @event.listens_for(Session, "after_rollback")
 def _discard_staged_artifacts(session: Session) -> None:
     stages = session.info.pop("qf_artifact_stages", [])
-    for temporary, _target, _digest in stages:
+    session.info.pop("qf_artifact_publications", None)
+    for temporary, target, digest in stages:
         temporary.unlink(missing_ok=True)
+        if (
+            target.exists()
+            and hashlib.sha256(target.read_bytes()).hexdigest() == digest
+        ):
+            target.unlink(missing_ok=True)
 
 
 def reap_orphan_artifacts(
@@ -202,6 +293,7 @@ def reap_orphan_artifacts(
 
     instant = now or datetime.now(UTC)
     timestamp = instant.timestamp()
+    _lock_artifact_mutations(session)
     root = _root()
     referenced: dict[str, str] = {}
     finalized = removed = 0
@@ -220,6 +312,7 @@ def reap_orphan_artifacts(
             if not target_valid:
                 row.publication_state = "FAILED"
                 row.publication_error = "published object missing or hash-invalid"
+                row.published_at = None
                 continue
             referenced[row.storage_key] = row.sha256
             continue
@@ -243,6 +336,7 @@ def reap_orphan_artifacts(
         except ArtifactStoreError as error:
             row.publication_state = "FAILED"
             row.publication_error = str(error)[:128]
+            row.published_at = None
             continue
         row.publication_state = "PUBLISHED"
         row.publication_error = None

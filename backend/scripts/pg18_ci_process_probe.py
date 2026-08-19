@@ -38,7 +38,7 @@ def main() -> int:
     mode = sys.argv[1]
     # Execute the real pytest environment bootstrap.  HUP/TERM intentionally use
     # os._exit below, proving the parent harness removes roots when Python cannot.
-    runpy.run_path(str(Path("tests/conftest.py").resolve()))
+    runpy.run_path(str(Path(__file__).resolve().parents[1] / "tests/conftest.py"))
     if mode == "normal":
         _write_ready(mode, None)
         return 0
@@ -56,7 +56,16 @@ def main() -> int:
         [sys.executable, "-c", "import time; time.sleep(3600)"],
         start_new_session=False,
     )
-    _write_ready(mode, child.pid)
+    try:
+        _write_ready(mode, child.pid)
+    except BaseException:
+        child.terminate()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+        raise
     while True:
         time.sleep(0.1)
 

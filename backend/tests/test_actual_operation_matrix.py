@@ -48,12 +48,13 @@ from app.main import (
     app,
     content_hash,
     job,
+    strategy_storage_fields,
     validation_action_capabilities,
 )
 from workers.main import run_agent_once, run_once
 
 SPEC = canonical_openapi()
-AUTH = {"Authorization": "Bearer matrix"}
+AUTH = {"Authorization": "Bearer matrix", "X-CSRF-Token": "m" * 32}
 
 
 @pytest.mark.parametrize("status", ["QUEUED", "RUNNING"])
@@ -232,11 +233,19 @@ def test_45_canonical_operation_ids_execute_real_handlers(
     )
     monkeypatch.setenv("QF_OPENAI_MODELS", "test-model")
 
+    original_client_request = client.request
+
+    def record_client_request(method: str, url: str, **kwargs):
+        response = original_client_request(method, url, **kwargs)
+        response_bodies.append(response.text)
+        return response
+
+    client.request = record_client_request  # type: ignore[method-assign]
+
     def request(operation: str, method: str, path: str, status: int, **kwargs):
         response = client.request(method, path, **kwargs)
         _check(operation, response, status)
         calls.append(operation)
-        response_bodies.append(response.text)
         return response
 
     def drain_core_job(job_id: str) -> JobRow:
@@ -397,12 +406,13 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         ("2020-09-01", "VALIDATION"),
         ("2020-09-02", "HOLDOUT"),
         ("2020-10-01", "HOLDOUT"),
+        ("2020-11-02", "HOLDOUT"),
         ("2020-12-31", "HOLDOUT"),
     ]
     market_rows = [
         {
             "event_time": f"{day}T21:00:00Z",
-            "available_at": f"{day}T21:01:00Z",
+            "available_at": f"{day}T21:00:00Z",
             "symbol": symbol,
             "close": 100 + day_index * multiplier,
             "benchmark_close": 100 + day_index,
@@ -1062,6 +1072,9 @@ def test_45_canonical_operation_ids_execute_real_handlers(
             id=second_factor_id,
             workspace_id="matrix-workspace",
             research_id=research_id,
+            name=factor_detail["name"],
+            category=factor_detail["category"],
+            created_by="test-owner",
             revision=1,
             detail=json.dumps(factor_detail),
         )
@@ -1084,6 +1097,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
                 id=seeded_strategy_id,
                 workspace_id="matrix-workspace",
                 research_id=research_id,
+                name=seeded_detail["name"],
                 revision=1,
                 detail=json.dumps(seeded_detail),
             )
@@ -1099,6 +1113,9 @@ def test_45_canonical_operation_ids_execute_real_handlers(
                 spec_sha256=source_strategy.spec_sha256,
                 revision=1,
                 detail=json.dumps(seeded_detail),
+                **strategy_storage_fields(
+                    seeded_detail, lifecycle_state="CANDIDATE", is_frozen=False
+                ),
             )
         )
     session.commit()
@@ -1115,7 +1132,49 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         },
     )
     assert seeded_backtest.status_code == 202
-    assert drain_core_job(seeded_backtest.json()["job_id"]).status == "COMPLETED"
+    seeded_backtest_job = drain_core_job(seeded_backtest.json()["job_id"])
+    assert seeded_backtest_job.status == "COMPLETED"
+    candidate_backtest = client.post(
+        f"/api/v1/strategies/{candidate_strategy_id}/versions/1/backtests",
+        headers=_key("agent-candidate-backtest"),
+        json={
+            "snapshot_id": snapshot_id,
+            "cost_model_id": "COST-00000000-0000-4000-8000-000000000103",
+            "engine_key": "qf-simulation-v1",  # gitleaks:allow
+            "engine_version": "1.0.0",
+            "parameters": [],
+        },
+    )
+    assert candidate_backtest.status_code == 202
+    candidate_backtest_job = drain_core_job(candidate_backtest.json()["job_id"])
+    assert candidate_backtest_job.status == "COMPLETED"
+    comparison_experiment_ids = []
+    research_revision = client.get(
+        f"/api/v1/research/{research_id}", headers=AUTH
+    ).json()["revision"]
+    for label in ("comparison-a", "comparison-b"):
+        comparison = client.post(
+            "/api/v1/experiments",
+            headers=_key(label),
+            json={
+                "research_id": research_id,
+                "research_revision_no": research_revision,
+                "objective": "Compare deterministic strategy evidence",
+                "hypothesis": "The strategy produces deterministic returns",
+                "experiment_type": "FAST_BACKTEST",
+                "data_snapshot_id": snapshot_id,
+                "strategy_id": candidate_strategy_id,
+                "strategy_version": 1,
+                "cost_model_id": "COST-00000000-0000-4000-8000-000000000103",
+                "parameters": [],
+                "engine_key": "qf-simulation-v1",
+                "engine_version": "1.0.0",
+            },
+        )
+        assert comparison.status_code == 202
+        comparison_job = drain_core_job(comparison.json()["job_id"])
+        assert comparison_job.status == "COMPLETED", comparison_job.error_detail
+        comparison_experiment_ids.append(comparison.json()["resource_ref"]["id"])
     seeded_strategy_read = client.get(
         f"/api/v1/strategies/{frozen_strategy_id}/versions/1", headers=AUTH
     )
@@ -1268,7 +1327,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         {
             "type": "tool",
             "name": "compare_backtests",
-            "arguments": {"experiment_ids": [experiment_id, child_id]},
+            "arguments": {"experiment_ids": comparison_experiment_ids},
         },
         {
             "type": "tool",
@@ -1522,7 +1581,7 @@ def test_45_canonical_operation_ids_execute_real_handlers(
     public_record = session.execute(
         select(Record).where(
             Record.workspace_id == "matrix-workspace",
-            Record.record_key == bindings["PUBLIC"].artifact_id,
+            Record.record_key == bindings["RESEARCH"].artifact_id,
         )
     ).scalar_one_or_none()
     holdout_record = session.execute(
@@ -1532,10 +1591,35 @@ def test_45_canonical_operation_ids_execute_real_handlers(
         )
     ).scalar_one_or_none()
     assert public_record is not None and holdout_record is not None
-    public_metadata = json.loads(public_record.body)
     holdout_metadata = json.loads(holdout_record.body)
     public_artifact = json.dumps(
-        read_parquet(public_metadata["storage_key"], public_metadata["content_sha256"])
+        {
+            partition: read_parquet(
+                json.loads(
+                    session.execute(
+                        select(Record).where(
+                            Record.workspace_id == "matrix-workspace",
+                            Record.record_key == bindings[partition].artifact_id,
+                        )
+                    )
+                    .scalar_one()
+                    .body
+                )["storage_key"],
+                json.loads(
+                    session.execute(
+                        select(Record).where(
+                            Record.workspace_id == "matrix-workspace",
+                            Record.record_key == bindings[partition].artifact_id,
+                        )
+                    )
+                    .scalar_one()
+                    .body
+                )["content_sha256"],
+            )
+            for partition in bindings
+            if partition != "HOLDOUT"
+        },
+        sort_keys=True,
     )
     protected_artifact = json.dumps(
         read_parquet(
@@ -1547,6 +1631,37 @@ def test_45_canonical_operation_ids_execute_real_handlers(
             *(row.payload for row in session.query(Audit).all()),
             *(row.payload for row in session.query(Event).all()),
             *(row.checkpoint for row in session.query(AgentRunRow).all()),
+            *(
+                value
+                for row in session.query(ToolCallRow).all()
+                for value in (
+                    row.input_payload or "",
+                    json.dumps(row.input, sort_keys=True) if row.input else "",
+                    row.result_summary or "",
+                    row.warnings or "",
+                    row.provenance or "",
+                )
+            ),
+            *(
+                value
+                for row in session.query(JobRow).all()
+                for value in (
+                    row.payload or "",
+                    row.input_payload or "",
+                    row.result_ref or "",
+                    row.error_detail or "",
+                )
+            ),
+            *(
+                value
+                for row in session.query(AgentRunRow).all()
+                for value in (
+                    row.decision_summary or "",
+                    row.next_action or "",
+                    row.objective or "",
+                )
+            ),
+            *(row.body for row in session.query(Record).all()),
             public_artifact,
         ]
     )

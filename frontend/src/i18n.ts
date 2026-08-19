@@ -12,13 +12,10 @@ export const canonicalTimeZone = (timezone: string): string => {
   }
 };
 
-const readServerLocale = (): ServerLocaleSettings | undefined => undefined;
-
-const restoredLocale = readServerLocale();
-let activeLocale: ServerLocaleSettings | undefined = restoredLocale;
+let activeLocale: ServerLocaleSettings | undefined;
 
 void i18n.use(initReactI18next).init({
-  lng: restoredLocale?.language ?? 'zh-CN',
+  lng: 'zh-CN',
   fallbackLng: 'en',
   interpolation: { escapeValue: false },
   resources: {
@@ -162,6 +159,7 @@ void i18n.use(initReactI18next).init({
           contract: 'The server response did not match the canonical contract.',
           connection: 'Connection failed. Retry when the service is available.',
           auditRequest: 'Audit request {{requestId}}',
+          field: 'Invalid field: {{field}}.',
           fallback: 'Request failed ({{code}}). Review the server detail and audit request.',
           CREDENTIAL_INVALID: 'Credentials are invalid.',
           CREDENTIAL_NOT_CONFIGURED: 'Credentials are not configured.',
@@ -194,6 +192,7 @@ void i18n.use(initReactI18next).init({
           editor: 'Edit all mutable configuration',
           saveConfiguration: 'Validate and activate configuration',
           validationFailed: 'Configuration validation failed.',
+          conflict: 'Server settings changed. Reload before saving this draft.',
           saved: 'Configuration activated.',
           secretPlaceholder: 'Write-only secret; leave blank to keep current value',
           secretJsonPlaceholder: 'Write-only JSON secret; leave blank to keep current value',
@@ -862,6 +861,7 @@ void i18n.use(initReactI18next).init({
           contract: '服务端响应与 canonical contract 不匹配。',
           connection: '连接失败。请在服务可用后重试。',
           auditRequest: '审计请求 {{requestId}}',
+          field: '字段校验失败：{{field}}。',
           fallback: '请求失败（{{code}}）。请查看服务端详情与审计请求。',
           CREDENTIAL_INVALID: '凭据无效。',
           CREDENTIAL_NOT_CONFIGURED: '尚未配置凭据。',
@@ -894,6 +894,7 @@ void i18n.use(initReactI18next).init({
           editor: '编辑全部可变配置',
           saveConfiguration: '校验并激活配置',
           validationFailed: '配置校验失败。',
+          conflict: '服务端设置已变化。请刷新后再保存当前草稿。',
           saved: '配置已激活。',
           secretPlaceholder: '仅写入密钥；留空表示保持当前值',
           secretJsonPlaceholder: '仅写入 JSON 密钥；留空表示保持当前值',
@@ -1421,24 +1422,30 @@ void i18n.use(initReactI18next).init({
 });
 
 const applyDocumentLocale = ({ language, timezone }: ServerLocaleSettings) => {
+  if (typeof document === 'undefined') return;
   document.documentElement.lang = language;
   document.documentElement.dataset.timezone = timezone;
 };
 
-if (restoredLocale) applyDocumentLocale(restoredLocale);
-else applyDocumentLocale({ language: 'zh-CN', timezone: 'UTC' });
+const defaultServerLocale: ServerLocaleSettings = { language: 'zh-CN', timezone: 'UTC' };
+applyDocumentLocale(defaultServerLocale);
 i18n.on('languageChanged', (language) => {
-  document.documentElement.lang = language;
+  if (typeof document !== 'undefined') document.documentElement.lang = language;
 });
 
+let localeChange: Promise<void> = Promise.resolve();
 export const applyServerSettingsLocale = async (settings: ServerLocaleSettings) => {
   const canonical = {
     ...settings,
     timezone: canonicalTimeZone(settings.timezone),
   };
-  activeLocale = canonical;
-  applyDocumentLocale(canonical);
-  await i18n.changeLanguage(canonical.language);
+  const next = localeChange.then(async () => {
+    await i18n.changeLanguage(canonical.language);
+    activeLocale = canonical;
+    applyDocumentLocale(canonical);
+  });
+  localeChange = next.catch(() => undefined);
+  await next;
 };
 
 export const configurationLocale = (value: unknown): ServerLocaleSettings | undefined => {
@@ -1452,8 +1459,14 @@ export const configurationLocale = (value: unknown): ServerLocaleSettings | unde
 
 export const getRestoredServerLocale = (): ServerLocaleSettings | undefined => activeLocale;
 
-export const resetServerSettingsLocale = (): void => {
-  activeLocale = undefined;
+export const resetServerSettingsLocale = async (): Promise<void> => {
+  const next = localeChange.then(async () => {
+    await i18n.changeLanguage(defaultServerLocale.language);
+    activeLocale = undefined;
+    applyDocumentLocale(defaultServerLocale);
+  });
+  localeChange = next.catch(() => undefined);
+  await next;
 };
 
 export default i18n;

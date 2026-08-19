@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-from importlib import import_module
 from typing import Any, cast
 
 from pydantic import ValidationError
 
-try:
-    _event_models = import_module("app.generated_api_models")
-except ImportError:  # pragma: no cover - packaged canonical fallback
-    _event_models = import_module("quantfoundry.contracts.openapi.generated_api_models")
-
-EventPayload = _event_models.EventPayload
-EventType = _event_models.EventType
-SseEnvelope = _event_models.SseEnvelope
+from quantfoundry.contracts.openapi.generated_api_models import (
+    EventPayload,
+    EventType,
+    SseEnvelope,
+)
 
 
 def _event_type_values() -> tuple[str, ...]:
@@ -37,6 +33,16 @@ def _event_object_types() -> dict[str, str]:
 
     result: dict[str, str] = {}
     schema = SseEnvelope.model_json_schema(mode="validation")
+    envelope_event_type = schema.get("properties", {}).get("event_type", {})
+    envelope_values = envelope_event_type.get("enum")
+    if not isinstance(envelope_values, list) or not all(
+        isinstance(value, str) for value in envelope_values
+    ):
+        raise RuntimeError("generated SSE event_type is not a closed string enum")
+    if set(envelope_values) != set(EVENT_TYPES) or len(envelope_values) != len(
+        EVENT_TYPES
+    ):
+        raise RuntimeError("generated SSE and EventType enums are inconsistent")
     for rule in schema.get("allOf", []):
         if not isinstance(rule, dict):
             continue
@@ -54,8 +60,12 @@ def _event_object_types() -> dict[str, str]:
         )
         for value in values:
             if isinstance(value, str):
+                if value in result and result[value] != object_type:
+                    raise RuntimeError(
+                        f"event type {value} has conflicting object types"
+                    )
                 result[value] = object_type
-    if set(result) != set(EVENT_TYPES):
+    if set(result) != set(envelope_values):
         raise RuntimeError("generated SSE event/object mapping is incomplete")
     return result
 
@@ -89,7 +99,7 @@ def safe_resync_payload(sequence: int | None = None) -> dict[str, Any]:
         "status": None,
     }
     if sequence is not None:
-        value["resync_from_sequence"] = max(1, sequence)
+        value["resync_from_sequence"] = str(max(1, sequence))
     return validate_event_payload(value)
 
 

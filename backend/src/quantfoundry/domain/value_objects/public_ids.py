@@ -4,55 +4,62 @@ from __future__ import annotations
 
 import re
 import uuid
+from types import MappingProxyType
 from typing import Final
 
-PUBLIC_ID_PREFIXES: Final[dict[str, str]] = {
-    "research_policy": "RP",
-    "risk_policy": "RISK",
-    "cost_model": "COST",
-    "credential": "CRED",
-    "capability": "CAP",
-    "dataset": "DSSET",
-    "snapshot": "DS",
-    "quality_run": "DQ",
-    "quality_issue": "DQI",
-    "research": "RSCH",
-    "evidence": "EVID",
-    "conclusion": "CONC",
-    "experiment": "EXP",
-    "factor": "FAC",
-    "strategy": "STRAT",
-    "validation": "VAL",
-    "holdout_exposure": "HOLD",
-    "red_team_run": "RT",
-    "portfolio": "PORT",
-    "memo": "MEMO",
-    "approval": "APR",
-    "paper": "PAPER",
-    "paper_run": "PRUN",
-    "paper_order": "PORD",
-    "paper_fill": "PFILL",
-    "performance_review": "REV",
-    "agent_run": "ARUN",
-    "tool_call": "TCALL",
-    "job": "JOB",
-    "domain_event": "EVT",
-    "audit_event": "AUD",
-    "artifact": "ART",
-    "notification": "NOTIF",
-    "provenance": "PROV",
-}
+PUBLIC_ID_PREFIXES: Final = MappingProxyType(
+    {
+        "research_policy": "RP",
+        "risk_policy": "RISK",
+        "cost_model": "COST",
+        "credential": "CRED",
+        "capability": "CAP",
+        "dataset": "DSSET",
+        "snapshot": "DS",
+        "quality_run": "DQ",
+        "quality_issue": "DQI",
+        "research": "RSCH",
+        "evidence": "EVID",
+        "conclusion": "CONC",
+        "experiment": "EXP",
+        "factor": "FAC",
+        "strategy": "STRAT",
+        "validation": "VAL",
+        "holdout_exposure": "HOLD",
+        "red_team_run": "RT",
+        "portfolio": "PORT",
+        "memo": "MEMO",
+        "approval": "APR",
+        "paper": "PAPER",
+        "paper_run": "PRUN",
+        "paper_order": "PORD",
+        "paper_fill": "PFILL",
+        "performance_review": "REV",
+        "agent_run": "ARUN",
+        "tool_call": "TCALL",
+        "job": "JOB",
+        "domain_event": "EVT",
+        "audit_event": "AUD",
+        "artifact": "ART",
+        "notification": "NOTIF",
+        "provenance": "PROV",
+    }
+)
 
 _ULID = r"[0-7][0-9A-HJKMNP-TV-Z]{25}"
 _UUID4 = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
-PUBLIC_ID_PATTERNS: Final[dict[str, str]] = {
-    kind: rf"^{prefix}-(?:{_ULID}|{_UUID4})$"
-    for kind, prefix in PUBLIC_ID_PREFIXES.items()
-}
-PUBLIC_ID_MAX_LENGTHS: Final[dict[str, int]] = {
-    kind: len(prefix) + 1 + 36 for kind, prefix in PUBLIC_ID_PREFIXES.items()
-}
-_COMPILED = {kind: re.compile(pattern) for kind, pattern in PUBLIC_ID_PATTERNS.items()}
+PUBLIC_ID_PATTERNS: Final = MappingProxyType(
+    {
+        kind: rf"^{prefix}-(?:{_ULID}|{_UUID4})$"
+        for kind, prefix in PUBLIC_ID_PREFIXES.items()
+    }
+)
+PUBLIC_ID_MAX_LENGTHS: Final = MappingProxyType(
+    {kind: len(prefix) + 1 + 36 for kind, prefix in PUBLIC_ID_PREFIXES.items()}
+)
+_COMPILED = MappingProxyType(
+    {kind: re.compile(pattern) for kind, pattern in PUBLIC_ID_PATTERNS.items()}
+)
 
 
 def new_public_id(kind: str) -> str:

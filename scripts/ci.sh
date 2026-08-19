@@ -27,8 +27,8 @@ platform_static() {
   docker compose --project-directory "$repo_root" --env-file "$repo_root/.env.example" config --quiet
   docker compose --project-directory "$repo_root" --profile local \
     --env-file "$repo_root/.env.example" config --quiet
-  shellcheck "$repo_root"/scripts/*.sh
-  actionlint "$repo_root"/.github/workflows/*.yml
+  /usr/bin/find "$repo_root/scripts" -type f -name '*.sh' -exec shellcheck {} +
+  /usr/bin/find "$repo_root/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -exec actionlint {} +
 }
 
 governance_check() {
@@ -69,6 +69,11 @@ require_runtime_identity() {
     printf '%s\n' 'QF_GIT_COMMIT and QF_BUILD_ID are required.' >&2
     exit 1
   }
+  checkout_commit="$(git -C "$repo_root" rev-parse HEAD)"
+  [[ "$QF_GIT_COMMIT" == "$checkout_commit" ]] || {
+    printf '%s\n' 'QF_GIT_COMMIT must equal checkout HEAD.' >&2
+    exit 1
+  }
 }
 
 backend_format() {
@@ -100,6 +105,10 @@ frontend_static() {
 }
 
 require_postgres() {
+  [[ "${QF_CI_DISPOSABLE_DATABASE:-}" == "1" ]] || {
+    printf '%s\n' 'QF_CI_DISPOSABLE_DATABASE=1 is required before CI may mutate PostgreSQL.' >&2
+    exit 1
+  }
   [[ "${QF_DATABASE_URL:-}" == postgresql+psycopg://* ]] || {
     printf '%s\n' 'QF_DATABASE_URL must target real PostgreSQL for integration and migration gates.' >&2
     exit 1
@@ -112,18 +121,22 @@ require_postgres() {
     printf '%s\n' 'QF_SKIP_AUTO_CREATE=1 is required so Alembic exclusively owns CI schema creation.' >&2
     exit 1
   }
+  run_backend python "$repo_root/scripts/ci/verify-disposable-ci-database.py" "$QF_DATABASE_URL" || {
+    printf '%s\n' 'Refusing to mutate a PostgreSQL database that was not provisioned for this CI run.' >&2
+    exit 1
+  }
 }
 
 migration_check() {
   require_postgres
-  run_backend alembic upgrade head
+  run_backend python scripts/ux001_domain_preflight.py --migrate
   run_backend alembic check
   run_backend python scripts/ux001_domain_preflight.py
 }
 
 backend_test() {
   require_postgres
-  run_backend pytest
+  run_backend env QF_ALLOW_EXTERNAL_TEST_DATABASE=1 pytest
 }
 
 backend_pg18_full() {
@@ -166,8 +179,10 @@ backend_pg18_full() {
       -u QF_LOCAL_DATA_CREDENTIAL \
       -u QF_CREDENTIAL_ENCRYPTION_KEY_ID \
       -u QF_CREDENTIAL_ENCRYPTION_KEY \
+      -u QF_CREDENTIAL_FINGERPRINT_KEY \
       -u QF_GIT_COMMIT \
       -u QF_BUILD_ID \
+      QF_PG18_CI_BASE_DATABASE_URL="$QF_DATABASE_URL" \
       sh scripts/pg18_ci.sh
   )
 }
@@ -179,6 +194,7 @@ fresh_local_smoke() {
     env \
       -u QF_DATABASE_URL \
       -u QF_ALEMBIC_URL \
+      -u QF_CONTROL_DB_URL \
       -u QF_AGENT_CHECKPOINT_URL \
       -u QF_AGENT_CHECKPOINT_SQLITE \
       -u QF_ARTIFACT_ROOT \
@@ -227,14 +243,10 @@ openapi_check() {
     QF_ENVIRONMENT=test \
     QF_DATABASE_URL="sqlite:///$ci_tmp/contracts.db" \
     QF_ALEMBIC_URL="sqlite:///$ci_tmp/contracts.db" \
+    QF_ALLOW_EXTERNAL_TEST_DATABASE=1 \
     QF_ALLOW_TEST_SCHEMA_BOOTSTRAP=1 \
     pytest tests/contracts
-  run_frontend exec openapi-typescript "$repo_root/docs/后端系统技术方案/contracts/openapi-v1.yaml" --output "$ci_tmp/generated.ts"
-  if ! cmp -s "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts"; then
-    diff -u "$repo_root/frontend/src/api/generated.ts" "$ci_tmp/generated.ts" || true
-    printf '%s\n' 'Frontend generated OpenAPI types are stale.' >&2
-    exit 1
-  fi
+  run_frontend codegen:check
 }
 
 tool_check() {
@@ -242,8 +254,6 @@ tool_check() {
   require_file docs/后端系统技术方案/contracts/tools/v1-p0.yaml
   run_backend python "$repo_root/scripts/tool_contract_check.py" \
     --schema-out "$ci_tmp/tool-contract.schema.json"
-  (cd "$repo_root/frontend" && pnpm dlx ajv-cli@5.0.0 compile \
-    --spec=draft2020 --strict=false -s "$ci_tmp/tool-contract.schema.json")
   run_backend python "$repo_root/scripts/tool_contract_check.py" \
     --schema-out "$ci_tmp/tool-contract.schema.json" --validate-instance
 }

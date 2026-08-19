@@ -138,6 +138,22 @@ export function formatCanonicalDecimal(
   }
 }
 
+export function formatCanonicalPercent(value: string, locale: string): string | null {
+  const parsed = parseCanonicalDecimal(value);
+  if (!parsed) return null;
+  const digits = parsed.integer + parsed.fraction;
+  const decimalIndex = parsed.integer.length + 2;
+  const integer =
+    decimalIndex <= 0
+      ? '0'
+      : decimalIndex >= digits.length
+        ? digits + '0'.repeat(decimalIndex - digits.length)
+        : digits.slice(0, decimalIndex);
+  const fraction = decimalIndex >= digits.length ? '' : digits.slice(decimalIndex);
+  const scaled = `${parsed.negative ? '-' : ''}${integer}${fraction ? `.${fraction}` : ''}`;
+  return formatCanonicalDecimal(scaled, locale);
+}
+
 export function formatServerDateTime(
   value: string,
   settings: { language: 'zh-CN' | 'en'; timezone: string } = getRestoredServerLocale() ?? {
@@ -145,8 +161,37 @@ export function formatServerDateTime(
     timezone: 'UTC',
   },
 ): string {
+  const utcPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
+  const match = value.match(utcPattern);
   const instant = new Date(value);
-  if (!Number.isFinite(instant.getTime()) || !value.endsWith('Z'))
+  if (!match || !Number.isFinite(instant.getTime())) return i18n.t('format.invalidUtc');
+  const [
+    ,
+    yearPart = '',
+    monthPart = '',
+    dayPart = '',
+    hourPart = '',
+    minutePart = '',
+    secondPart = '',
+    fraction = '',
+  ] = match;
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  const day = Number(dayPart);
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  const second = Number(secondPart);
+  const roundTrip = new Date(
+    Date.UTC(year, month - 1, day, hour, minute, second, Number((fraction + '000').slice(0, 3))),
+  );
+  if (
+    roundTrip.getUTCFullYear() !== year ||
+    roundTrip.getUTCMonth() !== month - 1 ||
+    roundTrip.getUTCDate() !== day ||
+    roundTrip.getUTCHours() !== hour ||
+    roundTrip.getUTCMinutes() !== minute ||
+    roundTrip.getUTCSeconds() !== second
+  )
     return i18n.t('format.invalidUtc');
   const timeZone = safeTimeZone(settings.timezone);
   const parts = new Intl.DateTimeFormat(settings.language, {

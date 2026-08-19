@@ -59,7 +59,9 @@ from quantfoundry.api.app import (
     app,
     content_hash,
     create_provenance,
+    experiment_storage_fields,
     job,
+    strategy_storage_fields,
 )
 from quantfoundry.api.sse.stream import durable_event_stream
 from quantfoundry.contracts.events.locator import register_sqlite_functions
@@ -73,6 +75,7 @@ from quantfoundry.infrastructure.jobs.queue import (
     LostLease,
     claim_job,
     complete_job,
+    fail_job,
     heartbeat_job,
     reap_expired_jobs,
     request_cancellation,
@@ -86,7 +89,10 @@ from quantfoundry.workers.main import (
     run_once,
 )
 
-AUTH = {"Authorization": "Bearer test"}
+AUTH = {
+    "Authorization": "Bearer test",
+    "X-CSRF-Token": "t" * 32,
+}
 
 
 def _key(label: str) -> dict[str, str]:
@@ -158,6 +164,75 @@ def _seed_strategy_version(
     research_id = f"RSCH-{suffix}"
     strategy_id = f"STRAT-{suffix}"
     strategy_version_id = f"SV-{suffix}"
+    strategy_detail = {
+        "strategy_id": strategy_id,
+        "name": "Runtime integrity fixture",
+        "version": 1,
+        "lifecycle_state": state,
+        "is_frozen": state != "CANDIDATE",
+        "thesis": "A deterministic runtime integrity strategy",
+        "universe": {
+            "asset_class": "EQUITY",
+            "symbols": [],
+            "universe_id": "TEST",
+        },
+        "signals": [],
+        "rules": {
+            "selection_count": 1,
+            "weighting": "EQUAL",
+            "rebalance_frequency": "DAILY",
+            "long_short": False,
+            "leverage_limit": "1",
+            "position_limit": "1",
+        },
+        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
+        "benchmark": "TEST",
+        "research_period": {"start": "2020-01-01", "end": "2020-06-30"},
+        "validation_period": {"start": "2020-07-01", "end": "2020-09-30"},
+        "holdout_period": {"start": "2020-10-01", "end": "2020-12-31"},
+        "known_failure_modes": [],
+        "spec_sha256": spec_sha256 or content_hash({"strategy": suffix}),
+        "specification": {},
+        "latest_backtest": {
+            "state": "EMPTY",
+            "result": None,
+            "metrics": [],
+            "chart": None,
+        },
+        "validation_summary": None,
+        "artifacts": [],
+        "provenance": [],
+        "frozen_at": datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        if state != "CANDIDATE"
+        else None,
+        "frozen_by": "test-owner" if state != "CANDIDATE" else None,
+        "revision": 1,
+        "action_capabilities": [],
+        "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    }
+    if detail is not None:
+        strategy_detail.update(json.loads(detail))
+    strategy_detail["strategy_id"] = strategy_id
+    strategy_detail["name"] = "Runtime integrity fixture"
+    strategy_detail["lifecycle_state"] = state
+    strategy_detail["is_frozen"] = state != "CANDIDATE"
+    strategy_detail["specification"] = {
+        key: strategy_detail[key]
+        for key in (
+            "thesis",
+            "universe",
+            "signals",
+            "rules",
+            "cost_model_id",
+            "benchmark",
+            "research_period",
+            "validation_period",
+            "holdout_period",
+            "known_failure_modes",
+        )
+    }
+    strategy_detail["specification"]["spec_sha256"] = strategy_detail["spec_sha256"]
+    detail_json = json.dumps(strategy_detail)
     session.add(
         ResearchRow(
             id=research_id,
@@ -165,6 +240,9 @@ def _seed_strategy_version(
             status="DRAFT",
             revision=1,
             title="Runtime integrity fixture",
+            original_user_prompt="Runtime integrity fixture",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
             detail="{}",
         )
     )
@@ -174,6 +252,7 @@ def _seed_strategy_version(
             id=strategy_id,
             workspace_id="test-workspace",
             research_id=research_id,
+            name="Runtime integrity fixture",
             revision=1,
             detail="{}",
         )
@@ -187,25 +266,13 @@ def _seed_strategy_version(
             version=1,
             state=state,
             spec_sha256=spec_sha256 or content_hash({"strategy": suffix}),
-            frozen_at=datetime.now(UTC),
+            frozen_at=datetime.now(UTC) if state != "CANDIDATE" else None,
             revision=2,
-            detail=detail
-            or json.dumps(
-                {
-                    "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-                    "research_period": {
-                        "start": "2020-01-01",
-                        "end": "2020-06-30",
-                    },
-                    "validation_period": {
-                        "start": "2020-07-01",
-                        "end": "2020-09-30",
-                    },
-                    "holdout_period": {
-                        "start": "2020-10-01",
-                        "end": "2020-12-31",
-                    },
-                }
+            detail=detail_json,
+            **strategy_storage_fields(
+                strategy_detail,
+                lifecycle_state=state,
+                is_frozen=state != "CANDIDATE",
             ),
         )
     )
@@ -229,6 +296,9 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             status="DRAFT",
             revision=1,
             title="Immutable evidence parent",
+            original_user_prompt="Immutable evidence parent",
+            created_at=now,
+            updated_at=now,
             detail="{}",
         )
     )
@@ -237,6 +307,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             id=f"STRAT-{suffix}",
             workspace_id="test-workspace",
             research_id=f"RSCH-{suffix}",
+            name="Immutable evidence parent",
             revision=1,
             detail="{}",
         )
@@ -336,6 +407,33 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             detail="{}",
         )
     )
+    experiment_detail = {
+        "experiment_id": f"EXP-{suffix}",
+        "research_id": f"RSCH-{suffix}",
+        "research_revision_no": 1,
+        "objective": "Immutable evidence fixture",
+        "hypothesis": "The fixture remains immutable",
+        "experiment_type": "FACTOR_ANALYSIS",
+        "status": "COMPLETED",
+        "validity_state": "VALID",
+        "data_snapshot_id": f"DS-{suffix}",
+        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
+        "factor_ref": None,
+        "strategy_ref": None,
+        "parameters": [],
+        "parameters_sha256": content_hash([]),
+        "search_space": [],
+        "search_configuration": None,
+        "engine": {"name": "test-engine", "version": "1.0"},
+        "adapter": None,
+        "code_version": "test",
+        "started_at": now.isoformat().replace("+00:00", "Z"),
+        "finished_at": now.isoformat().replace("+00:00", "Z"),
+        "created_at": now.isoformat().replace("+00:00", "Z"),
+        "invalidated_at": None,
+        "invalid_reason_code": None,
+        "invalid_reason_detail": None,
+    }
     session.add(
         ExperimentRow(
             id=f"EXP-{suffix}",
@@ -343,14 +441,31 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             research_id=f"RSCH-{suffix}",
             immutable=True,
             revision=2,
-            detail=json.dumps(
-                {
-                    "data_snapshot_id": f"DS-{suffix}",
-                    "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-                }
-            ),
+            detail=json.dumps(experiment_detail),
+            **experiment_storage_fields(experiment_detail),
         )
     )
+    strategy_detail = {
+        "strategy_id": f"STRAT-{suffix}",
+        "name": "Immutable evidence strategy",
+        "thesis": "The fixture remains immutable",
+        "universe": {"asset_class": "EQUITY", "symbols": [], "universe_id": "TEST"},
+        "signals": [],
+        "rules": {
+            "selection_count": 1,
+            "weighting": "EQUAL",
+            "rebalance_frequency": "DAILY",
+            "long_short": False,
+            "leverage_limit": "1",
+            "position_limit": "1",
+        },
+        "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
+        "benchmark": "TEST",
+        "research_period": {"start": "2020-01-01", "end": "2020-06-30"},
+        "validation_period": {"start": "2020-07-01", "end": "2020-09-30"},
+        "holdout_period": {"start": "2020-10-01", "end": "2020-12-31"},
+        "known_failure_modes": [],
+    }
     session.add(
         StrategyVersionRow(
             id=f"SV-{suffix}",
@@ -361,22 +476,9 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
             spec_sha256=content_hash({"strategy": suffix}),
             frozen_at=now,
             revision=2,
-            detail=json.dumps(
-                {
-                    "cost_model_id": "COST-00000000-0000-4000-8000-000000000003",
-                    "research_period": {
-                        "start": "2020-01-01",
-                        "end": "2020-06-30",
-                    },
-                    "validation_period": {
-                        "start": "2020-07-01",
-                        "end": "2020-09-30",
-                    },
-                    "holdout_period": {
-                        "start": "2020-10-01",
-                        "end": "2020-12-31",
-                    },
-                }
+            detail=json.dumps(strategy_detail),
+            **strategy_storage_fields(
+                strategy_detail, lifecycle_state="FROZEN", is_frozen=True
             ),
         )
     )
@@ -385,7 +487,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=f"DS-{suffix}",
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{uuid.uuid4()}",
             content_sha256=content_hash({"partition": suffix}),
             row_count=1,
@@ -505,6 +607,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
                 object_type="event_stream",
                 object_id=f"EVT-{suffix}",
                 object_revision=1,
+                result="SUCCESS",
                 payload="{}",
                 event_sha256=content_hash({"audit": suffix}),
                 occurred_at=now,
@@ -570,7 +673,7 @@ def test_database_rejects_changes_to_all_immutable_evidence() -> None:
                 result_artifact_id=result_artifact_id,
                 provenance_id=provenance_id,
                 result_sha256=content_hash({"result": suffix}),
-                period=json.dumps({"start": "2020-10-01", "end": "2020-12-31"}),
+                period="[2020-10-01,2021-01-01)",
                 result="{}",
                 exposed_at=now,
                 contamination=False,
@@ -701,6 +804,42 @@ def test_queue_priority_fencing_and_safe_vs_unsafe_reaping() -> None:
     session.close()
 
 
+def test_late_success_dependency_is_terminalized_before_claim() -> None:
+    queue_name = f"late-dependency-{uuid.uuid4().hex[:12]}"
+    session = SessionLocal()
+    session.info.update(
+        actor_id="test-owner",
+        workspace_id="test-workspace",
+        request_id=f"REQ-{uuid.uuid4()}",
+    )
+    prerequisite = job(session, "DATASET_VALIDATE", queue_name=queue_name)
+    session.commit()
+    prerequisite_lease = claim_job(session, queue_name, "worker-prerequisite")
+    assert prerequisite_lease is not None
+    session.commit()
+    fail_job(session, prerequisite_lease, "JOB_FAILED", "fixture failure")
+    session.commit()
+
+    dependent = job(session, "DATASET_VALIDATE", queue_name=queue_name)
+    session.add(
+        JobDependencyRow(
+            job_id=dependent["job_id"],
+            depends_on_job_id=prerequisite["job_id"],
+            workspace_id="test-workspace",
+            dependency_type="SUCCESS",
+        )
+    )
+    session.commit()
+
+    assert claim_job(session, queue_name, "worker-dependent") is None
+    session.commit()
+    dependent_row = session.get(JobRow, dependent["job_id"])
+    assert dependent_row is not None
+    assert dependent_row.status == "FAILED"
+    assert dependent_row.error_code == "JOB_DEPENDENCY_FAILED"
+    session.close()
+
+
 def test_sqlite_foreign_keys_are_enforced_for_every_connection() -> None:
     session = SessionLocal()
     if session.get_bind().dialect.name != "sqlite":
@@ -711,7 +850,7 @@ def test_sqlite_foreign_keys_are_enforced_for_every_connection() -> None:
         SnapshotPartitionRow(
             id=f"SPART-orphan-{uuid.uuid4().hex}",
             snapshot_id="DS-550e8400-e29b-41d4-a716-446655440020",
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id="ART-550e8400-e29b-41d4-a716-446655440020",
             content_sha256="0" * 64,
             row_count=0,
@@ -804,9 +943,9 @@ def test_formal_staged_artifact_recovers_to_published() -> None:
 
 @pytest.mark.parametrize(
     ("fault", "published_before_rollback"),
-    [("before_publish", False), ("after_publish", True)],
+    [("before_publish", False), ("after_publish", False)],
 )
-def test_artifact_publication_fault_never_commits_reference_and_reaps_orphan(
+def test_artifact_publication_fault_never_commits_reference_or_leaves_orphan(
     monkeypatch: pytest.MonkeyPatch,
     fault: str,
     published_before_rollback: bool,
@@ -1066,7 +1205,7 @@ def test_holdout_worker_failure_atomically_closes_domain_state() -> None:
         "tests": [],
         "warnings": [],
         "failures": [],
-        "holdout_state": "RUNNING",
+        "holdout_state": "LOCKED",
         "red_team_run_id": None,
         "job_id": accepted["job_id"],
         "revision": 1,
@@ -1081,7 +1220,7 @@ def test_holdout_worker_failure_atomically_closes_domain_state() -> None:
             workspace_id="test-workspace",
             strategy_version_id=strategy_version_id,
             status="WAITING_HOLDOUT",
-            holdout_state="RUNNING",
+            holdout_state="LOCKED",
             exposure_count=0,
             revision=1,
             detail=json.dumps(detail),
@@ -1256,7 +1395,7 @@ def test_agent_registry_policy_duplicate_guard_and_disable_checkpoint(
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=snapshot_id,
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{suffix}",
             content_sha256=content_hash({"artifact": suffix}),
             row_count=1,
@@ -1642,7 +1781,7 @@ def test_agent_crash_resumes_from_durable_safe_checkpoint(
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=snapshot_id,
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{suffix}",
             content_sha256=content_hash({"artifact": suffix}),
             row_count=1,
@@ -1767,7 +1906,7 @@ def test_agent_hard_budget_stops_before_another_model_or_tool_call(
         SnapshotPartitionRow(
             id=f"SPART-{suffix}",
             snapshot_id=snapshot_id,
-            partition="PUBLIC",
+            partition="RESEARCH",
             artifact_id=f"ART-{suffix}",
             content_sha256=content_hash({"artifact": suffix}),
             row_count=1,
@@ -1853,7 +1992,7 @@ def test_agent_hard_budget_stops_before_another_model_or_tool_call(
     session.close()
 
 
-def test_openai_compatible_adapter_retries_real_http_and_sends_bearer(
+def test_openai_compatible_adapter_does_not_retry_real_http(
     monkeypatch: pytest.MonkeyPatch,
     local_provider: LocalProviderHarness,
 ) -> None:
@@ -1863,17 +2002,13 @@ def test_openai_compatible_adapter_retries_real_http_and_sends_bearer(
         failure_statuses=[503],
     )
     model = OpenAICompatibleModel(model_name="provider-model", timeout_seconds=7)
-    assert model.next_action({"safe": "context"}) == {
-        "type": "conclude",
-        "summary": "provider ok",
-        "input_tokens": 1,
-        "output_tokens": 1,
-    }
+    with pytest.raises(AgentRuntimeError, match="Remote Codex returned HTTP 503"):
+        model.next_action({"safe": "context"})
     posts = [entry for entry in provider.request_log if entry["method"] == "POST"]
-    assert len(posts) == 2
+    assert len(posts) == 1
     assert all(entry["authorized"] is True for entry in posts)
     assert all(entry["path"] == "/v1/chat/completions" for entry in posts)
-    assert posts[-1]["model"] == "provider-model"
+    assert posts[0]["model"] == "provider-model"
 
     monkeypatch.delenv("QF_OPENAI_API_KEY")
     with pytest.raises(AgentRuntimeError, match="credentials are absent"):
@@ -2302,7 +2437,7 @@ def test_event_retention_preserves_workspace_cursor_expiry() -> None:
         stream = durable_event_stream(
             SessionLocal,
             Event,
-            sequence,
+            sequence - 1,
             validate,
             current_time,
             workspace_id=workspace_id,

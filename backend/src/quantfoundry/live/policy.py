@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import ClassVar, Literal
 
 from quantfoundry.live.connector import ConnectorCapabilities, OrderRequest
 
@@ -26,11 +27,24 @@ OrderStatus = Literal[
 
 _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     "CREATED": frozenset({"SUBMITTING", "CANCELLED"}),
-    "SUBMITTING": frozenset({"ACKNOWLEDGED", "UNKNOWN", "RECONCILING", "REJECTED"}),
+    "SUBMITTING": frozenset(
+        {
+            "ACKNOWLEDGED",
+            "PARTIALLY_FILLED",
+            "FILLED",
+            "CANCEL_PENDING",
+            "CANCELLED",
+            "EXPIRED",
+            "UNKNOWN",
+            "RECONCILING",
+            "REJECTED",
+        }
+    ),
     "ACKNOWLEDGED": frozenset(
         {
             "PARTIALLY_FILLED",
             "FILLED",
+            "CANCELLED",
             "CANCEL_PENDING",
             "REJECTED",
             "EXPIRED",
@@ -38,14 +52,21 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
         }
     ),
     "PARTIALLY_FILLED": frozenset(
-        {"PARTIALLY_FILLED", "FILLED", "CANCEL_PENDING", "UNKNOWN"}
+        {
+            "PARTIALLY_FILLED",
+            "FILLED",
+            "CANCEL_PENDING",
+            "CANCELLED",
+            "EXPIRED",
+            "UNKNOWN",
+        }
     ),
     "FILLED": frozenset(),
     "CANCEL_PENDING": frozenset({"CANCELLED", "FILLED", "PARTIALLY_FILLED", "UNKNOWN"}),
-    "CANCELLED": frozenset(),
+    "CANCELLED": frozenset({"PARTIALLY_FILLED", "FILLED"}),
     "REJECTED": frozenset(),
-    "EXPIRED": frozenset(),
-    "UNKNOWN": frozenset({"RECONCILING"}),
+    "EXPIRED": frozenset({"FILLED"}),
+    "UNKNOWN": frozenset({"PARTIALLY_FILLED", "FILLED", "RECONCILING"}),
     "RECONCILING": frozenset(
         {
             "ACKNOWLEDGED",
@@ -73,7 +94,7 @@ class ActivationEvidence:
     capabilities_hash: str
     account_id: str
     validated_at: datetime
-    max_validation_age: timedelta = timedelta(minutes=10)
+    max_validation_age: ClassVar[timedelta] = timedelta(minutes=10)
 
     def validate(
         self,
@@ -84,14 +105,27 @@ class ActivationEvidence:
         account_switch: KillSwitch,
         deployment_switch: KillSwitch,
         capabilities: ConnectorCapabilities,
+        submission_account_id: str,
+        expected_live_id: str,
+        current_approval_state: ApprovalState | None = None,
+        current_approval_revision: int | None = None,
+        current_connector_revision: int | None = None,
         order: OrderRequest | None = None,
     ) -> None:
-        if confirmation != f"ENABLE LIVE {self.live_id}":
+        if expected_live_id != self.live_id:
+            raise LivePolicyError("activation evidence belongs to another deployment")
+        if confirmation != f"ENABLE LIVE {expected_live_id}":
             raise LivePolicyError("explicit live confirmation is required")
         if self.approval_state != "APPROVED" or self.approval_revision < 1:
             raise LivePolicyError("live approval is not active")
         if (
+            current_approval_state != "APPROVED"
+            or current_approval_revision != self.approval_revision
+        ):
+            raise LivePolicyError("live approval is stale")
+        if (
             self.connector_revision < 1
+            or current_connector_revision != self.connector_revision
             or self.capabilities_hash != capabilities.content_hash()
         ):
             raise LivePolicyError("connector capabilities have changed")
@@ -100,12 +134,16 @@ class ActivationEvidence:
             for value in (global_switch, account_switch, deployment_switch)
         ):
             raise LivePolicyError("live kill switch is active")
+        if now.tzinfo is None or self.validated_at.tzinfo is None:
+            raise LivePolicyError("activation timestamps must be timezone-aware")
         current = now.astimezone(UTC)
         validated = self.validated_at.astimezone(UTC)
         if current < validated or current - validated > self.max_validation_age:
             raise LivePolicyError("connector validation has expired")
         if self.account_id not in capabilities.account_ids:
             raise LivePolicyError("approved account is not in connector capabilities")
+        if submission_account_id != self.account_id:
+            raise LivePolicyError("submission account does not match activation")
         if order is not None:
             capabilities.validate_order(order)
 
@@ -144,19 +182,19 @@ def apply_fill(
     known_fill_ids: frozenset[str],
     cumulative_quantity: str,
     order_quantity: str,
-    terminal: bool = False,
+    previous_cumulative_quantity: str | None = None,
+    terminal_status: OrderStatus | None = None,
+    known_fill_quantities: Mapping[str, str] | None = None,
 ) -> tuple[OrderStatus, frozenset[str], bool]:
     """Return status, fill-id set and whether this fill changed state."""
     if not fill_id:
         raise LivePolicyError("broker fill id is required")
-    if fill_id in known_fill_ids:
-        return current, known_fill_ids, False
     from decimal import Decimal, InvalidOperation
 
     try:
         cumulative = Decimal(cumulative_quantity)
         quantity = Decimal(order_quantity)
-    except InvalidOperation as error:
+    except (InvalidOperation, TypeError, ValueError) as error:
         raise LivePolicyError("fill quantities are invalid") from error
     if (
         not cumulative.is_finite()
@@ -167,9 +205,65 @@ def apply_fill(
         raise LivePolicyError("fill quantities are invalid")
     if cumulative > quantity:
         raise LivePolicyError("cumulative fill exceeds order quantity")
-    if terminal:
-        target: OrderStatus = "FILLED"
-    else:
-        target = "FILLED" if cumulative == quantity else "PARTIALLY_FILLED"
-    next_status = transition_order(current, target)
+    if known_fill_ids and (
+        known_fill_quantities is None
+        or not known_fill_ids <= known_fill_quantities.keys()
+    ):
+        raise LivePolicyError("retained fill IDs lack quantity evidence")
+    retained_max: Decimal | None = None
+    if known_fill_ids:
+        assert known_fill_quantities is not None
+        for retained_id in known_fill_ids:
+            try:
+                retained = Decimal(known_fill_quantities[retained_id])
+            except (InvalidOperation, TypeError, ValueError) as error:
+                raise LivePolicyError("recorded fill quantity is invalid") from error
+            if not retained.is_finite() or retained <= 0 or retained > quantity:
+                raise LivePolicyError("recorded fill quantity is invalid")
+            retained_max = max(retained_max or retained, retained)
+    if terminal_status is not None and terminal_status not in {
+        "CANCELLED",
+        "EXPIRED",
+        "FILLED",
+    }:
+        raise LivePolicyError("terminal status is invalid")
+    if terminal_status == "FILLED" and cumulative != quantity:
+        raise LivePolicyError("FILLED status requires the complete order quantity")
+    if fill_id in known_fill_ids:
+        if known_fill_quantities is None or fill_id not in known_fill_quantities:
+            raise LivePolicyError("duplicate fill has no retained quantity evidence")
+        try:
+            known_cumulative = Decimal(known_fill_quantities[fill_id])
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise LivePolicyError("recorded fill quantity is invalid") from error
+        if known_cumulative != cumulative:
+            raise LivePolicyError("duplicate fill id has conflicting quantity")
+        if terminal_status is None:
+            return current, known_fill_ids, False
+        next_status = transition_order(current, terminal_status)
+        return next_status, known_fill_ids, next_status != current
+    if previous_cumulative_quantity is not None:
+        try:
+            previous = Decimal(previous_cumulative_quantity)
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise LivePolicyError("previous cumulative quantity is invalid") from error
+        if (
+            not previous.is_finite()
+            or previous < 0
+            or cumulative <= previous
+            or (retained_max is not None and previous != retained_max)
+        ):
+            raise LivePolicyError("cumulative fill is not increasing")
+    if known_fill_ids and previous_cumulative_quantity is None:
+        raise LivePolicyError(
+            "previous cumulative quantity is required after a prior fill"
+        )
+    target: OrderStatus = (
+        "FILLED" if cumulative == quantity else terminal_status or "PARTIALLY_FILLED"
+    )
+    next_status = (
+        current
+        if current in {"CANCELLED", "EXPIRED"} and cumulative < quantity
+        else transition_order(current, target)
+    )
     return next_status, known_fill_ids | {fill_id}, True

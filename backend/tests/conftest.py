@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import inspect
 
 RESEARCH_POLICY_ID = "RP-00000000-0000-4000-8000-000000000001"
 RISK_POLICY_ID = "RISK-00000000-0000-4000-8000-000000000002"
@@ -56,46 +56,57 @@ def _test_runtime_directory(name: str, environment_name: str) -> Path:
     return path
 
 
-os.environ.setdefault(
-    "QF_DATABASE_URL", f"sqlite:////tmp/quantfoundry-pytest-{os.getpid()}.db"
-)
-os.environ.setdefault("QF_ENV", "test")
+configured_database_url = os.getenv("QF_DATABASE_URL")
+if configured_database_url is None:
+    os.environ["QF_DATABASE_URL"] = f"sqlite:///{_TEST_RUNTIME_ROOT / 'database.db'}"
+elif os.getenv("QF_ALLOW_EXTERNAL_TEST_DATABASE") != "1":
+    raise RuntimeError(
+        "QF_DATABASE_URL is externally configured; set "
+        "QF_ALLOW_EXTERNAL_TEST_DATABASE=1 only for an explicitly disposable test database"
+    )
+# Test collection must never inherit production/staging control-plane state;
+# the control DB teardown below is intentionally destructive to this test root.
+os.environ["QF_ENV"] = "test"
+os.environ["QF_ENVIRONMENT"] = "test"
 if os.environ["QF_DATABASE_URL"].startswith("sqlite"):
-    os.environ.setdefault("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP", "1")
+    os.environ["QF_ALLOW_TEST_SCHEMA_BOOTSTRAP"] = "1"
 else:
     # PostgreSQL tests are always Alembic-only.  Never let a caller's inherited
     # environment silently turn the suite into a metadata.create_all test.
     os.environ["QF_ALLOW_TEST_SCHEMA_BOOTSTRAP"] = "0"
-os.environ.setdefault(
-    "QF_TEST_AUTH_TOKENS",
-    json.dumps(
-        {
-            "test": {
-                "actor_id": "test-owner",
-                "workspace_id": "test-workspace",
-                "role": "OWNER",
-            },
-            "matrix": {
-                "actor_id": "matrix-owner",
-                "workspace_id": "matrix-workspace",
-                "role": "OWNER",
-            },
-            "viewer": {
-                "actor_id": "test-viewer",
-                "workspace_id": "test-workspace",
-                "role": "VIEWER",
-            },
-        }
-    ),
+if os.getenv("QF_CONTROL_DB_URL"):
+    raise RuntimeError(
+        "QF_CONTROL_DB_URL is forbidden for tests because control-plane teardown is destructive"
+    )
+os.environ["QF_TEST_AUTH_TOKENS"] = json.dumps(
+    {
+        "test": {
+            "actor_id": "test-owner",
+            "workspace_id": "test-workspace",
+            "role": "OWNER",
+        },
+        "matrix": {
+            "actor_id": "matrix-owner",
+            "workspace_id": "matrix-workspace",
+            "role": "OWNER",
+        },
+        "viewer": {
+            "actor_id": "test-viewer",
+            "workspace_id": "test-workspace",
+            "role": "VIEWER",
+        },
+    }
 )
-os.environ.setdefault("QF_SSE_TEST_CLOSE", "1")
-os.environ.setdefault("QF_AGENT_PROVIDER", "local-deterministic")
-os.environ.setdefault("QF_AGENT_MODEL", "local-test-v1")
-os.environ.setdefault("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER", "1")
-os.environ.setdefault("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "test-key-v1")
-os.environ.setdefault(
-    "QF_CREDENTIAL_ENCRYPTION_KEY",
-    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+os.environ["QF_SSE_TEST_CLOSE"] = "1"
+os.environ["QF_AGENT_PROVIDER"] = "local-deterministic"
+os.environ["QF_AGENT_MODEL"] = "local-test-v1"
+os.environ["QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER"] = "1"
+os.environ["QF_CREDENTIAL_ENCRYPTION_KEY_ID"] = "test-key-v1"
+os.environ["QF_CREDENTIAL_ENCRYPTION_KEY"] = (
+    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+)
+os.environ["QF_CREDENTIAL_FINGERPRINT_KEY"] = (
+    "AgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICE="
 )
 artifact_root = _test_runtime_directory("artifacts", "QF_ARTIFACT_DIR")
 dataset_root = _test_runtime_directory("datasets", "QF_DATASET_DIR")
@@ -106,8 +117,8 @@ for cost_model_id in (COST_MODEL_ID, MATRIX_COST_MODEL_ID):
             {
                 "cost_model_id": cost_model_id,
                 "version": 1,
-                "commission_bps": 1,
-                "slippage_bps": 2,
+                "commission_bps": 1.0,
+                "slippage_bps": 2.0,
             }
         ),
         encoding="utf-8",
@@ -140,7 +151,7 @@ for validation_policy_id in (VALIDATION_POLICY_ID, MATRIX_VALIDATION_POLICY_ID):
         ),
         encoding="utf-8",
     )
-os.environ.setdefault("QF_DEFAULT_VALIDATION_POLICY_ID", VALIDATION_POLICY_ID)
+os.environ["QF_DEFAULT_VALIDATION_POLICY_ID"] = VALIDATION_POLICY_ID
 
 
 def pytest_sessionfinish() -> None:
@@ -231,6 +242,8 @@ def configured_test_principals() -> None:
                         version=1,
                         status="ACTIVE",
                         rules={"kind": "research_policy", "version": 1},
+                        max_research_steps=25,
+                        max_tool_calls=50,
                         content_sha256=content_hash(
                             {"kind": "research_policy", "version": 1}
                         ),
@@ -260,6 +273,8 @@ def configured_test_principals() -> None:
                         version=1,
                         status="ACTIVE",
                         rules=validation_rules,
+                        max_research_steps=25,
+                        max_tool_calls=50,
                         content_sha256=content_hash(validation_rules),
                         created_by=owner_id,
                         created_at=now,
@@ -279,6 +294,10 @@ def configured_test_principals() -> None:
                         policy_id=risk_policy_id,
                         version=1,
                         status="ACTIVE",
+                        max_single_position=1,
+                        max_strategy_weight=1,
+                        max_paper_drawdown=1,
+                        rules={},
                         content_sha256=content_hash(
                             {"kind": "risk_policy", "version": 1}
                         ),
@@ -299,8 +318,17 @@ def configured_test_principals() -> None:
                         cost_model_id=cost_model_id,
                         version=1,
                         status="ACTIVE",
+                        commission_model={"type": "BPS", "value": 1},
+                        slippage_model={"type": "BPS", "value": 2},
+                        rebalance_timing="NEXT_OPEN",
+                        fill_assumption="NEXT_OPEN",
                         content_sha256=content_hash(
-                            {"kind": "cost_model", "version": 1}
+                            {
+                                "cost_model_id": cost_model_id,
+                                "version": 1,
+                                "commission_bps": 1.0,
+                                "slippage_bps": 2.0,
+                            }
                         ),
                         created_at=now,
                         activated_at=now,
@@ -339,39 +367,58 @@ def isolate_control_plane_between_tests():
     """Keep one test's activated remote endpoint from leaking into the next."""
     yield
     from app.control_plane import (
+        CONTROL_ENGINE,
         ActiveConfiguration,
         BootstrapState,
         ConfigurationRevision,
         ConfigurationValue,
         ControlSessionLocal,
+        _control_path,
     )
     from quantfoundry.api.app import AgentConfigRow, SessionLocal
 
     try:
-        with ControlSessionLocal.begin() as control:
-            baseline = (
-                control.query(ConfigurationRevision)
-                .order_by(ConfigurationRevision.revision)
-                .first()
+        control_path = _control_path().resolve()
+        bound_url = CONTROL_ENGINE.url
+        bound_path = Path(bound_url.database or "").resolve()
+        if bound_url.get_backend_name() != "sqlite" or bound_path != control_path:
+            raise RuntimeError(
+                f"refusing destructive control DB teardown against {CONTROL_ENGINE.url}"
             )
-            if baseline is not None:
-                active = control.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
-                if active is not None:
-                    active.active_revision = baseline.revision
-                    active.last_known_good_revision = baseline.revision
-                state = control.get(BootstrapState, "BOOTSTRAP-DEFAULT")
-                if state is not None:
-                    state.active_configuration_revision = baseline.revision
-                    state.last_known_good_configuration_revision = baseline.revision
-            control.query(ConfigurationValue).delete()
-    except SQLAlchemyError:
-        return
-
-    with SessionLocal.begin() as session:
-        session.query(AgentConfigRow).update(
-            {
-                AgentConfigRow.model_provider: "local-deterministic",
-                AgentConfigRow.model_name: "local-test-v1",
-            },
-            synchronize_session=False,
-        )
+        try:
+            control_path.relative_to(_TEST_RUNTIME_ROOT.resolve())
+        except ValueError as error:
+            raise RuntimeError(
+                f"refusing destructive control DB teardown outside test runtime: {control_path}"
+            ) from error
+        with ControlSessionLocal.begin() as control:
+            if inspect(control.bind).has_table("configuration_revisions"):
+                baseline = (
+                    control.query(ConfigurationRevision)
+                    .order_by(ConfigurationRevision.revision)
+                    .first()
+                )
+                if baseline is not None:
+                    active = control.get(ActiveConfiguration, "CONFIGURATION-DEFAULT")
+                    if active is not None:
+                        active.active_revision = baseline.revision
+                        active.last_known_good_revision = baseline.revision
+                    state = control.get(BootstrapState, "BOOTSTRAP-DEFAULT")
+                    if state is not None:
+                        state.active_configuration_revision = baseline.revision
+                        state.last_known_good_configuration_revision = baseline.revision
+                control.query(ConfigurationValue).delete()
+    finally:
+        with SessionLocal.begin() as session:
+            session.query(AgentConfigRow).update(
+                {
+                    AgentConfigRow.enabled: True,
+                    AgentConfigRow.model_provider: "local-deterministic",
+                    AgentConfigRow.model_name: "local-test-v1",
+                    AgentConfigRow.runtime_profile: "DEFAULT",
+                    AgentConfigRow.tool_timeout_seconds: 30,
+                    AgentConfigRow.max_steps_override: None,
+                    AgentConfigRow.max_tool_calls_override: None,
+                },
+                synchronize_session=False,
+            )

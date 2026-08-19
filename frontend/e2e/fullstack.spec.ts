@@ -101,10 +101,11 @@ test.describe('platform-driven full-stack Golden Flow', () => {
       exactPath,
       initialExactReads,
     );
-    exactReads.forEach((path) => witness.observeRest(path));
+    exactReads.forEach((path, index) => witness.observeRest(path, index + 1));
     const probe = await startCanonicalSseProbe(
       new URL('/api/v1/events/stream', applicationUrl!),
       await sessionCookie(request),
+      new URL(applicationUrl!).origin,
     );
     const beforeMutation = await request.get(new URL(exactPath, applicationUrl!).href, {
       headers: apiHeaders(),
@@ -138,9 +139,12 @@ test.describe('platform-driven full-stack Golden Flow', () => {
       ({ event }) =>
         event.event_type === 'research.updated' && event.object_id === created.research_id,
     );
-    witness.observeEvent(frame);
+    const readsAtEvent = exactReads.length;
+    witness.observeEvent(frame, readsAtEvent);
     await refetchResponse;
-    exactReads.slice(witness.baseline).forEach((path) => witness.observeRest(path));
+    exactReads
+      .slice(readsAtEvent)
+      .forEach((path, index) => witness.observeRest(path, readsAtEvent + index + 1));
     witness.assertReconciled();
     expect(exactReads.length).toBeGreaterThanOrEqual(initialExactReads + 1);
     expect(witness.snapshot().restReadsAfterBaseline).toBeGreaterThanOrEqual(1);
@@ -209,6 +213,7 @@ test.describe('platform-driven full-stack Golden Flow', () => {
     const sseProbe = await startCanonicalSseProbe(
       new URL('/api/v1/events/stream', applicationUrl!),
       `qf_session=${(await page.context().cookies()).find((item) => item.name === 'qf_session')?.value}`,
+      new URL(applicationUrl!).origin,
     );
 
     await executeCapability(page, 'create_research');
@@ -391,12 +396,14 @@ test.describe('platform-driven full-stack Golden Flow', () => {
         const browserCursors = await page.evaluate(() =>
           Object.entries(sessionStorage)
             .filter(([key]) => key.startsWith('qf.sse.cursor:'))
-            .map(([, value]) => Number(value)),
+            .map(([, value]) => value),
         );
         const probeCursors = sseProbe.snapshot().frames.map(({ cursor }) => cursor);
-        return browserCursors.length === 1 && probeCursors.length > 0
-          ? browserCursors[0]! - Math.max(...probeCursors)
-          : null;
+        if (browserCursors.length !== 1 || probeCursors.length === 0) return null;
+        const latestProbeCursor = probeCursors.reduce((latest, cursor) =>
+          BigInt(cursor) > BigInt(latest) ? cursor : latest,
+        );
+        return BigInt(browserCursors[0]!) === BigInt(latestProbeCursor) ? 0 : null;
       })
       .toBe(0);
     const actualFrames = sseProbe.snapshot().frames;

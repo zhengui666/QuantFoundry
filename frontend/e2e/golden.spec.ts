@@ -623,7 +623,7 @@ test.skip('SSE resync refetches REST truth without clearing a P00 draft', async 
     await streamGate;
     return route.fulfill({
       contentType: 'text/event-stream',
-      body: 'data: {"schema_version":1,"event_id":"e1","sequence":1,"event_type":"system.resync_required","occurred_at":"2026-01-01T00:00:00Z","object_type":"system","object_id":"root","object_version":null,"object_revision":null,"request_id":null,"job_id":null,"agent_run_id":null,"tool_call_id":null,"payload":{"resync_from_sequence":1}}\n\n',
+      body: 'data: {"schema_version":1,"event_id":"e1","sequence":"1","event_type":"system.resync_required","occurred_at":"2026-01-01T00:00:00Z","object_type":"event_stream","object_id":"EVT-7BSW7QFNPFN7FGSNW2WW07V82M","object_version":null,"object_revision":1,"request_id":"REQ-7BSW7QFNPFN7FGSNW2WW07V82M","job_id":null,"agent_run_id":null,"tool_call_id":null,"payload":{"resync_from_sequence":"1","state":"RESYNC_REQUIRED","status":null}}\n\n',
     });
   });
   await page.route('**/api/v1/setup/status', (route) => {
@@ -873,6 +873,7 @@ test('P11 requests approval from Validation detail capability and converges both
   await page.getByLabel('Approval reason').fill('Controlled matrix holdout');
   await expect(requestAction).toBeEnabled();
   await requestAction.click();
+  // public-id-prose APR-
   await expect(page.getByText(/Holdout approval requested: APR-/)).toBeVisible();
   await expect(page.getByText('APPROVAL PENDING')).toBeVisible();
   await expect(requestAction).toHaveCount(0);
@@ -1054,7 +1055,12 @@ test('P14 412 revision mismatch stays in the complete confirmation modal', async
         request_id: 'REQ-STALE-1',
         retryable: false,
         field_errors: [],
-        context: { object_type: 'approval', object_id: 'APR-0T71YPB60APYFY39FY75RYTVZB' },
+        context: {
+          object_type: 'approval',
+          object_id: 'APR-0T71YPB60APYFY39FY75RYTVZB',
+          object_version: null,
+          object_revision: null,
+        },
       },
     });
   });
@@ -1137,7 +1143,7 @@ test('P14 executes directly when the server approval capability requires no conf
         approval: approvedDetail,
         subject_ref: {
           type: 'validation',
-          id: detail.subject.id,
+          id: 'VAL-77JDJ6EWBNXK7F83TKMJZAR7XS',
           version: detail.subject.version,
           revision: detail.subject.revision,
         },

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../api/client';
+import { transientStorage } from '../shared/transient-storage';
 import { Panel, Problem, State } from '../ui';
 
 export function LoginPage() {
@@ -16,28 +17,34 @@ export function LoginPage() {
       <p>{t('auth.loginLede')}</p>
       <Panel title={t('auth.generalAccessKey')}>
         <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setPending(true);
-            setError(undefined);
-            try {
-              await api.login(key.trim());
-              setKey('');
-              const returnTo = sessionStorage.getItem('qf.auth.return_to');
-              sessionStorage.removeItem('qf.auth.return_to');
-              if (
-                returnTo &&
-                returnTo.startsWith('/') &&
-                !returnTo.startsWith('//') &&
-                returnTo !== '/login'
-              )
-                window.location.replace(returnTo);
-              else void navigate({ to: '/overview', replace: true });
-            } catch (value) {
-              setError(value);
-            } finally {
-              setPending(false);
-            }
+          onSubmit={(event) => {
+            void (async () => {
+              event.preventDefault();
+              setPending(true);
+              setError(undefined);
+              try {
+                await api.login(key.trim());
+                setKey('');
+                const returnTo = transientStorage.get('qf.auth.return_to');
+                transientStorage.remove('qf.auth.return_to');
+                let safeReturnTo: string | undefined;
+                if (returnTo) {
+                  try {
+                    const target = new URL(returnTo, window.location.origin);
+                    if (target.origin === window.location.origin && target.pathname !== '/login')
+                      safeReturnTo = `${target.pathname}${target.search}${target.hash}`;
+                  } catch {
+                    safeReturnTo = undefined;
+                  }
+                }
+                if (safeReturnTo) window.location.replace(safeReturnTo);
+                else void navigate({ to: '/overview', replace: true });
+              } catch (value) {
+                setError(value);
+              } finally {
+                setPending(false);
+              }
+            })();
           }}
         >
           <label>

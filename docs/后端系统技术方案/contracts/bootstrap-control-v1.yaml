@@ -207,6 +207,27 @@ relations:
       - append_only
       - hash_chain_continuous
       - no_secret_or_ciphertext_or_raw_provider_payload
+  control_idempotency_records:
+    cardinality: many
+    primary_key: [id]
+    unique_key: [principal, operation, idempotency_key]
+    fields:
+      id: {type: int64, nullable: false}
+      principal: {type: text, max_length: 128, nullable: false}
+      operation: {type: text, max_length: 128, nullable: false}
+      idempotency_key: {type: text, max_length: 128, nullable: false, sensitivity: request_locator}
+      request_sha256: {type: hash, nullable: false}
+      status: {type: enum, values: [PENDING, COMPLETED, ABANDONED], nullable: false}
+      response_status: {type: int64, nullable: true}
+      response_body: {type: json, nullable: true}
+      response_headers: {type: json, nullable: true}
+      created_at: {type: timestamp, nullable: false}
+      completed_at: {type: timestamp, nullable: true}
+      lease_expires_at: {type: timestamp, nullable: false}
+    checks:
+      - conflicting_request_fingerprint_rejected
+      - completed_response_replayed
+      - in_progress_request_not_duplicated
 indexes:
   - {relation: general_access_keys, columns: [status, expires_at]}
   - {relation: owner_sessions, columns: [token_sha256]}

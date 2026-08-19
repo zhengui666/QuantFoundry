@@ -11,8 +11,12 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC
 from typing import Any
 
+from jsonschema import ValidationError as JsonSchemaValidationError
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+
+from quantfoundry.infrastructure.db.schema import canonical_workspace_id
 
 
 def _wire(
@@ -26,7 +30,7 @@ def _wire(
         {
             "schema_version": 1,
             "event_id": event.event_id,
-            "sequence": event.sequence,
+            "sequence": str(event.sequence),
             "event_type": event.event_type,
             "occurred_at": occurred_at.astimezone(UTC)
             .isoformat()
@@ -62,7 +66,7 @@ def _resync_wire(
         {
             "schema_version": 1,
             "event_id": event_id,
-            "sequence": sequence,
+            "sequence": str(sequence),
             "event_type": "system.resync_required",
             "occurred_at": now(),
             "object_type": "event_stream",
@@ -76,12 +80,12 @@ def _resync_wire(
             "payload": {
                 "state": "RESYNC_REQUIRED",
                 "status": None,
-                "resync_from_sequence": sequence,
+                "resync_from_sequence": str(sequence),
             },
         }
     )
     return (
-        f"id: {sequence}\n"
+        f"id: {max(0, sequence - 1)}\n"
         "event: system.resync_required\n"
         f"data: {json.dumps(value, separators=(',', ':'))}\n\n"
     )
@@ -102,80 +106,111 @@ async def durable_event_stream(
 ) -> AsyncIterator[str]:
     cursor = last_event_id or 0
     heartbeat_at = time.monotonic() + heartbeat_seconds
-    first_poll = True
     while True:
-        session = session_factory()
-        try:
-            earliest = session.execute(
-                select(event_model)
-                .where(event_model.workspace_id == workspace_id)
-                .order_by(event_model.sequence.asc())
-                .limit(1)
-            ).scalar_one_or_none()
-            stream_state = (
-                session.get(watermark_model, workspace_id)
-                if watermark_model is not None
-                else None
-            )
-            watermark = (
-                stream_state.last_sequence
-                if stream_state is not None
-                else session.scalar(
-                    select(func.max(event_model.sequence)).where(
-                        event_model.workspace_id == workspace_id
+
+        def poll(*, cursor_value: int = cursor) -> tuple[list[Any], int | None]:
+            session = session_factory()
+            try:
+                storage_workspace_id = (
+                    canonical_workspace_id(workspace_id)
+                    if session.get_bind().dialect.name == "postgresql"
+                    else workspace_id
+                )
+                earliest = session.execute(
+                    select(event_model)
+                    .where(event_model.workspace_id == storage_workspace_id)
+                    .order_by(event_model.sequence.asc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                stream_state = (
+                    session.get(watermark_model, storage_workspace_id)
+                    if watermark_model is not None
+                    else None
+                )
+                watermark = (
+                    stream_state.last_sequence
+                    if stream_state is not None
+                    else session.scalar(
+                        select(func.max(event_model.sequence)).where(
+                            event_model.workspace_id == storage_workspace_id
+                        )
                     )
                 )
-            )
-            expired_through = (
-                stream_state.expired_through_sequence
-                if stream_state is not None
-                else None
-            )
-            if (
-                first_poll
-                and last_event_id is not None
-                and (
-                    (
+                expired_through = (
+                    stream_state.expired_through_sequence
+                    if stream_state is not None
+                    else None
+                )
+                has_cursor = last_event_id is not None or cursor_value > 0
+                if has_cursor:
+                    if (
+                        watermark_model is None
+                        and earliest is not None
+                        and cursor_value + 1 < earliest.sequence
+                    ):
+                        return [], int(earliest.sequence)
+                    if watermark is None and cursor_value > 0:
+                        return [], 1
+                    if watermark is not None and cursor_value > watermark:
+                        return [], int(watermark) + 1
+                    if (
                         expired_through is not None
                         and expired_through > 0
-                        and last_event_id <= expired_through
+                        and cursor_value < expired_through
+                    ):
+                        resume_sequence = int(expired_through) + 1
+                        if earliest is not None and earliest.sequence > resume_sequence:
+                            resume_sequence = earliest.sequence
+                        return [], resume_sequence
+                events = list(
+                    session.execute(
+                        select(event_model)
+                        .where(
+                            event_model.sequence > cursor_value,
+                            event_model.workspace_id == storage_workspace_id,
+                        )
+                        .order_by(event_model.sequence.asc())
+                        .limit(batch_size)
                     )
-                    or (
-                        watermark_model is None
-                        and earliest is None
-                        and watermark is not None
-                        and last_event_id <= watermark
-                    )
+                    .scalars()
+                    .all()
                 )
-            ):
-                resume_sequence = (
-                    earliest.sequence
-                    if earliest is not None and earliest.sequence > last_event_id
-                    else int(watermark or 0) + 1
-                )
-                yield _resync_wire(envelope, resume_sequence, now)
-                return
-            events = (
-                session.execute(
-                    select(event_model)
-                    .where(
-                        event_model.sequence > cursor,
-                        event_model.workspace_id == workspace_id,
-                    )
-                    .order_by(event_model.sequence.asc())
-                    .limit(batch_size)
-                )
-                .scalars()
-                .all()
-            )
-        finally:
-            session.close()
-        first_poll = False
+                if (
+                    watermark_model is None
+                    and has_cursor
+                    and events
+                    and int(events[0].sequence) > cursor_value + 1
+                ):
+                    return [], int(events[0].sequence)
+                if watermark_model is not None and has_cursor:
+                    current_state = stream_state
+                    if stream_state is not None:
+                        session.expire(stream_state)
+                        current_state = session.get(
+                            watermark_model, storage_workspace_id
+                        )
+                    if (
+                        current_state is not None
+                        and cursor_value < current_state.expired_through_sequence
+                    ):
+                        return [], int(current_state.expired_through_sequence) + 1
+                return events, None
+            finally:
+                session.close()
+
+        events, resync_sequence = await asyncio.to_thread(poll)
+        if resync_sequence is not None:
+            yield _resync_wire(envelope, resync_sequence, now)
+            return
         if events:
             for event in events:
                 try:
                     wire = _wire(event, envelope)
-                except (json.JSONDecodeError, TypeError, ValueError):
+                except (
+                    json.JSONDecodeError,
+                    JsonSchemaValidationError,
+                    PydanticValidationError,
+                ):
                     yield _resync_wire(
                         envelope,
                         event.sequence,

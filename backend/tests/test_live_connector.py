@@ -55,14 +55,22 @@ def test_signed_submit_is_idempotent_and_capability_gated() -> None:
         seen.append(request)
         if request.url.path == "/v1/accounts/acct-1/orders":
             return httpx.Response(
-                200, json={"status": "ACKNOWLEDGED", "broker_order_id": "b-1"}
+                200,
+                json={
+                    "status": "ACKNOWLEDGED",
+                    "broker_order_id": "b-1",
+                    "client_order_id": "LORD-1",
+                    "accepted_at": "2026-08-17T00:00:00Z",
+                    "updated_at": "2026-08-17T00:00:00Z",
+                    "fills": [],
+                },
             )
         return httpx.Response(200, json=_capabilities())
 
     transport = httpx.MockTransport(handler)
-    client = httpx.Client(base_url="https://connector.test", transport=transport)
+    client = httpx.Client(base_url="https://1.1.1.1", transport=transport)
     with ConnectorClient(
-        "https://connector.test",
+        "https://1.1.1.1",
         key_id="key-1",
         credential="secret",
         http_client=client,
@@ -95,7 +103,7 @@ def test_signed_submit_is_idempotent_and_capability_gated() -> None:
     )
     expected = hmac.new(b"secret", canonical.encode(), hashlib.sha256).hexdigest()
     assert response["broker_order_id"] == "b-1"
-    assert request.headers["Idempotency-Key"] == "LORD-1"
+    assert request.headers["Idempotency-Key"] == "submit:6:acct-1:6:LORD-1"
     assert request.headers["X-QF-Signature"] == f"v1={expected}"
     assert json.loads(body)["quantity"] == "2"
 
@@ -144,11 +152,11 @@ def test_transport_failure_is_unknown_outcome() -> None:
         raise httpx.ReadTimeout("timeout")
 
     client = httpx.Client(
-        base_url="https://connector.test", transport=httpx.MockTransport(handler)
+        base_url="https://1.1.1.1", transport=httpx.MockTransport(handler)
     )
     with (
         ConnectorClient(
-            "https://connector.test",
+            "https://1.1.1.1",
             key_id="key-1",
             credential="secret",
             http_client=client,
@@ -162,14 +170,14 @@ def test_validation_request_rejects_non_https_and_embedded_credentials() -> None
     with pytest.raises(ValidationError):
         LiveConnectorValidationRequest(
             connection_id="live-1",
-            endpoint="http://connector.test",
+            endpoint="http://1.1.1.1",
             key_id="key-1",
             credential="secret",
         )
     with pytest.raises(ValidationError):
         LiveConnectorValidationRequest(
             connection_id="live-1",
-            endpoint="https://user:pass@connector.test",
+            endpoint="https://user:pass@1.1.1.1",
             key_id="key-1",
             credential="secret",
         )
@@ -194,6 +202,11 @@ def test_activation_and_fill_rules_fail_closed() -> None:
         account_switch="ACTIVE",
         deployment_switch="ACTIVE",
         capabilities=capabilities,
+        submission_account_id="acct-1",
+        expected_live_id="LIVE-1",
+        current_approval_state="APPROVED",
+        current_approval_revision=evidence.approval_revision,
+        current_connector_revision=evidence.connector_revision,
     )
     with pytest.raises(LivePolicyError, match="confirmation"):
         evidence.validate(
@@ -203,6 +216,11 @@ def test_activation_and_fill_rules_fail_closed() -> None:
             account_switch="ACTIVE",
             deployment_switch="ACTIVE",
             capabilities=capabilities,
+            submission_account_id="acct-1",
+            expected_live_id="LIVE-1",
+            current_approval_state="APPROVED",
+            current_approval_revision=evidence.approval_revision,
+            current_connector_revision=evidence.connector_revision,
         )
     status, ids, changed = apply_fill(
         current="ACKNOWLEDGED",
@@ -216,9 +234,33 @@ def test_activation_and_fill_rules_fail_closed() -> None:
         current=status,
         fill_id="fill-1",
         known_fill_ids=ids,
+        known_fill_quantities={"fill-1": "0.5"},
         cumulative_quantity="0.5",
         order_quantity="1",
+        previous_cumulative_quantity="0.5",
     ) == (status, ids, False)
+    with pytest.raises(LivePolicyError, match="previous cumulative"):
+        apply_fill(
+            current="PARTIALLY_FILLED",
+            fill_id="fill-2",
+            known_fill_ids=ids,
+            known_fill_quantities={"fill-1": "0.5"},
+            cumulative_quantity="0.75",
+            order_quantity="1",
+        )
+    assert (
+        apply_fill(
+            current="PARTIALLY_FILLED",
+            fill_id="fill-3",
+            known_fill_ids=ids,
+            known_fill_quantities={"fill-1": "0.5"},
+            cumulative_quantity="0.75",
+            order_quantity="1",
+            previous_cumulative_quantity="0.5",
+            terminal_status="EXPIRED",
+        )[0]
+        == "EXPIRED"
+    )
     with pytest.raises(LivePolicyError, match="illegal order transition"):
         transition_order("FILLED", "CANCELLED")
     stale = ActivationEvidence(
@@ -232,4 +274,9 @@ def test_activation_and_fill_rules_fail_closed() -> None:
             account_switch="ACTIVE",
             deployment_switch="ACTIVE",
             capabilities=capabilities,
+            submission_account_id="acct-1",
+            expected_live_id="LIVE-1",
+            current_approval_state="APPROVED",
+            current_approval_revision=stale.approval_revision,
+            current_connector_revision=stale.connector_revision,
         )

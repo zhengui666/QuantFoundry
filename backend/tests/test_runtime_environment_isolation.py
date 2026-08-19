@@ -93,6 +93,7 @@ def test_ambient_runtime_directories_are_ignored_and_cleaned(
             "PYTEST_ADDOPTS": "",
             "QF_ALLOW_TEST_SCHEMA_BOOTSTRAP": "1",
             "QF_DATABASE_URL": f"sqlite:///{tmp_path / f'{mode}.db'}",
+            "QF_ALLOW_EXTERNAL_TEST_DATABASE": "1",
             "QF_RUNTIME_ISOLATION_AMBIENT_ROOT": str(ambient_root),
             "QF_RUNTIME_ISOLATION_PROBE_MODE": mode,
             "QF_RUNTIME_ISOLATION_REPORT": str(report_path),

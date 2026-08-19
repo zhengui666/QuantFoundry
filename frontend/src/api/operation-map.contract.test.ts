@@ -22,9 +22,16 @@ describe('canonical generated REST operation boundary', () => {
 
   it('keeps canonical authorization, concurrency, idempotency, and SSE headers in the map', () => {
     expect(operationMap.getSystemHealth.authenticated).toBe(false);
-    expect(operationMap.startResearch.headers).toEqual(['Idempotency-Key', 'If-Match']);
-    expect(operationMap.updateAgentConfig.headers).toEqual(['If-Match']);
-    expect(operationMap.streamEvents.headers).toEqual(['Last-Event-ID']);
+    expect(operationMap.startResearch.headers).toEqual([
+      { name: 'Idempotency-Key', required: true },
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ]);
+    expect(operationMap.updateAgentConfig.headers).toEqual([
+      { name: 'If-Match', required: true },
+      { name: 'X-CSRF-Token', required: true },
+    ]);
+    expect(operationMap.streamEvents.headers).toEqual([{ name: 'Last-Event-ID', required: false }]);
     expect(operationMap.exportMemo.query).toEqual([
       { name: 'format', required: true, value: 'MARKDOWN' },
     ]);

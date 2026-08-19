@@ -20,6 +20,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--component", required=True, choices=("worker", "scheduler"))
     parser.add_argument("--queue", choices=("core", "agent"))
     parser.add_argument("--max-age-seconds", type=int, default=120)
+    parser.add_argument(
+        "--instance-id",
+        default=None,
+    )
     args = parser.parse_args()
     if args.component == "worker" and args.queue is None:
         parser.error("--queue is required for worker health checks")
@@ -27,21 +31,35 @@ def parse_args() -> argparse.Namespace:
         parser.error("--queue is invalid for scheduler health checks")
     if args.max_age_seconds < 1:
         parser.error("--max-age-seconds must be positive")
+    if args.instance_id is None:
+        if args.component == "worker":
+            configured = os.getenv("QF_WORKER_ID")
+            args.instance_id = f"{configured}:{args.queue}" if configured else None
+        else:
+            args.instance_id = os.getenv("QF_SCHEDULER_ID")
+    if args.instance_id is None:
+        parser.error(
+            "--instance-id or the matching QF_WORKER_ID/QF_SCHEDULER_ID is required"
+        )
     return args
 
 
 def main() -> int:
     args = parse_args()
     if not domain_main.app.state.domain_database_available:
-        if os.getenv("QF_ENV", "production") in {"local", "development"}:
+        environment = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV", "production")
+        if environment in {"local", "development"}:
             return 0
         print("domain_database_unavailable", file=sys.stderr)
         return 1
-    threshold = datetime.now(UTC) - timedelta(seconds=args.max_age_seconds)
+    now = datetime.now(UTC)
+    threshold = now - timedelta(seconds=args.max_age_seconds)
     statement = select(RuntimeHeartbeat).where(
         RuntimeHeartbeat.component == args.component,
         RuntimeHeartbeat.occurred_at >= threshold,
+        RuntimeHeartbeat.occurred_at <= now,
     )
+    statement = statement.where(RuntimeHeartbeat.instance_id == args.instance_id)
     if args.queue is not None:
         statement = statement.where(RuntimeHeartbeat.queue_name == args.queue)
     session = SessionLocal()

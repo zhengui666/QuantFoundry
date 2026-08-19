@@ -45,7 +45,8 @@ test('viewport remains usable around the desktop breakpoint', async ({ page }) =
   await expect(page.getByRole('alert')).toContainText(
     /SERVICE_DEGRADED|service is degraded|服务.*降级/,
   );
-  await expect(page.getByRole('navigation', { name: /Primary|主导航/ })).toBeVisible();
+  await page.getByRole('button', { name: /Primary|主导航/ }).click();
+  await expect(page.getByRole('dialog', { name: /Primary|主导航/ })).toBeVisible();
 
   await page.setViewportSize({ width: 1180, height: 900 });
   const navigation = page.getByRole('navigation', { name: /Primary|主导航/ });

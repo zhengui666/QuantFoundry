@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -183,7 +184,7 @@ def test_workspace_resolver_first_lookup_is_sql_scoped() -> None:
     lookup = next(
         statement for statement in statements if "from research_cases" in statement
     )
-    assert "workspace_id" in lookup
+    assert re.search(r"\bwhere\b.*\bworkspace_id\b\s*=", lookup, re.S)
 
 
 def test_internal_public_reference_lookups_are_sql_scoped() -> None:
@@ -208,4 +209,7 @@ def test_internal_public_reference_lookups_are_sql_scoped() -> None:
         event.remove(main.engine, "before_cursor_execute", capture)
         session.close()
     assert len(statements) == 4
-    assert all("workspace_id" in statement for statement in statements)
+    assert all(
+        re.search(r"\bwhere\b.*\bworkspace_id\b", statement, re.S)
+        for statement in statements
+    )

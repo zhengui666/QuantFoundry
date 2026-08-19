@@ -65,6 +65,10 @@ _AGENT_ROLES = (
     "RED_TEAM_RESEARCHER",
     "PERFORMANCE_ANALYST",
 )
+_INT32_MIN = -(2**31)
+_INT32_MAX = 2**31 - 1
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
 
 
 def _postgres_locator_function_sql() -> str:
@@ -223,7 +227,7 @@ POSTGRES_LOCATOR_HELPERS = (
 
 
 def locator_truth_table() -> dict[str, list[dict[str, str | int | None]]]:
-    """Build the canonical 69/76 mandatory-locator oracle from generated rules."""
+    """Build the mandatory-locator oracle from every generated ID example."""
 
     cases: list[dict[str, str | int | None]] = []
     for rule in EventPayload.model_json_schema(mode="validation").get("allOf", []):
@@ -234,33 +238,42 @@ def locator_truth_table() -> dict[str, list[dict[str, str | int | None]]]:
             continue
         properties = rule.get("then", {}).get("properties", {})
         object_id_schema = properties.get("object_id", {})
-        examples = object_id_schema.get("examples", [])
-        if examples:
-            object_id = examples[-1]
-        elif isinstance(object_id_schema.get("const"), str):
-            object_id = object_id_schema["const"]
-        elif object_id_schema.get("enum"):
-            object_id = object_id_schema["enum"][0]
-        else:
-            object_id = "550e8400-e29b-41d4-a716-446655440000"
-        cases.append(
-            {
-                "object_type": object_type,
-                "object_id": object_id,
-                "object_version": (
-                    1
-                    if properties.get("object_version", {}).get("minimum") == 1
-                    else None
-                ),
-                "object_revision": (
-                    1
-                    if properties.get("object_revision", {}).get("minimum") == 1
-                    else None
-                ),
-            }
+        object_ids = [
+            value
+            for value in object_id_schema.get("examples", [])
+            if isinstance(value, str)
+        ]
+        if isinstance(object_id_schema.get("const"), str):
+            object_ids.append(object_id_schema["const"])
+        object_ids.extend(
+            value
+            for value in object_id_schema.get("enum", [])
+            if isinstance(value, str)
         )
-    if len(cases) != 21:
-        raise RuntimeError(f"locator contract requires 21 branches, got {len(cases)}")
+        if not object_ids:
+            object_ids = ["550e8400-e29b-41d4-a716-446655440000"]
+        for object_id in dict.fromkeys(object_ids):
+            cases.append(
+                {
+                    "object_type": object_type,
+                    "object_id": object_id,
+                    "object_version": (
+                        1
+                        if properties.get("object_version", {}).get("minimum") == 1
+                        else None
+                    ),
+                    "object_revision": (
+                        1
+                        if properties.get("object_revision", {}).get("minimum") == 1
+                        else None
+                    ),
+                }
+            )
+    branch_types = list(dict.fromkeys(row["object_type"] for row in cases))
+    if len(branch_types) != 21:
+        raise RuntimeError(
+            f"locator contract requires 21 branches, got {len(branch_types)}"
+        )
     special_types = {
         "strategy_version",
         "settings",
@@ -269,7 +282,7 @@ def locator_truth_table() -> dict[str, list[dict[str, str | int | None]]]:
         "event_stream",
     }
     ordinary = [row for row in cases if row["object_type"] not in special_types]
-    if len(ordinary) != 16:
+    if len({row["object_type"] for row in ordinary}) != 16:
         raise RuntimeError(
             f"locator contract requires 16 ordinary branches, got {len(ordinary)}"
         )
@@ -299,9 +312,22 @@ def locator_truth_table() -> dict[str, list[dict[str, str | int | None]]]:
             "object_revision": None,
         },
     ]
+    first_id_by_type = {
+        object_type: next(
+            row["object_id"] for row in cases if row["object_type"] == object_type
+        )
+        for object_type in branch_types
+    }
+    next_type = {
+        object_type: branch_types[(index + 1) % len(branch_types)]
+        for index, object_type in enumerate(branch_types)
+    }
     invalid.extend(
-        {**row, "object_id": cases[(index + 1) % len(cases)]["object_id"]}
-        for index, row in enumerate(cases)
+        {
+            **row,
+            "object_id": first_id_by_type[next_type[row["object_type"]]],
+        }
+        for row in cases
     )
     invalid.extend({**row, "object_version": 0} for row in cases)
     invalid.extend({**row, "object_revision": 0} for row in cases)
@@ -321,9 +347,9 @@ def locator_truth_table() -> dict[str, list[dict[str, str | int | None]]]:
         if row["object_type"]
         in {"settings", "provider_connection", "agent_config", "event_stream"}
     )
-    if len(valid) != 69 or len(invalid) != 76:
+    if len(valid) != 140 or len(invalid) != 159:
         raise RuntimeError(
-            f"locator truth table must be 69/76, got {len(valid)}/{len(invalid)}"
+            f"locator truth table must be 140/159, got {len(valid)}/{len(invalid)}"
         )
     return {"valid": valid, "invalid": invalid}
 
@@ -337,9 +363,13 @@ def _exact_locator_scalar_types(values: dict[str, Any]) -> bool:
         return False
     if object_id is not None and not isinstance(object_id, str):
         return False
-    return all(
+    if not all(
         value is None or (isinstance(value, int) and not isinstance(value, bool))
         for value in (object_version, object_revision)
+    ):
+        return False
+    return (object_version is None or _INT32_MIN <= object_version <= _INT32_MAX) and (
+        object_revision is None or _INT64_MIN <= object_revision <= _INT64_MAX
     )
 
 
@@ -357,7 +387,12 @@ def locator_quartet_valid(
             strict=True,
         )
     )
-    if not isinstance(allow_null, bool | int) or isinstance(allow_null, float):
+    if not (
+        isinstance(allow_null, bool)
+        or isinstance(allow_null, int)
+        and not isinstance(allow_null, bool)
+        and allow_null in (0, 1)
+    ):
         return False
     if all(value is None for value in values.values()):
         return bool(allow_null)

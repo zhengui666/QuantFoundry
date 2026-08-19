@@ -6,16 +6,35 @@ import {
   createRouter,
   lazyRouteComponent,
   Navigate,
+  redirect,
 } from '@tanstack/react-router';
 import { z } from 'zod';
+import { ApiError, api } from '../../api/client';
 
 type RouteComponent = () => ReactNode;
 
-type RouteComponents = { Shell: RouteComponent; SetupPage?: RouteComponent };
+type RouteComponents = { Shell: RouteComponent };
 
 /** Centralized typed route composition; feature implementations remain lazy. */
 export function createAppRouter({ Shell }: RouteComponents) {
-  const rootRoute = createRootRoute({ component: Shell });
+  const rootRoute = createRootRoute({
+    component: Shell,
+    beforeLoad: async ({ location }) => {
+      if (location.pathname === '/login') return;
+      try {
+        await api.session();
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          error.problem.status !== 401 ||
+          error.problem.code !== 'UNAUTHENTICATED'
+        )
+          throw error;
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw redirect({ to: '/login', replace: true });
+      }
+    },
+  });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',

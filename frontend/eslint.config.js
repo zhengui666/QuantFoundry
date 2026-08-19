@@ -1,8 +1,102 @@
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
+
+const typedSourceFiles = ['src/**/*.{ts,tsx}'];
+const nonProductionSourceFiles = [
+  'src/**/*.test.{ts,tsx}',
+  'src/**/*.stories.{ts,tsx}',
+  'src/testing/**/*.{ts,tsx}',
+  'e2e/**/*.{ts,tsx}',
+];
+const nonProductionFiles = [
+  '**/*.test.*',
+  '**/*.stories.*',
+  'src/testing/**',
+  'src/api/generated/**',
+  'src/api/generated.ts',
+];
+const typeChecked = tseslint.configs.recommendedTypeChecked.map((config) =>
+  config.languageOptions
+    ? {
+        ...config,
+        files: typedSourceFiles,
+        ignores: nonProductionFiles,
+        languageOptions: {
+          ...config.languageOptions,
+          parserOptions: {
+            ...config.languageOptions.parserOptions,
+            projectService: true,
+            tsconfigRootDir: import.meta.dirname,
+          },
+        },
+      }
+    : { ...config, files: typedSourceFiles, ignores: nonProductionFiles },
+);
+const nonProductionTyped = tseslint.configs.recommended.map((config) => ({
+  ...config,
+  files: nonProductionSourceFiles,
+  languageOptions: {
+    ...config.languageOptions,
+    parser: tseslint.parser,
+    globals: {
+      ...config.languageOptions?.globals,
+      AbortController: 'readonly',
+      crypto: 'readonly',
+      document: 'readonly',
+      fetch: 'readonly',
+      localStorage: 'readonly',
+      process: 'readonly',
+      sessionStorage: 'readonly',
+      TextDecoderStream: 'readonly',
+      URL: 'readonly',
+      window: 'readonly',
+    },
+  },
+  rules: { ...config.rules, 'no-unused-vars': 'off' },
+}));
+
 export default tseslint.config(
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...typeChecked,
+  ...nonProductionTyped,
+  {
+    files: nonProductionSourceFiles,
+    ignores: ['src/api/generated/**', 'src/api/generated.ts'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/exhaustive-deps': 'error',
+      'react-hooks/rules-of-hooks': 'error',
+    },
+  },
+  {
+    files: typedSourceFiles,
+    ignores: nonProductionFiles,
+    plugins: { 'react-hooks': reactHooks },
+    languageOptions: {
+      parser: tseslint.parser,
+    },
+    rules: {
+      'react-hooks/exhaustive-deps': 'error',
+      'react-hooks/rules-of-hooks': 'error',
+    },
+  },
+  {
+    files: typedSourceFiles,
+    ignores: [
+      ...nonProductionFiles,
+      'src/api/generated/**',
+      'src/api/generated.ts',
+      'src/shared/transient-storage.ts',
+    ],
+    rules: {
+      'no-console': 'error',
+      '@typescript-eslint/no-base-to-string': 'off',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+      '@typescript-eslint/prefer-promise-reject-errors': 'error',
+    },
+  },
   {
     ignores: [
       'dist',
@@ -11,10 +105,149 @@ export default tseslint.config(
       'test-results',
       'playwright-report',
       'src/api/generated.ts',
+      'src/api/generated/**',
     ],
   },
   {
     files: ['scripts/*.mjs'],
     languageOptions: { globals: { process: 'readonly' } },
+  },
+  {
+    files: typedSourceFiles,
+    ignores: [...nonProductionFiles, 'src/api/**', 'src/shared/transient-storage.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector: "MemberExpression[object.name=/^(window|globalThis|self)$/][property.name='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector:
+            "MemberExpression[object.name=/^(window|globalThis|self)$/][computed=true][property.value='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.computed=true][callee.property.value='fetch']",
+          message: 'Use the canonical operation client in src/api instead of raw fetch.',
+        },
+        {
+          selector:
+            "VariableDeclarator[init.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[computed=false][key.name=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message: 'Use the canonical operation client/storage adapter instead of destructuring browser globals.',
+        },
+        {
+          selector:
+            "VariableDeclarator[init.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[computed=true][key.value=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message: 'Use the canonical operation client/storage adapter instead of destructuring browser globals.',
+        },
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: 'Render structured text; dangerouslySetInnerHTML is forbidden.',
+        },
+        {
+          selector: 'MemberExpression[property.name=/^(localStorage|sessionStorage|indexedDB)$/]',
+          message:
+            'Use the allowlisted transient-storage adapter; client storage is not server truth.',
+        },
+        {
+          selector: 'MemberExpression[object.name=/^(localStorage|sessionStorage|indexedDB)$/]',
+          message:
+            'Use the allowlisted transient-storage adapter; client storage is not server truth.',
+        },
+        {
+          selector:
+            'MemberExpression[computed=true][property.value=/^(localStorage|sessionStorage|indexedDB)$/]',
+          message:
+            'Use the allowlisted transient-storage adapter; client storage is not server truth.',
+        },
+        {
+          selector:
+            "VariableDeclarator[id.type='ObjectPattern'][init.type='MemberExpression'][init.object.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[key.name=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message:
+            'Use the allowlisted canonical client/storage adapter; direct platform access is forbidden.',
+        },
+        {
+          selector:
+            "VariableDeclarator[id.type='ObjectPattern'][init.type='MemberExpression'][init.object.name=/^(window|globalThis|self)$/] > ObjectPattern > Property[computed=true][key.value=/^(fetch|localStorage|sessionStorage|indexedDB)$/]",
+          message:
+            'Use the allowlisted canonical client/storage adapter; direct platform access is forbidden.',
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        { name: 'fetch', message: 'Use the canonical operation client instead of raw fetch.' },
+        {
+          name: 'localStorage',
+          message: 'Use the allowlisted transient-storage adapter instead of browser storage.',
+        },
+        {
+          name: 'sessionStorage',
+          message: 'Use the allowlisted transient-storage adapter instead of browser storage.',
+        },
+        {
+          name: 'indexedDB',
+          message: 'Use the allowlisted transient-storage adapter instead of browser storage.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/api/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.*'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'react', message: 'The API layer must remain framework-agnostic.' },
+            { name: 'react-dom', message: 'The API layer must remain framework-agnostic.' },
+          ],
+          patterns: [
+            {
+              group: [
+                'react/**',
+                'react-dom/**',
+                '**/routes',
+                '**/routes/**',
+                '**/features',
+                '**/features/**',
+                '**/domain',
+                '**/domain/**',
+                '**/ui',
+                '**/ui/**',
+              ],
+              message: 'The API layer cannot depend on UI or domain implementation modules.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/domain/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.*', '**/*.stories.*'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/routes/**', '**/features/**'],
+              message: 'Domain modules cannot depend on routes or feature implementation modules.',
+            },
+          ],
+        },
+      ],
+    },
   },
 );

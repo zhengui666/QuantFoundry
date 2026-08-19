@@ -59,7 +59,7 @@ function ActualDomainPage({ page }: { page: 'research' | 'strategy' | 'data' }) 
 const meta = {
   title: 'Pages/Actual domain pages',
   component: ActualDomainPage,
-  parameters: { layout: 'fullscreen', msw: storybookProblemHandlers },
+  parameters: { layout: 'fullscreen', msw: { handlers: storybookProblemHandlers } },
   args: { page: 'research' },
 } satisfies Meta<typeof ActualDomainPage>;
 

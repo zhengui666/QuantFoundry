@@ -38,6 +38,7 @@ import {
   State,
 } from '../../ui';
 import i18n, { applyServerSettingsLocale, configurationLocale } from '../../i18n';
+import { transientStorage } from '../../shared/transient-storage';
 import { ServerTime } from '../../format';
 
 function assertNever(value: never): never {
@@ -103,6 +104,7 @@ export function Shell() {
   const [streamProblem, setStreamProblem] = useState<ApiError>();
   const [keyDraft, setKeyDraft] = useState('');
   const [reauthRequired, setReauthRequired] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [authScopeKey, setAuthScopeKey] = useState(auth.scope());
   const [sessionReady, setSessionReady] = useState(() => Boolean(auth.get()));
   const [localeReady, setLocaleReady] = useState(() => !auth.get());
@@ -122,27 +124,34 @@ export function Shell() {
       return;
     }
     setLocaleReady(false);
+    const scope = authScopeKey;
+    const controller = new AbortController();
     void api
-      .configurationActive()
+      .configurationActive(controller.signal)
       .then(({ body }) => {
+        if (auth.scope() !== scope) return;
         const locale = configurationLocale(
           body.values.find((entry) => entry.key === 'appearance.locale')?.value,
         );
         if (locale)
           return applyServerSettingsLocale(locale).then(() => {
+            if (auth.scope() !== scope) return;
             if (i18n.language !== locale.language) return i18n.changeLanguage(locale.language);
           });
       })
-      .finally(() => setLocaleReady(true))
+      .finally(() => {
+        if (auth.scope() === scope) setLocaleReady(true);
+      })
       .catch(() => undefined);
+    return () => controller.abort();
   }, [authScopeKey]);
   useEffect(() => {
     if (sessionReady && !auth.get() && !isLogin) {
       const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (returnTo !== '/login') sessionStorage.setItem('qf.auth.return_to', returnTo);
+      if (returnTo !== '/login') transientStorage.set('qf.auth.return_to', returnTo);
       void navigate({ to: '/login', replace: true });
     }
-  }, [isLogin, navigate, sessionReady]);
+  }, [authScopeKey, isLogin, navigate, sessionReady]);
   useEffect(() => {
     if (!auth.get()) return;
     return streamEvents(
@@ -151,14 +160,12 @@ export function Shell() {
         for (const queryKey of queryKeysForEvent(event))
           void client.invalidateQueries({ queryKey, exact: true, type: 'active' });
       },
-      () => {
+      async () => {
         setStreamState(translationRef.current('stream.resynchronizing'));
-        void (async () => {
-          const predicate = (query: { queryKey: readonly unknown[] }) =>
-            isMutableEventQueryKey(query.queryKey);
-          await client.invalidateQueries({ type: 'active', refetchType: 'none', predicate });
-          await client.refetchQueries({ type: 'active', predicate });
-        })();
+        const predicate = (query: { queryKey: readonly unknown[] }) =>
+          isMutableEventQueryKey(query.queryKey);
+        await client.invalidateQueries({ type: 'active', refetchType: 'none', predicate });
+        await client.refetchQueries({ type: 'active', predicate });
       },
       (state) => {
         setStreamState(
@@ -184,6 +191,16 @@ export function Shell() {
       }),
     [client],
   );
+  useEffect(() => setMobileNavOpen(false), [location.pathname]);
+  useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 1180px)');
+    const closeMobileSheetOnDesktop = () => {
+      if (desktopQuery.matches) setMobileNavOpen(false);
+    };
+    closeMobileSheetOnDesktop();
+    desktopQuery.addEventListener('change', closeMobileSheetOnDesktop);
+    return () => desktopQuery.removeEventListener('change', closeMobileSheetOnDesktop);
+  }, []);
   if (invalidRoute) return <State kind="error">{t(invalidRouteMessages[invalidRoute])}</State>;
   if ((!sessionReady || !localeReady) && !isLogin) return <State kind="loading" />;
   const navigation = [
@@ -198,77 +215,120 @@ export function Shell() {
     ['/activity', 'nav.activity'],
     ['/settings', 'nav.settings'],
   ] as const;
+  const navigationLinks = (mobile: boolean) =>
+    navigation.map(([to, key]) => (
+      <Link
+        key={to}
+        to={to}
+        aria-label={t(key)}
+        onClick={mobile ? () => setMobileNavOpen(false) : undefined}
+        activeProps={{ className: 'active', 'aria-current': 'page' }}
+      >
+        <span className="nav-label">{t(key)}</span>
+        <span className="nav-short" aria-hidden="true">
+          {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
+        </span>
+      </Link>
+    ));
   return (
     <>
       <div className={`app${isSetup ? ' setup-shell' : ''}`}>
-        {!isSetup && (
-          <nav className="sidebar" aria-label={t('nav.primary')}>
-            <div className="brand">
-              <span className="nav-label">{t('brand')}</span>
-              <span className="nav-short" aria-hidden="true">
-                QF
+        <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          {!isSetup && (
+            <>
+              <nav
+                id="primary-navigation"
+                className="sidebar desktop-sidebar"
+                aria-label={t('nav.primary')}
+              >
+                <div className="brand">
+                  <span className="nav-label">{t('brand')}</span>
+                  <span className="nav-short" aria-hidden="true">
+                    QF
+                  </span>
+                </div>
+                {navigationLinks(false)}
+              </nav>
+              <Dialog.Portal>
+                <Dialog.Overlay className="mobile-nav-backdrop" />
+                <Dialog.Content asChild aria-describedby={undefined}>
+                  <nav
+                    id="primary-navigation-sheet"
+                    className="sidebar mobile-sidebar"
+                    aria-label={t('nav.primary')}
+                  >
+                    <Dialog.Title className="mobile-sheet-title">{t('nav.primary')}</Dialog.Title>
+                    <div className="brand">
+                      <span className="nav-label">{t('brand')}</span>
+                      <span className="nav-short" aria-hidden="true">
+                        QF
+                      </span>
+                    </div>
+                    {navigationLinks(true)}
+                  </nav>
+                </Dialog.Content>
+              </Dialog.Portal>
+            </>
+          )}
+          <main key={authScopeKey}>
+            <header className="topbar">
+              {!isSetup && !isLogin && (
+                <Dialog.Trigger asChild>
+                  <button
+                    className="mobile-nav-trigger secondary"
+                    aria-expanded={mobileNavOpen}
+                    aria-controls="primary-navigation-sheet"
+                  >
+                    {t('nav.primary')}
+                  </button>
+                </Dialog.Trigger>
+              )}
+              <span aria-live="polite">
+                <Badge>
+                  {t('realtime')} ·{' '}
+                  {streamState === 'connecting' ? t('stream.connecting') : streamState}
+                </Badge>
               </span>
-            </div>
-            {navigation.map(([to, key]) => (
-              <Link
-                key={to}
-                to={to}
-                aria-label={t(key)}
-                activeProps={{ className: 'active', 'aria-current': 'page' }}
-              >
-                <span className="nav-label">{t(key)}</span>
-                <span className="nav-short" aria-hidden="true">
-                  {key.split('.').at(-1)?.slice(0, 2).toUpperCase()}
-                </span>
-              </Link>
-            ))}
-          </nav>
-        )}
-        <main key={authScopeKey}>
-          <header className="topbar">
-            <span aria-live="polite">
-              <Badge>
-                {t('realtime')} ·{' '}
-                {streamState === 'connecting' ? t('stream.connecting') : streamState}
-              </Badge>
-            </span>
-            {isLogin ? null : auth.get() ? (
-              <button className="secondary" onClick={() => void api.logout()}>
-                {t('auth.logout')}
-              </button>
-            ) : (
-              <form
-                className="auth-form"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  try {
-                    await api.login(keyDraft.trim());
-                    setKeyDraft('');
-                    setReauthRequired(false);
-                  } catch (error) {
-                    if (error instanceof ApiError) setStreamProblem(error);
-                    setReauthRequired(true);
-                  }
-                }}
-              >
-                <label>
-                  {t('auth.generalAccessKey')}
-                  <input
-                    type="password"
-                    value={keyDraft}
-                    aria-label={t('auth.generalAccessKey')}
-                    onChange={(event) => setKeyDraft(event.target.value)}
-                    placeholder={t('auth.memoryOnly')}
-                  />
-                </label>
-                <button disabled={!keyDraft.trim()}>{t('auth.authenticate')}</button>
-              </form>
-            )}
-          </header>
-          {reauthRequired && <State kind="error">{t('auth.expired')}</State>}
-          {streamProblem && <Problem error={streamProblem} />}
-          <Outlet />
-        </main>
+              {isLogin ? null : auth.get() ? (
+                <button className="secondary" onClick={() => void api.logout()}>
+                  {t('auth.logout')}
+                </button>
+              ) : (
+                <form
+                  className="auth-form"
+                  onSubmit={(event) => {
+                    void (async () => {
+                      event.preventDefault();
+                      try {
+                        await api.login(keyDraft.trim());
+                        setKeyDraft('');
+                        setReauthRequired(false);
+                      } catch (error) {
+                        if (error instanceof ApiError) setStreamProblem(error);
+                        setReauthRequired(true);
+                      }
+                    })();
+                  }}
+                >
+                  <label>
+                    {t('auth.generalAccessKey')}
+                    <input
+                      type="password"
+                      value={keyDraft}
+                      aria-label={t('auth.generalAccessKey')}
+                      onChange={(event) => setKeyDraft(event.target.value)}
+                      placeholder={t('auth.memoryOnly')}
+                    />
+                  </label>
+                  <button disabled={!keyDraft.trim()}>{t('auth.authenticate')}</button>
+                </form>
+              )}
+            </header>
+            {reauthRequired && <State kind="error">{t('auth.expired')}</State>}
+            {streamProblem && <Problem error={streamProblem} />}
+            <Outlet />
+          </main>
+        </Dialog.Root>
       </div>
     </>
   );
@@ -281,6 +341,10 @@ export function SetupPage() {
     queryKey: workspaceQueryKey('setup-status'),
     queryFn: ({ signal }) => api.setupStatus(signal),
   });
+  const configuration = useQuery({
+    queryKey: workspaceQueryKey('setup-configuration'),
+    queryFn: ({ signal }) => api.configurationActive(signal),
+  });
   const capabilities = useQuery({
     queryKey: workspaceQueryKey('setup-capabilities'),
     queryFn: ({ signal }) => api.setupCapabilities(signal),
@@ -291,11 +355,17 @@ export function SetupPage() {
   const [modelName, setModelName] = useState('');
   const [aiCredential, setAiCredential] = useState('');
   const [dataCredential, setDataCredential] = useState('');
+  const aiCredentialInFlight = useRef('');
+  const dataCredentialInFlight = useRef('');
   const [dataSkipped, setDataSkipped] = useState(false);
+  const [aiValidationSelection, setAiValidationSelection] = useState<
+    { providerId: string; modelName: string } | null | undefined
+  >();
   const setupRestored = useRef(false);
-  const resumeSetup = useRef(sessionStorage.getItem('qf.setup.started') === 'true');
+  const resumeSetup = useRef(transientStorage.get('qf.setup.started') === 'true');
   const completeIntent = useRef<{ payload: string; key: string } | undefined>(undefined);
   const completeSubmitting = useRef(false);
+  const formHydrated = useRef(false);
   const [aiConnection, setAiConnection] =
     useState<Schema<'SetupProviderConnectionValidationResult'>>();
   const [dataConnection, setDataConnection] =
@@ -303,44 +373,57 @@ export function SetupPage() {
   const [form, setForm] = useState({
     language: 'zh-CN' as 'en' | 'zh-CN',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    base_currency: 'USD',
     number_format_locale: 'zh-CN',
     default_benchmark: 'SPY',
     default_research_start: '',
     initial_paper_capital: '100000',
   });
   const validateAi = useMutation({
-    mutationFn: () =>
+    mutationFn: (variables: { providerId: string; modelName: string }) =>
       api.validateSetupConnection({
-        provider_id: providerId,
+        provider_id: variables.providerId,
         kind: 'AI',
-        model_name: modelName || null,
-        credential: aiCredential,
+        model_name: variables.modelName || null,
+        credential: aiCredentialInFlight.current,
       }),
-    onSuccess: async ({ body }) => {
-      setAiCredential('');
+    onSuccess: async ({ body }, variables) => {
+      const selectionIsCurrent =
+        providerId === variables.providerId && modelName === variables.modelName;
+      const refreshed = await status.refetch();
+      if (!selectionIsCurrent) return;
       if (body.state === 'FAILED') {
         setAiConnection(body);
         return;
       }
-      const refreshed = await status.refetch();
-      setAiConnection(
-        refreshed.data?.body.ai_connection_id === body.connection_id ? body : undefined,
-      );
+      if (refreshed.data?.body.ai_connection_id !== body.connection_id) {
+        setAiConnection(undefined);
+        return;
+      }
+      setAiCredential('');
+      setAiValidationSelection(variables);
+      setAiConnection(body);
+    },
+    onSettled: () => {
+      aiCredentialInFlight.current = '';
     },
   });
   const validateData = useMutation({
-    mutationFn: () =>
+    mutationFn: (variables: { providerId: string }) =>
       api.validateSetupConnection({
-        provider_id: dataProviderId,
+        provider_id: variables.providerId,
         kind: 'DATA',
         model_name: null,
-        credential: dataCredential,
+        credential: dataCredentialInFlight.current,
       }),
-    onSuccess: ({ body }) => {
+    onSuccess: async ({ body }, variables) => {
+      const providerIsCurrent = dataProviderId === variables.providerId;
+      await status.refetch();
+      if (!providerIsCurrent) return;
       setDataConnection(body);
       setDataCredential('');
-      void status.refetch();
+    },
+    onSettled: () => {
+      dataCredentialInFlight.current = '';
     },
   });
   const complete = useMutation({
@@ -355,20 +438,61 @@ export function SetupPage() {
         server.fallback_step !== null
       )
         throw new ContractError('Fresh server setup refs are required before Finish.');
-      const body = {
-        ...form,
-        ai_connection_id: server.ai_connection_id,
-        default_data_provider_id: dataProviderId || null,
-        default_frequency: 'DAILY',
-        default_research_start: form.default_research_start || null,
-        research_policy_id: server.research_policy_id,
-        risk_policy_id: server.risk_policy_id,
-        cost_model_id: server.cost_model_id,
-      };
+      const active = await configuration.refetch();
+      if (!active.data?.etag) throw new ContractError('Fresh configuration ETag is required.');
+      const valuesByKey = new Map(active.data.body.values.map((entry) => [entry.key, entry.value]));
+      const locale = valuesByKey.get('appearance.locale');
+      const defaults = valuesByKey.get('research.defaults');
+      if (
+        typeof locale !== 'object' ||
+        locale === null ||
+        Array.isArray(locale) ||
+        typeof defaults !== 'object' ||
+        defaults === null ||
+        Array.isArray(defaults)
+      )
+        throw new ContractError('Active setup configuration is incomplete.');
+      type ConfigurationValue = Schema<'ConfigurationValueView'>['value'];
+      const configurationValue = (value: object): ConfigurationValue => value as ConfigurationValue;
+      const initialPaperCapital = Number(form.initial_paper_capital);
+      if (!Number.isFinite(initialPaperCapital) || initialPaperCapital <= 0)
+        throw new ContractError('Initial paper capital must be a finite positive number.');
+      const candidate = await api.putConfigurationCandidate(
+        {
+          base_revision: active.data.body.active_revision,
+          values: [
+            {
+              key: 'appearance.locale',
+              value: configurationValue({
+                ...(locale as Record<string, unknown>),
+                language: form.language,
+                timezone: form.timezone,
+                number_format_locale: form.number_format_locale,
+              }),
+            },
+            {
+              key: 'research.defaults',
+              value: configurationValue({
+                ...(defaults as Record<string, unknown>),
+                benchmark: form.default_benchmark,
+                research_start: form.default_research_start || null,
+                initial_paper_capital: initialPaperCapital,
+              }),
+            },
+          ],
+        },
+        active.data.etag,
+      );
+      const validation = await api.validateConfigurationCandidate();
+      if (validation.body.revision !== candidate.body.revision)
+        throw new ContractError('Setup configuration changed during validation.');
+      if (validation.body.status !== 'VALID')
+        throw new ContractError('Setup configuration validation failed.');
+      const body = { configuration_revision: candidate.body.revision };
       const payload = JSON.stringify(body);
       if (!completeIntent.current || completeIntent.current.payload !== payload)
         completeIntent.current = { payload, key: idempotency() };
-      return api.completeSetup(body, completeIntent.current.key);
+      return api.completeSetup(body, active.data.etag, completeIntent.current.key);
     },
     onSuccess: async ({ body }) => {
       const locale = configurationLocale(
@@ -378,7 +502,7 @@ export function SetupPage() {
       const refreshed = await status.refetch();
       if (refreshed.data?.body.completed) {
         completeIntent.current = undefined;
-        sessionStorage.removeItem('qf.setup.started');
+        transientStorage.remove('qf.setup.started');
         void navigate({ to: '/overview', replace: true });
       } else if (refreshed.data) setStep(setupRecoveryStep(refreshed.data.body));
     },
@@ -386,7 +510,7 @@ export function SetupPage() {
       const refreshed = await status.refetch();
       if (refreshed.data?.body.completed) {
         completeIntent.current = undefined;
-        sessionStorage.removeItem('qf.setup.started');
+        transientStorage.remove('qf.setup.started');
         void navigate({ to: '/overview', replace: true });
       } else if (refreshed.data) setStep(setupRecoveryStep(refreshed.data.body));
     },
@@ -414,7 +538,14 @@ export function SetupPage() {
     step === 1
       ? Boolean(readiness?.owner_session_ready)
       : step === 2
-        ? Boolean(readiness?.ai_provider_configured && readiness.ai_connection_id)
+        ? Boolean(
+            readiness?.ai_provider_configured &&
+            readiness.ai_connection_id &&
+            aiValidationSelection !== null &&
+            (!aiValidationSelection ||
+              (aiValidationSelection.providerId === providerId &&
+                aiValidationSelection.modelName === modelName)),
+          )
         : step === 3
           ? dataStepComplete
           : step === 4
@@ -424,6 +555,10 @@ export function SetupPage() {
     readiness?.owner_session_ready &&
     readiness.ai_provider_configured &&
     readiness.ai_connection_id &&
+    aiValidationSelection !== null &&
+    (!aiValidationSelection ||
+      (aiValidationSelection.providerId === providerId &&
+        aiValidationSelection.modelName === modelName)) &&
     policyReady &&
     readiness.fallback_step === null &&
     !readiness.completed,
@@ -432,19 +567,60 @@ export function SetupPage() {
   useEffect(() => {
     if (!readiness || setupRestored.current) return;
     setupRestored.current = true;
-    sessionStorage.setItem('qf.setup.started', 'true');
+    transientStorage.set('qf.setup.started', 'true');
     if (readiness.completed) {
-      sessionStorage.removeItem('qf.setup.started');
+      transientStorage.remove('qf.setup.started');
       void navigate({ to: '/overview', replace: true });
     } else if (resumeSetup.current) setStep(recoveryStep);
   }, [navigate, readiness, recoveryStep]);
   useEffect(() => {
     if (readiness && step > recoveryStep && readiness.fallback_step !== null) setStep(recoveryStep);
   }, [readiness, recoveryStep, step]);
-  if (status.isLoading || capabilities.isLoading)
+  useEffect(() => {
+    if (!configuration.data || formHydrated.current) return;
+    formHydrated.current = true;
+    const values = new Map(configuration.data.body.values.map((entry) => [entry.key, entry.value]));
+    const locale = values.get('appearance.locale');
+    const defaults = values.get('research.defaults');
+    setForm((current) => ({
+      ...current,
+      ...(locale && typeof locale === 'object' && !Array.isArray(locale)
+        ? {
+            language:
+              locale.language === 'en' || locale.language === 'zh-CN'
+                ? locale.language
+                : current.language,
+            timezone: typeof locale.timezone === 'string' ? locale.timezone : current.timezone,
+            number_format_locale:
+              typeof locale.number_format_locale === 'string'
+                ? locale.number_format_locale
+                : current.number_format_locale,
+          }
+        : {}),
+      ...(defaults && typeof defaults === 'object' && !Array.isArray(defaults)
+        ? {
+            default_benchmark:
+              typeof defaults.benchmark === 'string'
+                ? defaults.benchmark
+                : current.default_benchmark,
+            default_research_start:
+              typeof defaults.research_start === 'string'
+                ? defaults.research_start
+                : current.default_research_start,
+            initial_paper_capital:
+              typeof defaults.initial_paper_capital === 'number' ||
+              typeof defaults.initial_paper_capital === 'string'
+                ? String(defaults.initial_paper_capital)
+                : current.initial_paper_capital,
+          }
+        : {}),
+    }));
+  }, [configuration.data]);
+  if (status.isLoading || capabilities.isLoading || configuration.isLoading)
     return <State kind="loading">{t('setup.loading')}</State>;
   if (status.error) return <Problem error={status.error} />;
   if (capabilities.error) return <Problem error={capabilities.error} />;
+  if (configuration.error) return <Problem error={configuration.error} />;
   return (
     <>
       <h1>{t('page.setup')}</h1>
@@ -460,7 +636,7 @@ export function SetupPage() {
         className="panel setup-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (completeSubmitting.current) return;
+          if (step !== 5 || !canFinish || complete.isPending || completeSubmitting.current) return;
           completeSubmitting.current = true;
           complete.mutate();
         }}
@@ -490,7 +666,7 @@ export function SetupPage() {
                 <option value="en">English</option>
               </select>
             </label>
-            {(['timezone', 'base_currency', 'number_format_locale'] as const).map((key) => (
+            {(['timezone', 'number_format_locale'] as const).map((key) => (
               <label key={key}>
                 {t(`setup.field.${key}`)}
                 <input
@@ -517,6 +693,7 @@ export function SetupPage() {
                   setProviderId(event.target.value);
                   setModelName('');
                   setAiConnection(undefined);
+                  setAiValidationSelection(null);
                 }}
               >
                 <option value="">{t('setup.selectProvider')}</option>
@@ -529,7 +706,14 @@ export function SetupPage() {
             </label>
             <label>
               {t('setup.model')}
-              <select value={modelName} onChange={(event) => setModelName(event.target.value)}>
+              <select
+                value={modelName}
+                onChange={(event) => {
+                  setModelName(event.target.value);
+                  setAiConnection(undefined);
+                  setAiValidationSelection(null);
+                }}
+              >
                 <option value="">{t('setup.providerDefault')}</option>
                 {selectedProvider?.models.map((model) => (
                   <option key={model.model_name}>{model.model_name}</option>
@@ -548,7 +732,10 @@ export function SetupPage() {
             <button
               type="button"
               disabled={!providerId || !aiCredential || validateAi.isPending}
-              onClick={() => validateAi.mutate()}
+              onClick={() => {
+                aiCredentialInFlight.current = aiCredential;
+                validateAi.mutate({ providerId, modelName });
+              }}
             >
               {validateAi.isPending ? t('setup.testing') : t('setup.testAi')}
             </button>
@@ -602,7 +789,10 @@ export function SetupPage() {
             <button
               type="button"
               disabled={!dataProviderId || !dataCredential || validateData.isPending}
-              onClick={() => validateData.mutate()}
+              onClick={() => {
+                dataCredentialInFlight.current = dataCredential;
+                validateData.mutate({ providerId: dataProviderId });
+              }}
             >
               {validateData.isPending ? t('setup.testing') : t('setup.testData')}
             </button>
@@ -664,7 +854,15 @@ export function SetupPage() {
                 {t(`setup.field.${key}`)}
                 <input
                   required={key !== 'default_research_start'}
-                  type={key === 'default_research_start' ? 'date' : 'text'}
+                  type={
+                    key === 'default_research_start'
+                      ? 'date'
+                      : key === 'initial_paper_capital'
+                        ? 'number'
+                        : 'text'
+                  }
+                  min={key === 'initial_paper_capital' ? '0.000000000000000001' : undefined}
+                  step={key === 'initial_paper_capital' ? 'any' : undefined}
                   value={form[key]}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, [key]: event.target.value }))
@@ -1328,7 +1526,9 @@ export function ExperimentPage() {
   const [overrideReason, setOverrideReason] = useState('');
   const [accepted, setAccepted] = useState<Schema<'ExperimentReproduceAccepted'>>();
   const reproduceInFlight = useRef(false);
-  const intent = useRef<{ payload: string; key: string } | undefined>(undefined);
+  const intent = useRef<{ experimentId: string; payload: string; key: string } | undefined>(
+    undefined,
+  );
   const query = useQuery({
     queryKey: validExperimentId
       ? workspaceQueryKey('experiment', experimentId)
@@ -1337,22 +1537,45 @@ export function ExperimentPage() {
     enabled: validExperimentId,
   });
   const reproduce = useMutation({
-    mutationFn: (body: ExperimentReproduceBody) => {
+    mutationFn: ({
+      experimentId: sourceExperimentId,
+      body,
+    }: {
+      experimentId: string;
+      body: ExperimentReproduceBody;
+    }) => {
       const payload = JSON.stringify(body);
-      if (!intent.current || intent.current.payload !== payload)
-        intent.current = { payload, key: idempotency() };
-      return api.reproduceExperiment(experimentId, body, intent.current.key);
+      if (
+        !intent.current ||
+        intent.current.experimentId !== sourceExperimentId ||
+        intent.current.payload !== payload
+      )
+        intent.current = { experimentId: sourceExperimentId, payload, key: idempotency() };
+      return api.reproduceExperiment(sourceExperimentId, body, intent.current.key);
     },
-    onSuccess: ({ body }) => {
+    onSuccess: ({ body }, variables) => {
+      if (variables.experimentId !== experimentId) return;
       setAccepted(body);
       setDialogOpen(false);
       intent.current = undefined;
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
+      if (variables?.experimentId !== experimentId) return;
       reproduceInFlight.current = false;
       void client.invalidateQueries({ queryKey: workspaceQueryKey('experiment', experimentId) });
     },
   });
+  useEffect(() => {
+    setAccepted(undefined);
+    setDialogOpen(false);
+    setMode('EXACT');
+    setEngineVersion('');
+    setAdapterVersion('');
+    setCodeVersion('');
+    setOverrideReason('');
+    reproduceInFlight.current = false;
+    intent.current = undefined;
+  }, [experimentId]);
   const job = useQuery({
     queryKey: workspaceQueryKey('job', accepted?.job_id),
     queryFn: ({ signal }) => api.job(accepted?.job_id ?? '', signal),
@@ -1396,7 +1619,7 @@ export function ExperimentPage() {
             reason: overrideReason.trim(),
           };
     reproduceInFlight.current = true;
-    reproduce.mutate(body);
+    reproduce.mutate({ experimentId, body });
   };
   const searchResult = (() => {
     switch (data.search_result.state) {
@@ -2533,6 +2756,14 @@ export function ValidationPage() {
     queryFn: ({ signal }) => api.holdoutResult(validationId, signal),
     enabled: validValidationId && gate.data?.body.state === 'EXPOSED',
   });
+  useEffect(() => {
+    if (gate.data?.body.state !== 'EXPOSED') {
+      client.removeQueries({
+        queryKey: workspaceQueryKey('holdout-result', validationId),
+        exact: true,
+      });
+    }
+  }, [client, gate.data?.body.state, validationId]);
   const action = useMutation({
     mutationFn: async (actionName: string) => {
       if (actionName === 'request_holdout_approval') {
@@ -2553,6 +2784,14 @@ export function ValidationPage() {
       void client.invalidateQueries({ queryKey: workspaceQueryKey('holdout', validationId) });
     },
   });
+  const resetAction = action.reset;
+  useEffect(() => {
+    setSelected(undefined);
+    setReason('');
+    setActionError(undefined);
+    actionInFlight.current = false;
+    resetAction();
+  }, [resetAction, validationId]);
   const runAction = (actionName: string) => {
     if (actionInFlight.current) return;
     actionInFlight.current = true;
@@ -2638,35 +2877,37 @@ export function ValidationPage() {
       </div>
       <div className="validation-layout">
         <Panel title={t('domainComponent.validationMatrix')}>
-          <table>
-            <thead>
-              <tr>
-                <th>{t('validation.test')}</th>
-                <th>{t('validation.purpose')}</th>
-                <th>{t('domainComponent.state')}</th>
-                <th>{t('validation.result')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.tests.map((test) => (
-                <tr
-                  key={`${test.test_key}:${test.attempt_no}`}
-                  className={test.state === 'FAIL' ? 'failed-row' : ''}
-                >
-                  <td>
-                    <button className="text-button" onClick={() => setSelected(test.test_key)}>
-                      {test.test_key}
-                    </button>
-                  </td>
-                  <td>{test.purpose}</td>
-                  <td>
-                    <Badge>{test.state}</Badge>
-                  </td>
-                  <td>{test.calculated_result ?? '—'}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('validation.test')}</th>
+                  <th>{t('validation.purpose')}</th>
+                  <th>{t('domainComponent.state')}</th>
+                  <th>{t('validation.result')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {detail.tests.map((test) => (
+                  <tr
+                    key={`${test.test_key}:${test.attempt_no}`}
+                    className={test.state === 'FAIL' ? 'failed-row' : ''}
+                  >
+                    <td>
+                      <button className="text-button" onClick={() => setSelected(test.test_key)}>
+                        {test.test_key}
+                      </button>
+                    </td>
+                    <td>{test.purpose}</td>
+                    <td>
+                      <Badge>{test.state}</Badge>
+                    </td>
+                    <td>{test.calculated_result ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <Inspector
             title={t('validation.inspector')}
             trigger={
@@ -2689,7 +2930,7 @@ export function ValidationPage() {
           <State kind="permission">{t('validation.protectedMetrics')}</State>
         )}
         {result.error && <Problem error={result.error} />}
-        {result.data && (
+        {holdout.state === 'EXPOSED' && result.data && (
           <>
             <Badge>{result.data.body.result}</Badge>
             <p>
@@ -2763,40 +3004,44 @@ export function ApprovalListPage() {
     <>
       <h1>{t('page.approvals')}</h1>
       <Panel title={t('approval.queue')}>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('approval.type')}</th>
-              <th>{t('approval.subject')}</th>
-              <th>{t('approval.status')}</th>
-              <th>{t('approval.requested')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {query.data?.body.items.map((item) => (
-              <tr key={item.approval_id}>
-                <td>
-                  <Link to="/approvals/$approvalId" params={{ approvalId: item.approval_id }}>
-                    {item.type}
-                  </Link>
-                </td>
-                <td>
-                  {item.subject.id} · v{item.subject.version ?? '—'}
-                </td>
-                <td>
-                  <Badge>{item.status}</Badge>
-                </td>
-                <td>
-                  <ServerTime value={item.requested_at} />
-                </td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('approval.type')}</th>
+                <th>{t('approval.subject')}</th>
+                <th>{t('approval.status')}</th>
+                <th>{t('approval.requested')}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {query.data?.body.items.map((item) => (
+                <tr key={item.approval_id}>
+                  <td>
+                    <Link to="/approvals/$approvalId" params={{ approvalId: item.approval_id }}>
+                      {item.type}
+                    </Link>
+                  </td>
+                  <td>
+                    {item.subject.id} · v{item.subject.version ?? '—'}
+                  </td>
+                  <td>
+                    <Badge>{item.status}</Badge>
+                  </td>
+                  <td>
+                    <ServerTime value={item.requested_at} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Panel>
     </>
   );
 }
+type ApprovalDecisionSnapshot = { etag: string; subjectSha256: string };
+
 export function ApprovalPage() {
   const { t } = useTranslation();
   const { approvalId } = useParams({ strict: false }) as { approvalId: string };
@@ -2813,16 +3058,19 @@ export function ApprovalPage() {
     enabled: validApprovalId,
   });
   const decide = useMutation({
-    mutationFn: async (kind: 'approve' | 'reject') => {
-      if (!query.data?.etag) throw new Error('Server ETag required');
-      const hash = query.data.body.subject.sha256;
-      return kind === 'approve'
-        ? api.approveApproval(approvalId, query.data.etag, { acknowledged_subject_sha256: hash })
-        : api.rejectApproval(approvalId, query.data.etag, {
-            acknowledged_subject_sha256: hash,
+    mutationFn: async ({
+      kind,
+      etag,
+      subjectSha256,
+    }: ApprovalDecisionSnapshot & { kind: 'approve' | 'reject' }) =>
+      kind === 'approve'
+        ? api.approveApproval(approvalId, etag, {
+            acknowledged_subject_sha256: subjectSha256,
+          })
+        : api.rejectApproval(approvalId, etag, {
+            acknowledged_subject_sha256: subjectSha256,
             reason,
-          });
-    },
+          }),
     onError: (error) => {
       setDecisionError(error);
       if (
@@ -2855,10 +3103,10 @@ export function ApprovalPage() {
   if (!data) return <State kind="empty" />;
   const approveCapability = data.action_capabilities.find((item) => item.action === 'approve');
   const rejectCapability = data.action_capabilities.find((item) => item.action === 'reject');
-  const makeDecision = (kind: 'approve' | 'reject') => {
+  const makeDecision = (kind: 'approve' | 'reject', snapshot: ApprovalDecisionSnapshot) => {
     if (decisionInFlight.current) return;
     decisionInFlight.current = true;
-    decide.mutate(kind);
+    decide.mutate({ kind, ...snapshot });
   };
   return (
     <>
@@ -2900,9 +3148,15 @@ export function ApprovalPage() {
               successSignal={decide.isSuccess ? decide.submittedAt : 0}
               onBeforeOpen={async () => {
                 setDecisionError(undefined);
-                await query.refetch();
+                const refreshed = await query.refetch();
+                if (refreshed.error) throw refreshed.error;
+                if (!refreshed.data?.etag) throw new Error('Server ETag required');
+                return {
+                  etag: refreshed.data.etag,
+                  subjectSha256: refreshed.data.body.subject.sha256,
+                };
               }}
-              onConfirm={() => makeDecision('approve')}
+              onConfirm={(snapshot) => makeDecision('approve', snapshot)}
             >
               <p>{t('approval.exactHash')}</p>
             </DecisionDialog>
@@ -2918,10 +3172,16 @@ export function ApprovalPage() {
               successSignal={decide.isSuccess ? decide.submittedAt : 0}
               onBeforeOpen={async () => {
                 setDecisionError(undefined);
-                await query.refetch();
+                const refreshed = await query.refetch();
+                if (refreshed.error) throw refreshed.error;
+                if (!refreshed.data?.etag) throw new Error('Server ETag required');
+                return {
+                  etag: refreshed.data.etag,
+                  subjectSha256: refreshed.data.body.subject.sha256,
+                };
               }}
               confirmDisabled={!reason.trim()}
-              onConfirm={() => makeDecision('reject')}
+              onConfirm={(snapshot) => makeDecision('reject', snapshot)}
             >
               <label>
                 {t('approval.rejectionReason')}
@@ -2957,89 +3217,134 @@ function DecisionDialog({
   detail: Schema<'ApprovalDetail'>;
   error: unknown;
   successSignal: number;
-  onBeforeOpen: () => Promise<void>;
-  onConfirm: () => void;
+  onBeforeOpen: () => Promise<ApprovalDecisionSnapshot>;
+  onConfirm: (snapshot: ApprovalDecisionSnapshot) => void;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [openError, setOpenError] = useState<unknown>();
+  const [snapshot, setSnapshot] = useState<ApprovalDecisionSnapshot>();
   useEffect(() => {
     if (successSignal > 0) setOpen(false);
   }, [successSignal]);
   if (item.visibility === 'HIDE') return null;
-  if (!item.requires_confirmation)
-    return <Capability item={item} label={label} busy={busy} onClick={onConfirm} />;
-  return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          setOpen(false);
-          return;
-        }
-        setRefreshing(true);
-        void onBeforeOpen().then(() => {
-          setRefreshing(false);
-          setOpen(true);
-        });
-      }}
-    >
-      <Dialog.Trigger asChild>
+  if (!item.requires_confirmation && !confirmDisabled)
+    return (
+      <>
         <Capability
           item={item}
           label={label}
           busy={busy || refreshing}
-          confirmationHandled
-          onClick={() => undefined}
+          onClick={() => {
+            setOpenError(undefined);
+            setRefreshing(true);
+            void onBeforeOpen()
+              .then(onConfirm)
+              .catch(setOpenError)
+              .finally(() => setRefreshing(false));
+          }}
         />
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="decision-dialog" aria-describedby={undefined}>
-          <Dialog.Title>{title}</Dialog.Title>
-          <dl className="definition">
-            <dt>{t('approval.subjectId')}</dt>
-            <dd>{detail.subject.id}</dd>
-            <dt>{t('approval.versionRevision')}</dt>
-            <dd>
-              {detail.subject.version ?? '—'} / {detail.subject.revision}
-            </dd>
-            <dt>{t('approval.approvalRevision')}</dt>
-            <dd>{detail.revision}</dd>
-            <dt>{t('approval.subjectHash')}</dt>
-            <dd>
-              <code>{detail.subject.sha256}</code>
-            </dd>
-          </dl>
-          <h3>{t('approval.effects')}</h3>
-          {detail.effects.map((effect) => (
-            <p key={effect.code}>
-              <strong>{effect.code}</strong> {effect.detail}
-            </p>
-          ))}
-          <h3>{t('approval.prerequisites')}</h3>
-          {detail.prerequisites.map((prerequisite) => (
-            <p key={prerequisite.key}>
-              <Badge>{prerequisite.state}</Badge> <strong>{prerequisite.key}</strong>{' '}
-              {prerequisite.detail}
-            </p>
-          ))}
-          {children}
-          {error !== undefined && <Problem error={error} />}
-          <button
-            data-testid={`capability-confirm-${item.action}`}
-            onClick={onConfirm}
-            disabled={busy || confirmDisabled || !item.allowed}
+        {openError !== undefined && <Problem error={openError} />}
+      </>
+    );
+  return (
+    <>
+      <Dialog.Root
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            if (refreshing || busy) return;
+            setOpen(false);
+            setSnapshot(undefined);
+            return;
+          }
+          setOpenError(undefined);
+          setRefreshing(true);
+          void onBeforeOpen()
+            .then((nextSnapshot) => {
+              setSnapshot(nextSnapshot);
+              setRefreshing(false);
+              setOpen(true);
+            })
+            .catch((error) => {
+              setRefreshing(false);
+              setOpen(false);
+              setOpenError(error);
+            });
+        }}
+      >
+        <Dialog.Trigger asChild>
+          <Capability
+            item={item}
+            label={label}
+            busy={busy || refreshing}
+            confirmationHandled
+            onClick={() => undefined}
+          />
+        </Dialog.Trigger>
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content
+            className="decision-dialog"
+            aria-describedby={undefined}
+            onEscapeKeyDown={(event) => {
+              if (refreshing || busy) event.preventDefault();
+            }}
+            onPointerDownOutside={(event) => {
+              if (refreshing || busy) event.preventDefault();
+            }}
           >
-            {busy ? t('common.saving') : t('approval.confirmVersioned')}
-          </button>
-          <Dialog.Close asChild>
-            <button className="secondary">{t('common.cancel')}</button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            <Dialog.Title>{title}</Dialog.Title>
+            <dl className="definition">
+              <dt>{t('approval.subjectId')}</dt>
+              <dd>{detail.subject.id}</dd>
+              <dt>{t('approval.versionRevision')}</dt>
+              <dd>
+                {detail.subject.version ?? '—'} / {detail.subject.revision}
+              </dd>
+              <dt>{t('approval.approvalRevision')}</dt>
+              <dd>{detail.revision}</dd>
+              <dt>{t('approval.subjectHash')}</dt>
+              <dd>
+                <code>{detail.subject.sha256}</code>
+              </dd>
+            </dl>
+            <h3>{t('approval.effects')}</h3>
+            {detail.effects.map((effect) => (
+              <p key={effect.code}>
+                <strong>{effect.code}</strong> {effect.detail}
+              </p>
+            ))}
+            <h3>{t('approval.prerequisites')}</h3>
+            {detail.prerequisites.map((prerequisite) => (
+              <p key={prerequisite.key}>
+                <Badge>{prerequisite.state}</Badge> <strong>{prerequisite.key}</strong>{' '}
+                {prerequisite.detail}
+              </p>
+            ))}
+            {children}
+            {error !== undefined && <Problem error={error} />}
+            <button
+              data-testid={`capability-confirm-${item.action}`}
+              onClick={() => {
+                if (snapshot) onConfirm(snapshot);
+              }}
+              disabled={busy || refreshing || confirmDisabled || !item.allowed || !snapshot}
+            >
+              {busy ? t('common.saving') : t('approval.confirmVersioned')}
+            </button>
+            <Dialog.Close asChild>
+              <button className="secondary" disabled={busy || refreshing}>
+                {t('common.cancel')}
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      {openError !== undefined && <Problem error={openError} />}
+    </>
   );
 }
 

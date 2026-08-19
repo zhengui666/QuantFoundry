@@ -3,18 +3,24 @@ set -euo pipefail
 
 commit="${1:-}"
 output="${2:-}"
+repo_root="${QF_CI_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'Expected commit must be a full lowercase SHA.' >&2; exit 2; }
 [[ -n "$output" ]] || { printf '%s\n' 'Output locator path is required.' >&2; exit 2; }
 [[ -n "${GITHUB_TOKEN:-}" && -n "${GITHUB_REPOSITORY:-}" ]] || { printf '%s\n' 'GITHUB_TOKEN and GITHUB_REPOSITORY are required to fetch independent review evidence.' >&2; exit 2; }
 command -v gh >/dev/null || { printf '%s\n' 'gh is required to fetch independent review evidence.' >&2; exit 2; }
 
+if [[ "$output" != /* ]]; then
+  output="$repo_root/$output"
+fi
 mkdir -p "$(dirname "$output")"
-GITHUB_TOKEN="$GITHUB_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" python3 - "$commit" "$output" <<'PY'
+output="$(cd "$(dirname "$output")" && pwd)/$(basename "$output")"
+QF_CI_REPO_ROOT="$repo_root" GITHUB_TOKEN="$GITHUB_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" python3 - "$commit" "$output" <<'PY'
 import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -23,8 +29,45 @@ import zipfile
 commit, output_name = sys.argv[1:]
 repository = os.environ["GITHUB_REPOSITORY"]
 token = os.environ["GITHUB_TOKEN"]
+repo_root = pathlib.Path(os.environ.get("QF_CI_REPO_ROOT", ".")).resolve()
+os.chdir(repo_root)
 env = os.environ.copy()
 env["GH_TOKEN"] = token
+content_type = "application/vnd.quantfoundry.independent-review+json;version=1"
+criteria = [
+    "Agent/governance change conforms to canonical contracts and fail-closed CI policy.",
+    "Independent review commands completed successfully on the reviewed commit.",
+]
+scope_paths = [
+    "AGENTS.md",
+    "PROJECT_BACKGROUND.md",
+    "Makefile",
+    "backend/pyproject.toml",
+    "backend/uv.lock",
+    "backend/src/quantfoundry",
+    "backend/app/agent_runtime.py",
+    "backend/workers",
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml",
+    "frontend/src",
+    "docs/Agent技术方案",
+    "docs/后端系统技术方案/contracts",
+    "docs/治理",
+    "backend/alembic",
+    "backend/alembic.ini",
+    "backend/alembic_control.ini",
+    ".github/workflows",
+    "scripts/ci",
+    "scripts/ci.sh",
+    "scripts/api_healthcheck.py",
+    "scripts/p0-check.sh",
+    "scripts/p0-check-test.sh",
+    "scripts/tool_contract_check.py",
+    "scripts/release-check.sh",
+    "scripts/release-evidence.sh",
+    "scripts/release-known-issues-check.sh",
+]
+trusted_workflow_blob_sha = "51bf6299bb3c1a290530efe7a99a6e043a43359d"
 
 def gh_json(endpoint):
     completed = subprocess.run(
@@ -37,29 +80,117 @@ def gh_json(endpoint):
     except json.JSONDecodeError as error:
         raise SystemExit(f"gh api returned non-JSON for {endpoint}") from error
 
-runs = gh_json(
+
+def gh_pages(endpoint, key):
+    items = []
+    separator = "&" if "?" in endpoint else "?"
+    for page in range(1, 101):
+        payload = gh_json(f"{endpoint}{separator}per_page=100&page={page}")
+        page_items = payload.get(key)
+        if not isinstance(page_items, list):
+            raise SystemExit(f"gh api response for {endpoint} has no {key} list")
+        items.extend(page_items)
+        if len(page_items) < 100:
+            return items
+    raise SystemExit(f"gh api pagination limit exceeded for {endpoint}")
+
+
+def read_archive(archive_path, max_report_bytes):
+    archive_digest = hashlib.sha256()
+    with archive_path.open("rb") as archive_file:
+        for chunk in iter(lambda: archive_file.read(1024 * 1024), b""):
+            archive_digest.update(chunk)
+    try:
+        with zipfile.ZipFile(archive_path) as bundle:
+            members = bundle.infolist()
+            if len(members) > 32 or sum(item.file_size for item in members) > 100 * 1024 * 1024:
+                raise SystemExit("independent review artifact exceeds the uncompressed size limit")
+            members = [
+                item
+                for item in bundle.infolist()
+                if item.filename == "independent-review-report.json" and not item.is_dir()
+            ]
+            if len(members) != 1:
+                raise SystemExit("independent review artifact must contain exactly one canonical review report")
+            if members[0].file_size > max_report_bytes:
+                raise SystemExit("independent review artifact report exceeds the size limit")
+            payload = bundle.read(members[0])
+    except (OSError, zipfile.BadZipFile) as error:
+        raise SystemExit(f"independent review artifact is not a readable ZIP: {error}") from error
+    try:
+        report = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"independent review artifact report is not JSON: {error}") from error
+    return archive_digest, payload, report
+
+runs = gh_pages(
     f"/repos/{repository}/actions/workflows/independent-agent-review.yml/runs"
-    f"?head_sha={commit}&status=completed&event=workflow_dispatch&per_page=100"
-).get("workflow_runs", [])
+    f"?head_sha={commit}&status=completed&event=workflow_dispatch",
+    "workflow_runs",
+)
 run = next((item for item in runs if item.get("head_sha") == commit and item.get("conclusion") == "success"), None)
 if not isinstance(run, dict) or not isinstance(run.get("id"), int):
     raise SystemExit("no successful independent-agent-review workflow run is bound to the current commit")
 if run.get("status") != "completed" or run.get("conclusion") != "success" or run.get("event") != "workflow_dispatch":
     raise SystemExit("independent review run must be a completed successful workflow_dispatch run")
-if run.get("path", "").split("@", 1)[0] != ".github/workflows/independent-agent-review.yml":
+workflow_reference = run.get("path", "")
+workflow_path = workflow_reference
+if workflow_path != ".github/workflows/independent-agent-review.yml":
     raise SystemExit("independent review run used an unauthorized workflow")
-run_id = run["id"]
-artifacts = gh_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts").get("artifacts", [])
-artifact = next(
-    (
-        item
-        for item in artifacts
-        if item.get("name") == f"independent-agent-review-{run_id}" and not item.get("expired") and isinstance(item.get("id"), int)
-    ),
-    None,
+workflow_id = run.get("workflow_id")
+if not isinstance(workflow_id, int) or workflow_id < 1:
+    raise SystemExit("independent review run has no workflow identity")
+workflow = gh_json(f"/repos/{repository}/actions/workflows/independent-agent-review.yml")
+if workflow.get("id") != workflow_id or workflow.get("path") != ".github/workflows/independent-agent-review.yml":
+    raise SystemExit("independent review run workflow identity is not canonical")
+workflow_source = gh_json(
+    f"/repos/{repository}/contents/.github/workflows/independent-agent-review.yml"
+    f"?ref={commit}"
 )
-if not isinstance(artifact, dict):
-    raise SystemExit("successful independent review run has no usable review artifact")
+if workflow_source.get("sha") != trusted_workflow_blob_sha:
+    raise SystemExit("independent review workflow is not the trusted revision")
+run_id = run["id"]
+run_attempt = run.get("run_attempt")
+if not isinstance(run_attempt, int) or run_attempt < 1:
+    raise SystemExit("independent review run has no valid run_attempt")
+run_actor = run.get("actor", {}).get("login") if isinstance(run.get("actor"), dict) else None
+triggering_actor = (
+    run.get("triggering_actor", {}).get("login") if isinstance(run.get("triggering_actor"), dict) else None
+)
+if not isinstance(run_actor, str) or not isinstance(triggering_actor, str):
+    raise SystemExit("independent review run has no actor identity")
+commit_payload = gh_json(f"/repos/{repository}/commits/{commit}")
+commit_authors = set()
+for field in ("author", "committer"):
+    item = commit_payload.get(field)
+    if not isinstance(item, dict) or not isinstance(item.get("login"), str) or not item["login"].strip():
+        raise SystemExit(f"independent review commit {field} identity is unresolved")
+    commit_authors.add(item["login"].casefold())
+message = commit_payload.get("commit", {}).get("message", "")
+if re.search(r"(?im)^Co-authored-by:", message):
+    raise SystemExit("independent review cannot resolve co-author identities fail-closed")
+if run_actor.casefold() in commit_authors or triggering_actor.casefold() in commit_authors:
+    raise SystemExit("independent review actor must be independent from the reviewed commit")
+artifacts = gh_pages(
+    f"/repos/{repository}/actions/runs/{run_id}/attempts/{run_attempt}/artifacts",
+    "artifacts",
+)
+matching_artifacts = [
+    item
+    for item in artifacts
+    if (
+        item.get("name") == f"independent-agent-review-{run_id}"
+        and not item.get("expired")
+        and isinstance(item.get("id"), int)
+        and isinstance(item.get("workflow_run"), dict)
+        and item["workflow_run"].get("id") == run_id
+    )
+]
+if len(matching_artifacts) != 1:
+    raise SystemExit("successful independent review attempt must have exactly one usable review artifact")
+artifact = matching_artifacts[0]
+if not isinstance(artifact.get("size_in_bytes"), int) or artifact["size_in_bytes"] > 100 * 1024 * 1024:
+    raise SystemExit("independent review artifact exceeds the size limit")
 artifact_id = artifact["id"]
 with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as directory:
     archive_path = pathlib.Path(directory) / "review.zip"
@@ -75,31 +206,67 @@ with tempfile.TemporaryDirectory(prefix="qf-independent-review-fetch-") as direc
         )
     if completed.returncode:
         raise SystemExit(f"cannot download independent review artifact: {completed.stderr.strip() or completed.returncode}")
-    archive = archive_path.read_bytes()
+    max_archive_bytes = 100 * 1024 * 1024
+    max_report_bytes = 1024 * 1024
+    if archive_path.stat().st_size > max_archive_bytes:
+        raise SystemExit("independent review artifact exceeds the size limit")
+    archive_digest, payload, report = read_archive(archive_path, max_report_bytes)
+    if not isinstance(report, dict):
+        raise SystemExit("independent review artifact report must be a JSON object")
+    if report.get("schema_version") != "1.0.0" or report.get("content_type") != content_type:
+        raise SystemExit("independent review artifact report schema or content_type is invalid")
+    if report.get("commit") != commit or report.get("github_run_id") != run_id or report.get("github_run_attempt") != run_attempt:
+        raise SystemExit("independent review artifact report is not bound to the selected run and commit")
+    if report.get("actor") != run_actor or report.get("triggering_actor") != triggering_actor:
+        raise SystemExit("independent review artifact report actor identity is not bound to the selected run")
+    if report.get("verifier_role") != "Independent Review Agent" or report.get("result") != "approved":
+        raise SystemExit("independent review artifact report is not an approved independent review")
+    if report.get("criteria") != criteria or report.get("reviewed_paths") != scope_paths:
+        raise SystemExit("independent review artifact report scope or criteria are not canonical")
+    for path in scope_paths:
+        subprocess.run(["git", "cat-file", "-e", f"{commit}:{path}"], check=True)
+    scope = subprocess.run(
+        ["git", "ls-tree", "-r", "--full-tree", commit, "--", *scope_paths],
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout
+    if report.get("review_scope_sha256") != hashlib.sha256(scope).hexdigest():
+        raise SystemExit("independent review artifact report scope digest is not current")
+    commands = report.get("commands")
+    if not isinstance(commands, list) or not commands or any(
+        not isinstance(item, dict)
+        or set(item) != {"command", "result", "exit_code"}
+        or not isinstance(item.get("command"), str)
+        or not item["command"].strip()
+        or item.get("result") != "pass"
+        or item.get("exit_code") != 0
+        for item in commands
+    ):
+        raise SystemExit("independent review artifact report contains an invalid command result")
+    locator = {
+        "schema_version": "1.0.0",
+        "content_type": "application/vnd.quantfoundry.independent-review+json;version=1",
+        "commit": commit,
+        "verifier_role": "Independent Review Agent",
+        "result": report["result"],
+        "github_run_id": run_id,
+        "github_run_attempt": run_attempt,
+        "actor": run_actor,
+        "triggering_actor": triggering_actor,
+        "artifact_uri": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}",
+        "artifact_sha256": archive_digest.hexdigest(),
+        "artifact_report": {"path": "independent-review-report.json", "sha256": hashlib.sha256(payload).hexdigest()},
+    }
+destination = pathlib.Path(output_name)
+temporary = tempfile.NamedTemporaryFile(
+    mode="w", encoding="utf-8", dir=destination.parent, delete=False
+)
 try:
-    with zipfile.ZipFile(__import__("io").BytesIO(archive)) as bundle:
-        members = [item for item in bundle.infolist() if item.filename == "independent-review-report.json" and not item.is_dir()]
-        if len(members) != 1:
-            raise SystemExit("independent review artifact must contain exactly one canonical review report")
-        payload = bundle.read(members[0])
-except (OSError, zipfile.BadZipFile) as error:
-    raise SystemExit(f"independent review artifact is not a readable ZIP: {error}") from error
-try:
-    report = json.loads(payload)
-except json.JSONDecodeError as error:
-    raise SystemExit(f"independent review artifact report is not JSON: {error}") from error
-if not isinstance(report, dict) or report.get("commit") != commit or report.get("github_run_id") != run_id:
-    raise SystemExit("independent review artifact report is not bound to the selected run and commit")
-locator = {
-    "schema_version": "1.0.0",
-    "content_type": "application/vnd.quantfoundry.independent-review+json;version=1",
-    "commit": commit,
-    "verifier_role": "Independent Review Agent",
-    "result": "approved",
-    "github_run_id": run_id,
-    "artifact_uri": f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}",
-    "artifact_sha256": hashlib.sha256(archive).hexdigest(),
-    "artifact_report": {"path": "independent-review-report.json", "sha256": hashlib.sha256(payload).hexdigest()},
-}
-pathlib.Path(output_name).write_text(json.dumps(locator, sort_keys=True) + "\n", encoding="utf-8")
+    with temporary:
+        temporary.write(json.dumps(locator, sort_keys=True) + "\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+    os.replace(temporary.name, destination)
+finally:
+    pathlib.Path(temporary.name).unlink(missing_ok=True)
 PY

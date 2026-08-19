@@ -28,7 +28,11 @@ def test_success_commits_domain_audit_event_and_replay_result_together() -> None
     key = f"uow-success-{uuid.uuid4()}"
     response = TestClient(app).post(
         "/api/v1/research",
-        headers={"Authorization": "Bearer test", "Idempotency-Key": key},
+        headers={
+            "Authorization": "Bearer test",
+            "Idempotency-Key": key,
+            "X-CSRF-Token": "t" * 32,
+        },
         json={"title": "Atomic success", "original_user_prompt": "Prove commit"},
     )
     assert response.status_code == 201
@@ -61,9 +65,13 @@ def test_failure_rolls_back_domain_audit_event_and_idempotency_result() -> None:
         session.add(
             ResearchRow(
                 id=research_id,
+                workspace_id="test-workspace",
                 status="DRAFT",
                 revision=1,
                 title="Must roll back",
+                original_user_prompt="Must roll back",
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
                 detail="{}",
             )
         )
@@ -100,6 +108,34 @@ def test_failure_rolls_back_domain_audit_event_and_idempotency_result() -> None:
         assert verification.query(Audit).filter_by(object_id=research_id).count() == 0
     finally:
         verification.close()
+
+
+@pytest.mark.parametrize("reset", ["rollback", "close"])
+def test_idempotency_operation_cannot_end_its_connection_transaction(
+    reset: str,
+) -> None:
+    session = SessionLocal()
+    key = f"uow-connection-reset-{reset}-{uuid.uuid4()}"
+
+    def operation() -> tuple[int, dict[str, str]]:
+        connection = session.connection()
+        getattr(connection, reset)()
+        return 201, {"unreachable": "true"}
+
+    with pytest.raises(RuntimeError, match="must not"):
+        execute(
+            session,
+            Idempotency,
+            key,
+            {"reset": reset},
+            "/connection-reset",
+            operation,
+            problem,
+            actor_id="test-owner",
+            workspace_id="test-workspace",
+            method="POST",
+        )
+    session.close()
 
 
 def test_idempotency_scope_and_expired_record_cleanup() -> None:

@@ -61,6 +61,7 @@ EXPECTED_STATE_KEYS = {
     "suppressed_since_utc",
     "resume_watermark_utc",
     "initialization_utc",
+    "domain_event_sequence",
     "revision",
     "reason_code",
     "actor",
@@ -102,6 +103,8 @@ def pg18_session_factory() -> sessionmaker[Session]:
         if revision not in {
             "0017_paper_scheduler_state_init",
             "0018_ux001_runtime_snapshots",
+            "0019_strategy_candidate_evidence",
+            "0020_experiment_terminal_guard",
         }:
             pytest.fail(
                 "QF-PAPER-SCH requires the 0017 scheduler migration or a "
@@ -153,7 +156,7 @@ def _owner_graph(
         ),
         {
             "id": cost_internal,
-            "legacy": f"COST-LEGACY-{token}",
+            "legacy": f"COST-LEGACY-{token}",  # reject_fixture COST-LEGACY
             "workspace": workspace_id,
             "public": cost_public,
             "sha": content_hash({"cost": token}),
@@ -237,7 +240,7 @@ def _owner_graph(
         ),
         {
             "id": risk_internal,
-            "legacy": f"RISK-LEGACY-{token}",
+            "legacy": f"RISK-LEGACY-{token}",  # reject_fixture RISK-LEGACY
             "workspace": workspace_id,
             "public": risk_public,
             "sha": content_hash({"risk": token}),
@@ -427,6 +430,17 @@ def _seed_gate_inputs(
                 updated_at=now,
             )
         )
+        session.execute(
+            text(
+                "UPDATE strategy_versions SET required_dataset_refs=CAST(:refs AS jsonb) "
+                "WHERE id=:strategy AND workspace_id=:workspace"
+            ),
+            {
+                "refs": json.dumps([str(dataset_id)]),
+                "strategy": deployment["strategy_version_id"],
+                "workspace": deployment["workspace_id"],
+            },
+        )
         manifest_job = JobRow(
             id=new_id("JOB"),
             workspace_id=deployment["workspace_id"],
@@ -467,8 +481,8 @@ def _seed_gate_inputs(
             schema_name="snapshot_manifest",
             schema_version=1,
             metadata_json={"snapshot_id": str(snapshot_id)},
-            publication_state="PUBLISHED",
-            published_at=now,
+            publication_state="STAGED",
+            published_at=None,
             created_at=now,
             immutable=True,
         )

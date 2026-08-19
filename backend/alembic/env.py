@@ -10,15 +10,27 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 database_url = os.getenv("QF_ALEMBIC_URL") or os.getenv("QF_DATABASE_URL")
 if not database_url:
     raise RuntimeError("QF_ALEMBIC_URL or QF_DATABASE_URL is required")
-os.environ.setdefault("QF_DATABASE_URL", database_url)
+_previous_database_url = os.environ.get("QF_DATABASE_URL")
+os.environ["QF_DATABASE_URL"] = database_url
 _previous_alembic_running = os.environ.get("QF_ALEMBIC_RUNNING")
 os.environ["QF_ALEMBIC_RUNNING"] = "1"
 
-from quantfoundry.api.app import Base  # noqa: E402
+try:
+    from quantfoundry.api.app import Base  # noqa: E402
 
-config = context.config
-config.set_main_option("sqlalchemy.url", database_url)
-target_metadata = Base.metadata
+    config = context.config
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    target_metadata = Base.metadata
+except Exception:
+    if _previous_database_url is None:
+        os.environ.pop("QF_DATABASE_URL", None)
+    else:
+        os.environ["QF_DATABASE_URL"] = _previous_database_url
+    if _previous_alembic_running is None:
+        os.environ.pop("QF_ALEMBIC_RUNNING", None)
+    else:
+        os.environ["QF_ALEMBIC_RUNNING"] = _previous_alembic_running
+    raise
 
 
 def run_migrations_offline():
@@ -32,6 +44,58 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    injected_connection = config.attributes.get("connection")
+    if injected_connection is not None:
+        sqlite_migration = injected_connection.dialect.name == "sqlite"
+        if sqlite_migration:
+            if injected_connection.in_transaction():
+                raise RuntimeError(
+                    "SQLite Alembic requires an idle injected connection; "
+                    "it will not commit a caller-owned transaction"
+                )
+            injected_connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            injected_connection.commit()
+            injected_connection.exec_driver_sql("BEGIN")
+        try:
+            context.configure(
+                connection=injected_connection, target_metadata=target_metadata
+            )
+            with context.begin_transaction():
+                context.run_migrations()
+            if sqlite_migration:
+                violations = injected_connection.exec_driver_sql(
+                    "PRAGMA foreign_key_check"
+                ).all()
+                if violations:
+                    raise RuntimeError(
+                        "SQLite migration produced foreign-key violations: "
+                        f"{violations[:3]}"
+                    )
+            if sqlite_migration and injected_connection.in_transaction():
+                injected_connection.commit()
+        except Exception:
+            if sqlite_migration and injected_connection.in_transaction():
+                injected_connection.rollback()
+            raise
+        finally:
+            if sqlite_migration:
+                try:
+                    if injected_connection.in_transaction():
+                        injected_connection.rollback()
+                    injected_connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                    if (
+                        injected_connection.exec_driver_sql(
+                            "PRAGMA foreign_keys"
+                        ).scalar_one()
+                        != 1
+                    ):
+                        raise RuntimeError(
+                            "SQLite migration failed to restore foreign keys"
+                        )
+                finally:
+                    if injected_connection.in_transaction():
+                        injected_connection.rollback()
+        return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
@@ -53,19 +117,36 @@ def run_migrations_online():
             # restored schema is checked before the connection is closed and
             # application connections still force foreign_keys=ON.
             connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
-        context.configure(connection=connection, target_metadata=target_metadata)
-        with context.begin_transaction():
-            context.run_migrations()
-        if sqlite_migration:
-            violations = connection.exec_driver_sql("PRAGMA foreign_key_check").all()
-            if violations:
-                raise RuntimeError(
-                    f"SQLite migration produced foreign-key violations: {violations[:3]}"
-                )
             connection.commit()
-            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-            if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 1:
-                raise RuntimeError("SQLite migration failed to restore foreign keys")
+            connection.exec_driver_sql("BEGIN")
+        try:
+            context.configure(connection=connection, target_metadata=target_metadata)
+            with context.begin_transaction():
+                context.run_migrations()
+            if sqlite_migration:
+                violations = connection.exec_driver_sql(
+                    "PRAGMA foreign_key_check"
+                ).all()
+                if violations:
+                    raise RuntimeError(
+                        "SQLite migration produced foreign-key violations: "
+                        f"{violations[:3]}"
+                    )
+            if sqlite_migration and connection.in_transaction():
+                connection.commit()
+        except Exception:
+            if sqlite_migration and connection.in_transaction():
+                connection.rollback()
+            raise
+        finally:
+            if sqlite_migration:
+                if connection.in_transaction():
+                    connection.rollback()
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 1:
+                    raise RuntimeError(
+                        "SQLite migration failed to restore foreign keys"
+                    )
 
 
 try:
@@ -74,6 +155,10 @@ try:
     else:
         run_migrations_online()
 finally:
+    if _previous_database_url is None:
+        os.environ.pop("QF_DATABASE_URL", None)
+    else:
+        os.environ["QF_DATABASE_URL"] = _previous_database_url
     if _previous_alembic_running is None:
         os.environ.pop("QF_ALEMBIC_RUNNING", None)
     else:

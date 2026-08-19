@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
@@ -18,7 +19,8 @@ from alembic import command
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 GATE_MANIFEST_PATH = BACKEND_ROOT / "schema/populated_migration_gate.json"
 APPLICATION_TABLE_COUNT = 63
-CHECK_CONSTRAINT_COUNT = 191
+CHECK_CONSTRAINT_COUNT = 220
+MIGRATION_GATE_MARKER_TABLE = "migration_gate_control.marker"
 COMMITTED_MINIMUM_ROWS = 2503
 COMMITTED_MINIMUM_NONEMPTY_TABLES = 38
 COMMITTED_MINIMUM_WORKSPACE_ROLE_TUPLES = 12
@@ -107,6 +109,40 @@ def _fingerprint(database_url: str) -> dict[str, tuple[int, str]]:
                     rows, sort_keys=True, separators=(",", ":")
                 ).encode()
                 result[table_name] = (len(rows), hashlib.sha256(encoded).hexdigest())
+            return result
+    finally:
+        engine.dispose()
+
+
+def _sequence_fingerprint(database_url: str) -> dict[str, tuple[Any, ...]]:
+    engine = create_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT schemaname, sequencename, start_value, "
+                    "increment_by, min_value, max_value, cycle, cache_size "
+                    "FROM pg_sequences ORDER BY schemaname, sequencename"
+                )
+            ).mappings()
+            result = {}
+            preparer = connection.dialect.identifier_preparer
+            for row in rows:
+                schema = preparer.quote(str(row["schemaname"]))
+                name = preparer.quote(str(row["sequencename"]))
+                state = connection.execute(
+                    text(f"SELECT last_value, is_called FROM {schema}.{name}")
+                ).mappings().one()
+                result[f"{row['schemaname']}.{row['sequencename']}"] = (
+                    state["last_value"],
+                    state["is_called"],
+                    row["start_value"],
+                    row["increment_by"],
+                    row["min_value"],
+                    row["max_value"],
+                    row["cycle"],
+                    row["cache_size"],
+                )
             return result
     finally:
         engine.dispose()
@@ -206,19 +242,42 @@ def _validate_coverage(
 
 
 def _validate_content_roundtrip(
-    before: dict[str, tuple[int, str]], after: dict[str, tuple[int, str]]
+    before: dict[str, tuple[int, str]],
+    after: dict[str, tuple[int, str]],
+    sequences_before: dict[str, tuple[Any, ...]] | None = None,
+    sequences_after: dict[str, tuple[Any, ...]] | None = None,
 ) -> None:
-    if after == before:
-        return
     changed = sorted(set(before) | set(after))
     changed = [name for name in changed if before.get(name) != after.get(name)]
     detail = {
         name: {"before": before.get(name), "after": after.get(name)} for name in changed
     }
-    raise RuntimeError(
-        "0016 populated roundtrip changed table count/hash: "
-        + json.dumps(detail, sort_keys=True)
-    )
+    if before != after:
+        raise RuntimeError(
+            "0016 populated roundtrip changed table count/hash: "
+            + json.dumps(detail, sort_keys=True)
+        )
+    if (sequences_before is None) != (sequences_after is None):
+        raise TypeError("sequence fingerprints must be supplied together")
+    if (
+        sequences_before is not None
+        and sequences_after is not None
+        and sequences_before != sequences_after
+    ):
+        raise RuntimeError(
+            "0016 populated roundtrip changed sequence state: "
+            + json.dumps(
+                {
+                    name: {
+                        "before": sequences_before.get(name),
+                        "after": sequences_after.get(name),
+                    }
+                    for name in sorted(set(sequences_before) | set(sequences_after))
+                    if sequences_before.get(name) != sequences_after.get(name)
+                },
+                sort_keys=True,
+            )
+        )
 
 
 def _schema_contract(database_url: str) -> dict[str, Any]:
@@ -265,12 +324,59 @@ def _alembic_check(database_url: str) -> None:
     try:
         config = Config(str(BACKEND_ROOT / "alembic.ini"))
         config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+        script = ScriptDirectory.from_config(config)
+        engine = create_engine(database_url)
+        try:
+            with engine.connect() as connection:
+                current = {
+                    str(value)
+                    for value in connection.execute(
+                        text("SELECT version_num FROM alembic_version")
+                    ).scalars()
+                }
+        finally:
+            engine.dispose()
+        expected = set(script.get_heads())
+        if current != expected:
+            raise RuntimeError(
+                f"database is not at current Alembic heads: {sorted(current)} != {sorted(expected)}"
+            )
         command.check(config)
     finally:
         if previous is None:
             os.environ.pop("QF_ALEMBIC_URL", None)
         else:
             os.environ["QF_ALEMBIC_URL"] = previous
+
+
+def _require_disposable_migration_gate(database_url: str) -> None:
+    marker = os.getenv("QF_MIGRATION_GATE_MARKER")
+    if not marker:
+        raise RuntimeError(
+            "QF_MIGRATION_GATE_MARKER is required; refusing destructive migration roundtrip"
+        )
+    engine = create_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            markers = (
+                connection.execute(
+                    text(
+                        f"SELECT marker FROM {MIGRATION_GATE_MARKER_TABLE} ORDER BY marker"
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            database_name = connection.execute(
+                text("SELECT current_database()")
+            ).scalar_one()
+        if markers != [marker]:
+            raise RuntimeError(
+                "target database is not the disposable migration gate database: "
+                f"database={database_name!r} marker_count={len(markers)}"
+            )
+    finally:
+        engine.dispose()
 
 
 def main() -> int:
@@ -292,9 +398,19 @@ def main() -> int:
         type=int,
         default=gate_manifest["minimum_workspace_role_tuples"],
     )
+    parser.add_argument(
+        "--confirm-destructive",
+        action="store_true",
+        help="confirm that the supplied disposable gate database may be downgraded",
+    )
     args = parser.parse_args()
     if not args.database_url:
         parser.error("--database-url or QF_DATABASE_URL is required")
+    if not args.confirm_destructive:
+        parser.error("--confirm-destructive is required for the downgrade/upgrade gate")
+    if not args.database_url.startswith("postgresql+psycopg://"):
+        parser.error("--database-url must target the PostgreSQL migration gate")
+    _require_disposable_migration_gate(args.database_url)
 
     _validate_requested_floors(
         minimum_rows=args.minimum_rows,
@@ -305,6 +421,7 @@ def main() -> int:
     _alembic_check(args.database_url)
     schema_before = _schema_contract(args.database_url)
     before = _fingerprint(args.database_url)
+    sequences_before = _sequence_fingerprint(args.database_url)
     roles_before = _agent_roles(args.database_url, "role_key")
     coverage = _validate_coverage(
         before,
@@ -315,29 +432,64 @@ def main() -> int:
         critical_table_floors=gate_manifest["critical_table_floors"],
     )
 
-    _alembic(args.database_url, "downgrade", "0015_langgraph_checkpoint")
-    roles_downgraded = _agent_roles(args.database_url, "role_key")
-    if roles_downgraded != roles_before:
-        raise RuntimeError(
-            "agent_configs role mapping changed during downgrade: "
-            f"before={sorted(roles_before)!r}, downgraded={sorted(roles_downgraded)!r}"
+    # The downgrade mutates the supplied database.  Once it starts, every
+    # failure path must attempt to restore head before the process exits.
+    downgraded = True
+    restored = False
+    original_error: BaseException | None = None
+    try:
+        _alembic(args.database_url, "downgrade", "0015_langgraph_checkpoint")
+        roles_downgraded = _agent_roles(args.database_url, "role_key")
+        if roles_downgraded != roles_before:
+            raise RuntimeError(
+                "agent_configs role mapping changed during downgrade: "
+                f"before={sorted(roles_before)!r}, downgraded={sorted(roles_downgraded)!r}"
+            )
+        _alembic(args.database_url, "upgrade", "head")
+        restored = True
+        after = _fingerprint(args.database_url)
+        sequences_after = _sequence_fingerprint(args.database_url)
+        roles_after = _agent_roles(args.database_url, "role_key")
+        _validate_content_roundtrip(before, after, sequences_before, sequences_after)
+        if roles_after != roles_before:
+            raise RuntimeError("agent_configs role mapping changed after upgrade")
+        _validate_coverage(
+            after,
+            roles_after,
+            minimum_rows=args.minimum_rows,
+            minimum_nonempty_tables=args.minimum_nonempty_tables,
+            minimum_agent_roles=args.minimum_agent_roles,
+            critical_table_floors=gate_manifest["critical_table_floors"],
         )
-    _alembic(args.database_url, "upgrade", "head")
-    after = _fingerprint(args.database_url)
-    roles_after = _agent_roles(args.database_url, "role_key")
-    _validate_content_roundtrip(before, after)
-    if roles_after != roles_before:
-        raise RuntimeError("agent_configs role mapping changed after upgrade")
-    _validate_coverage(
-        after,
-        roles_after,
-        minimum_rows=args.minimum_rows,
-        minimum_nonempty_tables=args.minimum_nonempty_tables,
-        minimum_agent_roles=args.minimum_agent_roles,
-        critical_table_floors=gate_manifest["critical_table_floors"],
-    )
-    _alembic_check(args.database_url)
-    schema_after = _schema_contract(args.database_url)
+        _alembic_check(args.database_url)
+        schema_after = _schema_contract(args.database_url)
+    except BaseException as error:
+        original_error = error
+        raise
+    finally:
+        if downgraded and not restored:
+            try:
+                _alembic(args.database_url, "upgrade", "head")
+                restored_after = _fingerprint(args.database_url)
+                restored_sequences = _sequence_fingerprint(args.database_url)
+                restored_roles = _agent_roles(args.database_url, "role_key")
+                _validate_content_roundtrip(
+                    before, restored_after, sequences_before, restored_sequences
+                )
+                if restored_roles != roles_before:
+                    raise RuntimeError(
+                        "automatic restoration changed agent_configs role mapping"
+                    )
+                if _schema_contract(args.database_url) != schema_before:
+                    raise RuntimeError(
+                        "automatic restoration changed the schema contract"
+                    )
+            except BaseException as restore_error:
+                if original_error is not None:
+                    raise RuntimeError(
+                        "migration roundtrip failed and automatic restoration also failed"
+                    ) from restore_error
+                raise
     if schema_after != schema_before:
         raise RuntimeError(
             f"schema/constraint report changed: before={schema_before}, "

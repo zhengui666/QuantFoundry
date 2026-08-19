@@ -27,9 +27,10 @@ criteria = [
     "Independent review commands completed successfully on the reviewed commit.",
 ]
 scope_paths = [
-    "AGENTS.md", "PROJECT_BACKGROUND.md", "backend/src/quantfoundry", "backend/workers",
-    "docs/Agent技术方案", "docs/后端系统技术方案/contracts/tools", "docs/治理",
-    ".github/workflows", "scripts/ci", "scripts/release-evidence.sh", "scripts/release-check.sh",
+    "AGENTS.md", "PROJECT_BACKGROUND.md", "Makefile", "backend/pyproject.toml", "backend/uv.lock", "backend/src/quantfoundry", "backend/app/agent_runtime.py", "backend/workers", "frontend/package.json", "frontend/pnpm-lock.yaml", "frontend/src",
+    "docs/Agent技术方案", "docs/后端系统技术方案/contracts", "docs/治理",
+    "backend/alembic", "backend/alembic.ini", "backend/alembic_control.ini",
+    ".github/workflows", "scripts/ci", "scripts/ci.sh", "scripts/api_healthcheck.py", "scripts/p0-check.sh", "scripts/p0-check-test.sh", "scripts/tool_contract_check.py", "scripts/release-check.sh", "scripts/release-evidence.sh", "scripts/release-known-issues-check.sh",
 ]
 scope_digest = hashlib.sha256(subprocess.check_output([
     "git", "-C", repository_root, "ls-tree", "-r", "--full-tree", commit, "--", *scope_paths,
@@ -39,8 +40,11 @@ def make_artifact(name, report_commit, report_scope_digest=scope_digest):
     embedded = {
         "schema_version": "1.0.0",
         "content_type": content_type,
-        "commit": report_commit,
-        "github_run_id": 100,
+            "commit": report_commit,
+            "github_run_id": 100,
+            "github_run_attempt": 1,
+        "actor": "review-bot",
+        "triggering_actor": "review-bot",
         "verifier_role": "Independent Review Agent",
         "result": "approved",
         "criteria": criteria,
@@ -59,6 +63,9 @@ def make_artifact(name, report_commit, report_scope_digest=scope_digest):
         "verifier_role": "Independent Review Agent",
         "result": "approved",
         "github_run_id": 100,
+        "github_run_attempt": 1,
+        "actor": "review-bot",
+        "triggering_actor": "review-bot",
         "artifact_uri": "https://github.com/acme/quantfoundry/actions/runs/100/artifacts/200",
         "artifact_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "artifact_report": {"path": "independent-review-report.json", "sha256": hashlib.sha256(payload).hexdigest()},
@@ -81,8 +88,13 @@ printf '%s\n' \
   'for ((index = 1; index <= $#; index++)); do' \
   '  if [[ "${!index}" == --output ]]; then next=$((index + 1)); output="${!next}"; fi' \
   'done' \
-  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\\\"head_sha\\\":\\\"%s\\\",\\\"status\\\":\\\"%s\\\",\\\"conclusion\\\":\\\"%s\\\",\\\"event\\\":\\\"%s\\\",\\\"path\\\":\\\"%s\\\"}\\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml@refs/heads/main}"; exit 0; fi' \
-  'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\\\"expired\\\":false,\\\"workflow_run\\\":{\\\"id\\\":100}}\\n"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/100$ ]]; then printf "{\"id\":100,\"head_sha\":\"%s\",\"run_attempt\":1,\"status\":\"%s\",\"conclusion\":\"%s\",\"event\":\"%s\",\"path\":\"%s\",\"head_branch\":\"%s\",\"workflow_id\":300,\"actor\":{\"login\":\"review-bot\"},\"triggering_actor\":{\"login\":\"review-bot\"}}\n" "$QF_REVIEW_MOCK_COMMIT" "${QF_REVIEW_MOCK_STATUS:-completed}" "${QF_REVIEW_MOCK_CONCLUSION:-success}" "${QF_REVIEW_MOCK_EVENT:-workflow_dispatch}" "${QF_REVIEW_MOCK_PATH:-.github/workflows/independent-agent-review.yml}" "${QF_REVIEW_MOCK_BRANCH:-main}"; exit 0; fi' \
+  'if [[ "$endpoint" == /repos/acme/quantfoundry/actions/workflows/independent-agent-review.yml ]]; then printf "{\"id\":300,\"path\":\".github/workflows/independent-agent-review.yml\"}\n"; exit 0; fi' \
+  'if [[ "$endpoint" == /repos/acme/quantfoundry/commits/* ]]; then printf "{\"author\":{\"login\":\"%s\"},\"committer\":{\"login\":\"%s\"}}\n" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}" "${QF_REVIEW_MOCK_COMMIT_AUTHOR:-change-author}"; exit 0; fi' \
+  'if [[ "$endpoint" == /repos/acme/quantfoundry ]]; then printf "{\"default_branch\":\"main\"}\n"; exit 0; fi' \
+  'if [[ "$endpoint" == "/repos/acme/quantfoundry/contents/.github/workflows/independent-agent-review.yml?ref=$QF_REVIEW_MOCK_COMMIT" ]]; then printf "{\"sha\":\"51bf6299bb3c1a290530efe7a99a6e043a43359d\"}\n"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/runs/100/attempts/1/artifacts ]]; then printf "{\"total_count\":1,\"artifacts\":[{\"id\":200,\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}]}\n"; exit 0; fi' \
+  'if [[ "$endpoint" =~ /actions/artifacts/200$ ]]; then printf "{\"id\":200,\"name\":\"independent-agent-review-100\",\"expired\":false,\"workflow_run\":{\"id\":100}}\n"; exit 0; fi' \
   'if [[ "$endpoint" =~ /actions/artifacts/200/zip$ ]]; then if [[ -n "$output" ]]; then cp "$QF_REVIEW_MOCK_ARCHIVE" "$output"; else cat "$QF_REVIEW_MOCK_ARCHIVE"; fi; exit 0; fi' \
   'exit 1' > "$mock_gh"
 chmod +x "$mock_gh"
@@ -92,9 +104,31 @@ run_verifier() {
   local archive="$2"
   local status="${3:-completed}"
   local conclusion="${4:-success}"
-  local workflow_path="${5:-.github/workflows/independent-agent-review.yml@refs/heads/main}"
-  env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" QF_REVIEW_MOCK_STATUS="$status" QF_REVIEW_MOCK_CONCLUSION="$conclusion" QF_REVIEW_MOCK_PATH="$workflow_path" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
+  local workflow_path="${5:-.github/workflows/independent-agent-review.yml}"
+  local commit_author="${6:-change-author}"
+  env PATH="$mock_dir:$PATH" GITHUB_TOKEN='fixture-token' GITHUB_REPOSITORY='acme/quantfoundry' QF_REVIEW_MOCK_ARCHIVE="$archive" QF_REVIEW_MOCK_STATUS="$status" QF_REVIEW_MOCK_CONCLUSION="$conclusion" QF_REVIEW_MOCK_PATH="$workflow_path" QF_REVIEW_MOCK_COMMIT_AUTHOR="$commit_author" "$repo_root/scripts/ci/verify-independent-review-report.sh" "$locator" "$commit_sha"
 }
+
+python3 - "$fixture_dir/positive.json" "$fixture_dir/positive-attestation.json" "$commit_sha" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+locator, attestation, commit = map(pathlib.Path, sys.argv[1:])
+attestation.write_text(json.dumps({
+    "schema_version": "1.0.0",
+    "commit": str(commit),
+    "locator_sha256": hashlib.sha256(locator.read_bytes()).hexdigest(),
+    "result": "verified",
+}), encoding="utf-8")
+PY
+
+if env QF_INDEPENDENT_REVIEW_OFFLINE=1 QF_INDEPENDENT_REVIEW_ATTESTATION="$fixture_dir/positive-attestation.json" \
+  "$repo_root/scripts/ci/verify-independent-review-report.sh" "$fixture_dir/positive.json" "$commit_sha" >/dev/null 2>&1; then
+  printf '%s\n' 'Expected forgeable offline verification mode to be disabled.' >&2
+  exit 1
+fi
 
 run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip"
 if run_verifier "$fixture_dir/wrong-content-commit.json" "$fixture_dir/wrong-content-commit.zip" >/dev/null 2>&1; then
@@ -115,6 +149,10 @@ if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" complet
 fi
 if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" completed success '.github/workflows/untrusted.yml@refs/heads/main' >/dev/null 2>&1; then
   printf '%s\n' 'Expected unauthorized independent review workflow to fail.' >&2
+  exit 1
+fi
+if run_verifier "$fixture_dir/positive.json" "$fixture_dir/positive.zip" completed success . review-bot >/dev/null 2>&1; then
+  printf '%s\n' 'Expected a reviewer matching the commit author to fail.' >&2
   exit 1
 fi
 

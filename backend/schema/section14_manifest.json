@@ -4,7 +4,7 @@
   "domain_table_count": 50,
   "manifest_version": 1,
   "source_path": "docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md",
-  "source_section_sha256": "e429bb50efd04faa540ffa67977a37243b9e0046b5c368241a8faf701292ce1e",
+  "source_section_sha256": "830c209c1d90b4f88788608bfcab17cf59b6585503d24155a853b26a58df2023",
   "support_column_count": 78,
   "support_table_count": 13,
   "support_tables": [
@@ -3767,7 +3767,7 @@
           "semantics": "归属 Validation public locator；与 internal validation FK 同 workspace"
         },
         {
-          "constraints": "CHECK closed `STRAT-ID@version` locator",
+          "constraints": "CHECK closed `STRAT-ID@version` locator <!-- reject_fixture STRAT-ID -->",
           "default": "-",
           "name": "strategy_version_public_id",
           "nullable": false,
@@ -5540,7 +5540,7 @@
         }
       ],
       "name": "agent_configs",
-      "section": "14.39"
+      "section": "14.40"
     },
     {
       "columns": [
@@ -5914,7 +5914,7 @@
         }
       ],
       "name": "agent_runs",
-      "section": "14.40"
+      "section": "14.41"
     },
     {
       "columns": [
@@ -6176,7 +6176,7 @@
         }
       ],
       "name": "tool_calls",
-      "section": "14.41"
+      "section": "14.42"
     },
     {
       "columns": [
@@ -6478,7 +6478,7 @@
         }
       ],
       "name": "jobs",
-      "section": "14.42"
+      "section": "14.43"
     },
     {
       "columns": [
@@ -6532,7 +6532,7 @@
         }
       ],
       "name": "job_dependencies",
-      "section": "14.43"
+      "section": "14.44"
     },
     {
       "columns": [
@@ -6698,7 +6698,7 @@
         }
       ],
       "name": "domain_events",
-      "section": "14.44"
+      "section": "14.45"
     },
     {
       "columns": [
@@ -6896,7 +6896,7 @@
         }
       ],
       "name": "audit_events",
-      "section": "14.45"
+      "section": "14.46"
     },
     {
       "columns": [
@@ -7054,7 +7054,7 @@
         }
       ],
       "name": "artifacts",
-      "section": "14.46"
+      "section": "14.47"
     },
     {
       "columns": [
@@ -7196,7 +7196,7 @@
         }
       ],
       "name": "notifications",
-      "section": "14.47"
+      "section": "14.48"
     },
     {
       "columns": [
@@ -7330,7 +7330,7 @@
         }
       ],
       "name": "idempotency_records",
-      "section": "14.48"
+      "section": "14.49"
     },
     {
       "columns": [
@@ -7520,7 +7520,7 @@
         }
       ],
       "name": "provenance_records",
-      "section": "14.49"
+      "section": "14.50"
     },
     {
       "columns": [
@@ -7550,7 +7550,7 @@
         }
       ],
       "name": "audit_chain_heads",
-      "section": "14.50"
+      "section": "14.51"
     },
     {
       "columns": [
@@ -7612,7 +7612,7 @@
         }
       ],
       "name": "data_snapshots",
-      "section": "14.51"
+      "section": "14.52"
     },
     {
       "columns": [
@@ -7658,7 +7658,7 @@
         }
       ],
       "name": "data_sources",
-      "section": "14.52"
+      "section": "14.53"
     },
     {
       "columns": [
@@ -7688,7 +7688,7 @@
         }
       ],
       "name": "event_stream_watermarks",
-      "section": "14.53"
+      "section": "14.54"
     },
     {
       "columns": [
@@ -7758,7 +7758,7 @@
         }
       ],
       "name": "records",
-      "section": "14.54"
+      "section": "14.55"
     },
     {
       "columns": [
@@ -7796,7 +7796,7 @@
         }
       ],
       "name": "runtime_heartbeats",
-      "section": "14.55"
+      "section": "14.56"
     },
     {
       "columns": [
@@ -7842,7 +7842,7 @@
         }
       ],
       "name": "session_tokens",
-      "section": "14.56"
+      "section": "14.57"
     },
     {
       "columns": [
@@ -7928,7 +7928,7 @@
         }
       ],
       "name": "setup_bindings",
-      "section": "14.57"
+      "section": "14.58"
     },
     {
       "columns": [
@@ -7990,7 +7990,7 @@
         }
       ],
       "name": "snapshot_partitions",
-      "section": "14.58"
+      "section": "14.59"
     },
     {
       "columns": [
@@ -8028,7 +8028,7 @@
         }
       ],
       "name": "users",
-      "section": "14.59"
+      "section": "14.60"
     },
     {
       "columns": [
@@ -8098,7 +8098,7 @@
         }
       ],
       "name": "validations",
-      "section": "14.60"
+      "section": "14.61"
     },
     {
       "columns": [
@@ -8136,7 +8136,7 @@
         }
       ],
       "name": "workspaces",
-      "section": "14.61"
+      "section": "14.62"
     }
   ]
 }

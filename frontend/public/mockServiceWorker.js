@@ -11,6 +11,40 @@ const PACKAGE_VERSION = '2.15.0'
 const INTEGRITY_CHECKSUM = '03cb67ac84128e63d7cd722a6e5b7f1e'
 const IS_MOCKED_RESPONSE = Symbol('isMockedResponse')
 const activeClientIds = new Set()
+const MESSAGE_TIMEOUT = 10_000
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+let lifecycleGeneration = 0
+
+async function reconcileActiveClients(sender, excludedClientId) {
+  const generation = ++lifecycleGeneration
+  const allClients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  })
+  if (sender?.id && !allClients.some((client) => client.id === sender.id)) {
+    allClients.push(sender)
+  }
+  const liveClientIds = new Set(allClients.map((client) => client.id).filter((id) => id !== excludedClientId))
+  if (generation !== lifecycleGeneration) return allClients
+  const remainingClients = allClients.filter((client) => client.id !== excludedClientId)
+
+  for (const clientId of activeClientIds) {
+    if (!liveClientIds.has(clientId)) activeClientIds.delete(clientId)
+  }
+
+  if (activeClientIds.size === 0 && remainingClients.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const remainingClients = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    })
+    if (generation === lifecycleGeneration && activeClientIds.size === 0 && remainingClients.length === 0) {
+      await self.registration.unregister()
+    }
+  }
+
+  return allClients
+}
 
 addEventListener('install', function () {
   self.skipWaiting()
@@ -20,8 +54,24 @@ addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim())
 })
 
-addEventListener('message', async function (event) {
+let lifecycleMessageQueue = Promise.resolve()
+
+addEventListener('message', function (event) {
+  const message = lifecycleMessageQueue.then(() => handleMessage(event))
+  lifecycleMessageQueue = message.catch(() => {})
+  event.waitUntil(message)
+})
+
+async function handleMessage(event) {
+  await reconcileActiveClients(event.source)
+
   const clientId = Reflect.get(event.source || {}, 'id')
+
+  if (event.data === 'CLIENT_CLOSED' && clientId && self.clients) {
+    activeClientIds.delete(clientId)
+    await reconcileActiveClients(undefined, clientId)
+    return
+  }
 
   if (!clientId || !self.clients) {
     return
@@ -33,33 +83,30 @@ addEventListener('message', async function (event) {
     return
   }
 
-  const allClients = await self.clients.matchAll({
-    type: 'window',
-  })
-
   switch (event.data) {
     case 'KEEPALIVE_REQUEST': {
-      sendToClient(client, {
+      await sendToClient(client, {
         type: 'KEEPALIVE_RESPONSE',
-      })
+      }).catch(() => {})
       break
     }
 
     case 'INTEGRITY_CHECK_REQUEST': {
-      sendToClient(client, {
+      await sendToClient(client, {
         type: 'INTEGRITY_CHECK_RESPONSE',
         payload: {
           packageVersion: PACKAGE_VERSION,
           checksum: INTEGRITY_CHECKSUM,
         },
-      })
+      }).catch(() => {})
       break
     }
 
     case 'MOCK_ACTIVATE': {
+      lifecycleGeneration++
       activeClientIds.add(clientId)
 
-      sendToClient(client, {
+      await sendToClient(client, {
         type: 'MOCKING_ENABLED',
         payload: {
           client: {
@@ -67,26 +114,19 @@ addEventListener('message', async function (event) {
             frameType: client.frameType,
           },
         },
-      })
+      }).catch(() => {})
       break
     }
 
     case 'CLIENT_CLOSED': {
       activeClientIds.delete(clientId)
 
-      const remainingClients = allClients.filter((client) => {
-        return client.id !== clientId
-      })
-
-      // Unregister itself when there are no more clients
-      if (remainingClients.length === 0) {
-        self.registration.unregister()
-      }
+      await reconcileActiveClients()
 
       break
     }
   }
-})
+}
 
 addEventListener('fetch', function (event) {
   const requestInterceptedAt = Date.now()
@@ -122,6 +162,8 @@ addEventListener('fetch', function (event) {
  * @param {number} requestInterceptedAt
  */
 async function handleRequest(event, requestId, requestInterceptedAt) {
+  const originatedFromActiveClient = Boolean(event.clientId && activeClientIds.has(event.clientId))
+  await reconcileActiveClients()
   const client = await resolveMainClient(event)
   const requestCloneForEvents = event.request.clone()
   const response = await getResponse(
@@ -129,12 +171,14 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
     client,
     requestId,
     requestInterceptedAt,
+    originatedFromActiveClient,
   )
 
   // Send back the response clone for the "response:*" life-cycle events.
   // Ensure MSW is active and ready to handle the message, otherwise
   // this message will pend indefinitely.
   if (client && activeClientIds.has(client.id)) {
+    try {
     const serializedRequest = await serializeRequest(requestCloneForEvents)
 
     // Omit the body of server-sent event stream responses.
@@ -150,7 +194,7 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
     // Clone the response so both the client and the library could consume it.
     const responseClone = isEventStreamResponse ? null : response.clone()
 
-    sendToClient(
+    void sendToClient(
       client,
       {
         type: 'RESPONSE',
@@ -172,7 +216,8 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
       responseClone && responseClone.body
         ? [serializedRequest.body, responseClone.body]
         : [],
-    )
+    ).catch(() => {})
+    } catch {}
   }
 
   return response
@@ -189,28 +234,8 @@ async function handleRequest(event, requestId, requestInterceptedAt) {
 async function resolveMainClient(event) {
   const client = await self.clients.get(event.clientId)
 
-  if (activeClientIds.has(event.clientId)) {
-    return client
-  }
-
-  if (client?.frameType === 'top-level') {
-    return client
-  }
-
-  const allClients = await self.clients.matchAll({
-    type: 'window',
-  })
-
-  return allClients
-    .filter((client) => {
-      // Get only those clients that are currently visible.
-      return client.visibilityState === 'visible'
-    })
-    .find((client) => {
-      // Find the client ID that's recorded in the
-      // set of clients that have registered the worker.
-      return activeClientIds.has(client.id)
-    })
+  if (activeClientIds.has(event.clientId)) return client
+  return undefined
 }
 
 /**
@@ -220,7 +245,7 @@ async function resolveMainClient(event) {
  * @param {number} requestInterceptedAt
  * @returns {Promise<Response>}
  */
-async function getResponse(event, client, requestId, requestInterceptedAt) {
+async function getResponse(event, client, requestId, requestInterceptedAt, originatedFromActiveClient) {
   // Clone the request because it might've been already used
   // (i.e. its body has been read and sent to the client).
   const requestClone = event.request.clone()
@@ -250,9 +275,13 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
     return fetch(requestClone, { headers })
   }
 
+  function failClosed() {
+    return SAFE_METHODS.has(event.request.method) ? passthrough() : Response.error()
+  }
+
   // Bypass mocking when the client is not active.
   if (!client) {
-    return passthrough()
+    return originatedFromActiveClient ? failClosed() : passthrough()
   }
 
   // Bypass initial page load requests (i.e. static assets).
@@ -260,12 +289,14 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
   // means that MSW hasn't dispatched the "MOCK_ACTIVATE" event yet
   // and is not ready to handle requests.
   if (!activeClientIds.has(client.id)) {
-    return passthrough()
+    return originatedFromActiveClient ? failClosed() : passthrough()
   }
 
   // Notify the client that a request has been intercepted.
   const serializedRequest = await serializeRequest(event.request)
-  const clientMessage = await sendToClient(
+  let clientMessage
+  try {
+    clientMessage = await sendToClient(
     client,
     {
       type: 'REQUEST',
@@ -276,7 +307,12 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
       },
     },
     [serializedRequest.body],
-  )
+    )
+  } catch {
+    return failClosed()
+  }
+
+  if (!clientMessage || typeof clientMessage !== 'object') return failClosed()
 
   switch (clientMessage.type) {
     case 'MOCK_RESPONSE': {
@@ -288,7 +324,7 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
     }
   }
 
-  return passthrough()
+  return failClosed()
 }
 
 /**
@@ -300,19 +336,37 @@ async function getResponse(event, client, requestId, requestInterceptedAt) {
 function sendToClient(client, message, transferrables = []) {
   return new Promise((resolve, reject) => {
     const channel = new MessageChannel()
+    let settled = false
+
+    const finish = (callback, value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      channel.port1.close()
+      channel.port2.close()
+      callback(value)
+    }
+
+    const timeout = setTimeout(() => {
+      finish(reject, new Error('MSW client message timed out'))
+    }, MESSAGE_TIMEOUT)
 
     channel.port1.onmessage = (event) => {
       if (event.data && event.data.error) {
-        return reject(event.data.error)
+        return finish(reject, event.data.error)
       }
 
-      resolve(event.data)
+      finish(resolve, event.data)
     }
 
-    client.postMessage(message, [
-      channel.port2,
-      ...transferrables.filter(Boolean),
-    ])
+    try {
+      client.postMessage(message, [
+        channel.port2,
+        ...transferrables.filter(Boolean),
+      ])
+    } catch (error) {
+      finish(reject, error)
+    }
   })
 }
 

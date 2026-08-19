@@ -24,19 +24,20 @@ def test_live_connector_contract_is_frozen_and_complete() -> None:
     )
     assert document["implementations"]["first"]["port"]["method"] == "request"
     assert document["implementations"]["first"]["port"]["response"] == "JSON_OBJECT"
-    paths = {entry["path"] for entry in document["operations"]}
+    operations = {(entry["method"], entry["path"]) for entry in document["operations"]}
     assert {
-        "/v1/capabilities",
-        "/v1/accounts",
-        "/v1/accounts/{account_id}/balances",
-        "/v1/accounts/{account_id}/positions",
-        "/v1/accounts/{account_id}/orders/preview",
-        "/v1/accounts/{account_id}/orders",
-        "/v1/accounts/{account_id}/orders/{broker_order_id}",
-        "/v1/accounts/{account_id}/orders/{broker_order_id}/cancel",
-        "/v1/accounts/{account_id}/fills",
-        "/v1/market/clock",
-    } <= paths
+        ("GET", "/v1/capabilities"),
+        ("GET", "/v1/accounts"),
+        ("GET", "/v1/accounts/{account_id}/balances"),
+        ("GET", "/v1/accounts/{account_id}/positions"),
+        ("POST", "/v1/accounts/{account_id}/orders/preview"),
+        ("POST", "/v1/accounts/{account_id}/orders"),
+        ("GET", "/v1/accounts/{account_id}/orders"),
+        ("GET", "/v1/accounts/{account_id}/orders/{broker_order_id}"),
+        ("POST", "/v1/accounts/{account_id}/orders/{broker_order_id}/cancel"),
+        ("GET", "/v1/accounts/{account_id}/fills"),
+        ("GET", "/v1/market/clock"),
+    } == operations
     assert set(document["assets"]) == {
         "EQUITY",
         "FUTURE",

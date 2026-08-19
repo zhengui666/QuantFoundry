@@ -34,11 +34,23 @@ def _key(label: str) -> str:
     return f"fresh-local-{label}-{uuid.uuid4()}"
 
 
+def _diagnostic_experiment_status(detail: str) -> str | None:
+    try:
+        value = json.loads(detail)
+    except (json.JSONDecodeError, TypeError):
+        return "INVALID_DETAIL"
+    return value.get("status") if isinstance(value, dict) else "INVALID_DETAIL"
+
+
 def _expect(response: httpx.Response, status: int) -> dict[str, object]:
     if response.status_code != status:
+        try:
+            diagnostic: object = _redact_diagnostic(response.json())
+        except (ValueError, TypeError):
+            diagnostic = "[REDACTED_NON_JSON_BODY]"
         raise RuntimeError(
             f"{response.request.method} {response.request.url.path}: "
-            f"{response.status_code} {response.text}"
+            f"{response.status_code} {json.dumps(diagnostic, sort_keys=True)}"
         )
     value = response.json()
     if not isinstance(value, dict):
@@ -52,6 +64,18 @@ class WorkflowObservation:
     terminal_failure: bool
     analyze_wait: bool
     diagnostic: dict[str, Any]
+
+
+def _redact_diagnostic(value: Any) -> Any:
+    sensitive = {"api_key", "credential", "password", "private_key", "secret", "token"}
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if key.lower() in sensitive else _redact_diagnostic(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_diagnostic(item) for item in value]
+    return value
 
 
 def _drive_worker_turns(
@@ -69,17 +93,25 @@ def _drive_worker_turns(
     last: WorkflowObservation | None = None
     for turn in range(max_turns):
         progressed = run_agent(turn)
-        after_agent = inspect()
-        observed_analyze_wait |= after_agent.analyze_wait
+        last = inspect()
+        observed_analyze_wait |= last.analyze_wait
+        if last.finished:
+            return observed_analyze_wait, _redact_diagnostic(last.diagnostic)
+        if last.terminal_failure:
+            raise RuntimeError(
+                "fresh local Research workflow reached a terminal failure: "
+                + json.dumps(_redact_diagnostic(last.diagnostic), sort_keys=True)
+            )
+
         progressed += run_core(turn)
         last = inspect()
         observed_analyze_wait |= last.analyze_wait
         if last.finished:
-            return observed_analyze_wait, last.diagnostic
+            return observed_analyze_wait, _redact_diagnostic(last.diagnostic)
         if last.terminal_failure:
             raise RuntimeError(
                 "fresh local Research workflow reached a terminal failure: "
-                + json.dumps(last.diagnostic, sort_keys=True)
+                + json.dumps(_redact_diagnostic(last.diagnostic), sort_keys=True)
             )
         if progressed:
             idle_turns = 0
@@ -88,9 +120,13 @@ def _drive_worker_turns(
         if idle_turns >= max_idle_turns:
             raise RuntimeError(
                 "fresh local Research workflow stalled: "
-                + json.dumps(last.diagnostic, sort_keys=True)
+                + json.dumps(_redact_diagnostic(last.diagnostic), sort_keys=True)
             )
-    diagnostic = last.diagnostic if last is not None else {"state": "unobserved"}
+    diagnostic = (
+        _redact_diagnostic(last.diagnostic)
+        if last is not None
+        else {"state": "unobserved"}
+    )
     raise RuntimeError(
         "fresh local Research workflow exceeded worker budget: "
         + json.dumps(diagnostic, sort_keys=True)
@@ -202,7 +238,7 @@ def _workflow_observation(
             "experiments": [
                 {
                     "id": row.id,
-                    "status": json.loads(row.detail).get("status"),
+                    "status": _diagnostic_experiment_status(row.detail),
                     "immutable": row.immutable,
                     "revision": row.revision,
                 }
@@ -245,29 +281,42 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root")
     args = parser.parse_args()
-    root = Path(args.root) if args.root else Path(tempfile.mkdtemp(prefix="qf-local-"))
-    root.mkdir(mode=0o750, parents=True, exist_ok=True)
-    environment = os.getenv("QF_ENVIRONMENT") or os.getenv("QF_ENV") or "local"
+    if args.root:
+        root = Path(args.root)
+        root.mkdir(mode=0o750, parents=True, exist_ok=True)
+        if any(root.iterdir()):
+            raise RuntimeError("fresh local smoke root must be empty")
+    else:
+        root = Path(tempfile.mkdtemp(prefix="qf-local-"))
+    configured_environment = os.getenv("QF_ENVIRONMENT")
+    legacy_environment = os.getenv("QF_ENV")
+    if (
+        configured_environment is not None
+        and legacy_environment is not None
+        and configured_environment != legacy_environment
+    ):
+        raise RuntimeError("QF_ENVIRONMENT and QF_ENV disagree")
+    environment = configured_environment or legacy_environment or "local"
     if environment not in {"local", "development", "test"}:
         raise RuntimeError(
             "fresh local smoke is forbidden outside local/development/test"
         )
     os.environ["QF_ENVIRONMENT"] = environment
     os.environ["QF_ENV"] = environment
-    os.environ.setdefault("QF_DATABASE_URL", f"sqlite:///{root / 'quantfoundry.db'}")
-    os.environ.setdefault("QF_GIT_COMMIT", "local-smoke")
-    os.environ.setdefault("QF_BUILD_ID", "local-smoke")
-    os.environ.setdefault("QF_ARTIFACT_DIR", str(root / "artifacts"))
-    os.environ.setdefault("QF_DATA_ROOT", str(root / "data"))
-    os.environ.setdefault("QF_DATASET_DIR", str(root / "datasets"))
-    os.environ.setdefault("QF_COST_MODEL_DIR", str(root / "cost-models"))
-    os.environ.setdefault("QF_POLICY_DIR", str(root / "policies"))
-    os.environ.setdefault(
-        "QF_AGENT_CHECKPOINT_SQLITE", str(root / "agent-checkpoint.db")
-    )
-    os.environ.setdefault("QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER", "1")
-    os.environ.setdefault("QF_LOCAL_DATA_CREDENTIAL", secrets.token_urlsafe(32))
-    os.environ.setdefault("QF_LOCAL_PROVIDER_API_KEY", secrets.token_urlsafe(32))
+    database_url = f"sqlite:///{root / 'quantfoundry.db'}"
+    os.environ["QF_DATABASE_URL"] = database_url
+    os.environ["QF_ALEMBIC_URL"] = database_url
+    os.environ["QF_GIT_COMMIT"] = "local-smoke"
+    os.environ["QF_BUILD_ID"] = "local-smoke"
+    os.environ["QF_ARTIFACT_DIR"] = str(root / "artifacts")
+    os.environ["QF_DATA_ROOT"] = str(root / "data")
+    os.environ["QF_DATASET_DIR"] = str(root / "datasets")
+    os.environ["QF_COST_MODEL_DIR"] = str(root / "cost-models")
+    os.environ["QF_POLICY_DIR"] = str(root / "policies")
+    os.environ["QF_AGENT_CHECKPOINT_SQLITE"] = str(root / "agent-checkpoint.db")
+    os.environ["QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER"] = "1"
+    os.environ["QF_LOCAL_DATA_CREDENTIAL"] = secrets.token_urlsafe(32)
+    os.environ["QF_LOCAL_PROVIDER_API_KEY"] = secrets.token_urlsafe(32)
     # This smoke owns an in-process Remote Codex transport.  Do not inherit
     # a test runner's model/provider selection: that would validate a different
     # workflow while still writing into the fresh database under test.
@@ -277,11 +326,13 @@ def main() -> None:
     os.environ["QF_CODEX_REMOTE_INSTANCE_ID"] = "CODEX-DEFAULT"
     os.environ["QF_CODEX_MODEL"] = "qf-local-v1"
     os.environ["QF_CODEX_MODELS"] = "qf-local-v1"
-    os.environ.setdefault("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "local-smoke-v1")
-    os.environ.setdefault(
-        "QF_CREDENTIAL_ENCRYPTION_KEY",
-        base64.b64encode(secrets.token_bytes(32)).decode(),
-    )
+    os.environ["QF_CREDENTIAL_ENCRYPTION_KEY_ID"] = "local-smoke-v1"
+    os.environ["QF_CREDENTIAL_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(
+        secrets.token_bytes(32)
+    ).decode()
+    os.environ["QF_CREDENTIAL_FINGERPRINT_KEY"] = base64.urlsafe_b64encode(
+        secrets.token_bytes(32)
+    ).decode()
     for directory in ("artifacts", "data", "datasets", "cost-models", "policies"):
         (root / directory).mkdir(mode=0o750, exist_ok=True)
 
@@ -290,10 +341,24 @@ def main() -> None:
     provider = create_server(
         "127.0.0.1", 0, api_key=os.environ["QF_LOCAL_PROVIDER_API_KEY"]
     )
-    provider_thread = threading.Thread(target=provider.serve_forever, daemon=True)
-    provider_thread.start()
-    provider_url = f"http://127.0.0.1:{provider.server_address[1]}/v1"
-    os.environ["QF_CODEX_BASE_URL"] = provider_url
+    provider_started = threading.Event()
+
+    def serve_provider() -> None:
+        provider_started.set()
+        provider.serve_forever()
+
+    provider_thread = threading.Thread(target=serve_provider, daemon=True)
+    try:
+        provider_thread.start()
+        if not provider_started.wait(timeout=2):
+            raise RuntimeError("local provider failed to start")
+        provider_url = f"http://127.0.0.1:{provider.server_address[1]}/v1"
+        os.environ["QF_CODEX_BASE_URL"] = provider_url
+    except BaseException:
+        provider.shutdown()
+        provider.server_close()
+        provider_thread.join(timeout=2)
+        raise
     try:
         health = httpx.get(
             f"http://127.0.0.1:{provider.server_address[1]}/healthz", timeout=2
@@ -530,7 +595,7 @@ def main() -> None:
                 ),
                 202,
             )
-        observed_analyze_wait, _diagnostic = _drive_worker_turns(
+        observed_analyze_wait, _ = _drive_worker_turns(
             lambda iteration: run_agent_once(identity=f"fresh-local-agent-{iteration}"),
             lambda iteration: run_once(identity=f"fresh-local-core-{iteration}"),
             lambda: _workflow_observation(
@@ -643,7 +708,8 @@ def main() -> None:
             )
         )
     finally:
-        provider.shutdown()
+        if provider_thread.is_alive() and provider_started.is_set():
+            provider.shutdown()
         provider.server_close()
         provider_thread.join(timeout=2)
 

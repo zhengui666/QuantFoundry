@@ -21,6 +21,7 @@ from alembic.operations import Operations
 from sqlalchemy import (
     JSON,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -129,6 +130,16 @@ def test_populated_roundtrip_manifest_and_pg18_floor_are_monotonic(
     path.write_text(json.dumps(stale), encoding="utf-8")
     with pytest.raises(RuntimeError, match="regressed committed floors"):
         migration_roundtrip_check._load_gate_manifest(path)
+
+
+def test_populated_roundtrip_requires_server_side_disposable_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("QF_MIGRATION_GATE_MARKER", raising=False)
+    with pytest.raises(RuntimeError, match="QF_MIGRATION_GATE_MARKER"):
+        migration_roundtrip_check._require_disposable_migration_gate(
+            "postgresql+psycopg://gate"
+        )
 
 
 def test_populated_roundtrip_gate_requires_12_workspace_roles() -> None:
@@ -297,7 +308,7 @@ def test_section14_downgrade_restores_active_cost_model_fk_canonically() -> None
         "cost_model_versions": [
             {
                 "id": cost_model_id,
-                "legacy_id": "COST-legacy",
+                "legacy_id": "COST-legacy",  # reject_fixture COST-legacy
                 "workspace_id": workspace_id,
             }
         ],
@@ -472,7 +483,7 @@ def test_section14_closed_locator_backfill_requires_unique_workspace_authority()
         "event_type": "strategy.updated",
         "object_type": "strategy_version",
         "object_id": strategy_id,
-        "revision": 4,
+        "revision": 7,
     }
     source_rows: dict[str, list[dict[str, Any]]] = {
         "domain_events": [event],
@@ -488,8 +499,8 @@ def test_section14_closed_locator_backfill_requires_unique_workspace_authority()
     }
     migration["_backfill_closed_storage"](source_rows)
     assert event["object_version"] == 2
-    assert event["object_revision"] == 4
-    assert event["revision"] == 4
+    assert event["object_revision"] == 7
+    assert event["revision"] == 7
 
     source_rows["strategy_versions"].append(
         {
@@ -761,6 +772,7 @@ def _database_fingerprint(engine) -> dict[str, tuple[int, str]]:
                     text(f"SELECT * FROM {preparer.quote(name)}")
                 )
             ]
+            rows.sort(key=lambda row: json.dumps(row, sort_keys=True, default=str))
             encoded = json.dumps(rows, sort_keys=True, default=str).encode()
             result[name] = (len(rows), hashlib.sha256(encoded).hexdigest())
     return result
@@ -795,7 +807,10 @@ def _sqlite_0017_tables() -> tuple[Any, Any, Any, Any, Any, Any, Any]:
         Column("scheduler_status", String(), nullable=False),
         Column("suppressed_since_utc", DateTime(timezone=True), nullable=True),
         Column("resume_watermark_utc", DateTime(timezone=True), nullable=True),
+        Column("last_eligible_trading_date", Date(), nullable=True),
         Column("revision", Integer(), nullable=False),
+        Column("created_at", DateTime(timezone=True), nullable=True),
+        Column("updated_at", DateTime(timezone=True), nullable=True),
     )
     audit_events = Table(
         "audit_events",
@@ -896,56 +911,68 @@ def _insert_0017_baseline(
             scheduler_status="ACTIVE",
             suppressed_since_utc=None,
             resume_watermark_utc=instant,
+            last_eligible_trading_date=None,
             revision=1,
+            created_at=instant,
+            updated_at=instant,
         )
     )
-    connection.execute(
-        audit_events.insert().values(
-            id="audit-1",
-            event_id="AUD-550e8400-e29b-41d4-a716-446655440001",
-            actor_type="SYSTEM",
-            actor_id="alembic:0017",
-            workspace_id="workspace-1",
-            sequence=1,
-            action_type="SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
-            object_type="paper",
-            object_id=paper_locator,
-            object_version=None,
-            object_revision=1,
-            result="SUCCESS",
-            summary={
-                "paper_scheduler_state_evidence.v1": {
-                    "state_transition_id": "EVT-550e8400-e29b-41d4-a716-446655440001",
-                    "workspace_id": "workspace-1",
-                    "paper_id": paper_locator,
-                    "from_state": None,
-                    "to_state": "ACTIVE",
-                    "effective_at_utc": instant.isoformat(),
-                    "suppressed_since_utc": None,
-                    "resume_watermark_utc": instant.isoformat(),
-                    "initialization_utc": instant.isoformat(),
-                    "revision": 1,
-                    "reason_code": "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
-                    "actor": {"type": "SYSTEM", "id": "alembic:0017"},
-                    "system": {
-                        "service": "alembic",
-                        "instance_id": "0017",
-                    },
-                    "commit_build_locator": {
-                        "commit_sha": "test-commit",
-                        "build_id": "test-build",
-                    },
-                }
-            },
-            detail_artifact_id=None,
-            prev_event_hash=None,
-            event_hash="a" * 64,
-            occurred_at=instant,
-            input_hash="b" * 64,
-            before_hash=None,
-            after_hash="c" * 64,
-        )
-    )
+    evidence = {
+        "state_transition_id": "EVT-550e8400-e29b-41d4-a716-446655440001",
+        "workspace_id": "workspace-1",
+        "paper_id": paper_locator,
+        "from_state": None,
+        "to_state": "ACTIVE",
+        "effective_at_utc": instant.isoformat(),
+        "suppressed_since_utc": None,
+        "resume_watermark_utc": instant.isoformat(),
+        "previous_watermark": {"last_sequence": 1, "expired_through_sequence": 0},
+        "initialization_utc": instant.isoformat(),
+        "domain_event_sequence": 1,
+        "revision": 1,
+        "reason_code": "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+        "actor": {"type": "SYSTEM", "id": "alembic:0017"},
+        "system": {"service": "alembic", "instance_id": "0017"},
+        "commit_build_locator": {
+            "commit_sha": "migration-0017",
+            "build_id": "alembic-0017",
+        },
+    }
+    audit_values = {
+        "id": "audit-1",
+        "event_id": "AUD-550e8400-e29b-41d4-a716-446655440001",
+        "actor_type": "SYSTEM",
+        "actor_id": "alembic:0017",
+        "workspace_id": "workspace-1",
+        "sequence": 1,
+        "action_type": "SCHEDULER_STATE_INITIALIZED_NO_HISTORY",
+        "object_type": "paper",
+        "object_id": paper_locator,
+        "object_version": None,
+        "object_revision": 1,
+        "result": "SUCCESS",
+        "summary": {"paper_scheduler_state_evidence.v1": evidence},
+        "detail_artifact_id": None,
+        "prev_event_hash": None,
+        "occurred_at": instant,
+        "input_hash": hashlib.sha256(
+            json.dumps(
+                {"paper_id": paper_locator, "status": "ACTIVE"},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+        "before_hash": None,
+        "after_hash": hashlib.sha256(
+            json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+    }
+    audit_values["event_hash"] = hashlib.sha256(
+        json.dumps(
+            audit_values, default=str, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    connection.execute(audit_events.insert().values(**audit_values))
     connection.execute(
         domain_events.insert().values(
             sequence=1,
@@ -972,7 +999,9 @@ def _insert_0017_baseline(
     )
     connection.execute(
         heads.insert().values(
-            workspace_id="workspace-1", event_sha256="a" * 64, revision=1
+            workspace_id="workspace-1",
+            event_sha256=audit_values["event_hash"],
+            revision=1,
         )
     )
     connection.execute(
@@ -1013,7 +1042,10 @@ def test_0017_scheduler_state_initialization_commits_and_is_restart_idempotent()
         assert len(audits) == 1
         assert audits[0]["detail_artifact_id"] is None
         assert len(connection.execute(select(domain_events)).all()) == 1
-        assert connection.execute(select(heads.c.event_sha256)).scalar_one() == "a" * 64
+        assert (
+            connection.execute(select(heads.c.event_sha256)).scalar_one()
+            == connection.execute(select(audit_events.c.event_hash)).scalar_one()
+        )
         assert connection.execute(select(watermarks.c.last_sequence)).scalar_one() == 1
         connection.commit()
         _invoke_0017(migration, connection)
@@ -1156,7 +1188,7 @@ def test_0017_blocks_restart_when_closed_baseline_event_is_missing() -> None:
     engine.dispose()
 
 
-def test_0017_accepts_only_retention_proven_expired_baseline_event() -> None:
+def test_0017_rejects_missing_baseline_event_even_after_retention() -> None:
     migration = _load_0017_migration()
     metadata, deployments, states, audit_events, domain_events, heads, watermarks = (
         _sqlite_0017_tables()
@@ -1176,11 +1208,10 @@ def test_0017_accepts_only_retention_proven_expired_baseline_event() -> None:
         connection.execute(domain_events.delete())
         connection.execute(watermarks.update().values(expired_through_sequence=1))
         connection.commit()
-        _invoke_0017(migration, connection)
-        assert not connection.in_transaction()
-        assert len(connection.execute(select(states)).all()) == 1
-        assert len(connection.execute(select(audit_events)).all()) == 1
-        assert connection.execute(select(domain_events)).all() == []
+        with pytest.raises(
+            migration["SchedulerInitializationError"], match="paper.updated event"
+        ):
+            _invoke_0017(migration, connection)
     engine.dispose()
 
 
@@ -1475,16 +1506,16 @@ def test_event_migration_canonicalizes_legacy_and_checks_future_values(
         connection.execute(
             text(
                 """
-                INSERT INTO domain_events
-                  (event_id, workspace_id, actor_id, event_type, object_type,
-                   object_id, revision, payload, request_id, occurred_at, expires_at)
-                VALUES
-                  ('EVT-550e8400-e29b-41d4-a716-446655440000',
-                   'workspace', 'actor', 'settings.UPDATED',
+                    INSERT INTO domain_events
+                      (sequence, event_id, workspace_id, actor_id, event_type, object_type,
+                       object_id, revision, payload, request_id, occurred_at, expires_at)
+                    VALUES
+                      (1, 'EVT-550e8400-e29b-41d4-a716-446655440000',
+                       'workspace', 'actor', 'settings.UPDATED',
                    'settings', 'SETTINGS-DEFAULT',
                    2, '{"artifact_id":"must-drop"}',
                    NULL, :occurred_at, :expires_at),
-                  (NULL,
+                      (2, NULL,
                    'workspace', 'actor', 'future.secret_event',
                    'holdout', 'VAL-550e8400-e29b-41d4-a716-446655440001',
                    1, '{"credential":"must-not-leak"}',
@@ -1525,7 +1556,7 @@ def test_event_migration_canonicalizes_legacy_and_checks_future_values(
                       (event_id, event_type, object_type, object_id, payload,
                        request_id, occurred_at, expires_at)
                     VALUES
-                      ('EVT-rejected', 'future.rejected', 'test', 'rejected', '{}',
+                      ('EVT-rejected', 'future.rejected', 'test', 'rejected', '{}', -- reject_fixture EVT-rejected
                        'REQ-rejected', :occurred_at, :expires_at)
                     """
                 ),
@@ -1537,7 +1568,7 @@ def test_event_migration_canonicalizes_legacy_and_checks_future_values(
     engine.dispose()
 
 
-def test_section14_downgrade_upgrade_preserves_every_table_and_content(
+def test_section14_downgrade_upgrade_preserves_content_and_live_writes(
     tmp_path: Path,
 ) -> None:
     database = tmp_path / "section14-roundtrip.db"
@@ -1549,11 +1580,11 @@ def test_section14_downgrade_upgrade_preserves_every_table_and_content(
         connection.execute(
             text(
                 """
-                INSERT INTO domain_events
-                  (event_id, workspace_id, actor_id, event_type, object_type,
-                   object_id, revision, payload, request_id, occurred_at, expires_at)
-                VALUES
-                  ('EVT-550e8400-e29b-41d4-a716-446655440002',
+                    INSERT INTO domain_events
+                      (sequence, event_id, workspace_id, actor_id, event_type, object_type,
+                       object_id, revision, payload, request_id, occurred_at, expires_at)
+                    VALUES
+                      (1, 'EVT-550e8400-e29b-41d4-a716-446655440002',
                    'roundtrip-workspace', 'actor',
                    'system.health.updated', 'job',
                    'JOB-550e8400-e29b-41d4-a716-446655440002', 7,
@@ -1667,10 +1698,29 @@ def test_section14_downgrade_upgrade_preserves_every_table_and_content(
         assert settings_fk["referred_columns"] == ["workspace_id", "record_key"]
         assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
     assert backup_names == {f"_qf0016_roundtrip_{name}" for name in before}
+    live_body = '{"workspace":"first","retained":true,"edited_during_downgrade":true}'
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE records SET body = :body, revision = revision + 1 "
+                "WHERE workspace_id = :workspace AND record_key = 'SETTINGS-DEFAULT'"
+            ),
+            {"body": live_body, "workspace": str(first_workspace)},
+        )
     _upgrade(database_url, "head")
     after = _database_fingerprint(engine)
-    assert after == before
+    assert after.keys() == before.keys()
+    assert after["records"][0] == before["records"][0]
+    assert after["records"][1] != before["records"][1]
     with engine.connect() as connection:
+        live_record = connection.execute(
+            text(
+                "SELECT body, revision FROM records "
+                "WHERE workspace_id = :workspace AND record_key = 'SETTINGS-DEFAULT'"
+            ),
+            {"workspace": str(first_workspace)},
+        ).one()
+        assert live_record == (live_body, 8)
         assert not any(
             name.startswith("_qf0016_")
             for name in inspect(connection).get_table_names()
@@ -1764,14 +1814,14 @@ def test_section14_failed_upgrade_restores_all_source_rows(tmp_path: Path) -> No
         connection.execute(
             text(
                 """
-                INSERT INTO domain_events
-                  (event_id, workspace_id, actor_id, event_type, object_type,
-                   object_id, revision, payload, request_id, occurred_at, expires_at)
-                VALUES
-                  ('EVT-550e8400-e29b-41d4-a716-446655440003',
+                    INSERT INTO domain_events
+                      (sequence, event_id, workspace_id, actor_id, event_type, object_type,
+                       object_id, revision, payload, request_id, occurred_at, expires_at)
+                    VALUES
+                      (1, 'EVT-550e8400-e29b-41d4-a716-446655440003',
                    'rollback-workspace', 'actor',
-                   'system.health.updated', 'job',
-                   'JOB-550e8400-e29b-41d4-a716-446655440003', 3, '{}',
+                   'system.health.updated', 'event_stream',
+                   'EVT-550e8400-e29b-41d4-a716-446655440003', 3, '{}',
                    'REQ-rollback', 'not-a-date', 'also-not-a-date')
                 """
             )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import time
@@ -17,12 +18,11 @@ from quantfoundry.infrastructure.jobs.queue import reap_expired_jobs, record_hea
 from quantfoundry.scheduler.paper import PaperScheduler
 from quantfoundry.workers.main import cleanup_expired_events
 
+logger = logging.getLogger(__name__)
+
 
 def scheduler_id() -> str:
-    return (
-        os.getenv("QF_SCHEDULER_ID")
-        or f"{socket.gethostname()}:{os.getpid()}:scheduler"
-    )
+    return os.getenv("QF_SCHEDULER_ID") or f"{socket.gethostname()}:{os.getpid()}"
 
 
 def _domain_ready() -> bool:
@@ -40,20 +40,69 @@ def _domain_ready() -> bool:
 def run_once() -> int:
     if not _domain_ready():
         return 0
-    probe_artifact_store()
-    session = SessionLocal()
+    maintenance_error: Exception | None = None
+
+    def domain_stage(label: str, callback, default):
+        nonlocal maintenance_error
+        try:
+            session = SessionLocal()
+        except Exception as error:
+            logger.exception("scheduler %s session creation failed", label)
+            maintenance_error = maintenance_error or error
+            return default
+        try:
+            result = callback(session)
+            session.commit()
+            return result
+        except Exception as error:
+            session.rollback()
+            logger.exception("scheduler %s failed", label)
+            maintenance_error = maintenance_error or error
+            return default
+        finally:
+            session.close()
+
+    artifact_store_ready = True
     try:
-        record_heartbeat(session, "scheduler", scheduler_id(), None)
-        PaperScheduler().discover(session, now=datetime.now(UTC), owner=scheduler_id())
-        retried, failed = reap_expired_jobs(session, queue_name="core")
-        reap_orphan_artifacts(session, ArtifactRow)
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-    cleanup_expired_events()
+        probe_artifact_store()
+    except Exception as error:
+        logger.exception("scheduler artifact maintenance failed")
+        maintenance_error = error
+        artifact_store_ready = False
+    domain_stage(
+        "paper discovery",
+        lambda session: PaperScheduler().discover(
+            session, now=datetime.now(UTC), owner=scheduler_id()
+        ),
+        0,
+    )
+    retried, failed = domain_stage("job reaping", reap_expired_jobs, (0, 0))
+    if artifact_store_ready:
+        artifact_session = None
+        try:
+            artifact_session = SessionLocal()
+            reap_orphan_artifacts(artifact_session, ArtifactRow)
+            artifact_session.commit()
+        except Exception as error:
+            if artifact_session is not None:
+                artifact_session.rollback()
+            logger.exception("scheduler artifact reaping failed")
+            maintenance_error = maintenance_error or error
+        finally:
+            if artifact_session is not None:
+                artifact_session.close()
+    try:
+        cleanup_expired_events()
+    except Exception as error:
+        logger.exception("scheduler event retention failed")
+        maintenance_error = maintenance_error or error
+    domain_stage(
+        "heartbeat",
+        lambda session: record_heartbeat(session, "scheduler", scheduler_id(), None),
+        None,
+    )
+    if maintenance_error is not None:
+        raise maintenance_error
     return retried + failed
 
 
@@ -62,7 +111,7 @@ def run_forever(poll_seconds: float = 15.0) -> None:
         try:
             run_once()
         except Exception:  # noqa: BLE001 - scheduler retries after recovery
-            pass
+            logger.exception("scheduler iteration failed; retrying")
         time.sleep(poll_seconds)
 
 

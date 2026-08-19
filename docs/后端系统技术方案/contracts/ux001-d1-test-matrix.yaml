@@ -30,6 +30,9 @@ families:
   - id: frontend_acceptance
     operations: []
     assertions: [responsive_390px, keyboard_a11y, loading_error_empty_pending_states, visual_baseline_review, settings_single_write_surface]
+  - id: openapi_operation_coverage
+    operations: [analyzeFactor, approveApproval, completeSetup, createDatasetSnapshot, createExperiment, createFactor, createResearch, createStrategy, createValidation, evaluateDataCapabilities, exportMemo, freezeStrategy, generateMemo, getApproval, getCurrentStrategyVersion, getDatasetSnapshot, getExperiment, getHoldoutGate, getHoldoutResult, getJob, getMemo, getOverview, getResearch, getSetupCapabilities, getSetupStatus, getStrategyVersion, getSystemHealth, getToolCall, getValidation, listAgents, listApprovals, listDataCapabilities, listResearch, rejectApproval, reproduceExperiment, requestHoldoutApproval, runFastBacktest, runHoldout, startResearch, streamEvents, validateDataset, validateLiveConnector, validateSetupProviderConnection]
+    assertions: [canonical_openapi_coverage]
 commands:
   contract_parse: ruby -e 'require "yaml"; YAML.load_file("docs/后端系统技术方案/contracts/openapi-v1.yaml")'
   generated_models_check: cd backend \&\& uv run python scripts/regenerate_api_models.py --check

@@ -9,9 +9,10 @@ import os
 import time
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from hmac import compare_digest
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -28,8 +29,11 @@ def ensure_fullstack_compat_setup() -> None:
         SessionLocal,
         SetupBindingRow,
     )
+    from quantfoundry.bootstrap.local import _workspace_seed_values
     from quantfoundry.infrastructure.crypto.provider_credentials import (
+        CredentialConfigurationError,
         credential_aad,
+        decrypt_credential,
         encrypt_credential,
     )
     from quantfoundry.infrastructure.db.schema import canonical_workspace_id
@@ -40,13 +44,53 @@ def ensure_fullstack_compat_setup() -> None:
     credential = os.environ["QF_LOCAL_PROVIDER_API_KEY"]
     timestamp = datetime.now(UTC)
     with SessionLocal.begin() as db:
-        ai = db.scalar(
-            select(ModelProviderConnectionRow).where(
-                ModelProviderConnectionRow.workspace_id == workspace_id,
-                ModelProviderConnectionRow.kind == "AI",
-                ModelProviderConnectionRow.validation_state == "SUCCESS",
+        active_connections = list(
+            db.scalars(
+                select(ModelProviderConnectionRow)
+                .where(
+                    ModelProviderConnectionRow.workspace_id == workspace_id,
+                    ModelProviderConnectionRow.owner_actor_id == owner_id,
+                    ModelProviderConnectionRow.provider_id == "REMOTE_CODEX",
+                    ModelProviderConnectionRow.kind == "AI",
+                    ModelProviderConnectionRow.model_name == model_name,
+                    ModelProviderConnectionRow.validation_state == "SUCCESS",
+                    ModelProviderConnectionRow.status == "ACTIVE",
+                )
+                .order_by(ModelProviderConnectionRow.validated_at.desc())
             )
         )
+        matching_connections = []
+        for candidate in active_connections:
+            try:
+                stored_credential = decrypt_credential(
+                    candidate.ciphertext,
+                    candidate.nonce,
+                    candidate.key_id,
+                    aad=credential_aad(
+                        connection_id=candidate.id,
+                        workspace_id=workspace_id,
+                        actor_id=owner_id,
+                        provider_id=candidate.provider_id,
+                        model_name=candidate.model_name,
+                    ),
+                )
+            except CredentialConfigurationError:
+                stored_credential = None
+            if stored_credential is not None and compare_digest(
+                stored_credential, credential
+            ):
+                matching_connections.append(candidate)
+            else:
+                # A different configured credential is not proof that this
+                # harness owns the connection. Leave unrelated active rows
+                # untouched.
+                continue
+        if matching_connections:
+            ai = matching_connections[0]
+            for duplicate in matching_connections[1:]:
+                duplicate.status = "REVOKED"
+        else:
+            ai = None
         if ai is None:
             connection_id = str(uuid.uuid4())
             ciphertext, nonce, key_id = encrypt_credential(
@@ -76,26 +120,36 @@ def ensure_fullstack_compat_setup() -> None:
             )
             db.add(ai)
             db.flush()
+        seed_values = _workspace_seed_values(workspace_id)
+        research_id = seed_values["research_policy"]["policy_id"]
+        risk_id = seed_values["risk_policy"]["policy_id"]
+        cost_id = seed_values["cost_model"]["cost_model_id"]
         research = db.scalar(
             select(ResearchPolicyVersionRow).where(
                 ResearchPolicyVersionRow.workspace_id == workspace_id,
-                ResearchPolicyVersionRow.policy_family == "research",
-                ResearchPolicyVersionRow.status == "ACTIVE",
+                ResearchPolicyVersionRow.policy_id == research_id,
             )
         )
         risk = db.scalar(
             select(RiskPolicyVersionRow).where(
                 RiskPolicyVersionRow.workspace_id == workspace_id,
-                RiskPolicyVersionRow.status == "ACTIVE",
+                RiskPolicyVersionRow.policy_id == risk_id,
             )
         )
         cost = db.scalar(
             select(CostModelVersionRow).where(
                 CostModelVersionRow.workspace_id == workspace_id,
-                CostModelVersionRow.status == "ACTIVE",
+                CostModelVersionRow.cost_model_id == cost_id,
             )
         )
-        if research is None or risk is None or cost is None:
+        if (
+            research is None
+            or research.status != "ACTIVE"
+            or risk is None
+            or risk.status != "ACTIVE"
+            or cost is None
+            or cost.status != "ACTIVE"
+        ):
             raise RuntimeError("full-stack seed policy/cost rows are missing")
         settings = db.scalar(
             select(Record).where(
@@ -164,7 +218,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-url", default="http://127.0.0.1:8000/api/v1")
     parser.add_argument("--application-url", required=True)
     parser.add_argument("--prepare-only", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    parsed = urlsplit(args.api_url)
+    if not parsed.hostname or parsed.username or parsed.password:
+        parser.error("--api-url must be an origin without embedded credentials")
+    if parsed.scheme != "https" and not (
+        parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    ):
+        parser.error("--api-url must use HTTPS unless it targets loopback")
+    return args
 
 
 def request_json(
@@ -255,16 +317,49 @@ def activate_fullstack_database(
     if not raw_url:
         raise RuntimeError("QF_FULLSTACK_DATABASE_URL is required")
     parsed = urlsplit(raw_url)
-    if not parsed.hostname or not parsed.username or not parsed.path.strip("/"):
+    if (
+        parsed.scheme not in {"postgresql", "postgres", "postgresql+psycopg"}
+        or not parsed.hostname
+        or not parsed.username
+        or not parsed.path.strip("/")
+    ):
         raise RuntimeError("QF_FULLSTACK_DATABASE_URL is invalid")
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    sslmode = query.get("sslmode", ["disable"])[-1].lower()
+    loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1", "postgres"}
+    if sslmode == "disable":
+        if not loopback or os.environ.get("QF_FULLSTACK_ALLOW_INSECURE_DB") != "1":
+            raise RuntimeError(
+                "non-loopback full-stack database connections require TLS"
+            )
+        tls_mode = "DISABLED"
+    elif sslmode == "verify-ca":
+        tls_mode = "VERIFY_CA"
+    elif sslmode == "verify-full":
+        tls_mode = "VERIFY_FULL"
+    else:
+        raise RuntimeError(
+            "full-stack database sslmode must be disable, verify-ca, or verify-full"
+        )
+    ca_certificate_pem = os.environ.get("QF_FULLSTACK_CA_CERTIFICATE_PEM")
+    if tls_mode != "DISABLED" and not ca_certificate_pem:
+        raise RuntimeError(
+            "TLS full-stack database connections require QF_FULLSTACK_CA_CERTIFICATE_PEM"
+        )
     status = client.get("/database/connection", headers=auth)
     if status.status_code != 200:
         raise RuntimeError(
             f"GET /database/connection: {status.status_code} {status.text}"
         )
     current = status.json()
-    if current.get("active_revision") is not None:
-        return
+    database_name = parsed.path.strip("/").split("/", 1)[0]
+    desired = {
+        "host": parsed.hostname,
+        "port": parsed.port or 5432,
+        "database": database_name,
+        "tls_mode": tls_mode,
+        "pool_profile": "fullstack-ci",
+    }
     etag = status.headers.get("etag")
     if not etag:
         raise RuntimeError("database status is missing ETag")
@@ -283,22 +378,31 @@ def activate_fullstack_database(
             "connection": {
                 "host": parsed.hostname,
                 "port": parsed.port or 5432,
-                "database": parsed.path.strip("/").split("/", 1)[0],
-                "tls_mode": "DISABLED",
+                "database": database_name,
+                "tls_mode": desired["tls_mode"],
                 "username": unquote(parsed.username),
                 "password": unquote(parsed.password or ""),
                 "pool_profile": "fullstack-ci",
+                **(
+                    {"ca_certificate_pem": ca_certificate_pem}
+                    if ca_certificate_pem
+                    else {}
+                ),
             },
         },
     )
     if not isinstance(candidate.get("revision"), int):
-        raise RuntimeError("database candidate is missing revision")
+        raise TypeError("database candidate is missing revision")
     request_json(
         client,
         "POST",
         "/database/connection/candidate/validate",
         expected=200,
-        headers={**auth, "Idempotency-Key": f"{prefix}-db-validate"},
+        headers={
+            **auth,
+            "X-Candidate-Revision": str(candidate["revision"]),
+            "Idempotency-Key": f"{prefix}-db-validate",
+        },
     )
     request_json(
         client,
@@ -308,6 +412,7 @@ def activate_fullstack_database(
         headers={
             **auth,
             "If-Match": etag,
+            "X-Candidate-Revision": str(candidate["revision"]),
             "Idempotency-Key": f"{prefix}-db-activate",
         },
     )
@@ -318,6 +423,7 @@ def main() -> int:
     general_key = os.environ.get("QF_FULLSTACK_GENERAL_KEY")
     if not general_key:
         raise RuntimeError("QF_FULLSTACK_GENERAL_KEY is required")
+    run_id = uuid.uuid4().hex[:12]
     with httpx.Client(base_url=args.api_url, timeout=30) as client:
         login = request_json(
             client,
@@ -329,12 +435,12 @@ def main() -> int:
         )
         session = login.get("session")
         if not isinstance(session, dict):
-            raise RuntimeError("login response is missing session")
+            raise TypeError("login response is missing session")
         csrf = session.get("csrf_token")
         if not isinstance(csrf, str) or len(csrf) < 32:
             raise RuntimeError("login response is missing CSRF token")
         auth = {"X-CSRF-Token": csrf}
-        activate_fullstack_database(client, auth, "fullstack-bootstrap")
+        activate_fullstack_database(client, auth, f"fullstack-db-{run_id}")
         from app.control_plane import restore_active_domain_database
 
         restore_active_domain_database()
@@ -353,7 +459,7 @@ def main() -> int:
         dataset_id = required_string(seeded, "dataset_id")
         cost_model_id = required_string(seeded, "cost_model_id")
         validation_policy_id = required_string(seeded, "validation_policy_id")
-        key_prefix = f"fullstack-{dataset_id}"
+        key_prefix = f"fullstack-{dataset_id}-{run_id}"
         active_response = client.get("/configuration/active", headers=auth)
         if active_response.status_code != 200:
             raise RuntimeError(
@@ -411,7 +517,7 @@ def main() -> int:
             )
         candidate_revision = candidate.json().get("revision")
         if not isinstance(candidate_revision, int):
-            raise RuntimeError("configuration candidate is missing revision")
+            raise TypeError("configuration candidate is missing revision")
         request_json(
             client,
             "POST",

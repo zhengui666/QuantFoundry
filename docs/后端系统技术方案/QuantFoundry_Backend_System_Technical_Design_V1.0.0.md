@@ -1972,7 +1972,7 @@ P00 AI provider connection 使用独立的加密 credential aggregate。`POST /s
 | `exposed_by_job_id` | `uuid` | NO | — | FK jobs(id) | 执行 Job |
 | `contaminated_for_future_versions` | `boolean` | NO | true |  | 对衍生版本视为已知 |
 | `validation_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,validation_id), CHECK exact VAL grammar | 归属 Validation public locator；与 internal validation FK 同 workspace |
-| `strategy_version_public_id` | `varchar(64)` | NO | — | CHECK closed `STRAT-ID@version` locator | Strategy aggregate public ID + 正整数 version；禁止仅 STRAT 猜测 current |
+| `strategy_version_public_id` | `varchar(64)` | NO | — | CHECK closed `STRAT-ID@version` locator <!-- reject_fixture STRAT-ID --> | Strategy aggregate public ID + 正整数 version；禁止仅 STRAT 猜测 current |
 | `approval_public_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,approval_public_id), CHECK exact APR grammar | 解锁审批 public locator |
 | `job_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,job_id), CHECK exact JOB grammar | 产生暴露结果的 Job public locator |
 | `result_artifact_public_id` | `varchar(40)` | NO | — | CHECK exact ART grammar | 不可变结果 artifact public locator |
@@ -2264,7 +2264,7 @@ Live scheduler 只能在 global/account/deployment kill switch 均启用、人�
 | `resolved_at` | `timestamptz` | YES | NULL |  | 处理 |
 | `resolution_reason` | `text` | YES | NULL |  | Dismiss/Apply reason |
 
-### 14.39 `agent_configs`
+### 14.40 `agent_configs`
 
 Agent runtime config is a mutable aggregate. It controls model/runtime limits only; the hard role permission matrix, approval authority, holdout access, and risk authority remain versioned server policy/code and are not fields in this table or mutation API.
 
@@ -2284,7 +2284,7 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 | `created_at` | `timestamptz` | NO | now() |  | Creation |
 | `updated_at` | `timestamptz` | NO | now() |  | Last mutation |
 
-### 14.40 `agent_runs`
+### 14.41 `agent_runs`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2335,7 +2335,7 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 | `root_agent_run_public_id` | `varchar(41)` | YES | NULL | INDEX, CHECK exact ARUN grammar | lineage root public locator；root run 为 NULL |
 | `parent_agent_run_public_id` | `varchar(41)` | YES | NULL | INDEX, CHECK exact ARUN grammar | direct parent/handoff public locator |
 
-### 14.41 `tool_calls`
+### 14.42 `tool_calls`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2372,7 +2372,7 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 | `configuration_sha256` | `varchar(64)` | NO | zero hash | CHECK lowercase hex SHA-256 | Captured configuration hash |
 | `tool_registry_sha256` | `varchar(64)` | NO | zero hash | CHECK lowercase hex SHA-256 | Canonical tool registry binding |
 
-### 14.42 `jobs`
+### 14.43 `jobs`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2416,7 +2416,7 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 
 `PAPER_DAILY_RUN` Job 的 `input_payload` 只保存启动所需的 closed command locator，至少为同 workspace 的 `paper_id`、`paper_run_id`、`trading_date` 和 `execution_assumption` revision/hash；它不是 transition evidence。attempt、lease、fence、retry 和 error columns仍是 scheduler execution 的唯一 mutable durable truth；每个 decision 的冻结快照必须写入 §23.4.1 Artifact。
 
-### 14.43 `job_dependencies`
+### 14.44 `job_dependencies`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2427,7 +2427,7 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 | `job_public_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,job_public_id,depends_on_job_public_id), CHECK exact JOB grammar | 当前 Job public locator |
 | `depends_on_job_public_id` | `varchar(40)` | NO | — | UNIQUE(workspace_id,job_public_id,depends_on_job_public_id), INDEX, CHECK exact JOB grammar | 被依赖 Job public locator |
 
-### 14.44 `domain_events`
+### 14.45 `domain_events`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2454,7 +2454,7 @@ Agent runtime config is a mutable aggregate. It controls model/runtime limits on
 
 Paper scheduler Domain Event only publishes the canonical `paper.run.updated`/`job.updated` event type and exact `paper_run`/`job` locator. `payload` may contain only the existing legal notification fields; it cannot reference or embed `paper_scheduler_evidence.v1`.
 
-### 14.45 `audit_events`
+### 14.46 `audit_events`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2504,7 +2504,7 @@ Scheduler evidence uses two mutually exclusive Audit shapes. For execution trans
 
 The state Audit `summary` is a queryable structured detail, not an Artifact substitute or SSE extension. It may be read only through authenticated workspace-scoped Audit review; Audit remains INSERT/SELECT append-only. A state row/deployment update, this exact summary, Audit hash-chain append, and closed `paper.updated` Domain Event are one transaction; failure rolls back all four. The execution Audit summary remains a redacted projection and never bypasses Artifact authorization.
 
-### 14.46 `artifacts`
+### 14.47 `artifacts`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2532,7 +2532,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 
 底层 blob dedupe 仅是物理存储优化：授权、签名 URL、读取、删除与引用计数必须先以 `(workspace_id,artifact_id|storage_key)` 解析 metadata；不得因 `sha256` 相同而跨 workspace 返回/复用 storage key、signed URL、密钥或密文。hash 相等不授予访问权。
 
-### 14.47 `notifications`
+### 14.48 `notifications`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2554,7 +2554,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `read_at` | `timestamptz` | YES | NULL |  | 已读 |
 | `resolved_at` | `timestamptz` | YES | NULL |  | 解决 |
 
-### 14.48 `idempotency_records`
+### 14.49 `idempotency_records`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2575,7 +2575,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `completed_at` | `timestamptz` | YES | NULL |  | 完成 |
 | `expires_at` | `timestamptz` | NO | now()+interval '7 days' | INDEX | V1 统一保留 7d |
 
-### 14.49 `provenance_records`
+### 14.50 `provenance_records`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2603,7 +2603,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `calculated_at` | `timestamptz` | NO | — |  | 确定性计算时点 |
 | `created_at` | `timestamptz` | NO | now() |  | 记录时间 |
 
-### 14.50 `audit_chain_heads`
+### 14.51 `audit_chain_heads`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2611,7 +2611,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `event_sha256` | `varchar(64)` | YES | NULL | CHECK lowercase hex SHA-256 | 最新 audit event hash；无事件的 genesis workspace 为 NULL |
 | `revision` | `integer` | NO | 0 | CHECK >=0 | head CAS revision；append 每次 +1 |
 
-### 14.51 `data_snapshots`
+### 14.52 `data_snapshots`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2623,7 +2623,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `revision` | `integer` | NO | 1 | CHECK revision=1 | immutable snapshot revision |
 | `detail` | `text` | NO | '{}' | closed Snapshot detail serialization, CHECK schema before write | 受权投影；HOLDOUT partition/raw value 禁止泄漏 |
 
-### 14.52 `data_sources`
+### 14.53 `data_sources`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2633,7 +2633,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `status` | `varchar(16)` | NO | 'ACTIVE' | CHECK ACTIVE\|VALID\|INVALID | Dataset validation source lifecycle |
 | `revision` | `integer` | NO | 1 | CHECK >=1 | mutable source CAS revision |
 
-### 14.53 `event_stream_watermarks`
+### 14.54 `event_stream_watermarks`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2641,7 +2641,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `last_sequence` | `integer` | NO | 0 | CHECK >=0 | 已提交最大 sequence；严格单调 |
 | `expired_through_sequence` | `integer` | NO | 0 | CHECK 0<=expired<=last_sequence | 已超出 replay retention 的最大 cursor |
 
-### 14.54 `records`
+### 14.55 `records`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2654,7 +2654,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `created_at` | `timestamptz` | NO | now() |  | 创建时刻 |
 | `updated_at` | `timestamptz` | NO | now() | INDEX(workspace_id,kind,updated_at DESC) | 最后成功 mutation |
 
-### 14.55 `runtime_heartbeats`
+### 14.56 `runtime_heartbeats`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2663,7 +2663,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `queue_name` | `varchar(32)` | YES | NULL | INDEX(queue_name,occurred_at DESC) | worker 队列；非 worker 为 NULL |
 | `occurred_at` | `timestamptz` | NO | now() | INDEX | 最新 heartbeat；health 仅按 TTL 计算 |
 
-### 14.56 `session_tokens`
+### 14.57 `session_tokens`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2673,7 +2673,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `expires_at` | `timestamptz` | NO | — | INDEX | 到期后 fail closed |
 | `revoked_at` | `timestamptz` | YES | NULL | INDEX WHERE revoked_at IS NOT NULL | 服务端撤销时刻；非 NULL 即不可用 |
 
-### 14.57 `setup_bindings`
+### 14.58 `setup_bindings`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2688,7 +2688,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `created_at` | `timestamptz` | NO | now() |  | 首次完成 Setup |
 | `updated_at` | `timestamptz` | NO | now() |  | 最后原子重绑定 |
 
-### 14.58 `snapshot_partitions`
+### 14.59 `snapshot_partitions`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2700,7 +2700,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `row_count` | `integer` | NO | — | CHECK >=0 | 行数；不暴露 protected value |
 | `created_at` | `timestamptz` | NO | now() |  | 物化时刻；UPDATE/DELETE trigger 拒绝 |
 
-### 14.59 `users`
+### 14.60 `users`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2709,7 +2709,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `role` | `varchar(16)` | NO | 'OWNER' | CHECK OWNER | P0 R2 仅 owner session；不是 Agent role |
 | `revision` | `integer` | NO | 1 | CHECK >=1 | identity record CAS revision |
 
-### 14.60 `validations`
+### 14.61 `validations`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -2722,7 +2722,7 @@ The state Audit `summary` is a queryable structured detail, not an Artifact subs
 | `revision` | `integer` | NO | 1 | CHECK >=1 | Validation detail/ETag/event revision |
 | `detail` | `text` | NO | '{}' | closed `ValidationDetail` serialization, CHECK schema before write | P11 matrix/failure 投影；LOCKED 时不含 protected result |
 
-### 14.61 `workspaces`
+### 14.62 `workspaces`
 
 | 字段 | PostgreSQL 类型 | Null | 默认/生成 | 约束/索引 | 语义 |
 |---|---|---|---|---|---|
@@ -3078,7 +3078,7 @@ P0 R2 不为 Tab 新增 canonical operation；`GET /research/{research_id}` 的 
 
 - `overview` 固定包含 current revision brief、nullable current conclusion、plan-node progress、latest evidence 与 nullable current agent work；不返回 CoT、raw tool payload 或 secret；
 - 尚未生成 plan/conclusion/current agent work 时返回 `null`；没有列表数据时返回 `items=[]`，不省略字段；
-- `timeline|experiments|evidence|artifacts|audit` 均使用 closed item schema + `PageInfo`。R2 embedded projection 返回当前授权范围的完整稳定排序集，因此 `page.has_more=false`、`next_cursor=null`；后续若需真正 cursor continuation，须先单独进入 canonical contract revision；
+- `timeline|experiments|evidence|artifacts|audit` 均使用 closed item schema + `PageInfo`。canonical OpenAPI 为 `/research`、`/approvals` 与 ResearchDetail embedded pages 冻结 `cursor`（十进制 offset token）和 `limit`（1..100，默认 100）；服务端先按稳定 ID 顺序取 `limit+1` 判断 `has_more`，不以全量 `.all()` 作为 list API 实现。ResearchDetail 指定 `tab` 时只对该 tab 使用 continuation cursor，其他 tab 仍返回有界的第一页；未指定 `tab` 时同一 cursor/limit 应用于五个 embedded page；无更多数据时 `next_cursor=null`；
 - `ObjectRef`、`ProvenanceRef`、`ResearchStatus`、`ExperimentStatus`、`ExperimentValidityState` 为共享语义，禁止在 controller/fixture 中另造松散 string map；
 - projection 来自 `research_cases + research_revisions + research_conclusions + research_plan_versions/nodes + experiments + evidence_items + artifacts + audit_events/agent_runs/provenance_records`，不新建可与这些表分叉的 Tab truth table。
 

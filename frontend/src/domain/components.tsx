@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Schema } from '../api/client';
 import { ServerTime } from '../format';
@@ -17,18 +17,21 @@ function DomainBoundary({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const disabledReasonId = useId();
   if (state === 'loading') return <State kind="loading">{t('domain.loading', { name })}</State>;
   if (state === 'empty') return <State kind="empty">{t('domain.empty', { name })}</State>;
   if (state === 'error') return <State kind="error">{t('domain.error', { name })}</State>;
   if (state === 'locked') return <State kind="permission">{t('domain.locked', { name })}</State>;
   if (state === 'disabled')
     return (
-      <fieldset className="domain-boundary" disabled aria-describedby={`${name}-disabled-reason`}>
-        {children}
-        <p id={`${name}-disabled-reason`} role="status">
+      <div className="domain-boundary" aria-describedby={disabledReasonId}>
+        <fieldset className="domain-boundary" disabled inert>
+          {children}
+        </fieldset>
+        <p id={disabledReasonId} role="status">
           {t('domain.disabled')}
         </p>
-      </fieldset>
+      </div>
     );
   return (
     <div
@@ -301,31 +304,33 @@ export function DataCapabilityMatrix({
   const { t } = useTranslation();
   return (
     <DomainBoundary state={viewState} name="data-capability-matrix">
-      <table>
-        <caption>{t('domainComponent.dataCapabilityMatrix')}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{t('domainComponent.capability')}</th>
-            <th scope="col">{t('domainComponent.provider')}</th>
-            <th scope="col">{t('domainComponent.state')}</th>
-            <th scope="col">{t('domainComponent.checkedAt')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {capabilities.map((capability) => (
-            <tr key={capability.capability_id}>
-              <td>{capability.capability_key}</td>
-              <td>{capability.provider_id}</td>
-              <td>
-                <StatusBadge status={capability.state} />
-              </td>
-              <td>
-                <ServerTime value={capability.checked_at} />
-              </td>
+      <div className="table-scroll">
+        <table>
+          <caption>{t('domainComponent.dataCapabilityMatrix')}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t('domainComponent.capability')}</th>
+              <th scope="col">{t('domainComponent.provider')}</th>
+              <th scope="col">{t('domainComponent.state')}</th>
+              <th scope="col">{t('domainComponent.checkedAt')}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {capabilities.map((capability) => (
+              <tr key={capability.capability_id}>
+                <td>{capability.capability_key}</td>
+                <td>{capability.provider_id}</td>
+                <td>
+                  <StatusBadge status={capability.state} />
+                </td>
+                <td>
+                  <ServerTime value={capability.checked_at} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </DomainBoundary>
   );
 }

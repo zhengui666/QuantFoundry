@@ -1,12 +1,18 @@
 :root {
+  --qf-duration-hover: 100ms;
   --qf-duration-fast: 120ms;
+  --qf-duration-popover: 120ms;
   --qf-duration-standard: 180ms;
+  --qf-duration-collapse: 160ms;
   --qf-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
+    --qf-duration-hover: 0ms;
     --qf-duration-fast: 0ms;
+    --qf-duration-popover: 0ms;
     --qf-duration-standard: 0ms;
+    --qf-duration-collapse: 0ms;
   }
 }

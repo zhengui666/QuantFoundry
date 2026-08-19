@@ -62,7 +62,14 @@ class FakePort:
             return _capabilities()
         if path == "/v1/accounts":
             return {"accounts": [{"account_id": "acct-1"}]}
-        return {"status": "ACKNOWLEDGED", "broker_order_id": "b-1"}
+        return {
+            "status": "ACKNOWLEDGED",
+            "broker_order_id": "b-1",
+            "client_order_id": "LORD-NT-1",
+            "accepted_at": "2026-08-17T00:00:00Z",
+            "updated_at": "2026-08-17T00:00:00Z",
+            "fills": [],
+        }
 
 
 def _order() -> OrderRequest:
@@ -89,14 +96,20 @@ def test_nautilus_port_maps_canonical_submit_and_cancel() -> None:
     )
     connector.cancel("acct-1", "b-1")
 
-    submit = port.calls[1]
+    submit = next(
+        call
+        for call in port.calls
+        if call["method"] == "POST" and call["path"].endswith("/orders")
+    )
     assert submit["method"] == "POST"
     assert submit["path"] == "/v1/accounts/acct-1/orders"
-    assert submit["idempotency_key"] == "LORD-NT-1"
+    assert submit["idempotency_key"] == "submit:6:acct-1:9:LORD-NT-1"
     assert submit["payload"]["schema_version"] == "LIVE_CONNECTOR_V1"
-    cancel = port.calls[2]
+    cancel = next(
+        call for call in port.calls if call["path"].endswith("/orders/b-1/cancel")
+    )
     assert cancel["path"].endswith("/orders/b-1/cancel")
-    assert cancel["idempotency_key"] == "cancel:b-1"
+    assert cancel["idempotency_key"] == "cancel:6:acct-1:3:b-1"
 
 
 def test_nautilus_port_preserves_unknown_submit_outcome() -> None:
@@ -114,7 +127,8 @@ def test_nautilus_port_preserves_unknown_submit_outcome() -> None:
 
 
 def test_nautilus_port_fails_closed_on_missing_order_capability() -> None:
-    connector = NautilusTraderConnector(FakePort())
+    port = FakePort()
+    connector = NautilusTraderConnector(port)
     capabilities = ConnectorCapabilities.from_wire(
         {
             **_capabilities(),
@@ -123,3 +137,4 @@ def test_nautilus_port_fails_closed_on_missing_order_capability() -> None:
     )
     with pytest.raises(ConnectorProtocolError, match="required order operations"):
         connector.submit_order("acct-1", _order(), capabilities)
+    assert port.calls == []

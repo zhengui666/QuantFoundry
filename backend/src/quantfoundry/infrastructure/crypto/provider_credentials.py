@@ -10,7 +10,9 @@ import base64
 import binascii
 import hashlib
 import hmac
+import json
 import os
+import re
 import secrets
 
 from cryptography.exceptions import InvalidTag
@@ -21,25 +23,71 @@ class CredentialConfigurationError(RuntimeError):
     pass
 
 
-def _master_key() -> tuple[str, bytes]:
-    key_id = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "").strip()
-    encoded = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY", "").strip()
-    if not key_id or not encoded:
-        raise CredentialConfigurationError(
-            "provider credential encryption key is not configured"
-        )
+def _reject_duplicate_key_ids(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for item_id, value in pairs:
+        if item_id in values:
+            raise CredentialConfigurationError(
+                f"provider credential keyring contains duplicate key id: {item_id}"
+            )
+        values[item_id] = value
+    return values
+
+
+def _decode_key(key_id: str, encoded: str) -> bytes:
     try:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", encoded):
+            raise ValueError("invalid URL-safe base64 alphabet")
         padded = encoded + "=" * (-len(encoded) % 4)
-        key = base64.urlsafe_b64decode(padded.encode("ascii"))
+        key = base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
     except (UnicodeEncodeError, binascii.Error, ValueError) as error:
         raise CredentialConfigurationError(
-            "provider credential encryption key is invalid"
+            f"provider credential key is invalid: {key_id}"
         ) from error
     if len(key) != 32:
         raise CredentialConfigurationError(
-            "provider credential encryption key must decode to 32 bytes"
+            f"provider credential key must decode to 32 bytes: {key_id}"
         )
-    return key_id, key
+    return key
+
+
+def _credential_keys() -> tuple[str, dict[str, bytes]]:
+    key_id = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY_ID", "").strip()
+    encoded = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+    keyring = os.getenv("QF_CREDENTIAL_ENCRYPTION_KEYS", "").strip()
+    if not key_id:
+        raise CredentialConfigurationError(
+            "provider credential encryption key is not configured"
+        )
+    if keyring:
+        try:
+            values = json.loads(keyring, object_pairs_hook=_reject_duplicate_key_ids)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise CredentialConfigurationError(
+                "provider credential keyring is invalid"
+            ) from error
+        if not isinstance(values, dict) or not values:
+            raise CredentialConfigurationError("provider credential keyring is invalid")
+        keys = {
+            str(item_id): _decode_key(str(item_id), item)
+            for item_id, item in values.items()
+            if isinstance(item_id, str) and isinstance(item, str)
+        }
+        if set(keys) != set(values) or key_id not in keys:
+            raise CredentialConfigurationError(
+                "active provider credential key is absent from keyring"
+            )
+        return key_id, keys
+    if not encoded:
+        raise CredentialConfigurationError(
+            "provider credential encryption key is not configured"
+        )
+    return key_id, {key_id: _decode_key(key_id, encoded)}
+
+
+def _master_key() -> tuple[str, bytes]:
+    key_id, keys = _credential_keys()
+    return key_id, keys[key_id]
 
 
 def encryption_is_configured() -> bool:
@@ -58,14 +106,14 @@ def credential_aad(
     provider_id: str,
     model_name: str | None,
 ) -> bytes:
-    fields = (
+    fields = [
         connection_id,
         workspace_id,
         actor_id,
         provider_id,
-        model_name or "",
-    )
-    return "\x1f".join(fields).encode("utf-8")
+        model_name,
+    ]
+    return json.dumps(fields, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def encrypt_credential(credential: str, *, aad: bytes) -> tuple[bytes, bytes, str]:
@@ -78,12 +126,33 @@ def encrypt_credential(credential: str, *, aad: bytes) -> tuple[bytes, bytes, st
 def decrypt_credential(
     ciphertext: bytes, nonce: bytes, key_id: str, *, aad: bytes
 ) -> str:
-    configured_key_id, key = _master_key()
-    if not hmac.compare_digest(key_id, configured_key_id):
+    _configured_key_id, keys = _credential_keys()
+    key = keys.get(key_id)
+    if key is None:
         raise CredentialConfigurationError("provider credential key id is unavailable")
+    candidates = [aad]
     try:
-        plaintext = AESGCM(key).decrypt(nonce, ciphertext, aad)
-        return plaintext.decode("utf-8")
+        fields = json.loads(aad.decode("utf-8"))
+        if (
+            isinstance(fields, list)
+            and len(fields) == 5
+            and all(isinstance(value, str) for value in fields[:4])
+            and (fields[4] is None or isinstance(fields[4], str))
+            and all("\x1f" not in value for value in fields[:4])
+            and (fields[4] is None or "\x1f" not in fields[4])
+        ):
+            legacy_fields = [*fields[:4], fields[4] or ""]
+            candidates.append("\x1f".join(legacy_fields).encode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        pass
+    try:
+        for candidate in candidates:
+            try:
+                plaintext = AESGCM(key).decrypt(nonce, ciphertext, candidate)
+                return plaintext.decode("utf-8")
+            except (InvalidTag, UnicodeDecodeError):
+                continue
+        raise InvalidTag
     except (InvalidTag, UnicodeDecodeError, ValueError) as error:
         raise CredentialConfigurationError(
             "provider credential authentication failed"
@@ -93,5 +162,57 @@ def decrypt_credential(
 def credential_fingerprint(credential: str) -> str:
     """Keyed request identity; unlike raw SHA-256 it resists offline guessing."""
 
-    _key_id, key = _master_key()
-    return hmac.new(key, credential.encode("utf-8"), hashlib.sha256).hexdigest()
+    return next(iter(credential_fingerprint_candidates(credential).values()))
+
+
+def credential_fingerprint_candidates(credential: str) -> dict[str, str]:
+    """Return active and retained fingerprints for rotation-safe idempotency."""
+
+    keyring = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEYS", "").strip()
+    if keyring:
+        try:
+            values = json.loads(keyring, object_pairs_hook=_reject_duplicate_key_ids)
+        except json.JSONDecodeError as error:
+            raise CredentialConfigurationError(
+                "provider credential fingerprint keyring is invalid"
+            ) from error
+        if not isinstance(values, dict) or not values:
+            raise CredentialConfigurationError(
+                "provider credential fingerprint keyring is invalid"
+            )
+        keys = {
+            str(key_id): _decode_key(str(key_id), encoded)
+            for key_id, encoded in values.items()
+            if isinstance(key_id, str) and isinstance(encoded, str)
+        }
+        if set(keys) != set(values):
+            raise CredentialConfigurationError(
+                "provider credential fingerprint keyring is invalid"
+            )
+        active_id = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEY_ID", "").strip()
+        if not active_id:
+            raise CredentialConfigurationError(
+                "active provider credential fingerprint key is not configured"
+            )
+        ordered_ids = [
+            active_id,
+            *sorted(key_id for key_id in keys if key_id != active_id),
+        ]
+        if active_id not in keys:
+            raise CredentialConfigurationError(
+                "active provider credential fingerprint key is absent from keyring"
+            )
+    else:
+        encoded = os.getenv("QF_CREDENTIAL_FINGERPRINT_KEY", "").strip()
+        if not encoded:
+            raise CredentialConfigurationError(
+                "provider credential fingerprint key is not configured"
+            )
+        ordered_ids = ["legacy"]
+        keys = {"legacy": _decode_key("fingerprint", encoded)}
+    return {
+        key_id: hmac.new(
+            keys[key_id], credential.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        for key_id in ordered_ids
+    }

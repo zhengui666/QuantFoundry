@@ -1,0 +1,146 @@
+import { ESLint } from 'eslint';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const frontendRoot = resolve(import.meta.dirname, '..');
+const cases = [
+  {
+    name: 'React Hooks',
+    path: 'hooks.tsx',
+    ruleId: 'react-hooks/rules-of-hooks',
+    source: `import { useState } from 'react';
+export function InvalidHook() {
+  if (Math.random() > 0.5) useState(0);
+  return null;
+}
+`,
+  },
+  {
+    name: 'TypeScript unsafe',
+    path: 'unsafe.ts',
+    ruleId: '@typescript-eslint/no-unsafe-assignment',
+    source: `const parsed = JSON.parse('{}');
+const unsafeString: string = parsed;
+export { unsafeString };
+`,
+  },
+  {
+    name: 'raw fetch',
+    path: 'fetch.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidRequest = () => fetch('/api/v1/health');
+`,
+  },
+  {
+    name: 'member raw fetch',
+    path: 'member-fetch.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidRequest = () => window.fetch('/api/v1/health');
+`,
+  },
+  {
+    name: 'computed raw fetch',
+    path: 'computed-fetch.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidRequest = () => window['fetch']('/api/v1/health');
+`,
+  },
+  {
+    name: 'dangerous HTML',
+    path: 'html.tsx',
+    ruleId: 'no-restricted-syntax',
+    source: `export function InvalidHtml() {
+  return <div dangerouslySetInnerHTML={{ __html: '<b>unsafe</b>' }} />;
+}
+`,
+  },
+  {
+    name: 'production console',
+    path: 'console.ts',
+    ruleId: 'no-console',
+    source: `console.log('must be routed through diagnostics');
+`,
+  },
+  {
+    name: 'client storage boundary',
+    path: 'storage.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidStorage = window.sessionStorage.getItem('server-truth');
+`,
+  },
+  {
+    name: 'direct client storage boundary',
+    path: 'direct-storage.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidStorage = localStorage.getItem('server-truth');
+`,
+  },
+  {
+    name: 'computed client storage boundary',
+    path: 'computed-storage.ts',
+    ruleId: 'no-restricted-syntax',
+    source: `export const invalidStorage = window['sessionStorage'].getItem('server-truth');
+`,
+  },
+  {
+    name: 'domain import boundary',
+    directory: 'src/domain/__eslint_fixtures__',
+    path: 'boundary.ts',
+    ruleId: 'no-restricted-imports',
+    source: `import { LoginPage } from '../../routes/LoginRoute';
+export { LoginPage };
+`,
+  },
+  {
+    name: 'nested UI import boundary',
+    directory: 'src/api/__eslint_fixtures__',
+    path: 'nested-ui.ts',
+    ruleId: 'no-restricted-imports',
+    source: `import Button from '../ui/Button';
+export { Button };
+`,
+  },
+];
+
+describe('frontend ESLint policy fixtures', () => {
+  it('rejects every mandated policy violation', async () => {
+    const fixtureRoots = new Map();
+    const fixturePaths = [];
+    try {
+      for (const { directory, path } of cases) {
+        const scope = directory
+          ? resolve(frontendRoot, directory, '..')
+          : resolve(frontendRoot, 'src');
+        let root = fixtureRoots.get(scope);
+        if (!root) {
+          root = await mkdtemp(join(scope, 'qf-eslint-fixtures-'));
+          fixtureRoots.set(scope, root);
+        }
+        fixturePaths.push(resolve(root, path));
+      }
+      await Promise.all(
+        cases.map(({ source }, index) => writeFile(fixturePaths[index], source, 'utf8')),
+      );
+      const eslint = new ESLint({
+        cwd: frontendRoot,
+        overrideConfigFile: resolve(frontendRoot, 'eslint.config.js'),
+      });
+      const results = await eslint.lintFiles(fixturePaths);
+      expect(results).toHaveLength(fixturePaths.length);
+      const resultByPath = new Map(results.map((result) => [resolve(result.filePath), result]));
+      expect(resultByPath.size).toBe(fixturePaths.length);
+      for (const [index, fixturePath] of fixturePaths.entries()) {
+        const result = resultByPath.get(resolve(fixturePath));
+        expect(result).toBeDefined();
+        expect(result.messages.map((message) => message.ruleId)).toContain(cases[index].ruleId);
+      }
+    } finally {
+      await Promise.all(
+        [...fixtureRoots.values()].map((directory) =>
+          rm(directory, { recursive: true, force: true }),
+        ),
+      );
+    }
+  }, 20_000);
+});

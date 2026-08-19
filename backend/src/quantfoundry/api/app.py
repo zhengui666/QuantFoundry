@@ -35,6 +35,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -108,6 +109,7 @@ from quantfoundry.infrastructure.crypto.provider_credentials import (
     CredentialConfigurationError,
     credential_aad,
     credential_fingerprint,
+    credential_fingerprint_candidates,
     decrypt_credential,
     encrypt_credential,
     encryption_is_configured,
@@ -126,6 +128,8 @@ if ENVIRONMENT in {"local", "development", "test", "ci"}:
         "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
     )
 else:
+    # UX-001: production domain connectivity is restored from the active,
+    # encrypted Control-DB binding; keep the sentinel until that canary passes.
     DB_URL = "postgresql+psycopg://qf-unavailable@127.0.0.1:1/qf-unavailable"
 if ENVIRONMENT == "production" and DB_URL.startswith("sqlite"):
     raise RuntimeError(
@@ -230,6 +234,59 @@ def _as_json_objects(value: JsonValue) -> list[JsonObject]:
     return cast(list[JsonObject], value)
 
 
+def _page_detail(value: object, cursor: str | None, limit: int) -> object:
+    if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+        return value
+    offset = int(cursor or "0")
+    items = value["items"]
+    selected = items[offset : offset + limit + 1]
+    has_more = len(selected) > limit
+    page = dict(value)
+    page["items"] = selected[:limit]
+    page["page"] = {
+        "next_cursor": str(offset + limit) if has_more else None,
+        "has_more": has_more,
+    }
+    return page
+
+
+def _tool_result_summary(value: object) -> dict[str, Any] | None:
+    if not value:
+        return None
+    try:
+        summary = json.loads(_as_str(value))
+    except TypeError, ValueError:
+        return None
+    if not isinstance(summary, dict):
+        return None
+    object_refs = summary.get("object_refs")
+    if not isinstance(object_refs, list):
+        output = summary.get("output", summary)
+        object_refs = [
+            {
+                "type": key.removesuffix("_id"),
+                "id": item,
+                "version": output.get("version"),
+                "revision": output.get("revision", 1),
+            }
+            for key, item in output.items()
+            if isinstance(output, dict)
+            and key.endswith("_id")
+            and isinstance(item, str)
+        ]
+    metric_keys = summary.get("metric_keys")
+    if not isinstance(metric_keys, list):
+        output = summary.get("output", summary)
+        metric_keys = [
+            key
+            for key, item in output.items()
+            if isinstance(output, dict)
+            and isinstance(item, (int, float))
+            and not isinstance(item, bool)
+        ]
+    return {"object_refs": object_refs, "metric_keys": metric_keys}
+
+
 if DB_URL.startswith("sqlite"):
 
     @event.listens_for(engine, "connect")
@@ -244,15 +301,15 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def optional_idempotency_key(
-    value: Annotated[
-        str | None, Header(alias="Idempotency-Key", min_length=20, max_length=128)
-    ] = None,
+    value: str | None = Header(
+        None, alias="Idempotency-Key", min_length=20, max_length=128
+    ),
 ) -> str | None:
     return value
 
 
 def optional_if_match(
-    value: Annotated[str | None, Header(alias="If-Match", min_length=1)] = None,
+    value: str | None = Header(None, alias="If-Match", min_length=1),
 ) -> str | None:
     return value
 
@@ -272,7 +329,10 @@ AgentRunId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["agent_run"])]
 ToolCallId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["tool_call"])]
 JobId = Annotated[str, ApiPath(pattern=PUBLIC_ID_PATTERNS["job"])]
 Version = Annotated[int, ApiPath(ge=1)]
-LastEventId = Annotated[int | None, Header(alias="Last-Event-ID", ge=0)]
+LastEventId = Annotated[
+    str,
+    Header(alias="Last-Event-ID", pattern=r"^[0-9]+$"),
+]
 AgentRole = Literal[
     "RESEARCH_DIRECTOR",
     "FACTOR_SCIENTIST",
@@ -360,7 +420,7 @@ class Event(Base):
     object_revision = Column(BigInteger)
     revision = Column(Integer)
     payload = Column(Text, nullable=False, default="{}")
-    request_id = Column(String)
+    request_id = Column(String, nullable=False)
     correlation_id = Column(String, index=True)
     causation_id = Column(String)
     job_id = Column(String, index=True)
@@ -392,6 +452,12 @@ class User(Base):
     revision = Column(Integer, nullable=False, default=1)
 
 
+@event.listens_for(User, "before_insert")
+@event.listens_for(User, "before_update")
+def _normalize_user_email(_mapper: Any, _connection: Any, target: User) -> None:
+    target.email = target.email.strip().lower()
+
+
 class Workspace(Base):
     __tablename__ = "workspaces"
     id = Column(String, primary_key=True)
@@ -414,6 +480,13 @@ class ResearchPolicyVersionRow(Base):
     rules = Column(
         JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
     )
+    require_cost_test = Column(Boolean, nullable=False, default=True)
+    require_parameter_stability = Column(Boolean, nullable=False, default=True)
+    require_oos = Column(Boolean, nullable=False, default=True)
+    require_holdout = Column(Boolean, nullable=False, default=True)
+    require_red_team = Column(Boolean, nullable=False, default=True)
+    max_research_steps = Column(Integer, nullable=False)
+    max_tool_calls = Column(Integer, nullable=False)
     content_sha256 = Column(String(64), nullable=False)
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
@@ -451,6 +524,14 @@ class RiskPolicyVersionRow(Base):
     policy_family = Column(String(32), nullable=False, default="risk")
     version = Column(Integer, nullable=False)
     status = Column(String, nullable=False)
+    max_single_position = Column(Numeric(20, 12), nullable=False)
+    max_strategy_weight = Column(Numeric(20, 12), nullable=False)
+    target_portfolio_vol = Column(Numeric(20, 12))
+    max_paper_drawdown = Column(Numeric(20, 12), nullable=False)
+    max_turnover = Column(Numeric(20, 12))
+    rules = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
+    )
     content_sha256 = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     activated_at = Column(DateTime(timezone=True))
@@ -488,6 +569,14 @@ class CostModelVersionRow(Base):
     cost_model_id = Column(String, nullable=False)
     version = Column(Integer, nullable=False)
     status = Column(String, nullable=False)
+    commission_model = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    slippage_model = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    spread_model = Column(JSON().with_variant(JSONB(), "postgresql"))
+    rebalance_timing = Column(String(32), nullable=False)
+    fill_assumption = Column(String(32), nullable=False)
+    currency = Column(String(3), nullable=False, default="USD")
     content_sha256 = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     activated_at = Column(DateTime(timezone=True))
@@ -527,7 +616,7 @@ class ModelProviderConnectionRow(Base):
     model_name = Column(String(128), nullable=False)
     ciphertext = Column(LargeBinary, nullable=False)
     nonce = Column(LargeBinary, nullable=False)
-    key_id = Column(String(64), nullable=False)
+    key_id = Column(String(160), nullable=False)
     validation_state = Column(String(16), nullable=False, default="SUCCESS")
     status = Column(String(16), nullable=False, default="VALIDATED")
     validated_at = Column(DateTime(timezone=True), nullable=False)
@@ -819,6 +908,7 @@ _SCHEDULER_STATE_EVIDENCE_KEYS = frozenset(
         "suppressed_since_utc",
         "resume_watermark_utc",
         "initialization_utc",
+        "domain_event_sequence",
         "revision",
         "reason_code",
         "actor",
@@ -932,16 +1022,27 @@ class ResearchRow(Base):
     __tablename__ = "research_cases"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("research_id", String(40), nullable=False, unique=True)
-    workspace_id = Column(String, ForeignKey("workspaces.id"))
+    workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=False)
     status = Column(String, nullable=False)
     revision = Column(BigInteger, nullable=False, default=1)
     title = Column(String, nullable=False)
+    original_user_prompt = Column(Text, nullable=False)
+    normalized_question = Column(Text)
+    evidence_status = Column(String, nullable=False, default="INSUFFICIENT")
+    current_revision_no = Column(Integer, nullable=False, default=1)
+    active_plan_version = Column(Integer)
     research_policy_ref_id = Column(
         "research_policy_id",
         Uuid(as_uuid=True),
         ForeignKey("research_policy_versions.id"),
         nullable=False,
     )
+    director_agent_version = Column(String(64))
+    current_agent_run_id = Column(Uuid(as_uuid=True))
+    current_job_id = Column(Uuid(as_uuid=True))
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True))
     detail = Column(Text, nullable=False, default="{}")
     __mapper_args__ = {"primary_key": [id]}
 
@@ -950,7 +1051,7 @@ class ExperimentRow(Base):
     __tablename__ = "experiments"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("experiment_id", String(48), nullable=False, unique=True)
-    workspace_id = Column(String, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
     research_ref_id = Column(
         "research_id",
         Uuid(as_uuid=True),
@@ -966,6 +1067,15 @@ class ExperimentRow(Base):
         index=True,
     )
     source_experiment_id = Column("source_experiment_public_id", String(48), index=True)
+    parent_experiment_ref_id = Column(
+        "parent_experiment_id", Uuid(as_uuid=True), ForeignKey("experiments.id")
+    )
+    research_revision_no = Column(Integer, nullable=False)
+    objective = Column(Text, nullable=False)
+    hypothesis = Column(Text, nullable=False)
+    experiment_type = Column(String(64), nullable=False)
+    status = Column(String(24), nullable=False, default="QUEUED")
+    validity_state = Column(String(24), nullable=False, default="PENDING")
     data_snapshot_ref_id = Column(
         "data_snapshot_id",
         Uuid(as_uuid=True),
@@ -978,6 +1088,27 @@ class ExperimentRow(Base):
         ForeignKey("cost_model_versions.id"),
         nullable=False,
     )
+    factor_version_ref_id = Column("factor_version_id", Uuid(as_uuid=True))
+    strategy_version_ref_id = Column("strategy_version_id", Uuid(as_uuid=True))
+    parameters = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    parameters_sha256 = Column(String(64), nullable=False)
+    search_space = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list
+    )
+    search_configuration = Column(JSON().with_variant(JSONB(), "postgresql"))
+    engine_key = Column(String(64), nullable=False)
+    engine_version = Column(String(64), nullable=False)
+    adapter_key = Column(String(64))
+    adapter_version = Column(String(64))
+    code_version = Column(String(64), nullable=False)
+    job_ref_id = Column("job_id", Uuid(as_uuid=True))
+    provenance_ref_id = Column("provenance_id", Uuid(as_uuid=True))
+    started_at = Column(DateTime(timezone=True))
+    finished_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    invalidated_at = Column(DateTime(timezone=True))
+    invalid_reason_code = Column(String(64))
+    invalid_reason_detail = Column(Text)
     research_policy_ref_id = Column(
         "research_policy_id",
         Uuid(as_uuid=True),
@@ -990,14 +1121,53 @@ class ExperimentRow(Base):
     __mapper_args__ = {"primary_key": [id]}
 
 
+def experiment_storage_fields(detail: dict[str, Any]) -> dict[str, Any]:
+    engine = detail["engine"]
+    created_at = _detail_datetime(detail["created_at"])
+    if created_at is None:
+        raise RuntimeError("experiment detail has no valid creation timestamp")
+    return {
+        "research_revision_no": detail["research_revision_no"],
+        "objective": detail["objective"],
+        "hypothesis": detail["hypothesis"],
+        "experiment_type": detail["experiment_type"],
+        "status": detail["status"],
+        "validity_state": detail["validity_state"],
+        "parameters": detail["parameters"],
+        "parameters_sha256": detail["parameters_sha256"],
+        "search_space": detail["search_space"],
+        "search_configuration": detail["search_configuration"],
+        "engine_key": engine["name"],
+        "engine_version": engine["version"],
+        "adapter_key": (detail["adapter"]["name"] if detail.get("adapter") else None),
+        "adapter_version": (
+            detail["adapter"]["version"] if detail.get("adapter") else None
+        ),
+        "code_version": detail["code_version"],
+        "started_at": _detail_datetime(detail["started_at"]),
+        "finished_at": _detail_datetime(detail["finished_at"]),
+        "created_at": created_at,
+        "invalidated_at": _detail_datetime(detail["invalidated_at"]),
+        "invalid_reason_code": detail["invalid_reason_code"],
+        "invalid_reason_detail": detail["invalid_reason_detail"],
+    }
+
+
 class FactorRow(Base):
     __tablename__ = "factors"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("factor_id", String(40), nullable=False, unique=True)
-    workspace_id = Column(String, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
     research_id = Column(
         String(40), ForeignKey("research_cases.research_id"), nullable=False, index=True
     )
+    name = Column(String(128), nullable=False)
+    category = Column(String(64), nullable=False)
+    current_version = Column(Integer, nullable=False, default=1)
+    status = Column(String(24), nullable=False, default="DRAFT")
+    created_by = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
     revision = Column(BigInteger, nullable=False, default=1)
     detail = Column(Text, nullable=False, default="{}")
     __mapper_args__ = {"primary_key": [id]}
@@ -1007,11 +1177,17 @@ class StrategyRow(Base):
     __tablename__ = "strategies"
     internal_id = Column("id", Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     id = Column("strategy_id", String(40), nullable=False, unique=True)
-    workspace_id = Column(String, index=True)
+    workspace_id = Column(String, index=True, nullable=False)
     research_id = Column(
         String(40), ForeignKey("research_cases.research_id"), nullable=False, index=True
     )
+    name = Column(String(160), nullable=False)
+    current_version = Column(Integer, nullable=False, default=1)
+    status = Column(String(24), nullable=False, default="IDEA")
+    origin_research_id = Column(Uuid(as_uuid=True))
     revision = Column(BigInteger, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
     detail = Column(Text, nullable=False, default="{}")
     __mapper_args__ = {"primary_key": [id]}
 
@@ -1031,6 +1207,28 @@ class StrategyVersionRow(Base):
         ForeignKey("cost_model_versions.id"),
         nullable=False,
     )
+    lifecycle_state = Column(String(24), nullable=False, default="CANDIDATE")
+    is_frozen = Column(Boolean, nullable=False, default=False)
+    thesis = Column(Text, nullable=False)
+    universe_spec = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    signals = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    selection_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    position_sizing = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    portfolio_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    rebalance_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    exit_rules = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    benchmark_ref = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False)
+    risk_constraints = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    required_dataset_refs = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    known_failure_modes = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False
+    )
+    expected_turnover = Column(Numeric(20, 12))
+    frozen_by = Column(String(64))
     version = Column(Integer, nullable=False)
     state = Column(String, nullable=False, default="CANDIDATE")
     spec_sha256 = Column(String(64), nullable=False)
@@ -1054,6 +1252,37 @@ class StrategyVersionRow(Base):
         CheckConstraint("version >= 1", name="strategy_versions_version_check"),
     )
     __mapper_args__ = {"primary_key": [id]}
+
+
+def strategy_storage_fields(
+    detail: dict[str, Any], *, lifecycle_state: str, is_frozen: bool
+) -> dict[str, Any]:
+    rules = detail["rules"]
+    return {
+        "lifecycle_state": lifecycle_state,
+        "is_frozen": is_frozen,
+        "thesis": detail["thesis"],
+        "universe_spec": detail["universe"],
+        "signals": detail["signals"],
+        "selection_rules": {
+            "selection_count": rules["selection_count"],
+            "long_short": rules["long_short"],
+        },
+        "position_sizing": {
+            "weighting": rules["weighting"],
+            "position_limit": rules["position_limit"],
+        },
+        "portfolio_rules": {"leverage_limit": rules["leverage_limit"]},
+        "rebalance_rules": {"rebalance_frequency": rules["rebalance_frequency"]},
+        "exit_rules": {},
+        "benchmark_ref": {"symbol": detail["benchmark"]},
+        "risk_constraints": {
+            "leverage_limit": rules["leverage_limit"],
+            "position_limit": rules["position_limit"],
+        },
+        "required_dataset_refs": [],
+        "known_failure_modes": detail["known_failure_modes"],
+    }
 
 
 class ValidationRow(Base):
@@ -1273,12 +1502,18 @@ def _install_sqlite_immutability_guards() -> None:
             "NEW.strategy_id != OLD.strategy_id OR NEW.version != OLD.version OR "
             "NEW.spec_sha256 != OLD.spec_sha256 OR NEW.frozen_at != OLD.frozen_at OR "
             "COALESCE(NEW.workspace_id, '') != COALESCE(OLD.workspace_id, '') OR "
-            "(NEW.state = OLD.state AND NEW.detail != OLD.detail))) OR NOT ("
+            "json_remove(NEW.detail, '$.lifecycle_state', '$.is_frozen', "
+            "'$.latest_backtest', '$.validation_summary', '$.artifacts', "
+            "'$.provenance', '$.frozen_at', '$.frozen_by', '$.revision', "
+            "'$.action_capabilities') IS NOT json_remove(OLD.detail, "
+            "'$.lifecycle_state', '$.is_frozen', '$.latest_backtest', "
+            "'$.validation_summary', '$.artifacts', '$.provenance', "
+            "'$.frozen_at', '$.frozen_by', '$.revision', '$.action_capabilities'))) OR NOT ("
             "NEW.state = OLD.state OR "
             "(OLD.state = 'CANDIDATE' AND NEW.state = 'FROZEN') OR "
             "(OLD.state = 'FROZEN' AND NEW.state = 'VALIDATING') OR "
             "(OLD.state = 'VALIDATING' AND NEW.state IN ('VALIDATED', 'REJECTED')) OR "
-            "(OLD.state = 'VALIDATED' AND NEW.state IN ('PAPER', 'RETIRED')) OR "
+            "(OLD.state = 'VALIDATED' AND NEW.state IN ('REJECTED', 'PAPER', 'RETIRED')) OR "
             "(OLD.state = 'PAPER' AND NEW.state = 'RETIRED')) BEGIN "
             "SELECT RAISE(ABORT, 'illegal or mutable strategy transition'); END"
         ).execute_if(dialect="sqlite"),
@@ -1404,6 +1639,9 @@ class ToolCallRow(Base):
     tool_version = Column(String, nullable=False)
     status = Column(String, nullable=False)
     input_payload = Column(Text, nullable=False, default="{}")
+    input = Column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
+    )
     input_sha256 = Column(String(64), nullable=False)
     semantic_scope = Column(String, nullable=False, default="")
     objective = Column(Text)
@@ -1740,7 +1978,10 @@ augment_section14_metadata(Base.metadata)
 
 
 # Schema creation is explicitly test-only. Durable environments are Alembic-only.
-if os.getenv("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP") == "1":
+if (
+    os.getenv("QF_ALLOW_TEST_SCHEMA_BOOTSTRAP") == "1"
+    and os.getenv("QF_ALEMBIC_RUNNING") != "1"
+):
     if ENVIRONMENT != "test" or not DB_URL.startswith("sqlite"):
         raise RuntimeError("test schema bootstrap is allowed only for SQLite tests")
     logger.warning(
@@ -1756,6 +1997,7 @@ app = FastAPI(
 app.router.route_class = CanonicalRoute
 # Domain workers must restore the Control-DB ACTIVE binding before their first
 # query; an unset flag would incorrectly treat the sentinel engine as ready.
+# app.main/control_plane owns the lifecycle and sets this only after a canary.
 app.state.domain_database_available = False
 
 
@@ -1785,7 +2027,7 @@ def remote_codex_mode() -> bool:
     try:
         snapshot = remote_codex_projection()
         return snapshot[0].lower() in {"openai-compatible", "remote-codex"}
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError, ValueError:
         return False
 
 
@@ -1798,7 +2040,7 @@ def remote_codex_projection() -> tuple[str, str]:
         provider = str(snapshot.get("model_provider") or "remote-codex")
         if model != "unconfigured":
             return provider, model
-    except (ImportError, OSError, RuntimeError, SQLAlchemyError):
+    except ImportError, OSError, RuntimeError, SQLAlchemyError:
         pass
     return ("remote-codex", os.getenv("QF_AGENT_MODEL", DEFAULT_AGENT_MODEL))
 
@@ -1815,6 +2057,35 @@ def require_cost_model(cost_model_id: str) -> None:
         load_cost_model(cost_model_id)
     except EngineInputError as error:
         raise problem(422, "INVALID_REQUEST", str(error)) from error
+
+
+def require_cost_model_binding(
+    session: Session, workspace_id: str, cost_model_id: str
+) -> CostModelVersionRow:
+    row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == workspace_id,
+            CostModelVersionRow.cost_model_id == cost_model_id,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise problem(409, "INVALID_REQUEST", "strategy cost model is unavailable")
+    try:
+        loaded = load_cost_model(cost_model_id)
+    except EngineInputError as error:
+        raise problem(422, "INVALID_REQUEST", str(error)) from error
+    loaded_hash = content_hash(
+        {
+            "cost_model_id": loaded.cost_model_id,
+            "version": loaded.version,
+            "commission_bps": loaded.commission_bps,
+            "slippage_bps": loaded.slippage_bps,
+        }
+    )
+    if loaded.version != row.version or loaded_hash != row.content_sha256:
+        raise problem(409, "INVALID_REQUEST", "strategy cost model binding changed")
+    return row
 
 
 def resolve_research_policy(
@@ -1865,6 +2136,22 @@ def resolve_research_policy(
 
 
 def db():
+    if ENVIRONMENT != "test":
+        try:
+            from app.control_plane import ensure_domain_database_current
+
+            ensure_domain_database_current()
+        except (
+            ImportError,
+            OSError,
+            KeyError,
+            RuntimeError,
+            ValueError,
+            SQLAlchemyError,
+        ) as error:
+            raise problem(
+                503, "DATABASE_DISCONNECTED", "Domain database is unavailable"
+            ) from error
     if (
         not getattr(app.state, "domain_database_available", True)
         and ENVIRONMENT != "test"
@@ -2410,7 +2697,7 @@ def emit(
         {
             "schema_version": 1,
             "event_id": event_id,
-            "sequence": 1,
+            "sequence": "1",
             "event_type": canonical_event_type,
             "occurred_at": now.isoformat(),
             "object_type": kind,
@@ -2483,6 +2770,14 @@ def emit(
         "agent_run_id": agent_run_id,
         "tool_call_id": tool_call_id,
     }
+    if audit_summary is not None:
+        state_evidence = audit_summary.get(_SCHEDULER_STATE_EVIDENCE_SECTION)
+        if isinstance(state_evidence, dict):
+            audit_summary = dict(audit_summary)
+            audit_summary[_SCHEDULER_STATE_EVIDENCE_SECTION] = {
+                **state_evidence,
+                "domain_event_sequence": next_sequence,
+            }
     event_sha256 = content_hash(
         {
             "previous_sha256": previous_sha256,
@@ -2668,6 +2963,7 @@ def job(
     priority: int = 100,
     retry_safe: bool = True,
     max_attempts: int = 3,
+    correlation_id: str | None = None,
 ) -> dict[str, Any]:
     job_id = new_id("JOB")
     queued_at = NOW()
@@ -2722,7 +3018,7 @@ def job(
             queued_at=queued_at_dt,
             created_by_type="USER" if actor_id else "SYSTEM",
             created_by_id=actor_id or "system",
-            correlation_id=job_id,
+            correlation_id=correlation_id or job_id,
             request_id=cast(str | None, s.info.get("request_id")),
         )
     )
@@ -2776,7 +3072,7 @@ def setup_status(actor: Actor = Depends(require_owner), s: Session = Depends(db)
         x = None
     try:
         settings = body(x) if x else None
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         settings = None
         x = None
     binding = s.get(SetupBindingRow, actor.workspace_id) if x is not None else None
@@ -3351,7 +3647,7 @@ def _validate_provider_credential(
             for item in response.json()["data"]
             if isinstance(item, dict) and isinstance(item.get("id"), str)
         }
-    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+    except httpx.HTTPError, KeyError, TypeError, ValueError:
         return False
     return payload.get("model_name") in available_models
 
@@ -3371,11 +3667,16 @@ def validate_live_connector(
     payload = data.model_dump(mode="json", exclude_unset=True)
     try:
         fingerprint = credential_fingerprint(data.credential)
+        fingerprint_candidates = list(
+            credential_fingerprint_candidates(data.credential).values()
+        )
     except CredentialConfigurationError:
         fingerprint = "credential-key-unavailable"
+        fingerprint_candidates = []
     redacted = {
         **{key: value for key, value in payload.items() if key != "credential"},
         "credential_fingerprint": fingerprint,
+        "__qf_fingerprint_candidates__": fingerprint_candidates,
     }
 
     def operation():
@@ -3391,7 +3692,7 @@ def validate_live_connector(
                 accounts = connector.accounts()
             finally:
                 connector.close()
-        except (ConnectorError, ValueError):
+        except ConnectorError, ValueError:
             return 200, {
                 "connection_id": data.connection_id,
                 "state": "FAILED",
@@ -3622,11 +3923,16 @@ def validate_setup_provider_connection(
 
     try:
         fingerprint = credential_fingerprint(payload["credential"])
+        fingerprint_candidates = list(
+            credential_fingerprint_candidates(payload["credential"]).values()
+        )
     except CredentialConfigurationError:
         fingerprint = "credential-key-unavailable"
+        fingerprint_candidates = []
     redacted = {
         **{key: value for key, value in payload.items() if key != "credential"},
         "credential_fingerprint": fingerprint,
+        "__qf_fingerprint_candidates__": fingerprint_candidates,
     }
     return idem(
         s,
@@ -3857,11 +4163,19 @@ def snapshot(
                 "DATA_QUALITY_BLOCKED",
                 "workspace-owned validated dataset is required",
             )
+        from quantfoundry.application.jobs.effects import dataset_validation_matches
+
         fingerprint = content_hash(
             {"dataset_id": dataset_id, "snapshot_request": payload}
         )
         try:
             bundle = load_dataset(dataset_id)
+            if not dataset_validation_matches(
+                s, dataset_id, actor.workspace_id, bundle
+            ):
+                raise EngineInputError(
+                    "dataset validation evidence is stale or missing"
+                )
             public_rows, holdout_rows = snapshot_rows(
                 bundle,
                 payload["coverage_start"],
@@ -3920,9 +4234,24 @@ def get_snapshot(
 
 
 @app.get("/api/v1/research")
-def list_research(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
+def list_research(
+    cursor: str = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    limit: int = Query(100, ge=1, le=100),
+    actor: Actor = Depends(require_owner),
+    s: Session = Depends(db),
+):
+    offset = int(cursor or "0")
+    rows = (
+        s.query(ResearchRow)
+        .filter_by(workspace_id=actor.workspace_id)
+        .order_by(ResearchRow.id)
+        .offset(offset)
+        .limit(limit + 1)
+        .all()
+    )
+    has_more = len(rows) > limit
     items = []
-    for row in s.query(ResearchRow).filter_by(workspace_id=actor.workspace_id).all():
+    for row in rows[:limit]:
         detail = _json_loads(row.detail)
         items.append(
             {
@@ -3940,7 +4269,10 @@ def list_research(actor: Actor = Depends(require_owner), s: Session = Depends(db
         )
     return {
         "items": items,
-        "page": {"next_cursor": None, "has_more": False},
+        "page": {
+            "next_cursor": str(offset + limit) if has_more else None,
+            "has_more": has_more,
+        },
     }
 
 
@@ -3959,6 +4291,9 @@ def create_research(
         )
         i = new_id("RSCH")
         created_at = NOW()
+        created_at_value = _detail_datetime(created_at)
+        if created_at_value is None:
+            raise RuntimeError("runtime clock returned an invalid timestamp")
         created_date = created_at[:10]
         brief_without_hash = {
             "revision_no": 1,
@@ -4022,7 +4357,18 @@ def create_research(
                 status="DRAFT",
                 revision=1,
                 title=d["title"],
+                original_user_prompt=d["original_user_prompt"],
+                normalized_question=d["normalized_question"],
+                evidence_status=d["evidence_status"],
+                current_revision_no=d["current_revision_no"],
+                active_plan_version=d["active_plan_version"],
                 research_policy_ref_id=research_policy.internal_id,
+                director_agent_version=d["director_agent_version"],
+                current_agent_run_id=d["current_agent_run_id"],
+                current_job_id=d["current_job_id"],
+                created_at=created_at_value,
+                updated_at=created_at_value,
+                completed_at=d["completed_at"],
                 detail=json.dumps(d),
             )
         )
@@ -4042,13 +4388,27 @@ def create_research(
 @app.get("/api/v1/research/{research_id}")
 def read_research(
     research_id: ResearchId,
+    tab: Literal["timeline", "experiments", "evidence", "artifacts", "audit"] = Query(
+        None
+    ),
+    cursor: str = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    limit: int = Query(100, ge=1, le=100),
     actor: Actor = Depends(require_owner),
     s: Session = Depends(db),
 ):
     r = owned(s, ResearchRow, research_id, actor, "research")
-    return JSONResponse(
-        json.loads(r.detail), headers={"ETag": f'W/"{r.id}:{r.revision}"'}
+    detail = _json_loads(r.detail)
+    all_tabs = (
+        "timeline",
+        "experiments",
+        "evidence",
+        "artifacts",
+        "audit",
     )
+    for name in all_tabs:
+        page_cursor = cursor if tab is None or tab == name else None
+        detail[name] = _page_detail(detail.get(name), page_cursor, limit)
+    return JSONResponse(detail, headers={"ETag": f'W/"{r.id}:{r.revision}"'})
 
 
 @app.post("/api/v1/research/{research_id}/start", status_code=202)
@@ -4190,7 +4550,24 @@ def create_experiment(
         require_engine(
             payload["engine_key"], payload["engine_version"], expected_engine
         )
-        require_cost_model(payload["cost_model_id"])
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, payload["cost_model_id"]
+        )
+        search_space = payload.get("search_space", [])
+        search_configuration = payload.get("search_configuration")
+        if payload["experiment_type"] == "PARAMETER_SENSITIVITY":
+            if not search_space or search_configuration is None:
+                raise problem(
+                    422,
+                    "INVALID_REQUEST",
+                    "parameter sensitivity requires search_space and search_configuration",
+                )
+        elif search_space or search_configuration is not None:
+            raise problem(
+                422,
+                "INVALID_REQUEST",
+                "search fields are only valid for PARAMETER_SENSITIVITY",
+            )
         if payload["experiment_type"] == "FACTOR_ANALYSIS":
             factor = s.execute(
                 select(FactorRow).where(
@@ -4217,7 +4594,12 @@ def create_experiment(
             s,
             "EXPERIMENT",
             {"type": "experiment", "id": experiment_id, "version": None, "revision": 1},
-            input_payload={"experiment_id": experiment_id, **payload},
+            input_payload={
+                "experiment_id": experiment_id,
+                "cost_model_version": cost_row.version,
+                "cost_model_sha256": cost_row.content_sha256,
+                **payload,
+            },
         )
         detail = validated_payload(
             "ExperimentDetail",
@@ -4236,8 +4618,8 @@ def create_experiment(
                 "parameters_sha256": hashlib.sha256(
                     json.dumps(payload["parameters"], sort_keys=True).encode()
                 ).hexdigest(),
-                "search_space": [],
-                "search_configuration": None,
+                "search_space": search_space,
+                "search_configuration": search_configuration,
                 "search_result": {
                     "state": "NOT_APPLICABLE",
                     "evaluated_count": 0,
@@ -4291,6 +4673,7 @@ def create_experiment(
                 source_experiment_id=None,
                 immutable=False,
                 revision=1,
+                **experiment_storage_fields(detail),
                 detail=json.dumps(detail),
             )
         )
@@ -4347,6 +4730,9 @@ def create_factor(
                 id=factor_id,
                 workspace_id=actor.workspace_id,
                 research_id=payload["research_id"],
+                name=payload["name"],
+                category=payload["category"],
+                created_by=actor.id,
                 revision=1,
                 detail=json.dumps(detail),
             )
@@ -4375,7 +4761,9 @@ def create_strategy(
 
     def f():
         owned(s, ResearchRow, payload["research_id"], actor, "research")
-        require_cost_model(payload["cost_model_id"])
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, payload["cost_model_id"]
+        )
         for signal in payload["signals"]:
             factor = s.execute(
                 select(FactorRow).where(
@@ -4444,6 +4832,7 @@ def create_strategy(
                 id=strategy_id,
                 workspace_id=actor.workspace_id,
                 research_id=payload["research_id"],
+                name=payload["name"],
                 revision=1,
                 detail=json.dumps(detail),
             )
@@ -4453,6 +4842,10 @@ def create_strategy(
                 id=new_id("SV"),
                 workspace_id=actor.workspace_id,
                 strategy_id=strategy_id,
+                cost_model_ref_id=cost_row.internal_id,
+                **strategy_storage_fields(
+                    detail, lifecycle_state="CANDIDATE", is_frozen=False
+                ),
                 version=1,
                 state="CANDIDATE",
                 spec_sha256=digest,
@@ -4674,6 +5067,9 @@ def reproduce_experiment(
         ).scalar_one_or_none()
         if snapshot is None:
             raise problem(422, "NON_REPRODUCIBLE", "source snapshot is unavailable")
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, _as_str(source_detail["cost_model_id"])
+        )
         snapshot_detail = json.loads(snapshot.detail)
         snapshot_adapter = snapshot_detail["provider_metadata"]
         if adapter is not None and (
@@ -4692,6 +5088,8 @@ def reproduce_experiment(
                 "source_experiment_id": source.id,
                 "source_provenance_id": source_provenance["provenance_id"],
                 "source_output_sha256": source_provenance["output_sha256"],
+                "cost_model_version": cost_row.version,
+                "cost_model_sha256": cost_row.content_sha256,
                 "reproduce_mode": mode,
                 "execution_overrides": payload.get("execution_overrides", {}),
                 "reason": payload.get("reason"),
@@ -4728,6 +5126,7 @@ def reproduce_experiment(
                 source_experiment_id=source.id,
                 immutable=False,
                 revision=1,
+                **experiment_storage_fields(child_detail),
                 detail=json.dumps(child_detail),
             )
         )
@@ -4846,7 +5245,9 @@ def backtest(
         require_engine(
             payload["engine_key"], payload["engine_version"], "qf-simulation-v1"
         )
-        require_cost_model(payload["cost_model_id"])
+        cost_row = require_cost_model_binding(
+            s, actor.workspace_id, payload["cost_model_id"]
+        )
         return 202, job(
             s,
             "FAST_BACKTEST",
@@ -4861,6 +5262,8 @@ def backtest(
                 "strategy_version": version,
                 "strategy_version_id": row.id,
                 "strategy_spec_sha256": row.spec_sha256,
+                "cost_model_version": cost_row.version,
+                "cost_model_sha256": cost_row.content_sha256,
                 **payload,
             },
         )
@@ -5038,6 +5441,37 @@ def validation(
             raise problem(409, "STRATEGY_NOT_FROZEN")
         if version.state != "FROZEN":
             raise problem(409, "STRATEGY_NOT_FROZEN")
+        strategy_detail = json.loads(version.detail)
+        cost = s.execute(
+            select(CostModelVersionRow).where(
+                CostModelVersionRow.internal_id == version.cost_model_ref_id
+            )
+        ).scalar_one_or_none()
+        if (
+            cost is None
+            or cost.workspace_id != actor.workspace_id
+            or cost.cost_model_id != strategy_detail.get("cost_model_id")
+        ):
+            raise problem(409, "INVALID_REQUEST", "strategy cost model is unavailable")
+        try:
+            loaded_cost = load_cost_model(cost.cost_model_id)
+        except EngineInputError as error:
+            raise problem(
+                422, "INVALID_REQUEST", "strategy cost model is invalid"
+            ) from error
+        if (
+            loaded_cost.version != cost.version
+            or content_hash(
+                {
+                    "cost_model_id": loaded_cost.cost_model_id,
+                    "version": loaded_cost.version,
+                    "commission_bps": loaded_cost.commission_bps,
+                    "slippage_bps": loaded_cost.slippage_bps,
+                }
+            )
+            != cost.content_sha256
+        ):
+            raise problem(409, "INVALID_REQUEST", "strategy cost model binding changed")
         require_engine(
             payload["strict_engine_key"],
             payload["strict_engine_version"],
@@ -5076,7 +5510,15 @@ def validation(
             s,
             "VALIDATION",
             {"type": "validation", "id": i, "version": None, "revision": 1},
-            input_payload={"validation_id": i, **payload},
+            input_payload={
+                "validation_id": i,
+                "policy_version": policy.version,
+                "policy_sha256": policy.content_sha256,
+                "cost_model_id": cost.cost_model_id,
+                "cost_model_version": cost.version,
+                "cost_model_sha256": cost.content_sha256,
+                **payload,
+            },
         )
         created_at = NOW()
         d = validated_payload(
@@ -5586,14 +6028,24 @@ def export_memo(
 
 
 @app.get("/api/v1/approvals")
-def list_approvals(actor: Actor = Depends(require_owner), s: Session = Depends(db)):
-    items = []
-    for row in (
+def list_approvals(
+    cursor: str = Query(None, pattern=r"^[0-9]+$", max_length=18),
+    limit: int = Query(100, ge=1, le=100),
+    actor: Actor = Depends(require_owner),
+    s: Session = Depends(db),
+):
+    offset = int(cursor or "0")
+    rows = (
         s.query(ApprovalRow)
         .filter_by(workspace_id=actor.workspace_id)
         .order_by(ApprovalRow.id)
+        .offset(offset)
+        .limit(limit + 1)
         .all()
-    ):
+    )
+    has_more = len(rows) > limit
+    items = []
+    for row in rows[:limit]:
         detail = _json_loads(row.detail)
         items.append(
             {
@@ -5612,7 +6064,13 @@ def list_approvals(actor: Actor = Depends(require_owner), s: Session = Depends(d
                 )
             }
         )
-    return {"items": items, "page": {"next_cursor": None, "has_more": False}}
+    return {
+        "items": items,
+        "page": {
+            "next_cursor": str(offset + limit) if has_more else None,
+            "has_more": has_more,
+        },
+    }
 
 
 @app.get("/api/v1/approvals/{approval_id}")
@@ -5872,7 +6330,7 @@ def agent_config_payload(row):
                 or snapshot.get("effective_configuration_revision")
                 or 1
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             ai_connection_id = "CODEX-DEFAULT"
     return {
         "role_key": row.role,
@@ -6022,7 +6480,7 @@ def agent_run(
             from app.control_plane import active_runtime_snapshot
 
             snapshot = active_runtime_snapshot()
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             snapshot = {}
         ai_connection_id = str(snapshot.get("ai_connection_id") or "CODEX-DEFAULT")
         ai_connection_revision = int(
@@ -6103,7 +6561,7 @@ def tool_call(
             configuration_sha256 = str(
                 snapshot.get("effective_configuration_sha256") or configuration_sha256
             )
-        except (ImportError, OSError, RuntimeError, ValueError, TypeError):
+        except ImportError, OSError, RuntimeError, ValueError, TypeError:
             pass
     return {
         "tool_call_id": r.id,
@@ -6120,7 +6578,7 @@ def tool_call(
         "tool_registry_sha256": "d13e3c4b60b6dd7232bd6fd3bd96fedb964b07846e502b249beb16b95b840633",
         "policy_version_ref": r.policy_version_ref,
         "status": r.status,
-        "result_summary": json.loads(r.result_summary) if r.result_summary else None,
+        "result_summary": _tool_result_summary(r.result_summary),
         "output_artifact_id": r.output_artifact_id,
         "warnings": json.loads(r.warnings),
         "provenance": json.loads(r.provenance) if r.provenance else None,
@@ -6139,7 +6597,7 @@ def stream(
         durable_event_stream(
             SessionLocal,
             Event,
-            last_event_id,
+            int(last_event_id) if last_event_id is not None else None,
             lambda data: validated_payload("SseEnvelope", data),
             NOW,
             workspace_id=actor.workspace_id,
@@ -6246,6 +6704,9 @@ def application_openapi() -> dict[str, Any]:
         if path.startswith("/api/v1")
     }
     generated["security"] = specification["security"]
+    generated["components"]["securitySchemes"] = deepcopy(
+        specification["components"]["securitySchemes"]
+    )
     generated["paths"]["/system/health"]["get"]["security"] = []
     path_parameter_models = {
         "dataset_id": "dataset",
@@ -6270,7 +6731,28 @@ def application_openapi() -> dict[str, Any]:
             operation["security"] = canonical_operation.get(
                 "security", specification.get("security")
             )
-            canonical_parameters = canonical_operation.get("parameters", [])
+            canonical_parameters = [
+                *specification["paths"][path].get("parameters", []),
+                *canonical_operation.get("parameters", []),
+            ]
+            runtime_parameters = operation.setdefault("parameters", [])
+            parameter_keys = {
+                (parameter.get("name"), parameter.get("in"))
+                for parameter in runtime_parameters
+                if isinstance(parameter, dict)
+            }
+            for raw_parameter in canonical_parameters:
+                parameter = (
+                    specification["components"]["parameters"][
+                        raw_parameter["$ref"].rsplit("/", 1)[-1]
+                    ]
+                    if "$ref" in raw_parameter
+                    else raw_parameter
+                )
+                key = (parameter.get("name"), parameter.get("in"))
+                if key not in parameter_keys:
+                    runtime_parameters.append(deepcopy(raw_parameter))
+                    parameter_keys.add(key)
             required_headers = {
                 (
                     specification["components"]["parameters"][

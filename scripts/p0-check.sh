@@ -2,8 +2,18 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+script_repo_root="$repo_root"
 registry="${1:-$repo_root/docs/治理/p0-blockers.yaml}"
 mode="${2:---require-closed}"
+uv_bin="$(command -v uv 2>/dev/null || true)"
+[[ "$uv_bin" = /* && -x "$uv_bin" && ! -L "$uv_bin" ]] || { printf '%s\n' 'uv is required to parse the canonical P0 registry.' >&2; exit 2; }
+uv_directory="$uv_bin"
+while [[ "$uv_directory" != / ]]; do
+  [[ ! -w "$uv_directory" ]] || { printf '%s\n' 'uv is located below a writable path.' >&2; exit 2; }
+  uv_directory="$(dirname "$uv_directory")"
+done
+uv_bin_dir="$(dirname "$uv_bin")"
+export PATH="$uv_bin_dir:/usr/local/bin:/usr/bin:/bin"
 
 [[ "$mode" == "--offline-report" || "$mode" == "--report" || "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]] || {
   printf 'Usage: %s [registry] [--offline-report|--report|--require-closed|--require-closed-except-supply-chain]\n' "$0" >&2
@@ -11,15 +21,95 @@ mode="${2:---require-closed}"
 }
 [[ -f "$registry" ]] || { printf 'Missing P0 registry: %s\n' "$registry" >&2; exit 2; }
 registry="$(cd "$(dirname "$registry")" && pwd)/$(basename "$registry")"
-command -v uv >/dev/null || { printf '%s\n' 'uv is required to parse the canonical P0 registry.' >&2; exit 2; }
+unset PYTHONPATH PYTHONHOME PYTHONSTARTUP UV_PYTHON UV_CONFIG_FILE UV_INDEX_URL UV_EXTRA_INDEX_URL UV_DEFAULT_INDEX UV_NATIVE_TLS
 
 if [[ "$mode" == "--report" ]]; then
   mode="--offline-report"
 fi
 
+strict_runtime_root=""
+# shellcheck disable=SC2317,SC2329 # invoked through the EXIT trap
+cleanup_strict_runtime() {
+  local status=$?
+  trap - EXIT
+  if [[ -n "$strict_runtime_root" ]]; then
+    rm -rf -- "$strict_runtime_root"
+  fi
+  exit "$status"
+}
+trap cleanup_strict_runtime EXIT
+
+if [[ "$mode" == "--require-closed" || "$mode" == "--require-closed-except-supply-chain" ]]; then
+  trusted_verifier_root="${QF_RELEASE_TRUSTED_VERIFIER_ROOT:-}"
+  trusted_verifier_commit="${QF_RELEASE_TRUSTED_VERIFIER_COMMIT:-}"
+  [[ -n "$trusted_verifier_root" && "$trusted_verifier_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    printf '%s\n' 'strict P0 verification requires an explicit trusted verifier checkout and commit' >&2
+    exit 2
+  }
+  trusted_verifier_root="$(cd "$trusted_verifier_root" 2>/dev/null && pwd)" || {
+    printf '%s\n' 'trusted verifier checkout is unavailable' >&2
+    exit 2
+  }
+  [[ "$script_repo_root" == "$trusted_verifier_root" ]] || {
+    printf '%s\n' 'strict P0 verification must execute from the trusted verifier checkout' >&2
+    exit 2
+  }
+  [[ "$(git -C "$trusted_verifier_root" rev-parse HEAD 2>/dev/null)" == "$trusted_verifier_commit" ]] || {
+    printf '%s\n' 'trusted verifier checkout does not match its commit anchor' >&2
+    exit 2
+  }
+  trusted_status="$(git -C "$trusted_verifier_root" status --porcelain --untracked-files=all)" || {
+    printf '%s\n' 'trusted verifier status cannot be inspected' >&2
+    exit 2
+  }
+  [[ -z "$trusted_status" ]] || {
+    printf '%s\n' 'trusted verifier checkout is not clean' >&2
+    exit 2
+  }
+  hidden_flags="$(git -C "$trusted_verifier_root" ls-files -v)" || {
+    printf '%s\n' 'trusted verifier file flags cannot be inspected' >&2
+    exit 2
+  }
+  if printf '%s\n' "$hidden_flags" | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf '%s\n' 'trusted verifier rejects assume-unchanged or skip-worktree files' >&2
+    exit 2
+  fi
+  release_root="${QF_RELEASE_REPO_ROOT:-$repo_root}"
+  release_root="$(cd "$release_root" 2>/dev/null && pwd)" || {
+    printf '%s\n' 'release checkout is unavailable' >&2
+    exit 2
+  }
+  release_head="$(git -C "$release_root" rev-parse HEAD 2>/dev/null)" || {
+    printf '%s\n' 'release checkout HEAD cannot be inspected' >&2
+    exit 2
+  }
+  release_commit="${QF_RELEASE_COMMIT:-$release_head}"
+  [[ "$release_head" == "$release_commit" ]] || {
+    printf '%s\n' 'release checkout does not match its commit anchor' >&2
+    exit 2
+  }
+  release_status="$(git -C "$release_root" status --porcelain --untracked-files=all)" || {
+    printf '%s\n' 'release checkout status cannot be inspected' >&2
+    exit 2
+  }
+  [[ -z "$release_status" ]] || {
+    printf '%s\n' 'release checkout is not clean' >&2
+    exit 2
+  }
+  release_flags="$(git -C "$release_root" ls-files -v)" || exit 2
+  if printf '%s\n' "$release_flags" | awk '$1 ~ /^[a-zS]$/ { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf '%s\n' 'release checkout rejects assume-unchanged or skip-worktree files' >&2
+    exit 2
+  fi
+  strict_runtime_root="$(mktemp -d "${TMPDIR:-/tmp}/qf-p0-runtime.XXXXXX")"
+  export UV_PROJECT_ENVIRONMENT="$strict_runtime_root/venv"
+  export UV_CACHE_DIR="$strict_runtime_root/cache"
+  mkdir -m 0700 "$UV_CACHE_DIR"
+fi
+
 set +e
-QF_RELEASE_REPO_ROOT="$repo_root" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
-  uv --directory "$repo_root/backend" run --frozen python - "$registry" "$mode" <<'PY'
+QF_RELEASE_REPO_ROOT="${QF_RELEASE_REPO_ROOT:-$repo_root}" QF_RELEASE_COMMIT="${QF_RELEASE_COMMIT:-$(git -C "$repo_root" rev-parse HEAD)}" \
+  "$uv_bin" --directory "$script_repo_root/backend" run --frozen python -I - "$registry" "$mode" <<'PY'
 import datetime as dt
 import hashlib
 import io
@@ -27,11 +117,13 @@ import json
 import os
 import pathlib
 import re
+import selectors
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, urlparse
 
 import yaml
 
@@ -43,6 +135,8 @@ expected_commit = os.environ["QF_RELEASE_COMMIT"]
 repo_root = pathlib.Path(os.environ["QF_RELEASE_REPO_ROOT"])
 sha_pattern = re.compile(r"^[0-9a-f]{40}$")
 sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
+MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
+MAX_REPORT_BYTES = 8 * 1024 * 1024
 github_build_pattern = re.compile(r"^github-actions/([1-9][0-9]*)$")
 repository_pattern = re.compile(r"^[^/\s]+/[^/\s]+$")
 placeholder_pattern = re.compile(r"(?i)^(?:placeholder|codeowners|todo|tbd|example|n/?a|unknown)$")
@@ -51,6 +145,16 @@ allowed_roles = {"Independent Test Agent", "Independent Review Agent"}
 role_content_types = {
     "Independent Test Agent": "application/vnd.quantfoundry.p0-test-evidence+json;version=1",
     "Independent Review Agent": "application/vnd.quantfoundry.p0-review-evidence+json;version=1",
+}
+required_owner_roles = {
+    "P0-PRODUCT-PAPER-DAILY-SCHEDULER": "Backend Agent",
+    "P0-CONTRACT-OPENAPI-45": "API / Contract Agent",
+    "P0-CONTRACT-TOOLS-13": "Agent-System Agent",
+    "P0-SCHEMA-ALEMBIC-AUTHORITY": "Database Agent",
+    "P0-ARCHITECTURE-TARGET-LAYERS": "Architecture / Implementation Agent",
+    "P0-SECURITY-RESEARCH-INTEGRITY": "Security Agent",
+    "P0-CI-REPRODUCIBILITY": "Test Agent",
+    "P0-SUPPLY-CHAIN-RELEASE-EVIDENCE": "Release Agent",
 }
 required_p0_ids = {
     "P0-PRODUCT-PAPER-DAILY-SCHEDULER",
@@ -66,25 +170,37 @@ allowed_verification_workflows = {
     "Independent Test Agent": {".github/workflows/independent-agent-test.yml"},
     "Independent Review Agent": {".github/workflows/independent-agent-review.yml"},
 }
+trusted_verification_workflow_blobs = {
+    ".github/workflows/independent-agent-test.yml": "697e21c0cf03b7f1605ca7eb40b9a0281ff7f399",
+    ".github/workflows/independent-agent-review.yml": "51bf6299bb3c1a290530efe7a99a6e043a43359d",
+}
+
+head_commit = subprocess.run(
+    ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+).stdout.strip()
+if not sha_pattern.fullmatch(expected_commit) or expected_commit != head_commit:
+    raise SystemExit("QF_RELEASE_COMMIT must be the full lowercase checked-out HEAD SHA")
+
+if strict_mode:
+    canonical_registry_rel = pathlib.PurePosixPath("docs/治理/p0-blockers.yaml")
+    if registry_path.is_symlink():
+        raise SystemExit("strict P0 verification registry must not be a symlink")
+    canonical_bytes = subprocess.check_output(
+        ["git", "-C", str(repo_root), "show", f"{expected_commit}:{canonical_registry_rel}"],
+    )
+    if registry_path.read_bytes() != canonical_bytes:
+        raise SystemExit("strict P0 verification registry is not byte-identical to the release commit")
 
 
 def invalid_value(value):
     return not isinstance(value, str) or not value.strip() or bool(placeholder_pattern.fullmatch(value.strip()))
 
 
-def commit_is_ancestor(verification_commit, release_commit):
-    if verification_commit == release_commit:
-        return True
-    completed = subprocess.run(
-        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", verification_commit, release_commit],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return completed.returncode == 0
-
-
 def valid_timestamp(value):
-    if invalid_value(value) or not value.endswith("Z"):
+    if invalid_value(value) or "T" not in value or not value.endswith("Z"):
         return False
     try:
         dt.datetime.fromisoformat(value[:-1] + "+00:00")
@@ -104,11 +220,8 @@ def parse_artifact_uri(value):
     if parsed.scheme != "https" or parsed.netloc != "github.com" or parsed.username or parsed.password:
         return None
     action_match = re.fullmatch(r"/([^/]+/[^/]+)/actions/runs/([1-9][0-9]*)/artifacts/([1-9][0-9]*)", parsed.path)
-    release_match = re.fullmatch(r"/([^/]+/[^/]+)/releases/download/([^/]+)/([^/]+)", parsed.path)
     if action_match:
         return ("actions", action_match.group(1), action_match.group(2), action_match.group(3))
-    if release_match:
-        return ("release", release_match.group(1), unquote(release_match.group(2)), unquote(release_match.group(3)))
     return None
 
 
@@ -170,8 +283,8 @@ class RemoteVerifier:
     def __init__(self):
         self.repository = os.environ.get("GITHUB_REPOSITORY", "")
         self.token = os.environ.get("GITHUB_TOKEN", "")
-        if not repository_pattern.fullmatch(self.repository):
-            raise RuntimeError("GITHUB_REPOSITORY is required for online P0 closure verification")
+        if self.repository != "zhengui666/QuantFoundry":
+            raise RuntimeError("GITHUB_REPOSITORY must be the canonical repository for online P0 closure verification")
         if not self.token:
             raise RuntimeError("GITHUB_TOKEN is required for online P0 closure verification")
         if not shutil_which("gh"):
@@ -191,16 +304,64 @@ class RemoteVerifier:
             raise RuntimeError(f"gh api returned non-JSON for {endpoint}") from error
 
     def gh_download(self, endpoint):
+        if f"/repos/{self.repository}/releases/assets" in endpoint:
+            raise RuntimeError("P0 closure evidence must not use GitHub release assets")
         with tempfile.TemporaryDirectory(prefix="qf-p0-evidence-") as directory:
             destination = pathlib.Path(directory) / "evidence.zip"
-            completed = subprocess.run(
-                ["gh", "api", endpoint, "--method", "GET"],
+            process = subprocess.Popen(
+                [
+                    "gh",
+                    "api",
+                    endpoint,
+                    "--method",
+                    "GET",
+                    *(["--header", "Accept: application/octet-stream"] if "/actions/artifacts/" in endpoint else []),
+                ],
                 env=self.env,
-                stdout=destination.open("wb"),
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            if completed.returncode:
-                raise RuntimeError(f"gh api download failed for {endpoint}: {completed.stderr.decode(errors='replace').strip() or completed.returncode}")
+            selector = selectors.DefaultSelector()
+            selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+            selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+            stderr = bytearray()
+            downloaded = 0
+            deadline = time.monotonic() + 120
+            try:
+                with destination.open("wb") as archive_file:
+                    while selector.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            process.kill()
+                            process.wait()
+                            raise RuntimeError(f"gh api download timed out for {endpoint}")
+                        events = selector.select(remaining)
+                        if not events:
+                            process.kill()
+                            process.wait()
+                            raise RuntimeError(f"gh api download timed out for {endpoint}")
+                        for key, _ in events:
+                            chunk = os.read(key.fileobj.fileno(), 1024 * 1024)
+                            if not chunk:
+                                selector.unregister(key.fileobj)
+                            elif key.data == "stderr":
+                                stderr.extend(chunk[: max(0, 64 * 1024 - len(stderr))])
+                            else:
+                                downloaded += len(chunk)
+                                if downloaded > MAX_EVIDENCE_BYTES:
+                                    process.kill()
+                                    process.wait()
+                                    raise RuntimeError("downloaded evidence exceeds the size limit")
+                                archive_file.write(chunk)
+            finally:
+                selector.close()
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+            return_code = process.returncode
+            stderr_text = bytes(stderr).decode(errors="replace").strip()
+            if return_code:
+                raise RuntimeError(f"gh api download failed for {endpoint}: {stderr_text or return_code}")
             try:
                 return destination.read_bytes()
             except OSError as error:
@@ -212,9 +373,15 @@ class RemoteVerifier:
             raise RuntimeError(f"GitHub Actions run {run_id} is not bound to commit {commit}")
         if run.get("status") != "completed" or run.get("conclusion") != "success":
             raise RuntimeError(f"GitHub Actions run {run_id} did not complete successfully")
-        workflow_path = run.get("path", "").split("@", 1)[0]
-        if workflow_path not in allowed_verification_workflows[role]:
+        workflow_path = run.get("path", "")
+        if workflow_path not in allowed_verification_workflows[role] or run.get("head_branch") != "main":
             raise RuntimeError(f"GitHub Actions run {run_id} used an unauthorized verification workflow")
+        workflow_source = self.gh_json(
+            f"/repos/{self.repository}/contents/{quote(workflow_path, safe='')}"
+            f"?ref={quote(commit, safe='')}"
+        )
+        if workflow_source.get("sha") != trusted_verification_workflow_blobs[workflow_path]:
+            raise RuntimeError(f"GitHub Actions run {run_id} used an untrusted workflow revision")
 
     def resolve_tag_commit(self, tag):
         ref = self.gh_json(f"/repos/{self.repository}/git/ref/tags/{quote(tag, safe='')}")
@@ -238,24 +405,22 @@ class RemoteVerifier:
         transport, repository, first, second = parsed
         if repository != self.repository:
             raise RuntimeError("remote evidence URI repository does not match GITHUB_REPOSITORY")
+        if transport != "actions":
+            raise RuntimeError("P0 closure evidence must use a GitHub Actions artifact")
         self.require_run(run_id, commit, role)
         if transport == "actions":
             artifact_run_id, artifact_id = first, second
             if artifact_run_id != str(run_id):
                 raise RuntimeError("artifact URL run id does not match build_id")
             artifact = self.gh_json(f"/repos/{self.repository}/actions/artifacts/{artifact_id}")
-            if artifact.get("expired") or artifact.get("workflow_run", {}).get("id") != run_id:
+            if (
+                artifact.get("expired")
+                or artifact.get("workflow_run", {}).get("id") != run_id
+                or not isinstance(artifact.get("size_in_bytes"), int)
+                or artifact["size_in_bytes"] > MAX_EVIDENCE_BYTES
+            ):
                 raise RuntimeError(f"Actions artifact {artifact_id} is missing, expired, or not bound to run {run_id}")
             blob = self.gh_download(f"/repos/{self.repository}/actions/artifacts/{artifact_id}/zip")
-        else:
-            tag, asset_name = first, second
-            if self.resolve_tag_commit(tag) != commit:
-                raise RuntimeError(f"release tag {tag} is not bound to commit {commit}")
-            release = self.gh_json(f"/repos/{self.repository}/releases/tags/{quote(tag, safe='')}")
-            asset = next((item for item in release.get("assets", []) if item.get("name") == asset_name), None)
-            if not asset or not isinstance(asset.get("id"), int):
-                raise RuntimeError(f"release asset {asset_name} is not present on release {tag}")
-            blob = self.gh_download(f"/repos/{self.repository}/releases/assets/{asset['id']}")
         self.require_sha256(blob, expected_sha256)
         return blob
 
@@ -274,6 +439,8 @@ def read_embedded_report(blob, report_path, expected_sha256):
             matches = [member for member in archive.infolist() if member.filename == report_path and not member.is_dir()]
             if len(matches) != 1:
                 raise RuntimeError("evidence ZIP must contain exactly one declared report_path")
+            if matches[0].file_size > MAX_REPORT_BYTES:
+                raise RuntimeError("embedded evidence report exceeds the size limit")
             payload = archive.read(matches[0])
     except (OSError, zipfile.BadZipFile) as error:
         raise RuntimeError(f"evidence object is not a readable ZIP: {error}") from error
@@ -281,7 +448,7 @@ def read_embedded_report(blob, report_path, expected_sha256):
         raise RuntimeError("embedded evidence report SHA-256 does not match registry")
     try:
         report = json.loads(payload)
-    except json.JSONDecodeError as error:
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise RuntimeError(f"embedded evidence report is not JSON: {error}") from error
     if not isinstance(report, dict):
         raise RuntimeError("embedded evidence report must be a JSON object")
@@ -293,9 +460,13 @@ def validate_embedded_report(prefix, report, record, role, run_id, remote, error
         "schema_version", "content_type", "commit_sha", "github_run_id", "verifier_role", "verified_at_utc",
         "closure_criteria", "commands", "artifact", "attestation",
     }
-    if set(report) != expected_fields:
+    if set(report) not in {expected_fields, expected_fields | {"github_run_attempt"}}:
         errors.append(f"{prefix}.embedded_report has an invalid field set")
         return
+    if "github_run_attempt" in report and (
+        not isinstance(report["github_run_attempt"], int) or report["github_run_attempt"] < 1
+    ):
+        errors.append(f"{prefix}.embedded_report.github_run_attempt must be positive")
     report_meta = record["report"]
     if report.get("schema_version") != "1.0.0":
         errors.append(f"{prefix}.embedded_report.schema_version must be 1.0.0")
@@ -335,14 +506,21 @@ def validate_closed_evidence(blocker_id, item, remote):
     covered_criteria = set()
     roles = set()
     role_runs = {role: set() for role in allowed_roles}
+    role_criteria = {role: set() for role in allowed_roles}
     for index, record in enumerate(evidence):
         prefix = f"{blocker_id}: evidence[{index}]"
         record_error_count = len(errors)
         if not isinstance(record, dict):
             errors.append(f"{prefix} must be an object")
             continue
+        owner_role = item.get("owner_role")
+        expected_owner_role = required_owner_roles.get(blocker_id)
+        if owner_role != expected_owner_role:
+            errors.append(
+                f"{blocker_id}: owner_role must be {expected_owner_role!r}"
+            )
         role = record.get("verifier_role")
-        if role not in allowed_roles or role == item.get("owner_role"):
+        if role not in allowed_roles or role == owner_role:
             errors.append(f"{prefix}.verifier_role must be an independent Test or Review Agent")
         else:
             roles.add(role)
@@ -351,8 +529,8 @@ def validate_closed_evidence(blocker_id, item, remote):
         commit_sha = record.get("commit_sha")
         if not isinstance(commit_sha, str) or not sha_pattern.fullmatch(commit_sha):
             errors.append(f"{prefix}.commit_sha must be a full lowercase 40-character SHA")
-        elif not commit_is_ancestor(commit_sha, expected_commit):
-            errors.append(f"{prefix}.commit_sha is not an ancestor of the current release commit")
+        elif commit_sha != expected_commit:
+            errors.append(f"{prefix}.commit_sha must equal the current release commit")
         build_id = record.get("build_id")
         build_match = github_build_pattern.fullmatch(build_id) if isinstance(build_id, str) else None
         if not build_match:
@@ -365,7 +543,7 @@ def validate_closed_evidence(blocker_id, item, remote):
         uri = record.get("artifact_uri")
         parsed_uri = parse_artifact_uri(uri)
         if not parsed_uri:
-            errors.append(f"{prefix}.artifact_uri must be a GitHub Actions artifact or GitHub Release asset URI")
+            errors.append(f"{prefix}.artifact_uri must be a GitHub Actions artifact URI")
         artifact_sha256 = record.get("artifact_sha256")
         if not isinstance(artifact_sha256, str) or not sha256_pattern.fullmatch(artifact_sha256):
             errors.append(f"{prefix}.artifact_sha256 must be a lowercase SHA-256")
@@ -382,6 +560,8 @@ def validate_closed_evidence(blocker_id, item, remote):
                     errors.append(f"{prefix}.closure_criteria contains a non-canonical criterion")
                 else:
                     covered_criteria.add(criterion)
+                    if role in allowed_roles and role != item.get("owner_role"):
+                        role_criteria[role].add(criterion)
         validate_commands(prefix, record.get("commands"), errors)
         if remote and len(errors) == record_error_count:
             try:
@@ -395,6 +575,10 @@ def validate_closed_evidence(blocker_id, item, remote):
         errors.append(f"{blocker_id}: evidence does not cover every closure criterion")
     if roles != allowed_roles:
         errors.append(f"{blocker_id}: evidence requires separate Independent Test Agent and Independent Review Agent records")
+    for role in allowed_roles:
+        missing_for_role = set(criteria) - role_criteria[role]
+        if missing_for_role:
+            errors.append(f"{blocker_id}: {role} evidence does not cover every closure criterion")
     if role_runs["Independent Test Agent"] & role_runs["Independent Review Agent"]:
         errors.append(f"{blocker_id}: Independent Test and Review evidence must use distinct GitHub Actions runs")
     return errors
@@ -402,7 +586,7 @@ def validate_closed_evidence(blocker_id, item, remote):
 
 try:
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
-except (OSError, yaml.YAMLError) as error:
+except (OSError, UnicodeError, yaml.YAMLError) as error:
     print(json.dumps({"registry": str(registry_path), "result": "invalid", "error": str(error)}, ensure_ascii=False))
     raise SystemExit(2)
 

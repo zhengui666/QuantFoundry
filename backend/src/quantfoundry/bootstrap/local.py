@@ -7,8 +7,10 @@ import hashlib
 import json
 import os
 import secrets
+import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -102,33 +104,67 @@ def _workspace_seed_values(workspace_id: str) -> dict[str, dict[str, Any] | str]
 def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
     encoded = json.dumps(value, sort_keys=True, indent=2) + "\n"
-    if path.exists() and path.read_text(encoding="utf-8") != encoded:
-        raise RuntimeError(f"refusing to overwrite different local policy: {path}")
-    path.write_text(encoded, encoding="utf-8")
-    path.chmod(0o640)
+    if path.exists():
+        if path.read_text(encoding="utf-8") != encoded:
+            raise RuntimeError(f"refusing to overwrite different local policy: {path}")
+        return
+    _atomic_write(path, encoded)
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    temporary = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    )
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        temporary_path.chmod(0o640)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def _write_local_dataset(root: Path, dataset_id: str) -> str:
     root.mkdir(mode=0o750, parents=True, exist_ok=True)
     csv_path = root / f"{dataset_id}.csv"
     rows = [
-        "event_time,available_at,symbol,close,benchmark_close,partition,split_factor,dividend,in_universe,sector",
-        "2024-01-02T21:00:00Z,2024-01-02T21:01:00Z,AAA,100,100,RESEARCH,1,0,true,TECH",
-        "2024-01-02T21:00:00Z,2024-01-02T21:01:00Z,BBB,100,100,RESEARCH,1,0,true,FINANCE",
-        "2024-01-03T21:00:00Z,2024-01-03T21:01:00Z,AAA,102,101,RESEARCH,1,0,true,TECH",
-        "2024-01-03T21:00:00Z,2024-01-03T21:01:00Z,BBB,99,101,RESEARCH,1,0,true,FINANCE",
-        "2024-01-04T21:00:00Z,2024-01-04T21:01:00Z,AAA,103,102,RESEARCH,1,0,true,TECH",
-        "2024-01-04T21:00:00Z,2024-01-04T21:01:00Z,BBB,98,102,RESEARCH,1,0,true,FINANCE",
-        "2024-01-05T21:00:00Z,2024-01-05T21:01:00Z,AAA,104,103,VALIDATION,1,0,true,TECH",
-        "2024-01-05T21:00:00Z,2024-01-05T21:01:00Z,BBB,97,103,VALIDATION,1,0,true,FINANCE",
-        "2024-01-08T21:00:00Z,2024-01-08T21:01:00Z,AAA,105,104,HOLDOUT,1,0,true,TECH",
-        "2024-01-08T21:00:00Z,2024-01-08T21:01:00Z,BBB,96,104,HOLDOUT,1,0,true,FINANCE",
+        "event_time,available_at,symbol,close,benchmark_close,partition,split_factor,dividend,in_universe,sector"
     ]
+
+    def append_session(day: datetime, partition: str, offset: int) -> None:
+        stamp = day.strftime("%Y-%m-%dT21:00:00Z")
+        rows.extend(
+            [
+                f"{stamp},{stamp},AAA,{100 + offset},{100 + offset},{partition},1,0,true,TECH",
+                f"{stamp},{stamp},BBB,{100 - offset},{100 + offset},{partition},1,0,true,FINANCE",
+            ]
+        )
+
+    def append_weekday_sessions(start: datetime, count: int, partition: str) -> None:
+        day = start
+        offset = 0
+        while offset < count:
+            if day.weekday() < 5:
+                append_session(day, partition, offset)
+                offset += 1
+            day += timedelta(days=1)
+
+    append_weekday_sessions(datetime(2024, 1, 2, tzinfo=UTC), 3, "RESEARCH")
+    append_weekday_sessions(datetime(2024, 1, 8, tzinfo=UTC), 21, "VALIDATION")
+    append_weekday_sessions(datetime(2024, 2, 6, tzinfo=UTC), 11, "HOLDOUT")
     csv_value = "\n".join(rows) + "\n"
     if csv_path.exists() and csv_path.read_text(encoding="utf-8") != csv_value:
         raise RuntimeError(f"refusing to overwrite different local dataset: {csv_path}")
-    csv_path.write_text(csv_value, encoding="utf-8")
-    csv_path.chmod(0o640)
+    if not csv_path.exists():
+        _atomic_write(csv_path, csv_value)
     _write_json(
         root / f"{dataset_id}.metadata.json",
         {
@@ -151,7 +187,17 @@ def seed_local(
     owner_id: str,
     owner_email: str,
     session_token: str,
+    ttl_hours: int = 30 * 24,
+    workspace_name: str = "QuantFoundry Local",
 ) -> dict[str, Any]:
+    if not isinstance(session_token, str) or len(session_token) < 32:
+        raise ValueError("session_token must contain at least 32 characters")
+    if ttl_hours <= 0:
+        raise ValueError("ttl_hours must be positive")
+    if not 1 <= len(workspace_name.strip()) <= 128:
+        raise ValueError("workspace_name must contain 1 to 128 characters")
+    workspace_name = workspace_name.strip()
+    workspace_id = canonical_workspace_id(workspace_id)
     cost_root = Path(os.environ["QF_COST_MODEL_DIR"])
     policy_root = Path(os.environ["QF_POLICY_DIR"])
     dataset_root = Path(os.environ["QF_DATASET_DIR"])
@@ -166,20 +212,36 @@ def seed_local(
     assert isinstance(risk_policy, dict)
     assert isinstance(cost_model, dict)
     assert isinstance(dataset_id, str)
-    _write_json(cost_root / f"{cost_model['cost_model_id']}.json", cost_model)
-    _write_json(
-        policy_root / f"{validation_policy['policy_id']}.json", validation_policy
-    )
-    _write_json(policy_root / f"{research_policy['policy_id']}.json", research_policy)
-    _write_json(policy_root / f"{risk_policy['policy_id']}.json", risk_policy)
-    dataset_id = _write_local_dataset(dataset_root, dataset_id)
+    file_paths = [
+        cost_root / f"{cost_model['cost_model_id']}.json",
+        policy_root / f"{validation_policy['policy_id']}.json",
+        policy_root / f"{research_policy['policy_id']}.json",
+        policy_root / f"{risk_policy['policy_id']}.json",
+        dataset_root / f"{dataset_id}.csv",
+        dataset_root / f"{dataset_id}.metadata.json",
+    ]
+    created_paths = [path for path in file_paths if not path.exists()]
     timestamp = datetime.now(UTC)
     session = SessionLocal()
+    commit_attempted = False
     try:
+        _write_json(cost_root / f"{cost_model['cost_model_id']}.json", cost_model)
+        _write_json(
+            policy_root / f"{validation_policy['policy_id']}.json", validation_policy
+        )
+        _write_json(
+            policy_root / f"{research_policy['policy_id']}.json", research_policy
+        )
+        _write_json(policy_root / f"{risk_policy['policy_id']}.json", risk_policy)
+        dataset_id = _write_local_dataset(dataset_root, dataset_id)
         existing_user = session.get(User, owner_id)
         if existing_user is None:
             session.add(User(id=owner_id, email=owner_email, role="OWNER", revision=1))
-        elif existing_user.email != owner_email or existing_user.role != "OWNER":
+        elif (
+            existing_user.email != owner_email
+            or existing_user.role != "OWNER"
+            or existing_user.revision != 1
+        ):
             raise RuntimeError(
                 "local owner is already bound to different identity data"
             )
@@ -190,11 +252,15 @@ def seed_local(
                 Workspace(
                     id=workspace_id,
                     owner_id=owner_id,
-                    name="QuantFoundry Local",
+                    name=workspace_name,
                     revision=1,
                 )
             )
-        elif existing_workspace.owner_id != owner_id:
+        elif (
+            existing_workspace.owner_id != owner_id
+            or existing_workspace.name != workspace_name
+            or existing_workspace.revision != 1
+        ):
             raise RuntimeError("local workspace is already bound to another owner")
         session.flush()
         rows: tuple[tuple[Any, str, str, dict[str, Any], dict[str, Any]], ...] = (
@@ -252,6 +318,32 @@ def seed_local(
                 }
                 if model is ResearchPolicyVersionRow:
                     row_values["rules"] = value
+                    row_values["max_research_steps"] = 25
+                    row_values["max_tool_calls"] = 50
+                elif model is RiskPolicyVersionRow:
+                    row_values.update(
+                        {
+                            "max_single_position": Decimal(
+                                str(value["max_position_weight"])
+                            ),
+                            "max_strategy_weight": Decimal(
+                                str(value["max_gross_exposure"])
+                            ),
+                            "max_paper_drawdown": Decimal(str(value["max_drawdown"])),
+                            "rules": value,
+                        }
+                    )
+                elif model is CostModelVersionRow:
+                    row_values.update(
+                        {
+                            "commission_model": {
+                                "commission_bps": value["commission_bps"]
+                            },
+                            "slippage_model": {"slippage_bps": value["slippage_bps"]},
+                            "rebalance_timing": "NEXT_OPEN",
+                            "fill_assumption": "NEXT_OPEN",
+                        }
+                    )
                 session.add(model(**row_values))
                 continue
             expected = {
@@ -264,12 +356,46 @@ def seed_local(
             }
             if model is ResearchPolicyVersionRow:
                 expected["rules"] = value
+                expected["require_cost_test"] = True
+                expected["require_parameter_stability"] = True
+                expected["require_oos"] = True
+                expected["require_holdout"] = True
+                expected["require_red_team"] = True
+                expected["max_research_steps"] = 25
+                expected["max_tool_calls"] = 50
+            elif model is RiskPolicyVersionRow:
+                expected.update(
+                    {
+                        "max_single_position": Decimal(
+                            str(value["max_position_weight"])
+                        ),
+                        "max_strategy_weight": Decimal(
+                            str(value["max_gross_exposure"])
+                        ),
+                        "target_portfolio_vol": None,
+                        "max_paper_drawdown": Decimal(str(value["max_drawdown"])),
+                        "max_turnover": None,
+                        "rules": value,
+                    }
+                )
+            elif model is CostModelVersionRow:
+                expected.update(
+                    {
+                        "commission_model": {"commission_bps": value["commission_bps"]},
+                        "slippage_model": {"slippage_bps": value["slippage_bps"]},
+                        "spread_model": None,
+                        "rebalance_timing": "NEXT_OPEN",
+                        "fill_assumption": "NEXT_OPEN",
+                        "currency": "USD",
+                    }
+                )
             if any(
                 getattr(existing, field) != expected_value
                 for field, expected_value in expected.items()
             ):
                 raise RuntimeError("local policy row has conflicting immutable binding")
-        if session.get(DataSource, (dataset_id, workspace_id)) is None:
+        data_source = session.get(DataSource, (dataset_id, workspace_id))
+        if data_source is None:
             session.add(
                 DataSource(
                     id=dataset_id,
@@ -279,6 +405,12 @@ def seed_local(
                     revision=1,
                 )
             )
+        elif (
+            data_source.provider_id != "LOCAL_DETERMINISTIC_DATA"
+            or data_source.status != "ACTIVE"
+            or data_source.revision != 1
+        ):
+            raise RuntimeError("local data source has conflicting immutable binding")
         token_sha256 = hashlib.sha256(session_token.encode()).hexdigest()
         existing_token = session.get(SessionToken, token_sha256)
         if existing_token is None:
@@ -287,7 +419,7 @@ def seed_local(
                     token_sha256=token_sha256,
                     actor_id=owner_id,
                     workspace_id=workspace_id,
-                    expires_at=timestamp + timedelta(days=30),
+                    expires_at=timestamp + timedelta(hours=ttl_hours),
                 )
             )
         elif (
@@ -295,16 +427,44 @@ def seed_local(
             or existing_token.workspace_id != canonical_workspace_id(workspace_id)
         ):
             raise RuntimeError("session token is already bound to another principal")
+        elif (
+            existing_token.revoked_at is not None
+            or (
+                existing_token.expires_at.replace(tzinfo=UTC)
+                if existing_token.expires_at.tzinfo is None
+                else existing_token.expires_at
+            )
+            <= timestamp
+        ):
+            raise RuntimeError(
+                "session token is revoked or expired; provide a new token"
+            )
+        elif (
+            existing_token.expires_at.replace(tzinfo=UTC)
+            if existing_token.expires_at.tzinfo is None
+            else existing_token.expires_at
+        ) < timestamp + timedelta(hours=ttl_hours):
+            existing_token.expires_at = timestamp + timedelta(hours=ttl_hours)
         active_policy = session.execute(
             select(ResearchPolicyVersionRow).where(
                 ResearchPolicyVersionRow.workspace_id == workspace_id,
                 ResearchPolicyVersionRow.policy_family == "research",
+                ResearchPolicyVersionRow.policy_id == research_policy["policy_id"],
                 ResearchPolicyVersionRow.status == "ACTIVE",
             )
-        ).scalar_one()
+        ).scalar_one_or_none()
+        if active_policy is None:
+            raise RuntimeError("seeded research policy is not active")
+        commit_attempted = True
         session.commit()
     except Exception:
         session.rollback()
+        if not commit_attempted:
+            for path in reversed(created_paths):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
         raise
     finally:
         session.close()

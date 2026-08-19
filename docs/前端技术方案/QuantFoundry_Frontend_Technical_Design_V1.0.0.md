@@ -2008,7 +2008,7 @@ GET /api/v1/research/{research_id}
 generated ResearchDetail
 ```
 
-单一 closed `ResearchDetail` 是七 Tab query truth；直接消费 required `overview`、`plan`、`timeline`、`experiments`、`evidence`、`artifacts`、`audit`。禁止为 Tab 创建未收录 operation、手写 DTO、`Record<string, unknown>`、optional fallback 或客户端聚合 truth。`timeline|experiments|evidence|artifacts|audit` 使用 generated page/item/PageInfo；当前 R2 embedded page 必须 `has_more=false`、`next_cursor=null`。
+单一 closed `ResearchDetail` 是七 Tab query truth；直接消费 required `overview`、`plan`、`timeline`、`experiments`、`evidence`、`artifacts`、`audit`。禁止为 Tab 创建未收录 operation、手写 DTO、`Record<string, unknown>`、optional fallback 或客户端聚合 truth。`timeline|experiments|evidence|artifacts|audit` 使用 generated page/item/PageInfo；通过 canonical `tab`、`cursor`、`limit` query continuation，`limit` 为 1..100（默认 100），无更多数据时 `has_more=false`、`next_cursor=null`；未指定 `tab` 时服务端对五个 embedded page 使用同一 page window。
 
 每个 Tab render state 独立但共享 query：initial loading 使用稳定 skeleton；null（plan/conclusion/current work）与 `items=[]` 使用 schema-aware empty；HTTP/validation error 显示 Problem/request_id；SSE reconnect/resync 只 invalid/refetch `researchDetail(research_id)`，保留 route/tab/scroll/form draft，不 remount App。未知额外字段或缺 required 字段 runtime fail closed，并进入可见 contract error + safe refetch。
 

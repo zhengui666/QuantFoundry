@@ -26,11 +26,42 @@ write_fixture() {
     missing)
       printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"release-manifest.json"},{"name":"SHA256SUMS","source":"SHA256SUMS"},{"name":"missing--backend.json","source":"missing/backend.json"},{"name":"attestations--backend.json","source":"attestations/backend.json"}]}' > "$directory/release-manifest.json"
       ;;
+    symlink)
+      printf '%s\n' '{"evidence":"outside"}' > "$fixture_root/outside.json"
+      ln -s "$fixture_root/outside.json" "$directory/escape.json"
+      printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"release-manifest.json"},{"name":"SHA256SUMS","source":"SHA256SUMS"},{"name":"escape.json","source":"escape.json"},{"name":"attestations--backend.json","source":"attestations/backend.json"}]}' > "$directory/release-manifest.json"
+      ;;
+    unsafe-source)
+      printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"release-manifest.json"},{"name":"SHA256SUMS","source":"SHA256SUMS"},{"name":"escape.json","source":"../outside.json"},{"name":"attestations--backend.json","source":"attestations/backend.json"}]}' > "$directory/release-manifest.json"
+      ;;
+    unsafe-name)
+      printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"release-manifest.json"},{"name":"SHA256SUMS","source":"SHA256SUMS"},{"name":"nested/backend.json","source":"attestations/backend.json"}]}' > "$directory/release-manifest.json"
+      ;;
+    reserved-mismatch)
+      printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"attestations/backend.json"},{"name":"SHA256SUMS","source":"SHA256SUMS"}]}' > "$directory/release-manifest.json"
+      ;;
+    reserved-swap)
+      printf '%s\n' '{"release_assets":[{"name":"release-manifest.json","source":"SHA256SUMS"},{"name":"SHA256SUMS","source":"release-manifest.json"}]}' > "$directory/release-manifest.json"
+      ;;
     *)
       printf 'Unknown fixture: %s\n' "$name" >&2
       exit 2
       ;;
   esac
+  python3 - "$directory/release-manifest.json" "$directory/attestations/backend.json" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+manifest_path, evidence_path = map(pathlib.Path, sys.argv[1:])
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+manifest["evidence_files"] = [{
+    "path": "attestations/backend.json",
+    "sha256": hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+}]
+manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+PY
 }
 
 write_fixture positive
@@ -39,13 +70,51 @@ test -f "$fixture_root/positive/SHA256SUMS"
 test -f "$fixture_root/positive/release-assets/release-manifest.json"
 test -f "$fixture_root/positive/release-assets/SHA256SUMS"
 test -f "$fixture_root/positive/release-assets/attestations--backend.json"
+python3 - "$fixture_root/positive" <<'PY'
+import hashlib
+import pathlib
+import subprocess
+import sys
 
-for case_name in collision orphan missing; do
+root = pathlib.Path(sys.argv[1])
+staging = root / "release-assets"
+assert sorted(path.name for path in staging.iterdir()) == [
+    "SHA256SUMS", "attestations--backend.json", "release-manifest.json"
+]
+assert (staging / "release-manifest.json").read_bytes() == (root / "release-manifest.json").read_bytes()
+assert (staging / "attestations--backend.json").read_bytes() == (root / "attestations/backend.json").read_bytes()
+assert (staging / "SHA256SUMS").read_bytes() == (root / "SHA256SUMS").read_bytes()
+checksums = {}
+for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+    digest, name = line.split("  ", 1)
+    assert name not in checksums
+    checksums[name] = digest
+assert set(checksums) == {"attestations--backend.json", "release-manifest.json"}
+for name, digest in checksums.items():
+    assert hashlib.sha256((staging / name).read_bytes()).hexdigest() == digest
+subprocess.run(["sha256sum", "--check", "--strict", str(root / "SHA256SUMS")], cwd=staging, check=True, stdout=subprocess.DEVNULL)
+PY
+
+for case_name in collision orphan missing symlink unsafe-source unsafe-name reserved-mismatch reserved-swap; do
   write_fixture "$case_name"
-  if "$repo_root/scripts/release-evidence.sh" package-assets "$fixture_root/$case_name" >/dev/null 2>&1; then
+  diagnostic="$fixture_root/$case_name.err"
+  if "$repo_root/scripts/release-evidence.sh" package-assets "$fixture_root/$case_name" > /dev/null 2>"$diagnostic"; then
     printf 'Expected fixture to fail: %s\n' "$case_name" >&2
     exit 1
   fi
+  case "$case_name" in
+    collision) expected='name collision' ;;
+    orphan) expected='orphan source files' ;;
+    missing) expected='missing source files' ;;
+    symlink) expected='symlink release asset source' ;;
+    unsafe-source) expected='source must be a safe relative path' ;;
+    unsafe-name) expected='name must be a non-empty flat filename' ;;
+    reserved-mismatch|reserved-swap) expected='reserved release asset name must map to itself' ;;
+  esac
+  grep -Fq "$expected" "$diagnostic" || {
+    cat "$diagnostic" >&2
+    exit 1
+  }
 done
 
 printf '%s\n' '{"result":"pass","gate":"release-evidence-assets-fixtures"}'

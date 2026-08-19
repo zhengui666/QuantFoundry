@@ -1,9 +1,19 @@
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { formatCanonicalDecimal, formatServerDateTime, safeTimeZone, ServerTime } from './format';
+import {
+  formatCanonicalDecimal,
+  formatCanonicalPercent,
+  formatServerDateTime,
+  safeTimeZone,
+  ServerTime,
+} from './format';
 
 describe('canonical decimal display formatter', () => {
+  it('scales canonical return decimals to exact percentages', () => {
+    expect(formatCanonicalPercent('0.0100', 'en')).toBe('1.00');
+    expect(formatCanonicalPercent('-0.125', 'de-DE')).toBe('-12,5');
+  });
   it.each([
     [0, '-9,007,199,254,740,993'],
     [1, '-9,007,199,254,740,993.1'],

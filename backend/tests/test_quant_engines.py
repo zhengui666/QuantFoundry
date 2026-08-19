@@ -19,6 +19,7 @@ from quantfoundry.api.app import HoldoutExposureRow, JobRow, SessionLocal, app
 from quantfoundry.engines.core import (
     CostModel,
     DatasetBundle,
+    EngineInputError,
     ValidationPolicy,
     compute_factor_rows,
     data_quality_profile,
@@ -61,13 +62,14 @@ def _market_row(
     partition: str = "VALIDATION",
 ) -> dict[str, object]:
     return {
-        "event_time": f"{day}T21:00:00Z",
-        "available_at": f"{day}T21:01:00Z",
+        "event_time": f"{day}T20:00:00Z",
+        "available_at": f"{day}T20:00:00Z",
         "date": day,
         "symbol": symbol,
         "close": close,
         "benchmark_close": benchmark,
         "partition": partition,
+        "calendar": "WEEKDAY",
     }
 
 
@@ -101,6 +103,14 @@ def test_csv_and_parquet_adapter_enforce_pit_as_of_and_schema(
             "partition": "VALIDATION",
         },
         {
+            "event_time": "2020-06-03T21:00:00Z",
+            "available_at": "2020-06-04T21:01:00Z",
+            "symbol": "BBB",
+            "close": 101.0,
+            "benchmark_close": 101.0,
+            "partition": "RESEARCH",
+        },
+        {
             "event_time": "2020-09-02T21:00:00Z",
             "available_at": "2020-09-02T21:01:00Z",
             "symbol": "QF_HOLDOUT_SENTINEL",
@@ -123,7 +133,7 @@ def test_csv_and_parquet_adapter_enforce_pit_as_of_and_schema(
     public, protected = snapshot_rows(
         csv_bundle, "2020-01-01", "2020-12-31", "2020-06-30T23:59:59Z"
     )
-    assert [row["date"] for row in public] == ["2020-06-01"]
+    assert [row["date"] for row in public] == ["2020-06-01", "2020-06-03"]
     assert protected == []
     assert all(row["available_at"] <= "2020-06-30T23:59:59Z" for row in public)
 
@@ -148,6 +158,91 @@ def test_csv_and_parquet_adapter_enforce_pit_as_of_and_schema(
         public,
         protected,
     )
+
+
+def test_dataset_rejects_intraday_duplicates_and_non_pit_rows(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("QF_DATASET_DIR", str(tmp_path))
+    dataset_id = "DSSET-550e8400-e29b-41d4-a716-446655440013"
+    _metadata(tmp_path, dataset_id)
+    rows = [
+        {
+            "event_time": "2020-06-01T21:00:00Z",
+            "available_at": "2020-06-01T21:01:00Z",
+            "symbol": "AAA",
+            "close": 100,
+            "benchmark_close": 100,
+            "partition": "RESEARCH",
+        },
+        {
+            "event_time": "2020-06-01T21:30:00Z",
+            "available_at": "2020-06-01T21:31:00Z",
+            "symbol": "AAA",
+            "close": 101,
+            "benchmark_close": 101,
+            "partition": "RESEARCH",
+        },
+    ]
+    columns = list(rows[0])
+    (tmp_path / f"{dataset_id}.csv").write_text(
+        ",".join(columns)
+        + "\n"
+        + "\n".join(",".join(str(row[column]) for column in columns) for row in rows),
+        encoding="utf-8",
+    )
+    with pytest.raises(EngineInputError, match="duplicate market row"):
+        load_dataset(dataset_id)
+
+    non_pit_id = "DSSET-550e8400-e29b-41d4-a716-446655440014"
+    _metadata(tmp_path, non_pit_id)
+    non_pit_rows = [
+        {
+            "event_time": "2020-06-02T21:00:00Z",
+            "available_at": "2020-06-02T20:59:59Z",
+            "symbol": "AAA",
+            "close": 100,
+            "benchmark_close": 100,
+            "partition": "RESEARCH",
+        }
+    ]
+    (tmp_path / f"{non_pit_id}.csv").write_text(
+        ",".join(columns)
+        + "\n"
+        + "\n".join(
+            ",".join(str(row[column]) for column in columns) for row in non_pit_rows
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        EngineInputError, match="available_at cannot precede event_time"
+    ):
+        load_dataset(non_pit_id)
+
+
+def test_simulation_does_not_use_late_release_for_prior_decision() -> None:
+    rows = [
+        {
+            **_market_row("2020-01-02", "AAA", 100, 100),
+            "available_at": "2020-01-04T21:00:00Z",
+            "strategy_score": 100,
+        },
+        {**_market_row("2020-01-02", "BBB", 100, 100), "strategy_score": 1},
+        {
+            **_market_row("2020-01-03", "AAA", 100, 100),
+            "strategy_score": 100,
+        },
+        {**_market_row("2020-01-03", "BBB", 100, 100), "strategy_score": 1},
+        {
+            **_market_row("2020-01-06", "AAA", 100, 100),
+            "strategy_score": 100,
+        },
+        {**_market_row("2020-01-06", "BBB", 100, 100), "strategy_score": 1},
+    ]
+    result = simulation_metrics(
+        rows, 1, CostModel("cost:zero", 1, 0, 0), calendar="WEEKDAY"
+    )
+    assert result["returns"] == [0.0, 0.0]
 
 
 def test_factor_ic_rank_ic_turnover_and_coverage_golden() -> None:
@@ -215,7 +310,7 @@ def test_versioned_golden_reference_and_tolerance_manifest() -> None:
         _market_row("2020-01-06", "BBB", 21, 102),
     ]
     actual_backtest = simulation_metrics(
-        backtest_rows, 1, CostModel("cost:zero", 1, 0, 0)
+        backtest_rows, 1, CostModel("cost:zero", 1, 0, 0), calendar="WEEKDAY"
     )
     expected_backtest = expected["backtest"]
     return_tolerance = tolerances["float64_return"]
@@ -270,13 +365,41 @@ def test_factor_oracle_changes_portfolio_returns() -> None:
         for row in compute_factor_rows(rows, "mean_reversion_1")
     ]
     cost = CostModel("cost:zero", 1, 0, 0)
-    momentum_result = simulation_metrics(momentum, 1, cost)
-    mean_reversion_result = simulation_metrics(mean_reversion, 1, cost)
+    momentum_result = simulation_metrics(momentum, 1, cost, calendar="WEEKDAY")
+    mean_reversion_result = simulation_metrics(
+        mean_reversion, 1, cost, calendar="WEEKDAY"
+    )
     assert momentum_result["returns"] == pytest.approx([-0.5], abs=1e-12)
     assert mean_reversion_result["returns"] == pytest.approx([0.1], abs=1e-12)
     assert momentum_result["final_weights"] == {"AAA": 1.0}
     assert mean_reversion_result["final_weights"] == {"BBB": 1.0}
     assert momentum_result["returns"] != mean_reversion_result["returns"]
+
+
+def test_enriched_rows_use_canonical_session_calendar() -> None:
+    rows = [
+        _market_row("2020-01-02", "AAA", 10, 100),
+        _market_row("2020-01-02", "BBB", 100, 100),
+        _market_row("2020-01-03", "AAA", 20, 101),
+        _market_row("2020-01-03", "BBB", 110, 101),
+        _market_row("2020-01-06", "AAA", 10, 102),
+        _market_row("2020-01-06", "BBB", 121, 102),
+    ]
+    scored = [
+        {**row, "strategy_score": row["factor_score"]}
+        for row in compute_factor_rows(rows, "momentum_1")
+    ]
+    result = simulation_metrics(
+        scored,
+        1,
+        CostModel("cost:zero", 1, 0, 0),
+        calendar="WEEKDAY",
+        market_rows=rows,
+    )
+    assert result["observations"] == 2
+    assert result["returns"] == pytest.approx([0.0, -0.5], abs=1e-12)
+    assert result["exposure"] == pytest.approx(0.5, abs=1e-12)
+    assert result["average_holding_period"] == pytest.approx(1.0, abs=1e-12)
 
 
 def test_factor_formula_strategy_spec_corporate_actions_and_policy() -> None:
@@ -322,7 +445,7 @@ def test_factor_formula_strategy_spec_corporate_actions_and_policy() -> None:
         raw_rows, "momentum_{lookback}", {"lookback": "1"}
     )
     assert [row["symbol"] for row in factor_rows] == ["AAA", "BBB", "AAA", "BBB"]
-    assert factor_rows[0]["factor_score"] == pytest.approx(-0.5, abs=1e-12)
+    assert factor_rows[0]["factor_score"] == pytest.approx(0.0, abs=1e-12)
     spec = {
         "universe": {"symbols": ["AAA"]},
         "signals": [{"direction": "LONG", "weight": "1"}],
@@ -334,7 +457,9 @@ def test_factor_formula_strategy_spec_corporate_actions_and_policy() -> None:
             "position_limit": "1",
         },
     }
-    result = simulation_metrics(raw_rows, 1, CostModel("cost:zero", 1, 0, 0), spec)
+    result = simulation_metrics(
+        raw_rows, 1, CostModel("cost:zero", 1, 0, 0), spec, calendar="WEEKDAY"
+    )
     assert result["returns"] == pytest.approx([0.0, 0.12], abs=1e-12)
     assert set(result["final_weights"]) == {"AAA"}
 
@@ -383,8 +508,8 @@ def test_backtest_cost_benchmark_drawdown_portfolio_and_risk_golden() -> None:
         _market_row("2020-01-06", "BBB", 21, 102),
     ]
     zero_cost = CostModel("cost:zero", 1, 0.0, 0.0)
-    result = simulation_metrics(rows, 1, zero_cost)
-    assert simulation_metrics(rows, 1, zero_cost) == result
+    result = simulation_metrics(rows, 1, zero_cost, calendar="WEEKDAY")
+    assert simulation_metrics(rows, 1, zero_cost, calendar="WEEKDAY") == result
     assert result["returns"] == pytest.approx([-0.1, 1 / 6], abs=1e-12)
     assert result["total_return"] == pytest.approx(0.05, abs=1e-12)
     assert result["benchmark_total_return"] == pytest.approx(0.02, abs=1e-12)
@@ -397,11 +522,14 @@ def test_backtest_cost_benchmark_drawdown_portfolio_and_risk_golden() -> None:
     assert sum(result["risk_contribution"].values()) == pytest.approx(1.0, abs=1e-12)
 
     charged = simulation_metrics(
-        rows, 1, CostModel("COST-00000000-0000-4000-8000-000000000003", 1, 1.0, 2.0)
+        rows,
+        1,
+        CostModel("COST-00000000-0000-4000-8000-000000000003", 1, 1.0, 2.0),
+        calendar="WEEKDAY",
     )
     assert charged["total_return"] < result["total_return"]
-    assert charged["commission"] == pytest.approx(0.0001, abs=1e-12)
-    assert charged["slippage"] == pytest.approx(0.0002, abs=1e-12)
+    assert charged["commission"] == pytest.approx(0.000100033344448, rel=1e-12)
+    assert charged["slippage"] == pytest.approx(0.000200066688896, rel=1e-12)
 
 
 def test_validation_can_fail_leakage_and_numerical_rules() -> None:
@@ -415,7 +543,9 @@ def test_validation_can_fail_leakage_and_numerical_rules() -> None:
         _market_row("2020-04-02", "AAA", 101, 101),
         _market_row("2020-04-03", "AAA", 102, 102),
     ]
-    metrics = simulation_metrics(rows, 1, CostModel("cost:zero", 1, 0, 0))
+    metrics = simulation_metrics(
+        rows, 1, CostModel("cost:zero", 1, 0, 0), calendar="WEEKDAY"
+    )
     assert all(state for _, state, _ in validation_checks(metrics, periods, rows))
     robustness = {
         "cost_stress": {**metrics, "total_return": metrics["total_return"] - 0.01},
@@ -472,7 +602,7 @@ def test_metric_properties_and_artifact_hash_verification(
             _market_row("2020-01-03", "AAA", second, 101),
             _market_row("2020-01-06", "AAA", third, 102),
         ]
-        result = simulation_metrics(rows, 1, cost)
+        result = simulation_metrics(rows, 1, cost, calendar="WEEKDAY")
         assert -1 <= result["maximum_drawdown"] <= 0
         assert result["turnover"] >= 0
         assert result["commission"] >= 0
@@ -517,8 +647,8 @@ def test_validation_failure_blocks_approval_without_direct_state_mutation() -> N
     ]
     rows = [
         {
-            "event_time": f"{day}T21:00:00Z",
-            "available_at": f"{day}T21:01:00Z",
+            "event_time": f"{day}T20:00:00Z",
+            "available_at": f"{day}T20:00:00Z",
             "symbol": symbol,
             "close": 100 + index * multiplier,
             "benchmark_close": 100 + index,

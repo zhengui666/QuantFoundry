@@ -7,28 +7,43 @@ otherwise conceal an incomplete handler result.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
+from functools import lru_cache
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 import jsonschema
 import yaml
 
-from quantfoundry.contracts.openapi.api_models import validate_schema
+from quantfoundry.contracts.openapi.api_models import (
+    application_schemas,
+    validate_schema,
+)
 
 _SPEC: dict[str, Any] | None = None
 
 
-def canonical_openapi() -> dict[str, Any]:
+@lru_cache(maxsize=1)
+def _canonical_openapi_cached() -> dict[str, Any]:
     global _SPEC
     if _SPEC is None:
-        _SPEC = yaml.safe_load(
-            (
-                Path(__file__).parents[5]
-                / "docs/后端系统技术方案/contracts/openapi-v1.yaml"
-            ).read_text()
-        )
+        resource = files("quantfoundry.contracts.openapi").joinpath("openapi-v1.yaml")
+        if resource.is_file():
+            _SPEC = yaml.safe_load(resource.read_text(encoding="utf-8"))
+        else:
+            _SPEC = yaml.safe_load(
+                (
+                    Path(__file__).parents[5]
+                    / "docs/后端系统技术方案/contracts/openapi-v1.yaml"
+                ).read_text(encoding="utf-8")
+            )
     return _SPEC
+
+
+def canonical_openapi() -> dict[str, Any]:
+    return deepcopy(_canonical_openapi_cached())
 
 
 def now() -> str:
@@ -37,7 +52,7 @@ def now() -> str:
 
 def validate_json_schema(schema: dict[str, Any], payload: Any) -> None:
     """Validate a schema fragment against the OpenAPI component resource."""
-    specification = canonical_openapi()
+    specification = _canonical_openapi_cached()
     root_schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "#/$target",
@@ -56,5 +71,9 @@ def validated_payload(name: str, payload: Any) -> Any:
     patterns and additional properties.  Callers must convert such failures to
     a canonical internal problem; silently normalizing is forbidden.
     """
+    schema = application_schemas().get(name)
+    if not isinstance(schema, dict):
+        raise KeyError(f"unknown OpenAPI schema: {name}")
+    validate_json_schema(schema, payload)
     validate_schema(name, payload)
     return payload

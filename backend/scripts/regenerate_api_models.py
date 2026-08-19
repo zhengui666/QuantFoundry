@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 import subprocess
 import sys
@@ -320,12 +321,32 @@ def _advertise_min_properties(source: str, class_name: str) -> str:
 def _advertise_validation_schema(
     source: str, class_name: str, validation_schema: dict[str, Any]
 ) -> str:
-    start = source.index(f"class {class_name}(")
-    config_start = source.index("model_config = ConfigDict(", start)
-    config_end = source.index("    )", config_start)
-    config = source[config_start:config_end]
+    tree = ast.parse(source)
+    target = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == class_name
+    )
+    lines = source.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    start = offsets[target.lineno - 1]
+    end = offsets[cast(int, target.end_lineno) - 1] + cast(int, target.end_col_offset)
+    class_source = source[start:end]
+    config_marker = "    model_config = ConfigDict("
+    config_start = class_source.find(config_marker)
+    if config_start < 0:
+        insert_at = source.find("\n", start) + 1
+        config = f"    model_config = ConfigDict(\n        json_schema_extra={validation_schema!r},\n    )\n"
+        return source[:insert_at] + config + source[insert_at:]
+    config_end = class_source.find("    )", config_start)
+    if config_end < 0:
+        raise ValueError(f"{class_name} has an unterminated model_config")
+    absolute_end = start + config_end
+    config = class_source[config_start:config_end]
     config += f"        json_schema_extra={validation_schema!r},\n"
-    return source[:config_start] + config + source[config_end:]
+    return source[: start + config_start] + config + source[absolute_end:]
 
 
 def _inline_validation_refs(
@@ -421,7 +442,24 @@ def _merge_structural_all_of(value: Any, schemas: dict[str, dict[str, Any]]) -> 
         and isinstance(branches[0], dict)
         and not any(key in branches[0] for key in ("if", "then", "else"))
     ):
-        current = deepcopy(branches[0])
+        branch = deepcopy(branches[0])
+        if set(branch) == {"$ref"}:
+            branch = deepcopy(schemas[branch["$ref"].rsplit("/", 1)[-1]])
+        current.pop("allOf")
+        for key, branch_value in branch.items():
+            if key == "properties" and isinstance(branch_value, dict):
+                current[key] = {
+                    **cast(dict[str, Any], current.get(key, {})),
+                    **branch_value,
+                }
+            elif key == "required" and isinstance(branch_value, list):
+                current[key] = list(
+                    dict.fromkeys(
+                        [*cast(list[Any], current.get(key, [])), *branch_value]
+                    )
+                )
+            elif key not in current:
+                current[key] = branch_value
     elif isinstance(branches, list) and all(
         isinstance(branch, dict)
         and not any(key in branch for key in ("if", "then", "else", "oneOf", "anyOf"))
@@ -458,6 +496,11 @@ def generate(output: Path = OUTPUT) -> str:
     specification: dict[str, Any] = yaml.safe_load(CONTRACT.read_text())
     schemas = specification["components"]["schemas"]
     generation_specification = _merge_structural_all_of(specification, schemas)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix="qf-generated-api-", suffix=".py"
+    )
+    os.close(descriptor)
+    work_output = Path(temporary_name)
     with tempfile.TemporaryDirectory() as input_directory:
         generation_input = Path(input_directory) / CONTRACT.name
         generation_input.write_text(
@@ -472,7 +515,7 @@ def generate(output: Path = OUTPUT) -> str:
             "--input-file-type",
             "openapi",
             "--output",
-            str(output),
+            str(work_output),
             "--output-model-type",
             "pydantic_v2.BaseModel",
             "--target-python-version",
@@ -490,7 +533,7 @@ def generate(output: Path = OUTPUT) -> str:
             "--disable-timestamp",
         ]
         subprocess.run(command, check=True)
-    source = output.read_text()
+        source = work_output.read_text()
     source = source.replace(
         "from datetime import date\n",
         "from datetime import date\nfrom decimal import Decimal, InvalidOperation\n",
@@ -555,7 +598,7 @@ def generate(output: Path = OUTPUT) -> str:
                 "    def validate_conditional_constraints(self):\n"
                 f"        validator = Draft202012Validator({validation_schema!r})\n"
                 "        errors = sorted(\n"
-                "            validator.iter_errors(self.model_dump(mode='json')),\n"
+                "            validator.iter_errors(self.model_dump(mode='json', by_alias=True, exclude_unset=True)),\n"
                 "            key=lambda error: list(error.absolute_path),\n"
                 "        )\n"
                 "        if errors:\n"
@@ -594,6 +637,8 @@ def generate(output: Path = OUTPUT) -> str:
         "                values = [Decimal(value) for value in self.values]\n"
         "            except InvalidOperation as error:\n"
         "                raise ValueError('INTEGER set values must be numeric integers') from error\n"
+        "            if any(not value.is_finite() for value in values):\n"
+        "                raise ValueError('INTEGER set values must be finite')\n"
         "            if any(value != value.to_integral_value() for value in values):\n"
         "                raise ValueError('INTEGER set values must be integral')\n"
         "        return self\n",
@@ -639,6 +684,27 @@ def generate(output: Path = OUTPUT) -> str:
             "    RootModel[ConfigurationValueWrite1 | ConfigurationValueWrite2]\n"
             "):\n"
             "    root: ConfigurationValueWrite1 | ConfigurationValueWrite2\n",
+            "\n\nclass ConfigurationValueView(BaseModel):\n"
+            "    model_config = ConfigDict(\n"
+            "        extra='forbid',\n"
+            "        json_schema_extra={\n"
+            "            'oneOf': [\n"
+            "                {'properties': {'sensitivity': {'enum': ['PUBLIC', 'MASKED']}}, 'required': ['sensitivity', 'value']},\n"
+            "                {'properties': {'sensitivity': {'const': 'SECRET'}, 'value': {'type': 'null'}, 'masked_hint': {'type': 'string', 'minLength': 1, 'maxLength': 80}}, 'required': ['sensitivity', 'value', 'masked_hint']},\n"
+            "            ]\n"
+            "        },\n"
+            "    )\n"
+            "    key: str = Field(..., pattern=r'^[a-z][a-z0-9]*(\\.[a-z0-9_-]+)+$')\n"
+            "    sensitivity: Literal['PUBLIC', 'MASKED', 'SECRET']\n"
+            "    configured: bool\n"
+            "    value: str | float | bool | dict[str, Any] | list | None\n"
+            "    masked_hint: str | None = Field(..., max_length=80)\n"
+            "\n"
+            "    @model_validator(mode='after')\n"
+            "    def validate_secret_view(self):\n"
+            "        if self.sensitivity == 'SECRET' and (self.value is not None or not self.masked_hint):\n"
+            "            raise ValueError('secret configuration values must be masked')\n"
+            "        return self\n",
             "\n\nclass ExperimentSearchDimension(\n"
             "    RootModel[Annotated[ExperimentSearchSetDimension | ExperimentSearchRangeDimension, Field(discriminator='kind')]]\n"
             "):\n"
@@ -657,12 +723,17 @@ def generate(output: Path = OUTPUT) -> str:
     source += "".join(missing_root_models)
     source += f"\n\nSCHEMA_NAMES = (\n    {schema_names},\n)\n"
     source += "\n__all__ = [*SCHEMA_NAMES, 'SCHEMA_NAMES']\n"
-    output.write_text(source)
-    subprocess.run([sys.executable, "-m", "ruff", "format", str(output)], check=True)
+    work_output.write_text(source)
     subprocess.run(
-        [sys.executable, "-m", "ruff", "check", "--fix", str(output)], check=True
+        [sys.executable, "-m", "ruff", "format", str(work_output)], check=True
     )
-    return output.read_text()
+    subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--fix", str(work_output)], check=True
+    )
+    source = work_output.read_text()
+    output.write_text(source)
+    work_output.unlink(missing_ok=True)
+    return source
 
 
 if __name__ == "__main__":

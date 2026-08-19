@@ -5,7 +5,14 @@ from __future__ import annotations
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from quantfoundry.contracts.openapi import generated_api_models as generated
 
@@ -33,76 +40,10 @@ ApprovalRejectRequest = generated.ApprovalRejectRequest
 AgentConfigUpdate = generated.AgentConfigUpdate
 
 
-class SetupCompleteRequest(BaseModel):
-    """UX-001 completes setup by activating a validated control-plane revision."""
+SetupCompleteRequest = generated.SetupCompleteRequest
 
-    model_config = ConfigDict(extra="forbid")
-    configuration_revision: int = Field(..., ge=1)
-
-
-class LiveConnectorValidationRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    connection_id: str = Field(
-        ..., min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$"
-    )
-    endpoint: str = Field(..., min_length=1, max_length=2048)
-    key_id: str = Field(..., min_length=1, max_length=160)
-    credential: str = Field(
-        ..., min_length=1, max_length=16384, json_schema_extra={"writeOnly": True}
-    )
-    expected_account_id: str | None = Field(default=None, min_length=1, max_length=160)
-
-    @field_validator("endpoint")
-    @classmethod
-    def require_https_endpoint(cls, value: str) -> str:
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme != "https"
-            or not parsed.netloc
-            or parsed.username
-            or parsed.password
-        ):
-            raise ValueError(
-                "endpoint must be an HTTPS URL without embedded credentials"
-            )
-        return value.rstrip("/")
-
-
-class LiveConnectorValidationResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    connection_id: str = Field(..., min_length=1, max_length=80)
-    state: Literal["SUCCESS", "FAILED"]
-    error_code: str | None
-    connector_id: str | None
-    protocol_version: str | None
-    capabilities_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    account_ids: list[str]
-    assets: list[
-        Literal[
-            "EQUITY", "FUTURE", "OPTION", "FX_SPOT", "CRYPTO_SPOT", "CRYPTO_PERPETUAL"
-        ]
-    ]
-    checked_at: AwareDatetime
-
-
-SCHEMA_MODELS: dict[str, type[BaseModel]] = {
-    name: cast(type[BaseModel], SetupCompleteRequest)
-    if name == "SetupCompleteRequest"
-    else cast(type[BaseModel], getattr(generated, name))
-    for name in generated.SCHEMA_NAMES
-}
-SCHEMA_MODELS.update(
+_COMPATIBILITY_ONLY_NAMES = frozenset(
     {
-        "LiveConnectorValidationRequest": LiveConnectorValidationRequest,
-        "LiveConnectorValidationResult": LiveConnectorValidationResult,
-    }
-)
-for _model in SCHEMA_MODELS.values():
-    _model.model_rebuild()
-try:
-    from app import generated_api_models as _ux_models
-
-    for _name in (
         "GeneralAccessKeyLoginRequest",
         "GeneralAccessKeyMetadata",
         "GeneralAccessKeyList",
@@ -127,14 +68,141 @@ try:
         "DatabaseConnectionStatus",
         "DatabaseConnectionCheck",
         "DatabaseConnectionValidationResult",
-        "ApiProblem",
-        "CanonicalErrorCode",
-        "FieldError",
-        "ProblemContext",
-    ):
-        SCHEMA_MODELS[_name] = cast(type[BaseModel], getattr(_ux_models, _name))
-except ImportError:
-    pass
+    }
+)
+
+
+class LiveConnectorValidationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    connection_id: str = Field(
+        ..., min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$"
+    )
+    endpoint: str = Field(..., min_length=1, max_length=2048)
+    key_id: str = Field(..., min_length=1, max_length=160)
+    credential: str = Field(
+        ..., min_length=1, max_length=16384, json_schema_extra={"writeOnly": True}
+    )
+    expected_account_id: str | None = Field(default=None, min_length=1, max_length=160)
+
+    @field_validator("endpoint")
+    @classmethod
+    def require_https_endpoint(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.netloc
+            or not parsed.hostname
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+        ):
+            raise ValueError(
+                "endpoint must be an HTTPS URL without embedded credentials"
+            )
+        try:
+            _ = parsed.port
+        except ValueError as error:
+            raise ValueError("endpoint must contain a valid HTTPS port") from error
+        try:
+            from quantfoundry.live.connector import _connector_endpoint_addresses
+
+            _connector_endpoint_addresses(value)
+        except ValueError as error:
+            raise ValueError(
+                "endpoint must resolve only to globally routable addresses"
+            ) from error
+        return value.rstrip("/")
+
+
+class LiveConnectorValidationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    connection_id: str = Field(..., min_length=1, max_length=80)
+    state: Literal["SUCCESS", "FAILED"]
+    error_code: str | None
+    connector_id: str | None
+    protocol_version: str | None
+    capabilities_hash: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
+    account_ids: list[str]
+    assets: list[
+        Literal[
+            "EQUITY", "FUTURE", "OPTION", "FX_SPOT", "CRYPTO_SPOT", "CRYPTO_PERPETUAL"
+        ]
+    ]
+    checked_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> LiveConnectorValidationResult:
+        if self.state == "SUCCESS":
+            if (
+                self.error_code is not None
+                or not self.connector_id
+                or not self.protocol_version
+                or not self.capabilities_hash
+            ):
+                raise ValueError(
+                    "successful connector validation must contain capabilities"
+                )
+        elif self.error_code is None:
+            raise ValueError("failed connector validation must contain an error code")
+        return self
+
+
+SCHEMA_MODELS: dict[str, type[BaseModel]] = {
+    name: cast(type[BaseModel], SetupCompleteRequest)
+    if name == "SetupCompleteRequest"
+    else cast(type[BaseModel], getattr(generated, name))
+    for name in generated.SCHEMA_NAMES
+    if name not in _COMPATIBILITY_ONLY_NAMES
+}
+SCHEMA_MODELS.update(
+    {
+        "LiveConnectorValidationRequest": LiveConnectorValidationRequest,
+        "LiveConnectorValidationResult": LiveConnectorValidationResult,
+    }
+)
+for _model in SCHEMA_MODELS.values():
+    _model.model_rebuild()
+# Compatibility bridge: UX-001 models share the package-owned generated module.
+from quantfoundry.contracts.openapi import (  # noqa: E402
+    generated_api_models as _ux_models,
+)
+
+for _name in (
+    "GeneralAccessKeyLoginRequest",
+    "GeneralAccessKeyMetadata",
+    "GeneralAccessKeyList",
+    "GeneralAccessKeyCreateRequest",
+    "GeneralAccessKeyRenameRequest",
+    "GeneralAccessKeyIssued",
+    "OwnerSessionView",
+    "SessionBootstrapResponse",
+    "ConfigurationCatalog",
+    "ConfigurationCatalogEntry",
+    "ConfigurationValueWrite",
+    "ConfigurationValueView",
+    "ConfigurationCandidateRequest",
+    "ConfigurationCandidate",
+    "ConfigurationConsumerState",
+    "ConfigurationActive",
+    "ConfigurationValidationResult",
+    "ConfigurationActivateRequest",
+    "ConfigurationRollbackRequest",
+    "DatabaseConnectionCandidate",
+    "DatabaseConnectionCandidateRequest",
+    "DatabaseConnectionStatus",
+    "DatabaseConnectionCheck",
+    "DatabaseConnectionValidationResult",
+    "ApiProblem",
+    "CanonicalErrorCode",
+    "FieldError",
+    "ProblemContext",
+):
+    _compat_model = cast(type[BaseModel], getattr(_ux_models, _name))
+    _existing_model = SCHEMA_MODELS.get(_name)
+    if _existing_model is None:
+        SCHEMA_MODELS[_name] = _compat_model
 
 
 def validate_schema(name: str, value: Any) -> Any:

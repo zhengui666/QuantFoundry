@@ -6,6 +6,8 @@ Revises: 0014_agent_artifacts
 
 from __future__ import annotations
 
+from typing import Any
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -18,11 +20,153 @@ depends_on = None
 
 SCHEMA = "agent_checkpoint"
 
+_TABLES = {
+    "checkpoint_migrations": ({"v"}, ("v",)),
+    "checkpoints": (
+        {
+            "thread_id",
+            "checkpoint_ns",
+            "checkpoint_id",
+            "parent_checkpoint_id",
+            "type",
+            "checkpoint",
+            "metadata",
+        },
+        ("thread_id", "checkpoint_ns", "checkpoint_id"),
+    ),
+    "checkpoint_blobs": (
+        {"thread_id", "checkpoint_ns", "channel", "version", "type", "blob"},
+        ("thread_id", "checkpoint_ns", "channel", "version"),
+    ),
+    "checkpoint_writes": (
+        {
+            "thread_id",
+            "checkpoint_ns",
+            "checkpoint_id",
+            "task_id",
+            "idx",
+            "channel",
+            "type",
+            "blob",
+            "task_path",
+        },
+        ("thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"),
+    ),
+}
+
+_COLUMN_CONTRACTS = {
+    "checkpoint_migrations": {"v": ("INTEGER", False, False)},
+    "checkpoints": {
+        "thread_id": ("TEXT", False, False),
+        "checkpoint_ns": ("TEXT", False, True),
+        "checkpoint_id": ("TEXT", False, False),
+        "parent_checkpoint_id": ("TEXT", True, False),
+        "type": ("TEXT", True, False),
+        "checkpoint": ("JSONB", False, False),
+        "metadata": ("JSONB", False, True),
+    },
+    "checkpoint_blobs": {
+        "thread_id": ("TEXT", False, False),
+        "checkpoint_ns": ("TEXT", False, True),
+        "channel": ("TEXT", False, False),
+        "version": ("TEXT", False, False),
+        "type": ("TEXT", False, False),
+        "blob": ("BYTEA", True, False),
+    },
+    "checkpoint_writes": {
+        "thread_id": ("TEXT", False, False),
+        "checkpoint_ns": ("TEXT", False, True),
+        "checkpoint_id": ("TEXT", False, False),
+        "task_id": ("TEXT", False, False),
+        "idx": ("INTEGER", False, False),
+        "channel": ("TEXT", False, False),
+        "type": ("TEXT", True, False),
+        "blob": ("BYTEA", False, False),
+        "task_path": ("TEXT", False, True),
+    },
+}
+
+
+def _validate_existing_schema(bind: Any) -> None:
+    inspector = sa.inspect(bind)
+    present = {name: inspector.has_table(name, schema=SCHEMA) for name in _TABLES}
+    if not all(present.values()):
+        raise RuntimeError(
+            "0015 found a partial LangGraph checkpoint schema; refusing adoption"
+        )
+    for name, (required_columns, primary_key) in _TABLES.items():
+        inspected_columns = inspector.get_columns(name, schema=SCHEMA)
+        columns = {item["name"] for item in inspected_columns}
+        if columns != required_columns:
+            raise RuntimeError(
+                f"0015 checkpoint table {SCHEMA}.{name} has an incompatible column set"
+            )
+        actual_key = (
+            inspector.get_pk_constraint(name, schema=SCHEMA).get("constrained_columns")
+            or []
+        )
+        if actual_key != list(primary_key):
+            raise RuntimeError(
+                f"0015 checkpoint table {SCHEMA}.{name} has an incompatible primary key"
+            )
+        for column in inspected_columns:
+            expected = _COLUMN_CONTRACTS[name].get(column["name"])
+            if expected is None:
+                continue
+            expected_type, nullable, requires_default = expected
+            actual_type = str(column["type"]).upper().replace(" ", "")
+            if (
+                actual_type != expected_type.replace(" ", "")
+                or column["nullable"] is not nullable
+            ):
+                raise RuntimeError(
+                    f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} has an incompatible type/nullability"
+                )
+            if requires_default:
+                actual_default = (
+                    str(column.get("default") or "").replace(" ", "").lower()
+                )
+                expected_defaults = (
+                    {"''", "''::text", "''::character varying"}
+                    if column["name"] != "metadata"
+                    else {"'{}'::jsonb"}
+                )
+                if actual_default not in expected_defaults:
+                    raise RuntimeError(
+                        f"0015 checkpoint column {SCHEMA}.{name}.{column['name']} has an incompatible default"
+                    )
+    try:
+        versions = {
+            int(value)
+            for (value,) in bind.execute(
+                sa.text(f"SELECT v FROM {SCHEMA}.checkpoint_migrations")
+            )
+        }
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(
+            "0015 existing LangGraph checkpoint migration versions are invalid"
+        ) from error
+    if versions != set(range(10)):
+        raise RuntimeError(
+            "0015 existing LangGraph checkpoint schema has incompatible migration versions"
+        )
+
 
 def upgrade() -> None:
-    if op.get_bind().dialect.name != "postgresql":
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        # SQLite agents use the dedicated SqliteSaver file and call setup()
+        # against that file at runtime; this PostgreSQL-only revision has no
+        # domain checkpoint objects to create on the domain SQLite database.
         return
+    if bind.dialect.name != "postgresql":
+        raise RuntimeError("0015 LangGraph checkpoint schema requires PostgreSQL")
     op.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+    inspector = sa.inspect(bind)
+    existing = any(inspector.has_table(name, schema=SCHEMA) for name in _TABLES)
+    if existing:
+        _validate_existing_schema(bind)
+        return
     op.create_table(
         "checkpoint_migrations",
         sa.Column("v", sa.Integer(), primary_key=True),
@@ -94,9 +238,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if op.get_bind().dialect.name != "postgresql":
-        return
-    op.drop_table("checkpoint_writes", schema=SCHEMA)
-    op.drop_table("checkpoint_blobs", schema=SCHEMA)
-    op.drop_table("checkpoints", schema=SCHEMA)
-    op.drop_table("checkpoint_migrations", schema=SCHEMA)
+    # Existing LangGraph installations are adopted without ownership metadata;
+    # never destroy their checkpoint data during rollback.
+    return None

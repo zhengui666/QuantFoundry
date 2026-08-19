@@ -2,14 +2,46 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: /node_modules[\\/]/,
+              minSize: 20 * 1024,
+              maxSize: 450 * 1024,
+              priority: 10,
+            },
+            {
+              name: 'app',
+              test: /[\\/]src[\\/]/,
+              minSize: 20 * 1024,
+              maxSize: 450 * 1024,
+              priority: 1,
+            },
+          ],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
     {
       name: 'e2e-auth-session',
       configureServer(server) {
-        if (process.env.QF_E2E_MOCK_AUTH !== '1') return;
+        if (process.env.QF_E2E_MOCK_AUTH !== '1' || process.env.QF_E2E_MODE !== '1') return;
+        const host = server.config.server.host;
+        if (host !== undefined && host !== 'localhost' && host !== '127.0.0.1' && host !== '::1')
+          throw new Error('QF_E2E_MOCK_AUTH requires a loopback-only Vite host.');
         server.middlewares.use((request, response, next) => {
+          const expectedToken = process.env.QF_E2E_MOCK_TOKEN;
+          if (!expectedToken || request.headers['x-qf-e2e-mock-token'] !== expectedToken) {
+            next();
+            return;
+          }
           if (request.url === '/api/v1/auth/session') {
             response.statusCode = 200;
             response.setHeader('content-type', 'application/json');

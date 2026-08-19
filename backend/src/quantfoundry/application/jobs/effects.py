@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import json
+import random
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from quantfoundry.api.app import (
     ApprovalRow,
     ArtifactRow,
     Base,
+    CostModelVersionRow,
     DataSource,
     ExperimentRow,
     FactorRow,
@@ -47,18 +50,21 @@ from quantfoundry.engines.core import (
     holdout_policy_result,
     load_cost_model,
     load_dataset,
-    load_validation_policy,
+    load_validation_policy_bundle,
+    load_validation_policy_document,
     simulation_metrics,
     snapshot_content_sha256,
     snapshot_rows,
     validation_checks,
 )
 from quantfoundry.infrastructure.artifacts.store import (
+    ArtifactStoreError,
     publish_staged,
     read_json,
     read_parquet,
     stage_json,
     stage_parquet,
+    staged_artifact_is_available,
 )
 
 
@@ -103,11 +109,12 @@ def _persist_section14_validation_run(
             workspace_id=job.workspace_id,
             policy_id=policy.policy_id,
             policy_family="validation",
+            version=policy.version,
         )
         .one_or_none()
     )
     if policy_row is None:
-        policy_content = dict(vars(policy))
+        policy_content = load_validation_policy_document(policy.policy_id)
         policy_row = ResearchPolicyVersionRow(
             id=f"{policy.policy_id}:{policy.version}:{uuid.uuid4()}",
             workspace_id=job.workspace_id,
@@ -116,6 +123,8 @@ def _persist_section14_validation_run(
             version=policy.version,
             status="ACTIVE",
             rules=policy_content,
+            max_research_steps=25,
+            max_tool_calls=50,
             content_sha256=content_hash(policy_content),
             created_by="system:validation-engine",
             created_at=finished_at,
@@ -199,41 +208,93 @@ def _persist_section14_snapshot(
     ).scalar_one_or_none()
     if source is None:
         raise InvalidJobState("workspace-owned snapshot data source is missing")
+    dataset_dates = [date.fromisoformat(row["date"]) for row in bundle.rows]
+    if not dataset_dates:
+        raise InvalidJobState("snapshot dataset contains no rows")
+    dataset_coverage_start = min(dataset_dates)
+    dataset_coverage_end = max(dataset_dates)
     provider_id = source.provider_id
-    provider_internal_id = session.execute(
-        select(providers.c.id).where(
-            providers.c.workspace_id == job.workspace_id,
-            providers.c.provider_id == provider_id,
-        )
-    ).scalar_one_or_none()
-    if provider_internal_id is None:
-        provider_internal_id = uuid.uuid4()
+    expected_bundle_provider = {
+        "LOCAL_DETERMINISTIC_DATA": "LOCAL_DETERMINISTIC",
+    }.get(provider_id, provider_id)
+    if bundle.provider_id != expected_bundle_provider:
+        raise InvalidJobState("dataset provider identity conflicts with source")
+    provider_row = (
         session.execute(
-            providers.insert().values(
-                id=provider_internal_id,
-                workspace_id=job.workspace_id,
-                provider_id=provider_id,
-                adapter_key=bundle.adapter_key,
-                display_name=provider_id,
-                status="CONNECTED",
-                is_default=False,
-                config={"adapter_version": bundle.adapter_version},
-                credential_ref=None,
-                last_tested_at=now,
-                last_success_at=now,
-                last_error_code=None,
-                revision=1,
-                created_at=now,
-                updated_at=now,
+            select(providers).where(
+                providers.c.workspace_id == job.workspace_id,
+                providers.c.provider_id == provider_id,
             )
         )
-    dataset_internal_id = session.execute(
-        select(datasets.c.id).where(
-            datasets.c.workspace_id == job.workspace_id,
-            datasets.c.dataset_id == inputs["dataset_id"],
+        .mappings()
+        .one_or_none()
+    )
+    if provider_row is None:
+        provider_internal_id = uuid.uuid4()
+        try:
+            with session.begin_nested():
+                session.execute(
+                    providers.insert().values(
+                        id=provider_internal_id,
+                        workspace_id=job.workspace_id,
+                        provider_id=provider_id,
+                        adapter_key=bundle.adapter_key,
+                        display_name=provider_id,
+                        status="CONNECTED",
+                        is_default=False,
+                        config={"adapter_version": bundle.adapter_version},
+                        credential_ref=None,
+                        last_tested_at=now,
+                        last_success_at=now,
+                        last_error_code=None,
+                        revision=1,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        except IntegrityError:
+            provider_row = (
+                session.execute(
+                    select(providers).where(
+                        providers.c.workspace_id == job.workspace_id,
+                        providers.c.provider_id == provider_id,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if provider_row is None:
+                raise
+            provider_internal_id = provider_row["id"]
+    else:
+        provider_internal_id = provider_row["id"]
+        provider_config = provider_row["config"]
+        if isinstance(provider_config, str):
+            try:
+                provider_config = json.loads(provider_config)
+            except json.JSONDecodeError:
+                provider_config = None
+        if (
+            not isinstance(provider_config, dict)
+            or provider_row["adapter_key"]
+            not in {bundle.adapter_key, provider_id.lower(), source.provider_id.lower()}
+            or (
+                provider_config.get("adapter_version") is not None
+                and provider_config["adapter_version"] != bundle.adapter_version
+            )
+        ):
+            raise InvalidJobState("provider identity conflicts with snapshot request")
+    dataset_row = (
+        session.execute(
+            select(datasets).where(
+                datasets.c.workspace_id == job.workspace_id,
+                datasets.c.dataset_id == inputs["dataset_id"],
+            )
         )
-    ).scalar_one_or_none()
-    if dataset_internal_id is None:
+        .mappings()
+        .one_or_none()
+    )
+    if dataset_row is None:
         dataset_internal_id = uuid.uuid4()
         session.execute(
             datasets.insert().values(
@@ -246,8 +307,8 @@ def _persist_section14_snapshot(
                 asset_class="EQUITY",
                 frequency="DAILY",
                 schema_version=1,
-                coverage_start=date.fromisoformat(inputs["coverage_start"]),
-                coverage_end=date.fromisoformat(inputs["coverage_end"]),
+                coverage_start=dataset_coverage_start,
+                coverage_end=dataset_coverage_end,
                 pit_semantics="VERIFIED",
                 latest_partition_at=now,
                 quality_state="HEALTHY",
@@ -261,18 +322,36 @@ def _persist_section14_snapshot(
                 updated_at=now,
             )
         )
+    else:
+        dataset_internal_id = dataset_row["id"]
+        if (
+            dataset_row["provider_id"] != provider_internal_id
+            or dataset_row["coverage_start"] != dataset_coverage_start
+            or dataset_row["coverage_end"] != dataset_coverage_end
+            or dataset_row["metadata"]
+            != {
+                "timezone": bundle.timezone,
+                "calendar": bundle.calendar,
+                "schema_sha256": bundle.schema_sha256,
+            }
+        ):
+            raise InvalidJobState("dataset identity conflicts with snapshot request")
     manifest = session.execute(
         select(ArtifactRow).where(
             ArtifactRow.workspace_id == job.workspace_id,
             ArtifactRow.artifact_id == detail["manifest_artifact_id"],
         )
     ).scalar_one()
-    existing_snapshot = session.execute(
-        select(snapshots.c.id).where(
-            snapshots.c.workspace_id == job.workspace_id,
-            snapshots.c.snapshot_id == detail["snapshot_id"],
+    existing_snapshot = (
+        session.execute(
+            select(snapshots).where(
+                snapshots.c.workspace_id == job.workspace_id,
+                snapshots.c.snapshot_id == detail["snapshot_id"],
+            )
         )
-    ).scalar_one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if existing_snapshot is None:
         session.execute(
             snapshots.insert().values(
@@ -296,6 +375,28 @@ def _persist_section14_snapshot(
                 created_by_job_id=job.internal_id,
             )
         )
+    else:
+        expected_snapshot = {
+            "workspace_id": job.workspace_id,
+            "snapshot_id": detail["snapshot_id"],
+            "dataset_id": dataset_internal_id,
+            "snapshot_kind": detail["snapshot_kind"],
+            "as_of_time": datetime.fromisoformat(
+                detail["as_of_time"].replace("Z", "+00:00")
+            ),
+            "coverage_start": date.fromisoformat(detail["coverage_start"]),
+            "coverage_end": date.fromisoformat(detail["coverage_end"]),
+            "manifest_artifact_id": manifest.id,
+            "row_count": detail["row_count"],
+            "schema_sha256": detail["schema_sha256"],
+            "content_sha256": detail["content_sha256"],
+            "provider_metadata": detail["provider_metadata"],
+            "created_by_job_id": job.internal_id,
+        }
+        if any(
+            existing_snapshot[key] != value for key, value in expected_snapshot.items()
+        ):
+            raise InvalidJobState("snapshot identity conflicts with existing lineage")
 
 
 def _cost_ref(cost: Any) -> dict[str, Any]:
@@ -399,8 +500,6 @@ def _artifact(
     session.add(metadata)
     session.flush()
     publish_staged(session, storage_key, digest)
-    metadata.publication_state = "PUBLISHED"
-    metadata.published_at = datetime.now(UTC)
     save(
         session,
         "artifact",
@@ -412,7 +511,7 @@ def _artifact(
             "storage_key": storage_key,
             "media_type": "application/json",
             "size_bytes": size_bytes,
-            "publication_state": "PUBLISHED",
+            "publication_state": "STAGED",
             "created_at": created_at.isoformat().replace("+00:00", "Z"),
         },
         artifact_id,
@@ -454,8 +553,6 @@ def _parquet_artifact(
     session.add(metadata)
     session.flush()
     publish_staged(session, storage_key, digest)
-    metadata.publication_state = "PUBLISHED"
-    metadata.published_at = datetime.now(UTC)
     save(
         session,
         "artifact",
@@ -468,7 +565,7 @@ def _parquet_artifact(
             "storage_key": storage_key,
             "media_type": "application/vnd.apache.parquet",
             "size_bytes": size_bytes,
-            "publication_state": "PUBLISHED",
+            "publication_state": "STAGED",
             "created_at": created_at.isoformat().replace("+00:00", "Z"),
         },
         artifact_id,
@@ -496,7 +593,11 @@ def _artifact_read_model(
     if (
         row is None
         or row.workspace_id != workspace_id
-        or row.publication_state != "PUBLISHED"
+        or row.publication_state not in {"STAGED", "PUBLISHED"}
+        or (
+            row.publication_state == "STAGED"
+            and not staged_artifact_is_available(session, row.storage_key, row.sha256)
+        )
     ):
         raise InvalidJobState("artifact metadata is missing")
     created_at = row.created_at
@@ -537,11 +638,67 @@ def _artifact_payload(
     return read_json(row.storage_key, row.sha256)
 
 
+def dataset_validation_matches(
+    session: Session, dataset_id: str, workspace_id: str, bundle: Any
+) -> bool:
+    expected_content = content_hash(bundle.rows)
+    active_policies = (
+        session.execute(
+            select(ResearchPolicyVersionRow).where(
+                ResearchPolicyVersionRow.workspace_id == workspace_id,
+                ResearchPolicyVersionRow.policy_family == "validation",
+                ResearchPolicyVersionRow.status == "ACTIVE",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if len(active_policies) != 1:
+        return False
+    active_policy = active_policies[0]
+    expected_policy = {
+        "id": active_policy.policy_id,
+        "version": active_policy.version,
+        "sha256": active_policy.content_sha256,
+    }
+    candidates = session.execute(
+        select(ArtifactRow)
+        .join(JobRow, JobRow.id == ArtifactRow.job_id)
+        .where(
+            ArtifactRow.workspace_id == workspace_id,
+            ArtifactRow.kind == "dataset_validation",
+            ArtifactRow.immutable.is_(True),
+            ArtifactRow.publication_state.in_(("STAGED", "PUBLISHED")),
+            JobRow.workspace_id == workspace_id,
+            JobRow.status == "COMPLETED",
+        )
+        .order_by(ArtifactRow.created_at.desc())
+    ).scalars()
+    for artifact in candidates:
+        if artifact.publication_state == "STAGED" and not staged_artifact_is_available(
+            session, artifact.storage_key, artifact.sha256
+        ):
+            continue
+        try:
+            evidence = read_json(artifact.storage_key, artifact.sha256)
+        except (ArtifactStoreError, OSError, ValueError):
+            continue
+        if (
+            evidence.get("dataset_id") == dataset_id
+            and evidence.get("state") == "PASS"
+            and evidence.get("content_sha256") == expected_content
+            and evidence.get("schema_sha256") == bundle.schema_sha256
+            and evidence.get("policy") == expected_policy
+        ):
+            return True
+    return False
+
+
 def _snapshot_market_rows(
     session: Session,
     snapshot_id: str,
     workspace_id: str | None,
-    partition: str = "PUBLIC",
+    partition: str = "RESEARCH",
 ) -> list[dict[str, Any]]:
     snapshot = session.get(SnapshotRow, snapshot_id)
     if (
@@ -562,7 +719,18 @@ def _snapshot_market_rows(
     rows = manifest.get("rows")
     if not isinstance(rows, list) or not rows:
         raise InvalidJobState(f"snapshot partition has no market rows: {partition}")
-    return rows
+    snapshot_detail = json.loads(snapshot.detail)
+    manifest_id = snapshot_detail.get("manifest_artifact_id")
+    if not isinstance(manifest_id, str):
+        raise InvalidJobState("snapshot manifest identity is missing")
+    snapshot_manifest = _artifact_payload(session, manifest_id, workspace_id)
+    source_context = snapshot_manifest.get("source_context")
+    calendar = (
+        source_context.get("calendar") if isinstance(source_context, dict) else None
+    )
+    if calendar not in {"WEEKDAY", "24X7"}:
+        raise InvalidJobState("snapshot calendar evidence is missing")
+    return [{**row, "calendar": calendar} for row in rows]
 
 
 def _factor_evidence_for_snapshot(
@@ -582,7 +750,7 @@ def _factor_evidence_for_snapshot(
         select(JobRow)
         .where(
             JobRow.workspace_id == workspace_id,
-            JobRow.job_type == "FACTOR_ANALYSIS",
+            JobRow.job_type.in_({"FACTOR_ANALYSIS", "EXPERIMENT"}),
             JobRow.status == "COMPLETED",
         )
         .order_by(JobRow.finished_at.desc())
@@ -601,11 +769,56 @@ def _factor_evidence_for_snapshot(
         artifact_id = result_ref.get("artifact_id")
         if not isinstance(artifact_id, str):
             continue
+        artifact_row = session.execute(
+            select(ArtifactRow).where(
+                ArtifactRow.artifact_id == artifact_id,
+                ArtifactRow.workspace_id == workspace_id,
+            )
+        ).scalar_one_or_none()
+        experiment_evidence = False
+        if candidate.job_type == "EXPERIMENT":
+            experiment = session.execute(
+                select(ExperimentRow).where(
+                    ExperimentRow.id == result_ref.get("object_id"),
+                    ExperimentRow.workspace_id == workspace_id,
+                    ExperimentRow.immutable.is_(True),
+                    ExperimentRow.status == "COMPLETED",
+                )
+            ).scalar_one_or_none()
+            experiment_detail = (
+                json.loads(experiment.detail) if experiment is not None else {}
+            )
+            experiment_evidence = (
+                result_ref.get("object_type") == "experiment"
+                and experiment is not None
+                and experiment_detail.get("factor_ref")
+                == {"id": factor_id, "version": factor_version}
+                and experiment_detail.get("data_snapshot_id") == snapshot_id
+            )
+        if (
+            artifact_row is None
+            or artifact_row.job_id != candidate.id
+            or artifact_row.kind
+            not in (
+                {"factor_analysis"}
+                if not experiment_evidence
+                else {"experiment_result"}
+            )
+            or (
+                not experiment_evidence
+                and (
+                    result_ref.get("object_type") != "factor"
+                    or result_ref.get("object_id") != factor_id
+                )
+            )
+        ):
+            continue
         evidence = _artifact_payload(session, artifact_id, workspace_id)
         if (
             evidence.get("factor_id") == factor_id
             and evidence.get("factor_version") == factor_version
-            and evidence.get("snapshot_id") == snapshot_id
+            and evidence.get("snapshot_id", evidence.get("data_snapshot_id"))
+            == snapshot_id
             and evidence.get("definition_sha256")
             == factor_detail.get("definition_sha256")
             and evidence.get("formula") == factor_detail.get("formula")
@@ -673,6 +886,66 @@ def _strategy_signal_rows(
     return enriched, bindings
 
 
+def _parameter_sensitivity_selection_counts(
+    detail: dict[str, Any], inputs: dict[str, Any]
+) -> tuple[list[int], dict[str, Any], list[dict[str, Any]]]:
+    configuration = detail.get("search_configuration") or inputs.get(
+        "search_configuration"
+    )
+    if not isinstance(configuration, dict):
+        raise InvalidJobState("parameter sensitivity search configuration is missing")
+    method = configuration.get("method")
+    max_evaluations = configuration.get("max_evaluations")
+    if (
+        method not in {"GRID", "RANDOM"}
+        or not isinstance(max_evaluations, int)
+        or isinstance(max_evaluations, bool)
+        or max_evaluations < 1
+    ):
+        raise InvalidJobState("parameter sensitivity search configuration is invalid")
+    dimensions = detail.get("search_space") or []
+    if not isinstance(dimensions, list) or len(dimensions) != 1:
+        raise InvalidJobState(
+            "parameter sensitivity requires one selection_count dimension"
+        )
+    dimension = dimensions[0]
+    if (
+        not isinstance(dimension, dict)
+        or dimension.get("parameter_key") != "selection_count"
+    ):
+        raise InvalidJobState("parameter sensitivity only supports selection_count")
+    if dimension.get("kind") == "SET":
+        raw_values = dimension.get("values")
+        if not isinstance(raw_values, list):
+            raise InvalidJobState("parameter sensitivity values are invalid")
+        values = [int(value) for value in raw_values]
+    elif dimension.get("kind") == "RANGE":
+        try:
+            minimum = int(dimension["minimum"])
+            maximum = int(dimension["maximum"])
+            step = int(dimension["step"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise InvalidJobState("parameter sensitivity range is invalid") from error
+        if minimum >= maximum or step <= 0:
+            raise InvalidJobState("parameter sensitivity range is invalid")
+        values = list(range(minimum, maximum + 1, step))
+    else:
+        raise InvalidJobState("parameter sensitivity dimension kind is invalid")
+    if any(value < 1 for value in values):
+        raise InvalidJobState("parameter sensitivity selection_count must be positive")
+    values = sorted(set(values))
+    if method == "RANDOM":
+        seed = configuration.get("seed")
+        if not isinstance(seed, int) or isinstance(seed, bool):
+            raise InvalidJobState("random parameter sensitivity requires a seed")
+        values = random.Random(seed).sample(values, min(max_evaluations, len(values)))
+    else:
+        values = values[:max_evaluations]
+    if not values:
+        raise InvalidJobState("parameter sensitivity has no alternatives")
+    return values, configuration, dimensions
+
+
 def _complete_experiment(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
@@ -718,6 +991,8 @@ def _complete_experiment(
             "parameters_sha256",
             "factor_ref",
             "strategy_ref",
+            "engine",
+            "adapter",
         )
         if any(detail.get(key) != source_detail.get(key) for key in immutable_inputs):
             raise InvalidJobState("reproduction changed an immutable research input")
@@ -730,8 +1005,28 @@ def _complete_experiment(
     ]
     if not market_rows:
         raise InvalidJobState("experiment snapshot has no RESEARCH partition rows")
+    canonical_market_rows = market_rows
     experiment_type = detail["experiment_type"]
     cost = load_cost_model(detail["cost_model_id"])
+    cost_version = inputs.get("cost_model_version")
+    cost_sha256 = inputs.get("cost_model_sha256")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == detail["cost_model_id"],
+            CostModelVersionRow.version == cost_version,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or not isinstance(cost_version, int)
+        or isinstance(cost_version, bool)
+        or cost_row.content_sha256 != cost_sha256
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_sha256
+    ):
+        raise InvalidJobState("experiment cost model binding changed")
     factor_binding = None
     factor_row = None
     if detail["factor_ref"]:
@@ -765,6 +1060,10 @@ def _complete_experiment(
             "sha256": strategy_row.spec_sha256,
         }
     factor_evidence: dict[str, Any] = {}
+    sensitivity_results: list[dict[str, Any]] | None = None
+    sensitivity_configuration: dict[str, Any] | None = None
+    sensitivity_search_space: list[dict[str, Any]] | None = None
+    sensitivity_search_result: dict[str, Any] | None = None
     if experiment_type == "FACTOR_ANALYSIS":
         if factor_binding is None:
             raise InvalidJobState("factor analysis binding is missing")
@@ -779,14 +1078,16 @@ def _complete_experiment(
             factor_detail["formula"]["expression"],
             factor_parameters,
         )
-        metrics = factor_metrics(calculated_rows, [1])
+        metrics = factor_metrics(
+            calculated_rows, [1], market_rows=canonical_market_rows
+        )
         factor_evidence = {
             "factor_id": factor_row.id,
             "factor_version": 1,
             "definition_sha256": factor_detail["definition_sha256"],
             "formula": factor_detail["formula"],
         }
-    elif experiment_type in {"FAST_BACKTEST", "PARAMETER_SENSITIVITY"}:
+    elif experiment_type == "FAST_BACKTEST":
         if strategy_row is None:
             raise InvalidJobState("strategy experiment binding is missing")
         strategy_spec = json.loads(strategy_row.detail)
@@ -802,7 +1103,73 @@ def _complete_experiment(
             int(strategy_spec["rules"]["selection_count"]),
             cost,
             strategy_spec,
+            calendar=market_rows[0].get("calendar") if market_rows else None,
+            market_rows=canonical_market_rows,
         )
+    elif experiment_type == "PARAMETER_SENSITIVITY":
+        if strategy_row is None:
+            raise InvalidJobState("strategy experiment binding is missing")
+        strategy_spec = json.loads(strategy_row.detail)
+        market_rows, strategy_factor_bindings = _strategy_signal_rows(
+            session,
+            strategy_detail=strategy_spec,
+            snapshot_id=detail["data_snapshot_id"],
+            workspace_id=job.workspace_id,
+            market_rows=market_rows,
+        )
+        selection_counts, sensitivity_configuration, sensitivity_search_space = (
+            _parameter_sensitivity_selection_counts(detail, inputs)
+        )
+        sensitivity_results = [
+            {
+                "parameters": [
+                    {"key": "selection_count", "value": str(selection_count)}
+                ],
+                "metrics": simulation_metrics(
+                    market_rows,
+                    selection_count,
+                    cost,
+                    {
+                        **strategy_spec,
+                        "rules": {
+                            **strategy_spec["rules"],
+                            "selection_count": selection_count,
+                        },
+                    },
+                    calendar=market_rows[0].get("calendar") if market_rows else None,
+                    market_rows=canonical_market_rows,
+                ),
+            }
+            for selection_count in selection_counts
+        ]
+        objective_key = sensitivity_configuration["objective_metric_key"]
+        scored = [
+            result
+            for result in sensitivity_results
+            if isinstance(result["metrics"].get(objective_key), (int, float))
+        ]
+        if not scored:
+            raise InvalidJobState(
+                "parameter sensitivity objective metric is unavailable"
+            )
+        selected = (
+            max
+            if sensitivity_configuration["objective_direction"] == "MAXIMIZE"
+            else min
+        )(scored, key=lambda result: result["metrics"][objective_key])
+        sensitivity_search_result = {
+            "state": "COMPLETED",
+            "evaluated_count": len(sensitivity_results),
+            "selected_parameters": selected["parameters"],
+            "selected_metric": {
+                "key": objective_key,
+                "value": format(selected["metrics"][objective_key], ".17g"),
+                "unit": None,
+            },
+            "result_ref": None,
+            "failure_code": None,
+        }
+        metrics = {"evaluated_count": len(sensitivity_results)}
     else:
         metrics = {"observations": len(market_rows), "input_rows_valid": True}
     calculation_output = {
@@ -812,19 +1179,20 @@ def _complete_experiment(
         "metrics": metrics,
         **factor_evidence,
     }
+    if sensitivity_results is not None:
+        calculation_output["search_results"] = sensitivity_results
+        calculation_output["search_configuration"] = sensitivity_configuration
     output_sha256 = content_hash(calculation_output)
     if (
         inputs.get("reproduce_mode") == "EXACT"
         and output_sha256 != source_output_sha256
     ):
         raise InvalidJobState("exact reproduction output hash differs from source")
-    evidence = {
-        "experiment_id": experiment_id,
-        **calculation_output,
-        "engine": detail["engine"],
-        "output_sha256": output_sha256,
-    }
-    artifact_id = _artifact(session, job, "experiment_result", evidence)
+    artifact_id = _artifact(session, job, "experiment_result", calculation_output)
+    if sensitivity_search_result is not None:
+        sensitivity_search_result["result_ref"] = _job_result_ref(
+            "experiment", experiment_id, artifact_id
+        )
     snapshot = session.get(SnapshotRow, detail["data_snapshot_id"])
     if snapshot is None or snapshot.workspace_id != job.workspace_id:
         raise InvalidJobState("experiment snapshot is missing")
@@ -835,7 +1203,17 @@ def _complete_experiment(
     research = session.get(ResearchRow, detail["research_id"])
     if research is None or research.workspace_id != job.workspace_id:
         raise InvalidJobState("experiment research is missing")
-    research_detail = json.loads(research.detail)
+    research_policy = session.execute(
+        select(ResearchPolicyVersionRow).where(
+            ResearchPolicyVersionRow.internal_id == research.research_policy_ref_id
+        )
+    ).scalar_one_or_none()
+    if (
+        research_policy is None
+        or research_policy.workspace_id != job.workspace_id
+        or research_policy.policy_family != "research"
+    ):
+        raise InvalidJobState("experiment research policy is missing")
     adapter = {
         "name": provider["adapter_key"],
         "version": provider["adapter_version"],
@@ -855,8 +1233,8 @@ def _complete_experiment(
         policies=[
             {
                 "type": "research_policy",
-                "id": research_detail["research_policy_id"],
-                "version": 1,
+                "id": research_policy.policy_id,
+                "version": research_policy.version,
             }
         ],
         factors=(
@@ -868,6 +1246,16 @@ def _complete_experiment(
         cost_model=_cost_ref(cost),
         parameters_sha256=detail["parameters_sha256"],
     )
+    provenance_ref_id = session.execute(
+        select(Base.metadata.tables["provenance_records"].c.id).where(
+            Base.metadata.tables["provenance_records"].c.workspace_id
+            == job.workspace_id,
+            Base.metadata.tables["provenance_records"].c.provenance_id
+            == provenance["provenance_id"],
+        )
+    ).scalar_one_or_none()
+    if provenance_ref_id is None:
+        raise InvalidJobState("experiment provenance is missing")
     finished = wire_now()
     detail.update(
         {
@@ -884,9 +1272,15 @@ def _complete_experiment(
                     job.workspace_id,
                 )
             ],
-            "search_space": detail.get("search_space", []),
-            "search_configuration": detail.get("search_configuration"),
-            "search_result": detail.get(
+            "search_space": sensitivity_search_space
+            if sensitivity_search_space is not None
+            else detail.get("search_space", []),
+            "search_configuration": sensitivity_configuration
+            if sensitivity_configuration is not None
+            else detail.get("search_configuration"),
+            "search_result": sensitivity_search_result
+            if sensitivity_search_result is not None
+            else detail.get(
                 "search_result",
                 {
                     "state": "NOT_APPLICABLE",
@@ -910,8 +1304,20 @@ def _complete_experiment(
         }
     )
     row.detail = json.dumps(validated_payload("ExperimentDetail", detail))
-    row.immutable = True
+    row.status = "COMPLETED"
+    row.validity_state = "VALID"
+    row.adapter_key = adapter["name"]
+    row.adapter_version = adapter["version"]
+    row.provenance_ref_id = provenance_ref_id
+    row.started_at = datetime.fromisoformat(detail["started_at"].replace("Z", "+00:00"))
+    row.finished_at = datetime.fromisoformat(
+        detail["finished_at"].replace("Z", "+00:00")
+    )
     row.revision += 1
+    row.job_ref_id = job.internal_id
+    # Commit final evidence and its immutable marker in one UPDATE.
+    row.immutable = True
+    session.flush()
     emit(
         session,
         "experiment",
@@ -949,6 +1355,22 @@ def _create_snapshot(
     if request_sha256 != inputs["request_sha256"]:
         raise InvalidJobState("snapshot admission hash mismatch")
     bundle = load_dataset(inputs["dataset_id"])
+    source = session.execute(
+        select(DataSource)
+        .where(
+            DataSource.id == inputs["dataset_id"],
+            DataSource.workspace_id == job.workspace_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if (
+        source is None
+        or source.status != "VALID"
+        or not dataset_validation_matches(
+            session, inputs["dataset_id"], job.workspace_id, bundle
+        )
+    ):
+        raise InvalidJobState("dataset validation evidence is stale or missing")
     public_rows, holdout_rows = snapshot_rows(
         bundle,
         inputs["coverage_start"],
@@ -970,6 +1392,10 @@ def _create_snapshot(
         )
     ).scalar_one_or_none()
     if existing is not None:
+        if existing.id != snapshot_id:
+            raise InvalidJobState(
+                "snapshot content already belongs to a different snapshot id"
+            )
         detail = json.loads(existing.detail)
         return _job_result_ref("snapshot", existing.id, detail["manifest_artifact_id"])
     public_id, public_object_sha256 = _parquet_artifact(
@@ -1003,18 +1429,11 @@ def _create_snapshot(
         "row_count": len(public_rows),
         "partitions": [
             {
-                "partition": "PUBLIC",
+                "partition": "RESEARCH",
                 "artifact_id": public_id,
                 "object_sha256": public_object_sha256,
                 "logical_content_sha256": public_sha256,
                 "row_count": len(public_rows),
-            },
-            {
-                "partition": "HOLDOUT",
-                "artifact_id": protected_id,
-                "object_sha256": protected_object_sha256,
-                "logical_content_sha256": holdout_sha256,
-                "row_count": len(holdout_rows),
             },
         ],
         "created_by_job_id": job.id,
@@ -1083,7 +1502,7 @@ def _create_snapshot(
             SnapshotPartitionRow(
                 id=new_id("SPART"),
                 snapshot_id=snapshot_id,
-                partition="PUBLIC",
+                partition="RESEARCH",
                 artifact_id=public_id,
                 content_sha256=public_object_sha256,
                 row_count=len(public_rows),
@@ -1272,6 +1691,8 @@ def _generate_memo(
         if isinstance(value, (int, float, str)) and not isinstance(value, bool)
     }
     validation_detail = json.loads(validation.detail)
+    if validation_detail.get("result") != "PASS":
+        raise InvalidJobState("memo requires a passing holdout result")
     sections = [
         {
             "section_key": "thesis",
@@ -1382,9 +1803,38 @@ def _completed_backtest(
             result_ref = json.loads(candidate.result_ref)
             artifact_id = result_ref.get("artifact_id")
             if isinstance(artifact_id, str):
-                return candidate, _artifact_payload(
+                if (
+                    result_ref.get("object_type") != "strategy_version"
+                    or result_ref.get("object_id") != strategy.strategy_id
+                    or result_ref.get("object_version") != strategy.version
+                ):
+                    continue
+                artifact = session.execute(
+                    select(ArtifactRow).where(
+                        ArtifactRow.workspace_id == strategy.workspace_id,
+                        ArtifactRow.artifact_id == artifact_id,
+                        ArtifactRow.job_id == candidate.id,
+                        ArtifactRow.kind == "fast_backtest",
+                        ArtifactRow.publication_state == "PUBLISHED",
+                        ArtifactRow.immutable.is_(True),
+                    )
+                ).scalar_one_or_none()
+                if artifact is None:
+                    continue
+                evidence = _artifact_payload(
                     session, artifact_id, strategy.workspace_id
                 )
+                if (
+                    evidence.get("strategy_id") != strategy.strategy_id
+                    or evidence.get("strategy_version") != strategy.version
+                    or evidence.get("strategy_spec_sha256") != strategy.spec_sha256
+                    or evidence.get("snapshot_id")
+                    != candidate_inputs.get("snapshot_id")
+                    or evidence.get("cost_model_id")
+                    != candidate_inputs.get("cost_model_id")
+                ):
+                    continue
+                return candidate, evidence
     raise InvalidJobState("completed deterministic fast backtest is required")
 
 
@@ -1411,14 +1861,15 @@ def _complete_validation(
     strategy_detail = json.loads(strategy.detail)
     backtest_job, backtest = _completed_backtest(session, strategy)
     backtest_inputs = json.loads(backtest_job.input_payload)
+    canonical_market_rows = _snapshot_market_rows(
+        session, backtest_inputs["snapshot_id"], job.workspace_id
+    )
     validation_signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=strategy_detail,
         snapshot_id=backtest_inputs["snapshot_id"],
         workspace_id=job.workspace_id,
-        market_rows=_snapshot_market_rows(
-            session, backtest_inputs["snapshot_id"], job.workspace_id
-        ),
+        market_rows=canonical_market_rows,
     )
     validation_rows = date_range_rows(
         validation_signal_rows,
@@ -1426,13 +1877,61 @@ def _complete_validation(
         strategy_detail["validation_period"]["end"],
         "VALIDATION",
     )
+    canonical_validation_rows = date_range_rows(
+        canonical_market_rows,
+        strategy_detail["validation_period"]["start"],
+        strategy_detail["validation_period"]["end"],
+        "VALIDATION",
+    )
     cost = load_cost_model(strategy_detail["cost_model_id"])
-    policy = load_validation_policy(inputs["policy_id"])
+    policy, policy_document = load_validation_policy_bundle(inputs["policy_id"])
+    policy_version = inputs.get("policy_version")
+    policy_sha256 = inputs.get("policy_sha256")
+    if not isinstance(policy_version, int) or isinstance(policy_version, bool):
+        raise InvalidJobState("validation policy version is missing")
+    policy_row = session.execute(
+        select(ResearchPolicyVersionRow).where(
+            ResearchPolicyVersionRow.workspace_id == job.workspace_id,
+            ResearchPolicyVersionRow.policy_id == inputs["policy_id"],
+            ResearchPolicyVersionRow.policy_family == "validation",
+            ResearchPolicyVersionRow.version == policy_version,
+            ResearchPolicyVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        policy_row is None
+        or policy.version != policy_version
+        or policy_sha256 != policy_row.content_sha256
+        or content_hash(policy_document) != policy_sha256
+    ):
+        raise InvalidJobState("validation policy binding changed")
+    cost_version = inputs.get("cost_model_version")
+    cost_sha256 = inputs.get("cost_model_sha256")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.internal_id == strategy.cost_model_ref_id,
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == strategy_detail["cost_model_id"],
+            CostModelVersionRow.version == cost_version,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or not isinstance(cost_version, int)
+        or isinstance(cost_version, bool)
+        or cost_sha256 != cost_row.content_sha256
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_sha256
+    ):
+        raise InvalidJobState("validation cost model binding changed")
     metrics = simulation_metrics(
         validation_rows,
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
+        calendar=validation_rows[0].get("calendar") if validation_rows else None,
+        market_rows=canonical_validation_rows,
     )
     selection_count = int(strategy_detail["rules"]["selection_count"])
     robustness = {
@@ -1446,6 +1945,8 @@ def _complete_validation(
                 cost.slippage_bps * 2,
             ),
             strategy_detail,
+            calendar=validation_rows[0].get("calendar") if validation_rows else None,
+            market_rows=canonical_validation_rows,
         ),
         "parameter_alternatives": [
             simulation_metrics(
@@ -1459,6 +1960,10 @@ def _complete_validation(
                         "selection_count": alternative,
                     },
                 },
+                calendar=validation_rows[0].get("calendar")
+                if validation_rows
+                else None,
+                market_rows=canonical_validation_rows,
             )
             for alternative in sorted(
                 {max(1, selection_count - 1), selection_count + 1}
@@ -1620,6 +2125,84 @@ def _complete_validation(
     return _job_result_ref("validation", row.id, artifact_id)
 
 
+def _sync_holdout_strategy(
+    session: Session,
+    job: JobRow,
+    validation: ValidationRow,
+    *,
+    result: str,
+    status: str,
+) -> None:
+    strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
+    if strategy is None or strategy.workspace_id != job.workspace_id:
+        return
+    desired_state = strategy.state
+    if status == "COMPLETED":
+        desired_state = "VALIDATED" if result == "PASS" else "REJECTED"
+    elif status in {"FAILED", "CANCELLED"}:
+        desired_state = "REJECTED"
+    if strategy.state in {"VALIDATED", "VALIDATING"}:
+        strategy.state = desired_state
+    strategy.revision += 1
+    detail = json.loads(strategy.detail)
+    summary = detail.get("validation_summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    detail["spec_sha256"] = strategy.spec_sha256
+    specification = detail.get("specification")
+    if isinstance(specification, dict):
+        specification["spec_sha256"] = strategy.spec_sha256
+    else:
+        detail["specification"] = {"spec_sha256": strategy.spec_sha256}
+    summary.setdefault(
+        "test_counts",
+        {
+            "pending": 0,
+            "running": 0,
+            "pass": 0,
+            "warn": 0,
+            "fail": 0,
+            "locked": 0,
+            "skipped": 0,
+        },
+    )
+    summary.setdefault("provenance", None)
+    summary.update(
+        {
+            "validation": {
+                "type": "validation",
+                "id": validation.id,
+                "version": None,
+                "revision": validation.revision,
+            },
+            "status": status,
+            "result": result,
+            "holdout_state": validation.holdout_state,
+            "revision": validation.revision,
+        }
+    )
+    detail.update(
+        {
+            "lifecycle_state": strategy.state,
+            "revision": strategy.revision,
+            "action_capabilities": strategy_action_capabilities(strategy.state),
+            "validation_summary": summary,
+        }
+    )
+    strategy.detail = json.dumps(validated_payload("StrategyVersionDetail", detail))
+    emit(
+        session,
+        "strategy_version",
+        strategy.strategy_id,
+        strategy.revision,
+        "strategy.updated",
+        payload={"state": strategy.state, "status": strategy.state},
+        object_version=strategy.version,
+        job_id=job.id,
+        correlation_id=job.correlation_id,
+    )
+
+
 def _expose_holdout(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1661,21 +2244,44 @@ def _expose_holdout(
         or strategy.state != "VALIDATED"
     ):
         raise InvalidJobState("holdout strategy is not validated")
+    validation_runs = Base.metadata.tables["validation_runs"]
+    validation_run = (
+        session.execute(
+            select(validation_runs).where(
+                validation_runs.c.validation_id == validation.id,
+                validation_runs.c.workspace_id == job.workspace_id,
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if validation_run is None:
+        raise InvalidJobState("holdout validation run is missing")
+    validation_policy_row = session.execute(
+        select(ResearchPolicyVersionRow).where(
+            ResearchPolicyVersionRow.internal_id == validation_run["policy_id"],
+            ResearchPolicyVersionRow.workspace_id == job.workspace_id,
+            ResearchPolicyVersionRow.policy_family == "validation",
+        )
+    ).scalar_one_or_none()
+    if validation_policy_row is None:
+        raise InvalidJobState("holdout validation policy is missing")
     strategy_detail = json.loads(strategy.detail)
     exposure_id = new_id("HEXP")
     backtest_job, _ = _completed_backtest(session, strategy)
     backtest_inputs = json.loads(backtest_job.input_payload)
     snapshot_id = backtest_inputs["snapshot_id"]
     period = strategy_detail["holdout_period"]
+    canonical_market_rows = [
+        *_snapshot_market_rows(session, snapshot_id, job.workspace_id),
+        *_snapshot_market_rows(session, snapshot_id, job.workspace_id, "HOLDOUT"),
+    ]
     signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=strategy_detail,
         snapshot_id=snapshot_id,
         workspace_id=job.workspace_id,
-        market_rows=[
-            *_snapshot_market_rows(session, snapshot_id, job.workspace_id),
-            *_snapshot_market_rows(session, snapshot_id, job.workspace_id, "HOLDOUT"),
-        ],
+        market_rows=canonical_market_rows,
     )
     market_rows = date_range_rows(
         signal_rows,
@@ -1683,14 +2289,43 @@ def _expose_holdout(
         period["end"],
         "HOLDOUT",
     )
+    canonical_holdout_rows = date_range_rows(
+        canonical_market_rows,
+        period["start"],
+        period["end"],
+        "HOLDOUT",
+    )
     cost = load_cost_model(strategy_detail["cost_model_id"])
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.internal_id == strategy.cost_model_ref_id,
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == strategy_detail["cost_model_id"],
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_row.content_sha256
+    ):
+        raise InvalidJobState("holdout cost model binding changed")
     calculated = simulation_metrics(
         market_rows,
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
+        calendar=market_rows[0].get("calendar") if market_rows else None,
+        market_rows=canonical_holdout_rows,
     )
-    policy = load_validation_policy(json.loads(validation.detail)["policy_id"])
+    policy, policy_document = load_validation_policy_bundle(
+        validation_policy_row.policy_id
+    )
+    if (
+        policy.version != validation_policy_row.version
+        or content_hash(policy_document) != validation_policy_row.content_sha256
+    ):
+        raise InvalidJobState("holdout validation policy binding changed")
     holdout_result, holdout_failures = holdout_policy_result(calculated, policy)
     metrics = [
         {
@@ -1748,17 +2383,42 @@ def _expose_holdout(
         },
     )
     artifact_id = _artifact(session, job, "holdout_result", result)
+    artifact = session.execute(
+        select(ArtifactRow).where(
+            ArtifactRow.artifact_id == artifact_id,
+            ArtifactRow.workspace_id == job.workspace_id,
+        )
+    ).scalar_one()
+    provenance_table = Base.metadata.tables["provenance_records"]
+    provenance_ref_id = session.execute(
+        select(provenance_table.c.id).where(
+            provenance_table.c.provenance_id == provenance["provenance_id"],
+            provenance_table.c.workspace_id == job.workspace_id,
+        )
+    ).scalar_one_or_none()
+    if provenance_ref_id is None:
+        raise InvalidJobState("holdout provenance is missing")
     exposure = HoldoutExposureRow(
         id=exposure_id,
         workspace_id=job.workspace_id,
         validation_id=validation.id,
+        validation_run_ref_id=validation_run["id"],
+        strategy_version_ref_id=strategy.internal_id,
         strategy_version_id=strategy.id,
+        approval_ref_id=approval.internal_id,
         approval_id=approval.id,
         job_id=job.id,
         result_artifact_id=artifact_id,
+        result_artifact_ref_id=artifact.id,
         provenance_id=provenance["provenance_id"],
+        provenance_ref_id=provenance_ref_id,
+        exposed_by_job_ref_id=job.internal_id,
+        holdout_period=json.dumps(strategy_detail["holdout_period"]),
         result_sha256=content_hash(result),
-        period=json.dumps(strategy_detail["holdout_period"]),
+        period=(
+            f"[{strategy_detail['holdout_period']['start']},"
+            f"{(date.fromisoformat(strategy_detail['holdout_period']['end']) + timedelta(days=1)).isoformat()})"
+        ),
         result=json.dumps(result),
         exposed_at=datetime.fromisoformat(exposed_at.replace("Z", "+00:00")),
         contamination=False,
@@ -1766,11 +2426,17 @@ def _expose_holdout(
     session.add(exposure)
     session.flush([exposure])
     validation_runs = Base.metadata.tables["validation_runs"]
+    validation_status = "COMPLETED" if holdout_result == "PASS" else "FAILED"
     session.execute(
         validation_runs.update()
-        .where(validation_runs.c.validation_id == validation.id)
+        .where(
+            validation_runs.c.validation_id == validation.id,
+            validation_runs.c.workspace_id == job.workspace_id,
+        )
         .values(
-            status="COMPLETED",
+            status=validation_status,
+            result=holdout_result,
+            failures=holdout_failures,
             holdout_state="EXPOSED",
             revision=validation.revision + 1,
             finished_at=datetime.fromisoformat(exposed_at.replace("Z", "+00:00")),
@@ -1778,17 +2444,26 @@ def _expose_holdout(
     )
     validation.holdout_state = "EXPOSED"
     validation.exposure_count = 1
-    validation.status = "COMPLETED"
+    validation.status = validation_status
     validation.revision += 1
     detail = json.loads(validation.detail)
     detail.update(
         {
             "holdout_state": "EXPOSED",
-            "status": "COMPLETED",
+            "status": validation_status,
+            "result": holdout_result,
+            "failures": holdout_failures,
             "revision": validation.revision,
         }
     )
     validation.detail = json.dumps(detail)
+    _sync_holdout_strategy(
+        session,
+        job,
+        validation,
+        result=holdout_result,
+        status=validation_status,
+    )
     emit(
         session,
         "validation",
@@ -1797,7 +2472,7 @@ def _expose_holdout(
         "validation.holdout.updated",
         payload={
             "state": "EXPOSED",
-            "status": "COMPLETED",
+            "status": validation_status,
         },
         job_id=job.id,
         correlation_id=job.correlation_id,
@@ -1823,8 +2498,14 @@ def _validate_dataset(
     )
     if len(policy_rows) != 1:
         raise InvalidJobState("validation policy cannot be resolved unambiguously")
-    policy = load_validation_policy(policy_rows[0].policy_id)
+    policy, policy_document = load_validation_policy_bundle(policy_rows[0].policy_id)
+    if (
+        policy.version != policy_rows[0].version
+        or content_hash(policy_document) != policy_rows[0].content_sha256
+    ):
+        raise InvalidJobState("validation policy binding changed")
     profile = data_quality_profile(bundle, policy)
+    profile["policy"]["sha256"] = policy_rows[0].content_sha256
     symbols = sorted({row["symbol"] for row in bundle.rows})
     dates = sorted({row["date"] for row in bundle.rows})
     evidence = {
@@ -1837,9 +2518,7 @@ def _validate_dataset(
         "coverage_end": dates[-1],
         "schema_sha256": bundle.schema_sha256,
         "content_sha256": content_hash(bundle.rows),
-        "late_release_count": sum(
-            1 for row in bundle.rows if row["available_at"][:10] > row["date"]
-        ),
+        "late_release_count": profile["late_release_count"],
         "late_release_fraction": profile["late_release_fraction"],
         "failures": profile["failures"],
         "policy": profile["policy"],
@@ -1922,22 +2601,33 @@ def _analyze_factor(
 def _run_backtest(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
-    strategy = session.get(StrategyVersionRow, inputs["strategy_version_id"])
+    strategy = session.execute(
+        select(StrategyVersionRow)
+        .where(
+            StrategyVersionRow.id == inputs["strategy_version_id"],
+            StrategyVersionRow.workspace_id == job.workspace_id,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
     if (
         strategy is None
         or strategy.workspace_id != job.workspace_id
         or strategy.state != "CANDIDATE"
+        or strategy.strategy_id != inputs["strategy_id"]
+        or strategy.version != inputs["strategy_version"]
+        or strategy.spec_sha256 != inputs["strategy_spec_sha256"]
     ):
-        raise InvalidJobState("candidate strategy version is missing")
+        raise InvalidJobState("candidate strategy version is missing or changed")
     strategy_detail = json.loads(strategy.detail)
+    canonical_market_rows = _snapshot_market_rows(
+        session, inputs["snapshot_id"], job.workspace_id
+    )
     signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=strategy_detail,
         snapshot_id=inputs["snapshot_id"],
         workspace_id=job.workspace_id,
-        market_rows=_snapshot_market_rows(
-            session, inputs["snapshot_id"], job.workspace_id
-        ),
+        market_rows=canonical_market_rows,
     )
     market_rows = date_range_rows(
         signal_rows,
@@ -1946,11 +2636,32 @@ def _run_backtest(
         "RESEARCH",
     )
     cost = load_cost_model(inputs["cost_model_id"])
+    cost_version = inputs.get("cost_model_version")
+    cost_sha256 = inputs.get("cost_model_sha256")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == inputs["cost_model_id"],
+            CostModelVersionRow.version == cost_version,
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or not isinstance(cost_version, int)
+        or isinstance(cost_version, bool)
+        or cost_row.content_sha256 != cost_sha256
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != cost_sha256
+    ):
+        raise InvalidJobState("strategy cost model binding changed")
     calculated = simulation_metrics(
         market_rows,
         int(strategy_detail["rules"]["selection_count"]),
         cost,
         strategy_detail,
+        calendar=market_rows[0].get("calendar") if market_rows else None,
+        market_rows=canonical_market_rows,
     )
     evidence = {
         "strategy_id": strategy.strategy_id,
@@ -2112,39 +2823,27 @@ def _compare_factor_evidence(
 ) -> dict[str, Any]:
     refs = inputs["factor_refs"]
     if not all(
-        isinstance(item, dict) and isinstance(item.get("id"), str) for item in refs
+        isinstance(item, dict)
+        and isinstance(item.get("id"), str)
+        and isinstance(item.get("version"), int)
+        for item in refs
     ):
         raise InvalidJobState("factor comparison refs are invalid")
     compared: list[dict[str, Any]] = []
     for ref in refs:
-        factor = session.get(FactorRow, ref["id"])
-        if factor is None or factor.workspace_id != job.workspace_id:
-            raise InvalidJobState("factor comparison subject is missing")
-        candidates = session.execute(
-            select(JobRow).where(
-                JobRow.workspace_id == job.workspace_id,
-                JobRow.job_type == "FACTOR_ANALYSIS",
-                JobRow.status == "COMPLETED",
-            )
-        ).scalars()
-        evidence = None
-        for candidate in candidates:
-            candidate_inputs = json.loads(candidate.input_payload)
-            if (
-                candidate_inputs.get("factor_id") == factor.id
-                and candidate_inputs.get("snapshot_id") == inputs["snapshot_id"]
-                and candidate.result_ref
-            ):
-                artifact_id = json.loads(candidate.result_ref).get("artifact_id")
-                if isinstance(artifact_id, str):
-                    evidence = _artifact_payload(session, artifact_id, job.workspace_id)
-                    break
-        if evidence is None:
-            raise InvalidJobState("factor comparison evidence is missing")
+        factor, evidence, _artifact_id = _factor_evidence_for_snapshot(
+            session,
+            factor_id=ref["id"],
+            factor_version=ref["version"],
+            snapshot_id=inputs["snapshot_id"],
+            workspace_id=job.workspace_id,
+        )
+        factor_detail = json.loads(factor.detail)
         compared.append(
             {
                 "factor_id": factor.id,
-                "definition_sha256": json.loads(factor.detail)["definition_sha256"],
+                "factor_version": ref["version"],
+                "definition_sha256": factor_detail["definition_sha256"],
                 "metrics": evidence["metrics"],
             }
         )
@@ -2159,7 +2858,15 @@ def _compare_backtest_evidence(
     compared = []
     for experiment_id in inputs["experiment_ids"]:
         experiment = session.get(ExperimentRow, experiment_id)
-        if experiment is None or experiment.workspace_id != job.workspace_id:
+        if (
+            experiment is None
+            or experiment.workspace_id != job.workspace_id
+            or experiment.experiment_type
+            not in {"FAST_BACKTEST", "PARAMETER_SENSITIVITY"}
+            or experiment.status != "COMPLETED"
+            or experiment.validity_state != "VALID"
+            or not experiment.immutable
+        ):
             raise InvalidJobState("backtest experiment is missing")
         detail = json.loads(experiment.detail)
         if detail.get("status") != "COMPLETED" or not experiment.immutable:
@@ -2179,7 +2886,11 @@ def _compare_backtest_evidence(
 def _run_parameter_sensitivity(
     session: Session, job: JobRow, inputs: dict[str, Any]
 ) -> dict[str, Any]:
-    strategy = session.get(StrategyVersionRow, inputs["strategy_version_id"])
+    strategy = session.execute(
+        select(StrategyVersionRow)
+        .where(StrategyVersionRow.id == inputs["strategy_version_id"])
+        .with_for_update()
+    ).scalar_one_or_none()
     snapshot = session.get(SnapshotRow, inputs["snapshot_id"])
     if (
         strategy is None
@@ -2187,15 +2898,21 @@ def _run_parameter_sensitivity(
         or strategy.workspace_id != job.workspace_id
         or snapshot.workspace_id != job.workspace_id
         or strategy.state != "CANDIDATE"
+        or strategy.strategy_id != inputs.get("strategy_id")
+        or strategy.version != inputs.get("strategy_version")
+        or strategy.spec_sha256 != inputs.get("strategy_spec_sha256")
     ):
         raise InvalidJobState("parameter sensitivity subjects are unavailable")
     detail = json.loads(strategy.detail)
-    signal_rows, _factor_bindings = _strategy_signal_rows(
+    canonical_market_rows = _snapshot_market_rows(
+        session, snapshot.id, job.workspace_id
+    )
+    signal_rows, factor_bindings = _strategy_signal_rows(
         session,
         strategy_detail=detail,
         snapshot_id=snapshot.id,
         workspace_id=job.workspace_id,
-        market_rows=_snapshot_market_rows(session, snapshot.id, job.workspace_id),
+        market_rows=canonical_market_rows,
     )
     rows = date_range_rows(
         signal_rows,
@@ -2209,6 +2926,23 @@ def _run_parameter_sensitivity(
         values = [detail["rules"]["selection_count"]]
     counts = sorted({int(value) for value in values if int(value) >= 1})
     cost = load_cost_model(inputs["cost_model_id"])
+    if "cost_model_version" not in inputs or "cost_model_sha256" not in inputs:
+        raise InvalidJobState("parameter sensitivity cost model binding is missing")
+    cost_row = session.execute(
+        select(CostModelVersionRow).where(
+            CostModelVersionRow.workspace_id == job.workspace_id,
+            CostModelVersionRow.cost_model_id == inputs["cost_model_id"],
+            CostModelVersionRow.version == inputs["cost_model_version"],
+            CostModelVersionRow.status == "ACTIVE",
+        )
+    ).scalar_one_or_none()
+    if (
+        cost_row is None
+        or cost_row.content_sha256 != inputs["cost_model_sha256"]
+        or cost.version != cost_row.version
+        or _cost_ref(cost)["sha256"] != inputs["cost_model_sha256"]
+    ):
+        raise InvalidJobState("parameter sensitivity cost model binding changed")
     results = [
         {
             "selection_count": count,
@@ -2220,6 +2954,13 @@ def _run_parameter_sensitivity(
                     **detail,
                     "rules": {**detail["rules"], "selection_count": count},
                 },
+                calendar=rows[0].get("calendar") if rows else None,
+                market_rows=date_range_rows(
+                    canonical_market_rows,
+                    detail["research_period"]["start"],
+                    detail["research_period"]["end"],
+                    "RESEARCH",
+                ),
             ),
         }
         for count in counts
@@ -2228,9 +2969,31 @@ def _run_parameter_sensitivity(
         "strategy_id": strategy.strategy_id,
         "strategy_version": strategy.version,
         "snapshot_id": snapshot.id,
+        "factor_bindings": factor_bindings,
         "results": results,
     }
-    artifact_id = _artifact(session, job, "parameter_sensitivity", output)
+    provenance = _provenance(
+        session,
+        input_value=inputs,
+        output_sha256=content_hash(output),
+        engine_name=inputs.get("engine_key", "qf-simulation-v1"),
+        engine_version=inputs.get("engine_version", "1.0.0"),
+        data_snapshot_ids=[snapshot.id],
+        strategy={
+            "id": strategy.strategy_id,
+            "version": strategy.version,
+            "sha256": strategy.spec_sha256,
+        },
+        factors=_provenance_factor_refs(factor_bindings),
+        cost_model=_cost_ref(cost),
+        parameters_sha256=content_hash(inputs.get("parameters", [])),
+    )
+    artifact_id = _artifact(
+        session,
+        job,
+        "parameter_sensitivity",
+        {**output, "provenance_id": provenance["provenance_id"]},
+    )
     return _job_result_ref(
         "strategy_version",
         strategy.strategy_id,
@@ -2273,12 +3036,14 @@ def apply_job_effect(session: Session, job: JobRow) -> dict[str, Any] | None:
 
         PaperScheduler().execute_claimed(session, job)
         return None
-    return None
+    raise InvalidJobState(f"unsupported job type: {job.job_type}")
 
 
 def apply_job_failure(session: Session, job: JobRow) -> None:
     """Atomically close domain state when a deterministic effect cannot complete."""
     inputs = json.loads(job.input_payload)
+    if content_hash(inputs) != job.payload_sha256:
+        raise InvalidJobState("job input payload hash mismatch")
     if job.job_type == "PAPER_DAILY_RUN":
         # queue.fail_job owns the fenced Job transition and invokes the Paper
         # failure transition after the durable Job row has reached FAILED.
@@ -2299,6 +3064,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
         ):
             return
         detail = json.loads(validation.detail)
+        terminal_result = "FAIL"
         validation.status = "FAILED"
         validation.holdout_state = "FAILED"
         validation.revision += 1
@@ -2307,9 +3073,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
         detail.update(
             {
                 "status": "FAILED",
-                "result": (
-                    "FAIL" if job.job_type == "VALIDATION" else detail.get("result")
-                ),
+                "result": terminal_result,
                 "failures": failures,
                 "holdout_state": "FAILED",
                 "revision": validation.revision,
@@ -2320,6 +3084,32 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             }
         )
         validation.detail = json.dumps(validated_payload("ValidationDetail", detail))
+        validation_runs = Base.metadata.tables["validation_runs"]
+        session.execute(
+            validation_runs.update()
+            .where(
+                validation_runs.c.workspace_id == job.workspace_id,
+                validation_runs.c.validation_id == validation.id,
+            )
+            .values(
+                status="FAILED",
+                result=terminal_result,
+                failures=failures,
+                holdout_state="FAILED",
+                revision=validation.revision,
+                finished_at=datetime.fromisoformat(
+                    detail["finished_at"].replace("Z", "+00:00")
+                ),
+            )
+        )
+        if job.job_type == "HOLDOUT_RUN":
+            _sync_holdout_strategy(
+                session,
+                job,
+                validation,
+                result="FAIL",
+                status="FAILED",
+            )
         if job.job_type == "VALIDATION":
             strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
             if (
@@ -2366,7 +3156,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             correlation_id=job.correlation_id,
         )
         return
-    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE"}:
+    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE", "FACTOR_ANALYSIS"}:
         experiment_id = inputs.get("experiment_id")
         if not isinstance(experiment_id, str):
             return
@@ -2379,6 +3169,7 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             experiment is None
             or experiment.workspace_id != job.workspace_id
             or experiment.immutable
+            or experiment.status in {"COMPLETED", "FAILED", "CANCELLED"}
         ):
             return
         detail = json.loads(experiment.detail)
@@ -2394,6 +3185,13 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
             }
         )
         experiment.detail = json.dumps(validated_payload("ExperimentDetail", detail))
+        finished_at = datetime.fromisoformat(
+            detail["finished_at"].replace("Z", "+00:00")
+        )
+        experiment.status = "FAILED"
+        experiment.validity_state = "INVALID"
+        experiment.finished_at = finished_at
+        experiment.invalidated_at = finished_at
         experiment.revision += 1
         emit(
             session,
@@ -2405,6 +3203,176 @@ def apply_job_failure(session: Session, job: JobRow) -> None:
                 "state": "FAILED",
                 "status": "FAILED",
                 "reason_code": "JOB_FAILED",
+            },
+            job_id=job.id,
+            correlation_id=job.correlation_id,
+        )
+
+
+def apply_job_cancellation(session: Session, job: JobRow) -> None:
+    """Close the durable domain record before the fenced Job becomes terminal."""
+    inputs = json.loads(job.input_payload)
+    if content_hash(inputs) != job.payload_sha256:
+        raise InvalidJobState("job input payload hash mismatch")
+    if job.job_type == "PAPER_DAILY_RUN":
+        from quantfoundry.scheduler.paper import PaperScheduler
+
+        PaperScheduler().fail_claimed(
+            session,
+            job,
+            reason_code="JOB_CANCELLED",
+            status="CANCELLED",
+        )
+        return
+    if job.job_type in {"VALIDATION", "HOLDOUT_RUN"}:
+        validation_id = inputs.get("validation_id")
+        if not isinstance(validation_id, str):
+            return
+        validation = session.execute(
+            select(ValidationRow)
+            .where(ValidationRow.id == validation_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if (
+            validation is None
+            or validation.workspace_id != job.workspace_id
+            or validation.status in {"COMPLETED", "FAILED", "CANCELLED"}
+        ):
+            return
+        detail = json.loads(validation.detail)
+        terminal_result = "FAIL"
+        validation.status = "CANCELLED"
+        validation.holdout_state = "FAILED"
+        validation.revision += 1
+        detail.update(
+            {
+                "status": "CANCELLED",
+                "result": terminal_result,
+                "holdout_state": "FAILED",
+                "revision": validation.revision,
+                "finished_at": wire_now(),
+                "action_capabilities": [],
+            }
+        )
+        validation.detail = json.dumps(validated_payload("ValidationDetail", detail))
+        validation_runs = Base.metadata.tables["validation_runs"]
+        session.execute(
+            validation_runs.update()
+            .where(
+                validation_runs.c.workspace_id == job.workspace_id,
+                validation_runs.c.validation_id == validation.id,
+            )
+            .values(
+                status="CANCELLED",
+                result=terminal_result,
+                holdout_state="FAILED",
+                revision=validation.revision,
+                finished_at=datetime.fromisoformat(
+                    detail["finished_at"].replace("Z", "+00:00")
+                ),
+            )
+        )
+        if job.job_type == "HOLDOUT_RUN":
+            _sync_holdout_strategy(
+                session,
+                job,
+                validation,
+                result="FAIL",
+                status="CANCELLED",
+            )
+        if job.job_type == "VALIDATION":
+            strategy = session.get(StrategyVersionRow, validation.strategy_version_id)
+            if (
+                strategy is not None
+                and strategy.workspace_id == job.workspace_id
+                and strategy.state == "VALIDATING"
+            ):
+                strategy.state = "FROZEN"
+                strategy.revision += 1
+                strategy_detail = json.loads(strategy.detail)
+                strategy_detail.update(
+                    {
+                        "lifecycle_state": "FROZEN",
+                        "revision": strategy.revision,
+                        "action_capabilities": strategy_action_capabilities("FROZEN"),
+                    }
+                )
+                strategy.detail = json.dumps(
+                    validated_payload("StrategyVersionDetail", strategy_detail)
+                )
+                emit(
+                    session,
+                    "strategy_version",
+                    strategy.strategy_id,
+                    strategy.revision,
+                    "strategy.updated",
+                    payload={"state": "FROZEN", "status": "FROZEN"},
+                    object_version=strategy.version,
+                    job_id=job.id,
+                    correlation_id=job.correlation_id,
+                )
+        emit(
+            session,
+            "validation",
+            validation.id,
+            validation.revision,
+            "validation.updated",
+            payload={
+                "state": "CANCELLED",
+                "status": "CANCELLED",
+                "reason_code": "JOB_CANCELLED",
+            },
+            job_id=job.id,
+            correlation_id=job.correlation_id,
+        )
+        return
+    if job.job_type in {"EXPERIMENT", "EXPERIMENT_REPRODUCE", "FACTOR_ANALYSIS"}:
+        experiment_id = inputs.get("experiment_id")
+        if not isinstance(experiment_id, str):
+            return
+        experiment = session.execute(
+            select(ExperimentRow)
+            .where(ExperimentRow.id == experiment_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if (
+            experiment is None
+            or experiment.workspace_id != job.workspace_id
+            or experiment.immutable
+            or experiment.status in {"COMPLETED", "FAILED", "CANCELLED"}
+        ):
+            return
+        detail = json.loads(experiment.detail)
+        detail.update(
+            {
+                "status": "CANCELLED",
+                "validity_state": "INVALID",
+                "action_capabilities": [],
+                "finished_at": wire_now(),
+                "invalidated_at": wire_now(),
+                "invalid_reason_code": "JOB_CANCELLED",
+                "invalid_reason_detail": "Worker cancellation requested",
+            }
+        )
+        experiment.detail = json.dumps(validated_payload("ExperimentDetail", detail))
+        finished_at = datetime.fromisoformat(
+            detail["finished_at"].replace("Z", "+00:00")
+        )
+        experiment.status = "CANCELLED"
+        experiment.validity_state = "INVALID"
+        experiment.finished_at = finished_at
+        experiment.invalidated_at = finished_at
+        experiment.revision += 1
+        emit(
+            session,
+            "experiment",
+            experiment.id,
+            experiment.revision,
+            "experiment.updated",
+            payload={
+                "state": "CANCELLED",
+                "status": "CANCELLED",
+                "reason_code": "JOB_CANCELLED",
             },
             job_id=job.id,
             correlation_id=job.correlation_id,
