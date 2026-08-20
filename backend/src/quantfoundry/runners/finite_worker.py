@@ -1,4 +1,4 @@
-"""Durable finite-job worker with isolated child processes for plugin code."""
+"""Durable finite-job worker with isolated child processes for plugin and research code."""
 
 from __future__ import annotations
 
@@ -31,29 +31,28 @@ def _noop_handler(_: Settings, __: Job) -> None:
     return
 
 
-def _plugin_child(action: str) -> Handler:
+def _child_handler(module: str, *fixed_arguments: str) -> Handler:
     def handler(settings: Settings, job: Job) -> None:
+        timeout = (
+            settings.plugin_job_timeout_seconds
+            if module.endswith("plugin_jobs")
+            else settings.research_job_timeout_seconds
+        )
         try:
             subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "quantfoundry.runners.plugin_jobs",
-                    action,
-                    str(job.id),
-                ],
+                [sys.executable, "-m", module, *fixed_arguments, str(job.id)],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=settings.plugin_job_timeout_seconds,
+                timeout=timeout,
                 env=os.environ.copy(),
             )
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"plugin {action} child exceeded its time limit") from exc
+            raise RuntimeError(f"{job.kind} child exceeded its time limit") from exc
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
-                f"plugin {action} child failed with exit code {exc.returncode}"
+                f"{job.kind} child failed with exit code {exc.returncode}"
             ) from exc
 
     return handler
@@ -61,9 +60,13 @@ def _plugin_child(action: str) -> Handler:
 
 HANDLERS: dict[str, Handler] = {
     "SYSTEM_NOOP": _noop_handler,
-    "PLUGIN_INSTALL": _plugin_child("install"),
-    "PLUGIN_BUNDLE_BUILD": _plugin_child("build"),
-    "PLUGIN_REMOVE": _plugin_child("remove"),
+    "PLUGIN_INSTALL": _child_handler("quantfoundry.runners.plugin_jobs", "install"),
+    "PLUGIN_BUNDLE_BUILD": _child_handler("quantfoundry.runners.plugin_jobs", "build"),
+    "PLUGIN_REMOVE": _child_handler("quantfoundry.runners.plugin_jobs", "remove"),
+    "PARQUET_IMPORT": _child_handler("quantfoundry.runners.import_parquet"),
+    "BACKTEST": _child_handler("quantfoundry.runners.research_jobs", "backtest"),
+    "OPTIMIZATION": _child_handler("quantfoundry.runners.research_jobs", "optimization"),
+    "HOLDOUT": _child_handler("quantfoundry.runners.research_jobs", "holdout"),
 }
 
 
