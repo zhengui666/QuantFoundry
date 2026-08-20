@@ -56,6 +56,7 @@ class Settings:
     plugin_validation_timeout_seconds: int
     bundle_build_timeout_seconds: int
     plugin_job_timeout_seconds: int
+    integration_preflight_timeout_seconds: int
     job_poll_seconds: float
     job_lease_seconds: int
     supervisor_poll_seconds: float
@@ -104,6 +105,9 @@ class Settings:
             ),
             plugin_job_timeout_seconds=_positive_int(
                 "QF_PLUGIN_JOB_TIMEOUT_SECONDS", 900
+            ),
+            integration_preflight_timeout_seconds=_positive_int(
+                "QF_INTEGRATION_PREFLIGHT_TIMEOUT_SECONDS", 120
             ),
             job_poll_seconds=_positive_float("QF_JOB_POLL_SECONDS", 1.0),
             job_lease_seconds=_positive_int("QF_JOB_LEASE_SECONDS", 60),

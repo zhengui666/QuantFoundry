@@ -44,6 +44,7 @@ def settings(tmp_path: Path) -> Settings:
         plugin_validation_timeout_seconds=30,
         bundle_build_timeout_seconds=60,
         plugin_job_timeout_seconds=90,
+        integration_preflight_timeout_seconds=30,
         job_poll_seconds=0.01,
         job_lease_seconds=60,
         supervisor_poll_seconds=0.01,

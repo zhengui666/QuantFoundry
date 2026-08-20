@@ -52,8 +52,9 @@ def _plugin_child(action: str) -> Handler:
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"plugin {action} child exceeded its time limit") from exc
         except subprocess.CalledProcessError as exc:
-            diagnostic = (exc.stderr or "plugin child failed")[-4000:]
-            raise RuntimeError(diagnostic) from exc
+            raise RuntimeError(
+                f"plugin {action} child failed with exit code {exc.returncode}"
+            ) from exc
 
     return handler
 
