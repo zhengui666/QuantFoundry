@@ -1,61 +1,50 @@
 name: quantfoundry
 
-x-backend-env: &backend-env
-  QF_ENV: ${QF_ENV:?missing QF_ENV}
-  QF_ENVIRONMENT: ${QF_ENVIRONMENT:?missing QF_ENVIRONMENT}
-  QF_GIT_COMMIT: ${QF_GIT_COMMIT:?missing QF_GIT_COMMIT}
-  QF_BUILD_ID: ${QF_BUILD_ID:?missing QF_BUILD_ID}
-  QF_DATABASE_URL: postgresql+psycopg://${QF_POSTGRES_USER:?missing QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD:?missing QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB:?missing QF_POSTGRES_DB}
-  QF_ALEMBIC_URL: postgresql+psycopg://${QF_POSTGRES_USER:?missing QF_POSTGRES_USER}:${QF_POSTGRES_PASSWORD:?missing QF_POSTGRES_PASSWORD}@postgres:5432/${QF_POSTGRES_DB:?missing QF_POSTGRES_DB}
-  QF_SKIP_AUTO_CREATE: "1"
-  QF_ARTIFACT_ROOT: /var/lib/quantfoundry/artifacts
-  QF_ARTIFACT_DIR: /var/lib/quantfoundry/artifacts
-  QF_DATA_ROOT: /var/lib/quantfoundry/data
-  QF_DATASET_DIR: /var/lib/quantfoundry/data/datasets
-  QF_COST_MODEL_DIR: /var/lib/quantfoundry/data/cost-models
-  QF_POLICY_DIR: /var/lib/quantfoundry/data/policies
-  QF_TOOL_CONTRACT_PATH: /workspace/docs/后端系统技术方案/contracts/tools/v1-p0.yaml
-  QF_AGENT_PROVIDER: ${QF_AGENT_PROVIDER:-unconfigured}
-  QF_AGENT_MODEL: ${QF_AGENT_MODEL:-unconfigured}
-  QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER: ${QF_ENABLE_LOCAL_DETERMINISTIC_PROVIDER:-0}
-  QF_OPENAI_BASE_URL: ${QF_OPENAI_BASE_URL:-}
-  QF_OPENAI_MODELS: ${QF_OPENAI_MODELS:-}
-  QF_OPENAI_DISPLAY_NAME: ${QF_OPENAI_DISPLAY_NAME:-OpenAI-compatible provider}
-  QF_LOCAL_PROVIDER_API_KEY: ${QF_LOCAL_PROVIDER_API_KEY:-}
-  QF_LOCAL_DATA_CREDENTIAL: ${QF_LOCAL_DATA_CREDENTIAL:-}
-  QF_CREDENTIAL_ENCRYPTION_KEY_ID: ${QF_CREDENTIAL_ENCRYPTION_KEY_ID:?missing QF_CREDENTIAL_ENCRYPTION_KEY_ID}
-  QF_CREDENTIAL_ENCRYPTION_KEY: ${QF_CREDENTIAL_ENCRYPTION_KEY:?missing QF_CREDENTIAL_ENCRYPTION_KEY}
+x-core-env: &core-env
+  QF_ENV: ${QF_ENV:-development}
+  QF_DATABASE_URL: ${QF_DATABASE_URL:-postgresql+psycopg://quantfoundry:quantfoundry-local@postgres:5432/quantfoundry}
+  QF_ALEMBIC_URL: ${QF_ALEMBIC_URL:-postgresql+psycopg://quantfoundry:quantfoundry-local@postgres:5432/quantfoundry}
+  QF_MASTER_KEY: ${QF_MASTER_KEY:-}
+  QF_PLUGIN_ROOT: /var/lib/quantfoundry/plugins
+  QF_CATALOG_ROOT: /var/lib/quantfoundry/catalog
+  QF_REPORT_ROOT: /var/lib/quantfoundry/reports
+  QF_IMPORT_ROOT: /var/lib/quantfoundry/imports
+  QF_AGENT_ARTIFACT_ROOT: /var/lib/quantfoundry/agent-artifacts
+  QF_MAX_PARQUET_UPLOAD_BYTES: ${QF_MAX_PARQUET_UPLOAD_BYTES:-10737418240}
+  QF_JOB_POLL_SECONDS: ${QF_JOB_POLL_SECONDS:-1.0}
+  QF_JOB_LEASE_SECONDS: ${QF_JOB_LEASE_SECONDS:-60}
+  QF_SUPERVISOR_POLL_SECONDS: ${QF_SUPERVISOR_POLL_SECONDS:-1.0}
 
-x-backend-common: &backend-common
+x-core-service: &core-service
   build:
     context: .
     dockerfile: deploy/Dockerfile.backend
-    args:
-      QF_GIT_COMMIT: ${QF_GIT_COMMIT:?missing QF_GIT_COMMIT}
-      QF_BUILD_ID: ${QF_BUILD_ID:?missing QF_BUILD_ID}
   environment:
-    <<: *backend-env
+    <<: *core-env
   volumes:
-    - quantfoundry-artifacts:/var/lib/quantfoundry/artifacts
-    - quantfoundry-data:/var/lib/quantfoundry/data
+    - plugin-data:/var/lib/quantfoundry/plugins
+    - catalog-data:/var/lib/quantfoundry/catalog
+    - report-data:/var/lib/quantfoundry/reports
+    - import-data:/var/lib/quantfoundry/imports
+    - agent-artifact-data:/var/lib/quantfoundry/agent-artifacts
   restart: unless-stopped
+  read_only: true
   security_opt:
     - no-new-privileges:true
   cap_drop:
     - ALL
-  read_only: true
   tmpfs:
-    - /tmp:rw,noexec,nosuid,size=64m
+    - /tmp:rw,noexec,nosuid,size=128m
 
 services:
   postgres:
-    image: mirror.gcr.io/library/postgres:18.0-alpine3.22@sha256:48c8ad3a7284b82be4482a52076d47d879fd6fb084a1cbfccbd551f9331b0e40
+    image: postgres:18-alpine
     environment:
-      POSTGRES_DB: ${QF_POSTGRES_DB:?missing QF_POSTGRES_DB}
-      POSTGRES_USER: ${QF_POSTGRES_USER:?missing QF_POSTGRES_USER}
-      POSTGRES_PASSWORD: ${QF_POSTGRES_PASSWORD:?missing QF_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${QF_POSTGRES_DB:-quantfoundry}
+      POSTGRES_USER: ${QF_POSTGRES_USER:-quantfoundry}
+      POSTGRES_PASSWORD: ${QF_POSTGRES_PASSWORD:-quantfoundry-local}
     volumes:
-      - postgres-data:/var/lib/postgresql
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -63,187 +52,70 @@ services:
       retries: 20
       start_period: 10s
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-      - SETGID
-      - SETUID
 
   migrate:
-    <<: *backend-common
+    <<: *core-service
     restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["sh", "-ec", "alembic upgrade head && alembic check"]
-
-  storage-init:
-    <<: *backend-common
-    user: "0:0"
-    read_only: true
-    restart: "no"
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
     command:
       - sh
       - -ec
-      - >-
-        mkdir -p
-        /var/lib/quantfoundry/artifacts
-        /var/lib/quantfoundry/data/datasets
-        /var/lib/quantfoundry/data/cost-models
-        /var/lib/quantfoundry/data/policies
-        && chown -R quantfoundry:quantfoundry
-        /var/lib/quantfoundry/artifacts
-        /var/lib/quantfoundry/data
-        && chmod 0750
-        /var/lib/quantfoundry/artifacts
-        /var/lib/quantfoundry/data
-        /var/lib/quantfoundry/data/datasets
-        /var/lib/quantfoundry/data/cost-models
-        /var/lib/quantfoundry/data/policies
-
-  local-provider:
-    profiles: ["local"]
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.backend
-      args:
-        QF_GIT_COMMIT: ${QF_GIT_COMMIT:?missing QF_GIT_COMMIT}
-        QF_BUILD_ID: ${QF_BUILD_ID:?missing QF_BUILD_ID}
-    environment:
-      QF_ENV: ${QF_ENV:?missing QF_ENV}
-      QF_ENVIRONMENT: ${QF_ENVIRONMENT:?missing QF_ENVIRONMENT}
-      QF_LOCAL_PROVIDER_API_KEY: ${QF_LOCAL_PROVIDER_API_KEY:-}
-    command: ["python", "-m", "app.local_provider", "--host", "0.0.0.0", "--port", "8011"]
-    expose: ["8011"]
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/healthz', timeout=2).read()"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
+      - python -m quantfoundry.db.preflight && alembic upgrade head
 
   api:
-    <<: *backend-common
+    <<: *core-service
     depends_on:
       migrate:
         condition: service_completed_successfully
-      storage-init:
-        condition: service_completed_successfully
-      local-provider:
-        condition: service_healthy
-        required: false
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    expose: ["8000"]
+    command: ["uvicorn", "quantfoundry.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${QF_HTTP_PORT:-8000}:8000"
     healthcheck:
-      test: ["CMD", "python", "/workspace/scripts/api_healthcheck.py"]
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/system/health', timeout=2));
+          raise SystemExit(0 if d.get('live') else 1)
       interval: 10s
       timeout: 3s
       retries: 12
       start_period: 10s
 
-  worker:
-    <<: *backend-common
+  finite-worker:
+    <<: *core-service
     depends_on:
       migrate:
         condition: service_completed_successfully
-      storage-init:
-        condition: service_completed_successfully
-    environment:
-      <<: *backend-env
-      QF_WORKER_KIND: core
-    command: ["python", "-m", "workers.main"]
+    command: ["qf-finite-worker"]
     healthcheck:
-      test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "worker", "--queue", "core"]
+      test: ["CMD", "qf-finite-worker", "--check"]
       interval: 15s
       timeout: 5s
       retries: 8
-      start_period: 15s
+      start_period: 10s
 
-  agent-worker:
-    <<: *backend-common
+  live-supervisor:
+    <<: *core-service
     depends_on:
       migrate:
         condition: service_completed_successfully
-      storage-init:
-        condition: service_completed_successfully
-      local-provider:
-        condition: service_healthy
-        required: false
-    environment:
-      <<: *backend-env
-      QF_WORKER_KIND: agent
-    command: ["python", "-m", "workers.main"]
+    command: ["qf-live-supervisor"]
     healthcheck:
-      test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "worker", "--queue", "agent"]
+      test: ["CMD", "qf-live-supervisor", "--check"]
       interval: 15s
       timeout: 5s
       retries: 8
-      start_period: 15s
-
-  scheduler:
-    <<: *backend-common
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      storage-init:
-        condition: service_completed_successfully
-    environment:
-      <<: *backend-env
-    command: ["python", "-m", "scheduler.main"]
-    healthcheck:
-      test: ["CMD", "python", "/workspace/scripts/runtime_healthcheck.py", "--component", "scheduler"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 15s
-
-  frontend:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.frontend
-      args:
-        QF_GIT_COMMIT: ${QF_GIT_COMMIT:?missing QF_GIT_COMMIT}
-        QF_BUILD_ID: ${QF_BUILD_ID:?missing QF_BUILD_ID}
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - "${QF_HTTP_PORT:-8080}:8080"
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=32m
-      - /var/cache/nginx:rw,noexec,nosuid,size=32m
-      - /var/run:rw,noexec,nosuid,size=8m
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
-      interval: 10s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
+      start_period: 10s
 
 volumes:
   postgres-data:
-  quantfoundry-artifacts:
-  quantfoundry-data:
+  plugin-data:
+  catalog-data:
+  report-data:
+  import-data:
+  agent-artifact-data:

@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/quantfoundry-nautilus-redesign
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: quantfoundry
+          POSTGRES_USER: quantfoundry
+          POSTGRES_PASSWORD: quantfoundry
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U quantfoundry -d quantfoundry"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      QF_ENV: test
+      QF_DATABASE_URL: postgresql+psycopg://quantfoundry:quantfoundry@127.0.0.1:5432/quantfoundry
+      QF_ALEMBIC_URL: postgresql+psycopg://quantfoundry:quantfoundry@127.0.0.1:5432/quantfoundry
+      QF_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Install
+        run: python -m pip install -e 'backend[dev]'
+      - name: Compile
+        run: python -m compileall -q backend/src
+      - name: Lint
+        run: ruff check backend/src backend/tests
+      - name: Type check
+        run: mypy backend/src/quantfoundry
+      - name: Database preflight and migration
+        run: |
+          python -m quantfoundry.db.preflight
+          alembic -c backend/alembic.ini upgrade head
+          python -m quantfoundry.db.preflight
+      - name: Tests
+        run: pytest -q backend/tests
+      - name: Compose configuration
+        run: docker compose --env-file .env.example config --quiet
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --manifest-path native/qf_nautilus_risk/Cargo.toml --check
+      - name: Lint
+        run: cargo clippy --manifest-path native/qf_nautilus_risk/Cargo.toml --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --manifest-path native/qf_nautilus_risk/Cargo.toml

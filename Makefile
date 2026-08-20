@@ -1,46 +1,79 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap local-bootstrap owner-bootstrap up down logs ps migrate format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses verify-compose
+.PHONY: help install-dev format lint typecheck test test-unit test-integration compile migrate preflight up down logs ps build verify-compose rust-format rust-lint rust-test ci
 
 help:
-	@echo "Targets: bootstrap local-bootstrap owner-bootstrap up down logs ps migrate format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-check release-known-issues hygiene secrets licenses verify-compose"
+	@printf '%s\n' \
+	  'install-dev      Install backend with development dependencies' \
+	  'format           Format Python and Rust sources' \
+	  'lint             Run Python lint checks' \
+	  'typecheck        Run Python type checks' \
+	  'test             Run Python tests' \
+	  'compile          Compile Python sources' \
+	  'migrate          Run database preflight and Alembic upgrade' \
+	  'up/down/logs/ps  Operate the Core Compose stack' \
+	  'build            Build the backend image' \
+	  'rust-*           Run native risk crate checks' \
+	  'ci               Run the local CI-equivalent checks'
 
-bootstrap:
-	@./scripts/bootstrap.sh
+install-dev:
+	python -m pip install -e 'backend[dev]'
 
-owner-bootstrap:
-	@./scripts/bootstrap-owner.sh
+format:
+	ruff format backend/src backend/tests
+	cargo fmt --manifest-path native/qf_nautilus_risk/Cargo.toml
 
-local-bootstrap:
-	@./scripts/bootstrap-local.sh
+lint:
+	ruff check backend/src backend/tests
 
-up:
-	@docker compose --profile local up --build --remove-orphans
+typecheck:
+	mypy backend/src/quantfoundry
 
-down:
-	@docker compose --profile local down --remove-orphans
+test:
+	pytest -q backend/tests
 
-logs:
-	@docker compose --profile local logs --follow --tail=200
+test-unit:
+	pytest -q backend/tests/unit
 
-ps:
-	@docker compose --profile local ps
+test-integration:
+	pytest -q backend/tests/integration
+
+compile:
+	python -m compileall -q backend/src
+
+preflight:
+	python -m quantfoundry.db.preflight
 
 migrate:
-	@docker compose run --rm migrate
+	python -m quantfoundry.db.preflight
+	alembic -c backend/alembic.ini upgrade head
 
-format lint typecheck backend-lint backend-typecheck backend-mypy test build e2e visual browser fresh-smoke schema contract openapi tools pg18 fullstack platform backend-ci frontend-ci ci governance p0-check release-known-issues hygiene secrets licenses:
-	@./scripts/ci.sh $@
+up:
+	docker compose --env-file .env up --build --remove-orphans
 
-release-check:
-	@set -eu; \
-	if [ -z "$${QF_RELEASE_TAG:-}" ]; then \
-	  printf '%s\n' 'QF_RELEASE_TAG is required for release-check.' >&2; \
-	  exit 2; \
-	fi; \
-	./scripts/release-check.sh "$$QF_RELEASE_TAG"
+down:
+	docker compose --env-file .env down --remove-orphans
+
+logs:
+	docker compose --env-file .env logs --follow --tail=200
+
+ps:
+	docker compose --env-file .env ps
+
+build:
+	docker build -f deploy/Dockerfile.backend -t quantfoundry-backend:local .
 
 verify-compose:
-	@docker compose --env-file .env.example config --quiet
-	@docker compose --profile local --env-file .env.example config --quiet
+	docker compose --env-file .env.example config --quiet
+
+rust-format:
+	cargo fmt --manifest-path native/qf_nautilus_risk/Cargo.toml --check
+
+rust-lint:
+	cargo clippy --manifest-path native/qf_nautilus_risk/Cargo.toml --all-targets -- -D warnings
+
+rust-test:
+	cargo test --manifest-path native/qf_nautilus_risk/Cargo.toml
+
+ci: compile lint typecheck test rust-format rust-lint rust-test verify-compose

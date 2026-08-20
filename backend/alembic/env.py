@@ -1,69 +1,50 @@
-import os
-import sys
-from pathlib import Path
+"""Alembic environment for the fresh QuantFoundry schema."""
 
-from sqlalchemy import engine_from_config, event, pool
+from __future__ import annotations
+
+from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
-sys.path.insert(0, str(Path(__file__).parents[1]))
-database_url = os.getenv("QF_ALEMBIC_URL") or os.getenv("QF_DATABASE_URL")
-if not database_url:
-    raise RuntimeError("QF_ALEMBIC_URL or QF_DATABASE_URL is required")
-os.environ.setdefault("QF_DATABASE_URL", database_url)
-
-from app.main import Base  # noqa: E402
+from quantfoundry.db.models import Base
+from quantfoundry.settings import Settings
 
 config = context.config
-config.set_main_option("sqlalchemy.url", database_url)
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+settings = Settings.from_env()
+config.set_main_option("sqlalchemy.url", settings.alembic_url)
 target_metadata = Base.metadata
 
 
-def run_migrations_offline():
+def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
         literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        compare_type=True,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
-def run_migrations_online():
+def run_migrations_online() -> None:
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    if database_url.startswith("sqlite"):
-
-        @event.listens_for(connectable, "connect")
-        def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
-
     with connectable.connect() as connection:
-        sqlite_migration = database_url.startswith("sqlite")
-        if sqlite_migration:
-            # Rebuild migrations may contain cyclic composite FKs.  Disable
-            # enforcement only on this isolated Alembic connection; every
-            # restored schema is checked before the connection is closed and
-            # application connections still force foreign_keys=ON.
-            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+        )
         with context.begin_transaction():
             context.run_migrations()
-        if sqlite_migration:
-            violations = connection.exec_driver_sql("PRAGMA foreign_key_check").all()
-            if violations:
-                raise RuntimeError(
-                    f"SQLite migration produced foreign-key violations: {violations[:3]}"
-                )
-            connection.commit()
-            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-            if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 1:
-                raise RuntimeError("SQLite migration failed to restore foreign keys")
 
 
 if context.is_offline_mode():
