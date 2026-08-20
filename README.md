@@ -46,7 +46,7 @@ curl http://127.0.0.1:8000/api/v1/system/health
 curl http://127.0.0.1:8000/api/v1/plugins
 ```
 
-插件安装通过 `/api/v1/plugin-releases` 上传 PRIMARY wheel 和依赖 wheels，随后异步完成离线安装、descriptor validation 和 runtime bundle 构建。当前仓库尚未达到可运行或可交易状态；上述命令和接口是目标部署入口，不是当前完成度声明。API 只绑定 loopback，不默认提供 Swagger UI、Redoc、testnet、公共插件市场或盈利承诺。
+插件安装通过 `/api/v1/plugin-releases` 上传 PRIMARY wheel 和依赖 wheels，随后异步完成离线安装与 descriptor validation；在资源绑定或调用 `/api/v1/plugin-runtime-bundles/prewarm` 时，按具体 release 组合异步构建 runtime bundle。当前仓库尚未达到可运行或可交易状态；上述命令和接口是目标部署入口，不是当前完成度声明。API 只绑定 loopback，不默认提供 Swagger UI、Redoc、testnet、公共插件市场或盈利承诺。
 
 ## 文档
 
