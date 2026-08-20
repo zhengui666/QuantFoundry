@@ -1,218 +1,173 @@
-> # QuantFoundry — AGENTS.md
->
-> > 本文件是 QuantFoundry 项目的开发治理入口，只定义：**文档索引、文档围栏与 MUST 规则、开发 Agent 编排策略**。
->
-> ------
->
-> ## 1. 项目文档索引
->
-> 项目文件库根目录：`/QuantFoundry`
->
-> ```text
-> /QuantFoundry
-> ├── AGENTS.md
-> ├── PROJECT_BACKGROUND.md
-> └── docs
->     ├── PRD
->     │   └── V1.0.0.md
->     ├── 治理
->     │   ├── QuantFoundry_Repository_Governance_V1.0.0.md
->     │   └── p0-blockers.yaml
->     │   ├── release-known-issues.json
->     │   └── release-evidence-manifest.template.json
->     ├── UI设计方案
->     │   └── QuantFoundry_UI_Design_V1.0.0.md
->     ├── 前端技术方案
->     │   ├── QuantFoundry_Frontend_Technical_Design_V1.0.0.md
->     │   └── QuantFoundry_Frontend_Technical_Design_V1.0.0_Backend_CoBuild_Patch.md  # 已完整合并；historical archive
->     ├── 后端系统技术方案
->     │   ├── QuantFoundry_Backend_System_Technical_Design_V1.0.0.md
->     │   ├── contracts/
->     │   │   ├── openapi-v1.yaml                # canonical OpenAPI
->     │   │   └── tools/                         # canonical semantic-tool schemas
->     │   │       ├── README.md
->     │   │       └── v1-p0.yaml
->     │   └── assets
->     │       └── QuantFoundry 后端系统技术架构总览.png
->     ├── Agent技术方案
->     │   └── QuantFoundry_Agent_Technical_Design_V1.0.0.md
->     └── 全栈测试方案
->         └── QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md
-> ```
->
-> ### 1.1 文档职责
->
-> | 文档                                                         | 约束范围                                 |
-> | ------------------------------------------------------------ | ---------------------------------------- |
-> | `PROJECT_BACKGROUND.md`                                      | 项目级背景、文件库治理入口与总体边界     |
-> | `docs/PRD/V1.0.0.md`                                         | Final V1.0；产品需求、业务流程、页面/功能、验收口径 |
-> | `docs/治理/QuantFoundry_Repository_Governance_V1.0.0.md`      | 事实源、变更顺序、P0 no-waiver、Agent 编排、兼容与发布语义 |
-> | `docs/治理/p0-blockers.yaml`                                  | P0 发布阻断项的机器可读 registry；仅有 closure evidence 才可关闭 |
-> | `docs/治理/release-known-issues.json`                         | committed release known-issue registry；P0 path 未解决 S1 阻断发布 |
-> | `docs/治理/release-evidence-manifest.template.json`           | release evidence manifest 的 committed schema/template |
-> | `docs/UI设计方案/QuantFoundry_UI_Design_V1.0.0.md`           | UI、交互、视觉与页面状态                 |
-> | `docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0.md` | 前端架构、模块、状态、路由、工程约束     |
-> | `docs/前端技术方案/QuantFoundry_Frontend_Technical_Design_V1.0.0_Backend_CoBuild_Patch.md` | 已完整合并的 historical archive；不再生效，不是竞争事实源 |
-> | `docs/后端系统技术方案/QuantFoundry_Backend_System_Technical_Design_V1.0.0.md` | 后端架构、领域模型、数据、接口与系统约束 |
-> | `docs/后端系统技术方案/contracts/openapi-v1.yaml`            | 唯一 canonical OpenAPI machine-readable 事实源 |
-> | `docs/后端系统技术方案/contracts/tools/README.md`            | Tool Contract 版本、兼容性与 staged scope 治理规则 |
-> | `docs/后端系统技术方案/contracts/tools/v1-p0.yaml`           | staged P0/P0.5 唯一 canonical Agent semantic-tool field-level 事实源 |
-> | `docs/Agent技术方案/QuantFoundry_Agent_Technical_Design_V1.0.0.md` | Agent 系统设计、职责与运行约束           |
-> | `docs/全栈测试方案/QuantFoundry_Full_Stack_Test_Plan_V1.0.0.md` | 测试范围、测试矩阵、验收与发布门禁       |
->
-> ------
->
-> ## 2. 文档围栏与 MUST 规则
->
-> ### 2.1 文档是开发事实源
->
-> 所有开发 Agent **MUST** 先读取与当前任务相关的项目文档，再执行任何实现、测试或变更工作。
->
-> 所有开发实现 **MUST** 遵循项目文档中已经明确的需求、字段、接口、状态、流程、架构、边界、验收标准与测试要求。
->
-> 任何 Agent **MUST NOT** 因个人判断、工程习惯、实现便利或模型推断，擅自偏离已生效文档。
->
-> 当多个文档存在交叉约束时，Agent **MUST** 同时满足全部有效约束；如果发现冲突，**MUST** 停止相关实现并将冲突上报给主 Agent，由主 Agent组织文档治理，不得自行选择其中一份作为最终事实源。
->
-> ### 2.2 突破文档围栏时必须先动态修改文档
->
-> 任何会突破现有文档围栏的行为，包括但不限于以下情况：
->
-> - 新增、删除或修改产品功能；
-> - 新增、删除或修改页面、按钮、交互、状态；
-> - 新增、删除或修改字段、枚举、数据模型；
-> - 新增、删除或修改 API、事件、错误码、协议；
-> - 新增、删除或修改前端、后端、Agent 架构；
-> - 新增、删除或修改业务流程、权限、风控或边界条件；
-> - 新增、删除或修改测试标准、验收标准、发布门禁；
-> - 任何实现与当前有效文档不一致的情况；
->
-> 均 **MUST** 先完成对应文档的动态更新，再进入代码实现。
->
-> 执行顺序 **MUST** 为：
->
-> ```text
-> 发现围栏缺口/冲突
-> → 明确需要变更的文档
-> → 更新文档
-> → 同步更新受影响的上下游文档
-> → 如文件新增/删除/改名/移动，则同步更新 AGENTS.md 文档索引
-> → 主 Agent 重新编排开发任务
-> → 子 Agent 实现代码
-> → 子 Agent 执行测试与验收
-> ```
->
-> 代码 **MUST NOT** 先于文档事实源发生规范性变更。
->
-> ### 2.3 文档联动
->
-> 当某项变更同时影响产品、UI、前端、API、后端、Agent 或测试时，相关文档 **MUST** 联动更新，禁止只修改其中一份导致文档间失配。
->
-> 当项目文档发生新增、删除、重命名或路径移动时，`AGENTS.md` 中的“项目文档索引” **MUST** 同步动态修改，确保索引始终反映文件库真实结构。
->
-> ------
->
-> ## 3. 开发 Agent 编排策略
->
-> ### 3.1 总体模型
->
-> QuantFoundry 的开发工作采用 **1 个主 Agent + 一组子 Agent** 的团队编排模式。
->
-> - **主 Agent 模型：`gpt-5.6-sol xhigh`**
-> - **子 Agent 模型：`gpt-5.6-terra medium`**
->
-> 主 Agent 负责 hold 整个开发团队；所有具体工程工作由主 Agent 拆分并委派给一个或多个子 Agent。
->
-> ### 3.2 主 Agent：仅负责编排
->
-> 主 Agent **只得参与开发团队编排与治理**，职责仅包括：
->
-> - 读取项目治理文档与任务要求；
-> - 判断任务涉及哪些文档围栏；
-> - 拆分工作包与依赖关系；
-> - 选择并调度子 Agent；
-> - 定义每个子 Agent 的输入、输出、边界与验收条件；
-> - 处理子 Agent 之间的依赖、冲突、阻塞与返工；
-> - 根据子 Agent 的结构化报告判断下一步编排动作；
-> - 组织文档变更、实现、测试、复核与交付顺序；
-> - 汇总开发状态、风险、测试结果与最终交付结论。
->
-> 主 Agent 对代码执行严格隔离，**MUST NOT**：
->
-> - 直接读取任何源代码文件；
-> - 直接读取任何代码 diff / patch；
-> - 直接新增代码；
-> - 直接修改代码；
-> - 直接删除代码；
-> - 直接重构代码；
-> - 直接修复代码；
-> - 直接进行代码 Review；
-> - 直接编写、修改、删除或阅读测试代码；
-> - 直接执行单元测试、集成测试、端到端测试或任何其他测试；
-> - 直接执行 lint、typecheck、build、schema 校验、契约校验等工程验证；
-> - 直接运行测试命令、验证命令或以命令行方式自行验收实现结果；
-> - 直接阅读原始测试日志、测试堆栈或测试产物以自行完成技术验证；
-> - 以任何形式绕过子 Agent 亲自完成代码实现、测试、验证、Review 或验收工作。
->
-> 主 Agent **MUST NOT** 承担测试者、验证者或代码审查者角色。主 Agent可以定义测试工作包、验收条件和复核顺序，但所有测试执行、工程验证、技术验收与代码复核 **MUST** 由子 Agent 完成。
->
-> 如需要了解代码或测试状态，主 Agent **MUST** 通过子 Agent 提交的结构化非源码报告获取，例如：
->
-> - 涉及的模块/文件路径；
-> - 完成状态；
-> - 变更目的；
-> - 行为级变更摘要；
-> - API/Schema 影响摘要；
-> - 测试结果；
-> - 失败原因；
-> - 风险与阻塞项；
-> - 是否满足对应文档与验收标准。
->
-> 结构化报告 **MUST NOT** 要求主 Agent 阅读具体源代码、测试代码、diff、patch、原始测试日志或其他需要主 Agent亲自进行技术判断的底层实现内容。
->
-> ### 3.3 子 Agent：执行工程任务
->
-> 所有具体工程行为 **MUST** 由上述子 Agent 执行，包括但不限于：
->
-> - 代码阅读与代码库探索；
-> - 功能实现；
-> - Bug 修复；
-> - 重构；
-> - 数据库与 Schema 变更；
-> - API 实现与契约落地；
-> - 前端实现；
-> - 后端实现；
-> - Agent 系统实现；
-> - 测试代码编写；
-> - 单元测试、集成测试、端到端测试；
-> - 静态检查、构建、类型检查；
-> - 代码 Review；
-> - 文档变更执行；
-> - 向主 Agent 输出结构化实施与验收报告。
->
-> 子 Agent 在执行任务前 **MUST** 阅读与自身工作包相关的有效项目文档，并将这些文档视为实现围栏。
->
-> 子 Agent 一旦发现实现需要突破文档围栏，**MUST** 停止对应代码变更并上报主 Agent，不得自行以代码事实反向覆盖文档事实。
->
-> ### 3.4 推荐编排角色
->
-> 主 Agent 可按任务动态创建多个子 Agent。典型角色包括：
->
-> - Frontend Agent
-> - Backend Agent
-> - API / Contract Agent
-> - Database Agent
-> - Agent-System Agent
-> - Test Agent
-> - Review Agent
-> - Documentation Agent
->
-> 角色不是固定编制。主 Agent **MUST** 根据任务边界、并行度与依赖关系动态增减子 Agent。
->
-> ### 3.5 交叉复核
->
-> 关键代码变更 **MUST** 至少经过“实现子 Agent”和“独立复核/测试子 Agent”两个不同工作角色。
->
-> 实现 Agent **MUST NOT** 将“自己实现成功”视为最终验收结论。
->
-> 主 Agent **MUST** 仅根据子 Agent 提交的文档一致性报告、独立测试结果、独立复核结论和任务验收状态完成最终编排收口；主 Agent **MUST NOT** 亲自复跑测试、读取测试实现或进行任何形式的技术验收。
+# QuantFoundry Agent 治理
+
+本文件是开发 Agent 的最小治理入口。它定义执行顺序、事实源指针、架构边界和完成门槛；不复制产品 API、数据表、完整代码树或背景说明。
+
+## 1. 事实源与读取顺序
+
+1. `DESIGN.md` 是 QuantFoundry 唯一完整的产品与架构事实源。
+2. `README.md` 是运行入口和当前状态摘要，不是第二份设计文档。
+3. 代码、配置和运行行为是实现证据；它们不能静默改写 `DESIGN.md`。
+4. 法律文件（`LICENSE`、`NOTICE`、`THIRD_PARTY_NOTICES.md`）按各自约束处理。
+
+开始任何跨层工作前，先读取 `DESIGN.md` 中与任务相关的章节。若目标行为、状态、字段、接口、插件能力、风险规则或验收标准没有明确记录，先补文档再写代码。
+
+### 何时必须读取设计全文
+
+- 修改产品流程、研究状态、审批或部署生命周期时；
+- 修改 Nautilus ownership、插件 seam、Strategy 合同或数据导入时；
+- 修改 Polymarket、风险、recovery、heartbeat、Stop/Restart 或真实资金边界时；
+- 修改数据库、持久卷、凭据、运行拓扑、API 资源或错误语义时；
+- 进行仓库级删除、重构、依赖替换或发布验收时。
+
+## 2. 不可突破的边界
+
+- NautilusTrader 是唯一交易内核；QF 是控制平面和产品层。
+- 订单、成交、仓位、NAV、撮合、费用、市场数据和交易场所同步不在 QF 重建第二套事实账本。
+- 数据源和执行连接通过已安装的 `quantfoundry.plugins` entry point 发现；data/execution 组合必须满足设计中的兼容性约束。
+- 券商连接只使用官方 Nautilus adapter；没有官方 adapter 的交易场所不支持。
+- `parquet_l2` 只负责固定 L2 Parquet 到 Nautilus Catalog 的导入，不是自定义券商协议客户端。
+- QF 无前端、无用户/workspace/auth、无 AI/Agent/Tool、无 Paper scheduler。
+- Strategy 是可信代码，必须在独立进程运行；文档和实现不得把它描述为安全沙箱。
+- 跨 instrument 的中央逐单风险必须沿设计指定的 Rust execution seam 实现；不使用 C++，不复制 Polymarket 协议客户端。
+- API 默认绑定 `127.0.0.1:8000`，不得恢复前端的 `8080` 暴露语义。
+- 不新增应用级 SHA、hash、checksum、digest 或 fingerprint 字段、文件、状态判断或完整性流程。
+- 不预埋未来 feature flag、兼容层、在线插件安装、HA、Redis、密钥轮换或无实际迁移的迁移框架。
+
+## 3. 文档优先
+
+涉及以下任一变化时，先更新 `DESIGN.md`，再实现：
+
+- 产品能力、研究章节、状态转移、审批条件或失败语义；
+- 插件能力、配置 schema、Strategy 上传合同或数据格式；
+- API 资源、错误码、字段、数据库模型或持久化所有权；
+- 风险上限、reservation、reconciliation、heartbeat、recovery 或真实资金边界；
+- 运行拓扑、依赖版本、部署入口、验收标准或已知限制。
+
+顺序固定为：
+
+```text
+发现缺口或冲突
+→ 更新 DESIGN.md
+→ 检查 README.md / AGENTS.md 指针
+→ 实现
+→ 运行最窄有效验证
+→ 独立复核
+→ 汇总证据
+```
+
+如果实现与设计冲突，停止相关代码工作并报告冲突。不得用代码事实反向覆盖文档事实，也不得让 README 或 AGENTS 变成竞争事实源。
+
+## 4. Ponytail 实现纪律
+
+每次编码、重构、依赖选择和 review 都使用 Ponytail full：
+
+1. 先判断需求是否必须存在；推测性需求删除。
+2. 查找现有实现；能复用就不新增。
+3. 优先 Python 标准库、平台能力和已安装依赖。
+4. 再做最小局部改动；删除优先于添加，少文件、少状态、少抽象。
+5. 一个实现不建立接口、工厂或配置层来假装可扩展。
+6. 不复制 Nautilus 类型、计算、事件循环、adapter 或金融事实表。
+7. 真实的简化上限用一行 `ponytail:` 注释说明上限和升级条件；普通代码不添加口号式注释。
+
+Ponytail 不得删掉真实边界的校验、错误处理、凭据保护、数据一致性、可访问性或用户明确要求。最小 diff 必须位于正确 ownership point，而不是把补丁散落到各调用方。
+
+## 5. 分层与 ownership
+
+修改前先画出触及的调用和数据流，确认行为的真正拥有者：
+
+- API：请求校验、控制面状态、统一错误 envelope；
+- QF orchestration：研究、策略版本、Run、Approval、Deployment 和控制事件；
+- plugins：entry point 描述、配置 schema 和官方 Nautilus builder；
+- runners/workers：有限作业和独立 Nautilus 进程生命周期；
+- Nautilus：交易内核、Catalog、回测、风险、订单、成交、仓位和 reconciliation；
+- PostgreSQL：QF 控制面、Optuna 引用和风险最小投影；
+- 持久卷：Catalog、reports 和 import staging。
+
+任何同时修改两个 ownership 层的工作，都必须在设计中说明边界和失败路径。能下沉到已有 Nautilus 或 PostgreSQL 原语的行为，不在 QF 重新实现。
+
+## 6. 关键路径纪律
+
+### Strategy、回测和优化
+
+- 只接受设计规定的单个 `.py` 合同和大小上限。
+- 回测只走 `BacktestNode + ParquetDataCatalog`。
+- 优化保持 100 trial、最多 4 个独立 BacktestNode 进程和 Optuna 独立 schema。
+- Pareto 自动选择必须使用设计固定的确定性算法；不得悄悄改成人工挑选。
+- Holdout 只运行一次；审批前不得把失败 candidate 偷换进同一 Holdout。
+
+### Parquet 和外部交易
+
+- L2 importer 分批读取、严格校验十进制金额、snapshot 起始和事件连续性。
+- 导入失败不注册部分 Catalog，终态清理 staging。
+- Polymarket 订单语义遵循官方 adapter；不要引入自定义 stop/trailing/OCO 等类型。
+- 真实资金路径必须保留 production read-only preflight、最小金额 canary 和独立复核。
+
+### 风险和恢复
+
+- 25 pUSD 是具体 `InstrumentId` 的 Nautilus 原生逐单限制；100 pUSD 是 QF 中央 funder gross reservation。
+- reservation 必须在官方 client submit 前完成；无法证明为减仓的订单按全部 debit 计入。
+- 风险数据库、投影、owner、heartbeat 或 reconciliation 不完整时，增加风险 fail-closed；cancel 仍可用。
+- recovery generation 无 Strategy、无 heartbeat；armed generation 完成再次对账和风险激活后才加载 Strategy。
+- 动态 universe 变更通过受控 restart；新 instrument 未生成精确风险映射前不得交易。
+
+## 7. Agent 编排
+
+QuantFoundry 使用主 Agent + 执行子 Agent 的编排方式。主 Agent 负责：
+
+- 读取事实源并界定工作包；
+- 拆分文档、实现、测试和复核依赖；
+- 指定每个子 Agent 的输入、输出、边界和验收条件；
+- 汇总结构化报告，处理冲突、阻塞和返工；
+- 仅依据独立证据收口，不把“实现完成”当作“验收通过”。
+
+执行子 Agent 负责其工作包内的文档、代码、测试、静态检查、运行验证和 review。关键改动必须由实现 Agent 与独立复核/测试 Agent 分别承担；同一个 Agent 不能同时提供实现结论和独立验收结论。
+
+子 Agent 报告必须包含：
+
+- 修改文件和行为级摘要；
+- 对 `DESIGN.md` 的一致性结论；
+- API/schema/依赖/持久化影响；
+- 执行过的检查、结果和失败原因；
+- 未验证项、风险和阻塞；
+- 是否满足本工作包的完成标准。
+
+## 8. 验证纪律
+
+每次检查前先写清楚：它要发现的具体失败是什么；若失败，下一步会如何改变。没有这两个答案就不运行。
+
+验证顺序：
+
+1. 文档和路径自洽性；
+2. 受影响模块的最窄单元或行为检查；
+3. 跨边界集成检查；
+4. 只有在前一步失败、边界扩大或设计明确要求时才运行更宽检查。
+
+非平凡逻辑必须留下一个能在逻辑破坏时失败的最小 runnable check。真实交易、数据库锁、恢复、heartbeat、未知 submit 和插件加载不能只用 mock 自我证明；需要对应的外部或进程级证据。
+
+Review 只报告可达的真实缺陷：说明路径、影响和最小修复。不要以“可能有用”“未来也许需要”制造工作。
+
+## 9. 文档任务完成标准
+
+文档变更完成的条件是：
+
+- `DESIGN.md` 仍是唯一产品/架构事实源；
+- `README.md` 只保留入口、状态、Quick Start 和设计链接；
+- `AGENTS.md` 只保留治理规则，不复制 API、数据表和长背景；
+- 文档没有承诺当前尚未实现的 ready 状态；
+- 所有内部链接、目标端口、路径和术语互相一致；
+- 删除或重命名文件后，指针同步更新；
+- 文档校验和 `git diff --check` 通过；
+- 独立 Documentation/Architecture reviewer 无阻断意见。
+
+## 10. 代码任务完成标准
+
+代码交付前必须确认：
+
+- 先更新过受影响的设计事实源；
+- 变更位于正确 ownership point，未创建平行交易内核；
+- 没有新增前端、auth、应用级哈希或未批准的依赖/抽象；
+- 测试覆盖实际支持边界和失败语义；
+- 真正需要外部系统的部分已明确区分“已验证”“未验证”和“被阻塞”；
+- 实现报告和独立复核报告均已提交。
+
+未满足任何一项时，状态只能是未完成或部分完成，不得标记为 release-ready/live-ready。

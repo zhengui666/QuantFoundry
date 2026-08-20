@@ -5,7 +5,7 @@ labels: [enhancement, triage]
 body:
   - type: markdown
     attributes:
-      value: "For security concerns, use SECURITY.md. Product and contract changes require governed documentation updates before implementation."
+      value: "Product and contract changes require governed documentation updates before implementation."
   - type: textarea
     id: problem
     attributes:

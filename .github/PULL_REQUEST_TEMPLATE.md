@@ -17,5 +17,4 @@
 
 ## Checklist
 
-- [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md) and follow the [Code of Conduct](../CODE_OF_CONDUCT.md).
-- [ ] I reported any suspected vulnerability privately under [SECURITY.md](../SECURITY.md).
+- [ ] I read [README.md](../README.md) for the current project entry point and [AGENTS.md](../AGENTS.md) for repository governance.
