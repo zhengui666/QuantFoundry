@@ -1,6 +1,6 @@
 ---
 name: quantfoundry
-summary: Operate a QuantFoundry quantitative research and live-trading workstation through the official qf CLI. Use for plugin staging, data and connection setup, dataset import, strategy and research management, experiments, run monitoring, approval preparation, deployment monitoring, explicit Stop requests, risk inspection, universe revisions, and recovery diagnostics. Never use raw HTTP, database access, secrets, self-approval, or forced destructive actions.
+description: Operate a QuantFoundry quantitative research and live-trading workstation through the official qf CLI. Use for plugin staging, data and connection setup, dataset import, strategy and research management, experiments, run monitoring, approval preparation, deployment monitoring, explicit Stop requests, risk inspection, universe revisions, and recovery diagnostics. Never use raw HTTP, database access, secrets, self-approval, or forced destructive actions.
 ---
 
 # QuantFoundry Operator Skill
