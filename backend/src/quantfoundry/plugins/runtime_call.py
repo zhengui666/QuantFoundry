@@ -50,22 +50,25 @@ def _invoke_builder(builder: Any, public: dict[str, Any], secret: dict[str, str]
     return builder(public)
 
 
-def main() -> int:
-    request = json.load(sys.stdin)
-    plugin_id = str(request["plugin_id"])
+def _preflight(
+    plugin: Any,
+    descriptor: DescriptorSnapshot,
+    request: dict[str, Any],
+) -> dict[str, Any]:
     capability = Capability(str(request["capability"]))
     public_config = dict(request.get("public_config") or {})
     secret_config = {
         str(name): str(value) for name, value in dict(request.get("secret_config") or {}).items()
     }
-
-    plugin, descriptor = _load_plugin(plugin_id)
     if capability not in descriptor.capabilities:
         raise RuntimeError(
-            f"plugin {plugin_id!r} does not provide capability {capability.value!r}"
+            f"plugin {descriptor.plugin_id!r} does not provide capability {capability.value!r}"
         )
 
-    if capability in {Capability.HISTORICAL_IMPORT, Capability.LIVE_DATA}:
+    if capability is Capability.HISTORICAL_IMPORT:
+        method_name = "build_catalog_importer"
+        preflight_name = "preflight_importer"
+    elif capability is Capability.LIVE_DATA:
         method_name = "build_data_config"
         preflight_name = "preflight_data"
     else:
@@ -85,7 +88,7 @@ def main() -> int:
         else:
             preflight()
 
-    response = {
+    return {
         "ok": True,
         "plugin_id": descriptor.plugin_id,
         "version": descriptor.version,
@@ -93,6 +96,57 @@ def main() -> int:
         "constructed_type": f"{type(built).__module__}.{type(built).__qualname__}",
         "preflight_performed": preflight is not None and callable(preflight),
     }
+
+
+def _import_catalog(
+    plugin: Any,
+    descriptor: DescriptorSnapshot,
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    if Capability.HISTORICAL_IMPORT not in descriptor.capabilities:
+        raise RuntimeError("plugin does not provide historical import")
+    public_config = dict(request.get("public_config") or {})
+    secret_config = {
+        str(name): str(value) for name, value in dict(request.get("secret_config") or {}).items()
+    }
+    builder = getattr(plugin, "build_catalog_importer", None)
+    if builder is None or not callable(builder):
+        raise RuntimeError("plugin does not implement build_catalog_importer()")
+    importer = _invoke_builder(builder, public_config, secret_config)
+    operation = getattr(importer, "import_parquet", None)
+    if operation is None and callable(importer):
+        operation = importer
+    if operation is None or not callable(operation):
+        raise RuntimeError("catalog importer must be callable or expose import_parquet()")
+    result = operation(
+        source_path=str(request["source_path"]),
+        catalog_path=str(request["catalog_path"]),
+        instrument_id=str(request["instrument_id"]),
+        metadata=dict(request.get("metadata") or {}),
+    )
+    if result is None:
+        result = {}
+    if not isinstance(result, dict):
+        raise RuntimeError("catalog importer must return a dictionary summary")
+    return {
+        "ok": True,
+        "plugin_id": descriptor.plugin_id,
+        "version": descriptor.version,
+        "summary": result,
+    }
+
+
+def main() -> int:
+    request = json.load(sys.stdin)
+    plugin_id = str(request["plugin_id"])
+    plugin, descriptor = _load_plugin(plugin_id)
+    action = str(request.get("action", "preflight"))
+    if action == "preflight":
+        response = _preflight(plugin, descriptor, request)
+    elif action == "import_catalog":
+        response = _import_catalog(plugin, descriptor, request)
+    else:
+        raise RuntimeError(f"unsupported runtime plugin action: {action}")
     print(json.dumps(response, separators=(",", ":"), default=str))
     return 0
 
