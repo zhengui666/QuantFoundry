@@ -1,5 +1,5 @@
-"""Runtime plugin contracts and control-plane lifecycle helpers."""
+"""QuantFoundry runtime plugin management."""
 
-from quantfoundry.plugins.contract import Capability, DescriptorSnapshot
+from quantfoundry.plugins.contract import Capability, DescriptorSnapshot, RuntimePlugin
 
-__all__ = ["Capability", "DescriptorSnapshot"]
+__all__ = ["Capability", "DescriptorSnapshot", "RuntimePlugin"]
