@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.exc import SQLAlchemyError
 
 from quantfoundry.db.session import ping_database
 
@@ -31,7 +32,7 @@ def health(request: Request) -> HealthResponse:
     details: dict[str, Any] = {}
     try:
         ping_database(request.app.state.engine)
-    except Exception as exc:  # health must return a stable envelope for DB outages
+    except SQLAlchemyError as exc:
         database_state = "unavailable"
         details["database_error"] = type(exc).__name__
 

@@ -3,30 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
-    Boolean,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
-    Integer,
-    LargeBinary,
-    Numeric,
     String,
     Text,
     UniqueConstraint,
     Uuid,
     func,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from quantfoundry.db.base import Base, IDENTITY_INT, JSON_VALUE, MONEY, TimestampMixin
+from quantfoundry.db.base import Base, JSON_VALUE, TimestampMixin
 
 
 class OperationReceipt(Base):

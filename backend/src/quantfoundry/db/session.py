@@ -40,7 +40,7 @@ def session_scope(factory: SessionFactory) -> Iterator[Session]:
     try:
         yield session
         session.commit()
-    except BaseException:
+    except BaseException:  # noqa: BLE001 - rollback before re-raising caller failure
         session.rollback()
         raise
     finally:

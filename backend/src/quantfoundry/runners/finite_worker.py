@@ -91,7 +91,7 @@ def run_once(settings: Settings, *, owner: str) -> bool:
                 aggregate_id=current.id,
                 payload={"kind": current.kind},
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a job failure must reach durable state
             fail_job(session, current, str(exc))
             append_event(
                 session,
