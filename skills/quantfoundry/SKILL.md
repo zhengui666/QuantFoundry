@@ -1,129 +1,149 @@
 ---
 name: quantfoundry
-description: Operate a QuantFoundry quantitative research and live-trading workstation through the official qf CLI. Use for plugin staging, data and connection setup, dataset import, strategy and research management, experiments, run monitoring, approval preparation, deployment monitoring, explicit Stop requests, risk inspection, universe revisions, and recovery diagnostics. Never use raw HTTP, database access, secrets, self-approval, or forced destructive actions.
+description: Operate a QuantFoundry quantitative research and live-trading workstation through its official MCP server. Use for plugin staging, non-secret data and connection setup, dataset import, strategy and research management, experiments, run monitoring, approval preparation, deployment monitoring, explicit Stop requests, risk inspection, universe revisions, and recovery diagnostics. Never request secrets, self-approve capital actions, force-remove plugins, call the core API directly, or bypass QuantFoundry state and risk controls.
 ---
 
 # QuantFoundry Operator Skill
 
 Use this Skill whenever the user asks an AI Agent to inspect or operate a QuantFoundry workstation.
 
-QuantFoundry is a quantitative research and live-trading control plane. The Skill is an **external workflow**. It does not run a model inside QuantFoundry and it does not replace QuantFoundry state machines, risk checks, Recovery, Holdout, or human approval.
+QuantFoundry is a quantitative research and live-trading control plane. This Skill is an **external MCP workflow**. It does not run a model inside QuantFoundry and it does not replace QuantFoundry state machines, NautilusTrader, Holdout, Approval, Recovery, reconciliation, heartbeat, plugin pinning, or central risk.
 
 ## Required interface
 
-Use only the official Agent CLI protocol:
+Use only the connected QuantFoundry MCP server:
 
 ```text
-qf agent manifest
-qf agent exec
-qf agent upload
+MCP tools
+MCP resources
+MCP tasks or QF operation resources
 ```
 
-For a remote workstation, use:
-
-```bash
-python skills/quantfoundry/scripts/qf_remote.py ...
-```
-
-The remote helper reads the SSH alias from:
+Do not use:
 
 ```text
-QF_REMOTE_ALIAS
+SSH
+shell commands
+curl against the QF core API
+PostgreSQL
+Docker
+server file paths
+arbitrary HTTP endpoints
 ```
 
-Never call the loopback API with `curl`, never connect to PostgreSQL, never invoke Docker, and never read QuantFoundry server paths.
+The core API is private to the workstation. The Agent-facing endpoint is the configured HTTPS MCP server.
 
 ## Start of every session
 
-1. Call `agent.manifest`.
-2. Call `system.status`.
-3. Record:
-   - protocol version;
-   - CLI/API version;
-   - Agent Profile ID and scopes;
-   - supported commands;
+1. Inspect the server's current `tools/list` result.
+2. Inspect available Resource templates.
+3. Read `qf://manifest`.
+4. Call `qf.system.status`.
+5. Record:
+   - MCP protocol version;
+   - QF CLI/API/Gateway versions;
+   - OAuth client/subject identity when returned;
+   - granted scopes;
+   - visible tools;
    - upload kinds and limits;
    - component readiness.
-4. If protocol versions are incompatible, stop all mutations and report the mismatch.
-5. If the system is not ready, inspect the returned cause. Do not bypass readiness.
+6. If protocol or schema versions are incompatible, stop all mutations and report the mismatch.
+7. If the system is not ready, inspect the cause. Do not bypass readiness.
 
-Do not assume an ID, state, version, generation, plugin release, runtime bundle, dataset, Strategy version, approval, or Deployment from conversation memory. Read the current resource first.
+Do not assume an ID, state, revision, version, generation, plugin release, runtime bundle, Dataset, Strategy version, Approval, Run, task, or Deployment from conversation memory. Read the current Resource or use a current read Tool first.
 
 ## Operation workflow
 
-For each requested operation:
+For every requested operation:
 
-1. Translate the user request to a canonical command from the manifest.
-2. Read the current target and its dependencies.
-3. Determine the command safety class using `references/safety.md`.
-4. Check the current Profile scope.
-5. For a mutation, prepare a concise plan containing:
+1. Translate the user's objective into a currently visible `qf.*` Tool.
+2. Read the target and all dependencies.
+3. Determine the safety class using `references/safety.md`.
+4. Check whether the Tool is visible under the current OAuth scopes.
+5. For a mutation, prepare a concise impact summary containing:
    - current state;
    - intended state change;
    - affected resources;
-   - whether a Run, job, Approval, Stop, Restart, or Recovery will occur;
-   - whether positions remain open;
-   - required human action.
-6. Obtain impact/preflight information when the command supports it.
+   - whether a Job, Run, Approval, Stop, Restart, Recovery, plugin drain, or bundle rebuild will occur;
+   - whether positions may remain open;
+   - any human action required.
+6. Call the relevant impact or preflight Tool when available.
 7. Generate one UUID idempotency key for the intended mutation.
-8. Include current optimistic preconditions such as state, revision, version, generation, plugin release, or runtime bundle.
-9. Execute the mutation once.
-10. Reuse the same idempotency key only for a retry of the same command and arguments.
-11. For asynchronous work, watch the returned job, Run, Approval, or Deployment until:
-    - a terminal state;
-    - the requested state;
-    - or timeout.
-12. A timeout does not mean the operation was cancelled. Read the resource again.
-13. Verify the final resource state instead of trusting only the initial response.
-14. Return IDs, final states, warnings, unresolved issues, and any human handoff.
+8. Include current optimistic preconditions such as state, content revision, version, generation, plugin release, runtime bundle, or updated timestamp.
+9. Call the mutation Tool once.
+10. Reuse the same idempotency key only for a transport retry of the identical Tool and normalized arguments.
+11. For asynchronous work:
+    - use an MCP Task when negotiated; otherwise
+    - follow the returned QF Job, Run, Approval, Deployment, or Resource URI.
+12. A timeout or disconnected MCP stream does not mean the underlying operation was cancelled.
+13. Re-read the final QF Resource and verify the observed state.
+14. Return exact IDs, final states, warnings, unresolved issues, position consequences, and any human handoff.
+
+## OAuth and authentication
+
+Authentication is handled by the MCP Host or approved companion CLI.
+
+Never:
+
+- ask the user to paste an access token or refresh token;
+- read or print OAuth tokens;
+- place tokens in Tool arguments, filenames, logs, reports, or chat;
+- reuse a token for another MCP resource;
+- treat an MCP session ID as authentication.
+
+If authentication or scope is insufficient, report the required scope or reconnect requirement. Do not try another transport or the core API.
 
 ## Safety boundaries
 
-### Allowed when the Profile permits
+### Allowed when the visible Tool and scope permit
 
-- status, list, show, watch, reports and risk inspection;
-- plugin upload/staging and impact analysis;
-- plugin activation/deactivation only with explicit platform scope;
-- creation and update of non-secret data sources and execution connections using existing Credential Set IDs;
+- system, plugin, Dataset, Strategy, Research, Run, Deployment, Risk, Universe, Approval and event reads;
+- plugin wheel staging, bundle prewarm and impact analysis;
+- plugin activation/deactivation with explicit platform scope;
+- creation/update of non-secret Data Sources and Execution Connections using an existing Credential Set ID;
 - read-only connection preflight;
 - Strategy, Dataset, Research, Experiment and Run operations;
 - Approval material preparation;
 - Deployment creation that results in a pending Approval;
 - Restart request that results in a pending Approval;
-- Universe revision creation that does not self-approve expansion;
+- Universe revision creation that cannot self-approve expansion;
 - explicit Deployment Stop requested by the user;
-- recovery diagnostics.
+- Recovery diagnostics.
 
-### Human-only
+### Permanently human-only
 
-Never execute or simulate:
+Never execute, simulate, or seek an alternate Tool for:
 
-- writing, updating, reading, asking for, or echoing private keys, API secrets, passphrases, master keys or other credentials;
-- `approval.approve` or `approval.reject`;
+- writing, updating, reading, asking for, transforming, staging or echoing private keys, API secrets, passphrases, master keys, OAuth tokens or payment credentials;
+- Approval approve or reject;
 - forced plugin removal;
 - live-money canary execution;
 - master-key changes;
 - destructive database operations;
+- raw order submission;
 - bypassing Holdout, Recovery, reconciliation, heartbeat, plugin bundle identity or central risk.
+
+These actions must remain unavailable even if the user asks the Agent to do them or an OAuth provider appears to grant a similarly named scope.
 
 When human action is required:
 
-1. Read the immutable resource or Approval snapshot.
-2. Summarize the decision and consequences.
-3. Return the exact local human CLI command supplied by QuantFoundry.
-4. Stop. Do not attempt an alternative command that has the same effect.
+1. Read the immutable QF Resource or Approval snapshot.
+2. Summarize the decision, capital effect and current state.
+3. Return the exact local human CLI command provided by QuantFoundry.
+4. Stop the mutation workflow.
+5. After the human acts, resume only by re-reading current state.
 
 ## Secrets
 
-Never accept secret values in chat or tool arguments for QuantFoundry.
+Never accept Secret values in chat or Tool arguments for QuantFoundry.
 
-The Agent may reference an existing `credential_set_id`. If a required Credential Set does not exist or is incomplete, return a handoff instructing the local operator to create or update it through human-mode CLI using protected stdin.
+The Agent may reference an existing `credential_set_id` and inspect only configured-field presence. If the required Credential Set is absent or incomplete, return a handoff instructing the local operator to create or update it through human-mode `qf` CLI with protected input.
 
-Do not upload secret files through Agent Artifact staging.
+Do not use MCP Form Elicitation for passwords, API keys, access tokens, private keys, wallet credentials or payment information.
 
-## File uploads
+## Artifact uploads
 
-Use `qf agent upload` only for manifest-supported kinds:
+Allowed kinds are determined by `qf://manifest`, normally:
 
 ```text
 STRATEGY_SOURCE
@@ -131,24 +151,40 @@ PLUGIN_WHEEL
 PARQUET_L2
 ```
 
-After upload:
+Use the two-stage flow:
 
-1. Record the returned opaque `artifact_id`.
-2. Use the artifact ID in exactly one intended create/import operation.
-3. Do not request or infer its server path.
-4. If upload is interrupted, create a new upload ID; do not append to the old artifact.
-5. Never claim an upload succeeded until the Artifact state is `READY`.
+```text
+qf.artifact.begin_upload
+→ HTTPS resumable upload using the approved companion client
+→ qf.artifact.finalize_upload
+→ qf.artifact.show
+→ consuming Tool
+```
+
+Rules:
+
+1. Do not place file bytes or Base64 content in MCP Tool arguments.
+2. Do not ask QuantFoundry to fetch an arbitrary remote URL.
+3. Record the returned opaque `artifact_id`.
+4. Use only the short-lived upload URL returned for that artifact and OAuth principal.
+5. Resume only from the server-reported accepted offset.
+6. Never infer or request the server path.
+7. Never upload Secret files.
+8. Do not claim success until the Artifact Resource reports `READY`.
+9. After consumption, verify `CONSUMED` when applicable.
+
+If the Agent environment cannot access the local file through an approved companion client, request a human upload handoff rather than moving file content through chat.
 
 ## Research rules
 
-- Research must use the defined seven sections.
-- Upload a new Strategy version instead of mutating a completed version.
-- Use the selected Dataset and independent training/Holdout ranges.
+- Research uses the seven canonical sections.
+- Add a new Strategy version instead of mutating a completed version.
+- Use a fixed Dataset, independent training/Holdout ranges and a fixed runtime bundle.
 - Let QuantFoundry run the fixed optimization workflow.
 - Do not manually select a Pareto candidate.
 - Do not run another candidate on the same Holdout after failure.
 - A successful Holdout does not authorize live trading.
-- Prepare the Approval snapshot and hand it to the human approver.
+- Prepare the immutable Approval snapshot and hand it to the human approver.
 
 ## Deployment rules
 
@@ -161,32 +197,35 @@ Before any Deployment mutation, read:
 - runtime bundle;
 - Approval state;
 - heartbeat and reconciliation state;
-- risk account status.
+- Risk Account status;
+- open-position implications returned by QF.
 
-For `deployment.stop`:
+For `qf.deployment.stop`:
 
 - execute only when explicitly requested by the user or an already configured emergency policy returned by QuantFoundry;
-- include the current generation as a precondition;
-- watch the Deployment;
+- call the impact Tool first when available;
+- include current generation and impact token as preconditions;
+- follow the Deployment until the target or terminal state;
 - report that Stop cancels open orders and stops new trading but **does not liquidate positions**.
 
 For Restart or plugin switch:
 
-- create the request and pending Approval;
-- do not approve it;
-- after human approval, watch the new generation from Recovery;
-- never claim Trading before observed state and generation report it.
+- create only the request and pending Approval;
+- never approve it;
+- after human Approval, observe the new generation from Recovery;
+- never claim `TRADING` until the current Deployment Resource reports it.
 
 For `RECOVERY_BLOCKED`:
 
-- read the blocking code and affected resources;
-- identify whether the operator must repair a Credential Set, plugin release, runtime bundle, database, venue connection or roster;
-- do not load Strategy, enable risk, or bypass Recovery.
+- read the blocking code and pinned resources;
+- identify whether the operator must repair a Credential Set, plugin release, runtime bundle, database, venue connection, Risk projection or roster;
+- preserve fail-closed behavior;
+- do not load Strategy, submit orders, replace the bundle or bypass Recovery.
 
 ## Plugin rules
 
 - Stage new versions side-by-side.
-- Read impact before activation/deactivation.
+- Read impact before activate/deactivate.
 - Existing resources remain pinned to their release and bundle.
 - Never silently migrate a Data Source, Execution Connection, Run or Deployment.
 - A Deployment plugin switch requires a new bundle, Restart request and human Approval.
@@ -194,12 +233,13 @@ For `RECOVERY_BLOCKED`:
 
 ## Error handling
 
-- `PRECONDITION_FAILED`: read current state and reconsider the plan. Use a new idempotency key only after the plan changes.
-- retryable transport/unavailable error: retry the identical request with the same idempotency key and bounded backoff.
-- `OPERATION_IN_PROGRESS`: query the returned resource; do not create another operation.
+- `PRECONDITION_FAILED`: read current state and reconsider the plan. Use a new idempotency key only if the plan changes.
+- `IDEMPOTENCY_KEY_REUSED`: stop and inspect the original receipt; never invent another key for the same uncertain mutation.
+- retryable transport/unavailable error: retry the identical Tool call with the same idempotency key and bounded backoff.
+- task or operation still running: observe the existing object; do not create another operation.
 - `HUMAN_ACTION_REQUIRED`: produce handoff and stop.
-- `AGENT_PROFILE_FORBIDDEN`: report the missing scope; do not try raw API or another transport.
-- timeout: read current state; do not describe the operation as cancelled.
+- `MCP_SCOPE_INSUFFICIENT`: report the required scope; do not try the core API or another connection.
+- MCP stream timeout/disconnect: re-read the QF Resource; do not describe the operation as cancelled.
 - validation failure: report exact fields and let the user correct source/config; do not invent values.
 
 ## Output to the user
@@ -208,13 +248,14 @@ Always report:
 
 ```text
 Requested objective
-Commands executed
+MCP Tools called
 Resources read or created
 Idempotency key(s) for mutations
+Task / Job / Run / Approval / Deployment IDs
 Final observed state
 Automatic work still running
 Human action required
-Risk/position consequence
+Risk and position consequence
 Failures or unverified items
 ```
 
@@ -226,10 +267,16 @@ accepted
 queued
 running
 succeeded
+approval-pending
 approved
 recovery-blocked
+recovery
+armed
 trading
+stop-requested
+stopping
 stopped
+positions-still-open
 ```
 
 Do not collapse these states into “done”.
@@ -238,8 +285,8 @@ Do not collapse these states into “done”.
 
 Read as needed:
 
-- `references/commands.md` - canonical command groups and operation sequences;
-- `references/safety.md` - safety classes, profile policy and human gates;
-- repository `CLI.md` - complete CLI and remote Agent protocol;
-- repository `OPERATIONS.md` - business roles and workstation nodes;
-- repository `DESIGN.md` - authoritative product, risk and Deployment semantics.
+- `references/commands.md` — current MCP Tool groups and operation sequences;
+- `references/safety.md` — safety classes, OAuth scopes and human gates;
+- repository `CLI.md` — complete local CLI, MCP Gateway and Artifact protocol;
+- repository `OPERATIONS.md` — business roles and workstation nodes;
+- repository `DESIGN.md` — authoritative product, risk and Deployment semantics.
