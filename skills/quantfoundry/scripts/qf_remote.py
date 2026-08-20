@@ -38,11 +38,26 @@ def _command(mode: str) -> list[str]:
     return ["ssh", "-T", alias, mode]
 
 
-def _forward_result(result: subprocess.CompletedProcess[bytes]) -> int:
-    sys.stdout.buffer.write(result.stdout)
+def _forward_streams(stdout: bytes, stderr: bytes) -> None:
+    sys.stdout.buffer.write(stdout)
     sys.stdout.buffer.flush()
-    sys.stderr.buffer.write(result.stderr)
+    sys.stderr.buffer.write(stderr)
     sys.stderr.buffer.flush()
+
+
+def _run_capture(command: list[str], *, input_bytes: bytes | None = None) -> int:
+    try:
+        result = subprocess.run(
+            command,
+            input=input_bytes,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        print(f"transport executable not found: {exc.filename}", file=sys.stderr)
+        return 127
+    _forward_streams(result.stdout, result.stderr)
     return result.returncode
 
 
@@ -71,25 +86,11 @@ def _read_jsonl(path: str) -> bytes:
 
 
 def command_manifest(_: argparse.Namespace) -> int:
-    result = subprocess.run(
-        _command("manifest"),
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    return _forward_result(result)
+    return _run_capture(_command("manifest"))
 
 
 def command_exec(args: argparse.Namespace) -> int:
-    payload = _read_jsonl(args.request)
-    result = subprocess.run(
-        _command("exec"),
-        input=payload,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    return _forward_result(result)
+    return _run_capture(_command("exec"), input_bytes=_read_jsonl(args.request))
 
 
 def _copy_file(source: BinaryIO, destination: BinaryIO) -> None:
@@ -125,12 +126,17 @@ def command_upload(args: argparse.Namespace) -> int:
         + b"\n"
     )
 
-    process = subprocess.Popen(
-        _command("upload"),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        process = subprocess.Popen(
+            _command("upload"),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        print(f"transport executable not found: {exc.filename}", file=sys.stderr)
+        return 127
+
     assert process.stdin is not None
     try:
         process.stdin.write(header_bytes)
@@ -139,15 +145,18 @@ def command_upload(args: argparse.Namespace) -> int:
         process.stdin.close()
         process.stdin = None
         stdout, stderr = process.communicate()
+    except (BrokenPipeError, OSError) as exc:
+        process.kill()
+        stdout, stderr = process.communicate()
+        _forward_streams(stdout, stderr)
+        print(f"artifact upload transport failed: {exc}", file=sys.stderr)
+        return 10
     except BaseException:
         process.kill()
         process.wait()
         raise
 
-    sys.stdout.buffer.write(stdout)
-    sys.stdout.buffer.flush()
-    sys.stderr.buffer.write(stderr)
-    sys.stderr.buffer.flush()
+    _forward_streams(stdout, stderr)
     return process.returncode
 
 
