@@ -319,21 +319,18 @@ RISKS
 CONCLUSION
 ```
 
-### 5.2 Experiment 与 Run
+### 5.2 Experiment、Run 与 Plugin job
 
-Run 类型：
+Research Run 类型：
 
 ```text
-PLUGIN_INSTALL
-PLUGIN_BUNDLE_BUILD
-PLUGIN_REMOVE
 PARQUET_IMPORT
 BACKTEST
 OPTIMIZATION
 HOLDOUT
 ```
 
-研究 Run 状态：
+Run 状态：
 
 ```text
 QUEUED → RUNNING → SUCCEEDED
@@ -341,7 +338,15 @@ QUEUED → RUNNING → SUCCEEDED
                  └→ CANCELLED
 ```
 
-插件管理作业使用同一 `jobs` 队列，但其业务状态写入 plugin release/runtime bundle；不伪装成 Research experiment。终态不可重新打开；重试创建新 Run 或新 job。有限作业的子进程退出码、标准错误摘要和报告引用必须写回。
+插件管理只使用 `jobs.kind`：
+
+```text
+PLUGIN_INSTALL
+PLUGIN_BUNDLE_BUILD
+PLUGIN_REMOVE
+```
+
+Plugin job 不创建 Research `runs` 行，也不挂到 Experiment；其业务状态写入 `plugin_releases` 或 `plugin_runtime_bundles`。Research Run 和 plugin job 的终态均不可重新打开；重试必须创建新的 Run 或 job。子进程退出码、标准错误摘要和报告/状态引用必须写回对应资源。
 
 ### 5.3 Approval
 
@@ -410,7 +415,7 @@ Deployment 固定 `runtime_bundle_id`、data plugin release 和 execution plugin
 
 | 表 | 关键字段 | 约束/用途 |
 |---|---|---|
-| `plugin_releases` | `id`, `plugin_id`, `distribution_name`, `version`, `api_version`, `state`, `is_default`, `descriptor_snapshot`, `last_error`, `created_at`, `activated_at`, `removed_at` | `(plugin_id, version)` 唯一；同一 `plugin_id` 最多一个 default active release |
+| `plugin_releases` | `id`, `plugin_id`, `distribution_name`, `version`, `api_version`, `state`, `is_default`, `descriptor_snapshot`, `last_error`, `created_at`, `activated_at`, `removed_at` | `(plugin_id, version)` 永久唯一；同一 `plugin_id` 最多一个 default active release |
 | `plugin_artifacts` | `id`, `plugin_release_id`, `role`, `filename`, `relative_path`, `package_name`, `package_version`, `created_at` | `role=PRIMARY|DEPENDENCY`；只接受 wheel；不保存 QF checksum |
 | `plugin_runtime_bundles` | `id`, `state`, `python_version`, `qf_version`, `nautilus_version`, `environment_path`, `last_error`, `created_at`, `ready_at`, `removed_at` | `BUILDING|READY|FAILED|STALE|REMOVED`；目录完成后不可原地修改 |
 | `plugin_runtime_bundle_members` | `runtime_bundle_id`, `plugin_release_id`, `member_role` | 明确记录 bundle 内 release；不使用组合 hash |
@@ -422,15 +427,17 @@ RECEIVED → INSTALLING → VALIDATING → STAGED → ACTIVE
                          └────────────→ FAILED
 ACTIVE → DRAINING → INACTIVE → REMOVING → REMOVED
 STAGED → REMOVING → REMOVED
+FAILED → INSTALLING | REMOVING
 ```
 
 规则：
 
-- `ACTIVE` 是新绑定的默认 release；激活新版本时，旧 active release 在同一事务中进入 `DRAINING`。
+- `ACTIVE` 是新绑定的默认 release；激活新版本时，旧 active release在同一事务中进入 `DRAINING`。
 - `DRAINING` 禁止新 data source、execution connection 或 deployment 绑定，但允许已有绑定完成作业、自动 recovery 或人工 Stop。
-- `DRAINING` 在无活跃/排队运行引用后进入 `INACTIVE`。
+- `DRAINING` 在无活跃/排队运行引用后进入 `INACTIVE`；处于 `INACTIVE` 的旧持久绑定不能启动新的 Run 或人工 Restart，除非重新激活或迁移。
 - `REMOVED` 只删除 artifact 和 bundle 文件，不删除数据库 tombstone。
-- `FAILED` release 不允许激活；重新上传必须使用新版本号或先物理移除失败 release。
+- `FAILED` release 不允许激活；若原 artifacts 完整，可以创建新 `PLUGIN_INSTALL` job 重试同一 release，否则必须上传新的 version。
+- `(plugin_id, version)` 在 tombstone 后仍不可复用；任何重新构建必须提升 version。
 
 ### 6.3 控制面表
 
@@ -505,6 +512,8 @@ created_at TIMESTAMPTZ
 
 - 一个 PRIMARY wheel；
 - 零个或多个 DEPENDENCY wheels；
+- 同一个 wheel 集内每个 distribution name 只能出现一个 version；
+- DEPENDENCY wheel 不得声明 `quantfoundry.plugins` entry point；
 - 不接受 sdist、editable install、源码目录、Git URL 或任意可变远程 URL；
 - 包含 native extension 时必须提供与目标 Python/平台兼容的预编译 wheel。
 
@@ -515,7 +524,7 @@ PRIMARY wheel 必须声明恰好一个 entry point：
 <plugin_id> = "<module>:<descriptor_factory>"
 ```
 
-Entry point name、descriptor `plugin_id` 和安装请求声明的 `plugin_id` 必须一致；distribution version 与 descriptor version 必须一致。
+Entry point name、descriptor `plugin_id` 和安装请求声明的 `plugin_id` 必须一致；distribution version 与 descriptor version 必须一致。一次 release validation environment 中必须只发现这一个目标 entry point。
 
 API 和长生命周期进程只读取数据库中持久化的 descriptor snapshot，不直接调用 `entry_points()` 或导入插件。Entry point 的发现与 `.load()` 只发生在独立 validator/runner 进程。
 
@@ -560,6 +569,7 @@ RECEIVED
   → 将 wheel 集写入 imports/plugin-install/{release_id}/
   → 解析 wheel METADATA 和 entry point 声明（不执行插件）
   → 创建一次性 validation venv
+  → 从 core wheelhouse 安装固定 QF plugin contract、Nautilus 和约束依赖
   → uv 离线安装 PRIMARY + DEPENDENCY wheels
   → uv pip check
   → validator 子进程加载唯一 entry point
@@ -573,6 +583,7 @@ RECEIVED
 
 - 使用 backend image 内固定的 `uv`；
 - `--offline --no-index --only-binary :all:`；
+- 使用 core lock 生成的精确 constraints，插件不得替换 QF/Nautilus/core dependency 版本；
 - 禁止 Python 自动下载；
 - 不执行 sdist build；
 - validation venv 和失败 staging 在 `finally` 清理；
@@ -597,13 +608,15 @@ runtime bundle
 
 1. 以数据库 UUID 创建临时 bundle 目录；
 2. 使用与 backend image 相同的 Python patch version 创建 venv；
-3. 从 image 内 core wheelhouse 和 plugin artifact 目录离线安装；
+3. 从 image 内 core wheelhouse 和 plugin artifact 目录按 core constraints 离线安装；
 4. 执行 `uv pip check`；
 5. 在 bundle Python 中重新发现和加载所有指定 entry points；
 6. 校验 release 组合、`compatibility_key`、QF/Nautilus/Python 版本；
-7. 执行最小 builder construction check，不连接真实 venue；
+7. 校验 descriptor/builder 可调用性和 Nautilus factory 注册；不伪造业务配置，也不连接真实 venue；
 8. 原子 rename 到 `/var/lib/quantfoundry/plugins/bundles/{bundle_id}`；
 9. 状态变为 `READY`，目录只读。
+
+实际 data source、execution connection 或 deployment 在首次使用前，必须在该 bundle 的独立 preflight 子进程中使用其真实 public config、secret presence 和资源上下文构造配置。需要真实网络的 Polymarket preflight 仍按生产只读流程单独执行，不能由 generic bundle build 冒充。
 
 Bundle 完成后不得原地 `pip install`、`pip uninstall` 或修改文件。需要新插件版本或新组合时创建新 bundle。
 
@@ -642,8 +655,8 @@ backend image 的 Python、QF 或 Nautilus 版本变化后，旧 bundle 标记�
 `POST /api/v1/plugin-releases/{id}/deactivate`：
 
 - 立即进入 `DRAINING`，禁止新绑定；
-- 已启动 finite Run 可以完成；
-- 已有 live deployment 可以继续、自动 recovery 或人工 Stop，但不能创建引用该 release 的新 deployment；
+- 已经入队或运行的 finite Run 可以完成；
+- 已有 live deployment 可以继续、自动 recovery 或人工 Stop，但不能人工 Restart，也不能创建引用该 release 的新 deployment；
 - 无 active/queued 运行引用后自动进入 `INACTIVE`；
 - 控制面保持运行。
 
@@ -655,7 +668,7 @@ backend image 的 Python、QF 或 Nautilus 版本变化后，旧 bundle 标记�
 - 强制删除：先进入 `DRAINING`，取消尚未启动的相关 jobs，请求受影响 deployment 按标准 Stop 撤单并退出 runner，待所有子进程终止后把依赖资源标记为 `BLOCKED_PLUGIN_REMOVED`；
 - 删除仅清理该 release artifacts 和不再被引用的 bundles；
 - 数据库 release 行保留为 `REMOVED` tombstone；
-- 强制删除不强平现有仓位，后续恢复需要重新安装兼容 release 或重新绑定可用连接。
+- 强制删除不强平现有仓位，后续恢复需要重新安装新 version 的兼容 release 或重新绑定可用连接。
 
 ### 7.6 为什么不做进程内 reload/unload
 
@@ -777,7 +790,7 @@ Nautilus BacktestNode + ParquetDataCatalog
 
 QF 保存 `BacktestResult` 的标准 summary、PnL/return/general stats、returns series、counts 和 timestamps。orders/fills/positions/account 报告使用 Nautilus 官方 report 生成函数写入 reports volume；QF 只保存文件引用。
 
-每个 Run 在入队前固定 `runtime_bundle_id`。若只需要 core Nautilus，则使用 core bundle；若 Strategy 或数据路径需要 plugin release，则使用包含确切 release 的 bundle。Bundle 后续变成 `DRAINING` 不影响已入队 Run，变成 `REMOVED/STALE` 且尚未启动时 Run 必须失败或重建，不得漂移到其他版本。
+每个 Run 在入队前固定 `runtime_bundle_id`。若只需要 core Nautilus，则使用零插件成员的 core bundle；若 Strategy 或数据路径需要 plugin release，则使用包含确切 release 的 bundle。Bundle 成员 release 后续进入 `DRAINING` 不影响已经入队或运行的 Run。若固定 bundle 在子进程启动前变成 `STALE` 或 `REMOVED`，Run 以 `PLUGIN_RUNTIME_UNAVAILABLE` 失败；重试必须创建新 Run 并显式选择新构建的 bundle，不得原地改写旧 Run 或漂移到其他 release。
 
 ### 11.2 Optuna 配置
 
@@ -1067,7 +1080,7 @@ runner 中的 execution observer 订阅 Nautilus 订单/成交/取消/拒绝事�
 7. 完成 funder 风险 reconciliation；
 8. 无法证明完整时保持 `RECOVERY_BLOCKED`，指数退避重试，上限 60 秒。
 
-如果 release 已 `DRAINING`，原 deployment 仍可执行 recovery；如果 artifacts/bundle 已被强制移除，必须保持 `RECOVERY_BLOCKED`，不得漂移到同 plugin_id 的其他版本。
+如果 release 已 `DRAINING`，原 deployment 仍可执行自动 recovery；如果 artifacts/bundle 已被强制移除，必须保持 `RECOVERY_BLOCKED`，不得漂移到同 plugin_id 的其他版本。
 
 ### 16.3 Armed generation
 
@@ -1086,7 +1099,8 @@ runner 中的 execution observer 订阅 Nautilus 订单/成交/取消/拒绝事�
 - 人工 Restart：创建新的 start approval；批准后进入新的 recovery generation；
 - 进程崩溃：自动启动原 bundle 的 recovery generation，可沿用原审批；
 - universe 变化：通过受控 restart，不在运行节点内热改 config；
-- plugin switch：先更新绑定并构建新 bundle，再创建新的 start approval；批准后用新 bundle 从 recovery 开始，不在旧 TradingNode 内 reload。
+- plugin switch：先更新绑定并构建新 bundle，再创建新的 start approval；批准后用新 bundle 从 recovery 开始，不在旧 TradingNode 内 reload；
+- core/QF/Nautilus 升级使原 bundle `STALE` 时，不允许自动 recovery 使用替代 bundle；操作者必须构建新 bundle并重新审批启动。
 
 ## 17. 部署、配置与依赖
 
@@ -1134,7 +1148,7 @@ Optuna `optuna` schema 由 Optuna 自己初始化和管理。
 
 Core runtime 依赖仅保留：FastAPI、Uvicorn、Pydantic、SQLAlchemy、Alembic、psycopg、cryptography、PyArrow、Optuna、Nautilus/QF native wheel、uv 和 multipart upload 所需包。
 
-Backend image 提供只读 core wheelhouse，包含构建 runtime bundle 所需的精确 QF runner、Nautilus、risk wheel 和 core dependencies。插件必须随上传提供 core wheelhouse 未包含的依赖 wheels。
+Backend image 提供只读 core wheelhouse，包含构建 validation venv/runtime bundle 所需的精确 QF plugin contract/runner、Nautilus、risk wheel 和 core dependencies。插件必须随上传提供 core wheelhouse 未包含的依赖 wheels。
 
 删除 LangGraph、LangGraph checkpointer、PyYAML、jsonschema、DuckDB、datamodel-code-generator、前端 Node 依赖及其运行路径，除非后续设计变更证明存在真实需求。
 
@@ -1182,15 +1196,16 @@ Mock 只能证明本地分支逻辑；wheel 安装、entry point 加载、native
 
 - [ ] API 运行期间可以上传 wheel 集并完成 `RECEIVED → STAGED → ACTIVE`，无需重启任何 control-plane service。
 - [ ] API/finite-worker/live-supervisor 主进程不导入第三方 plugin module。
-- [ ] 非 wheel、sdist、editable、远程 URL、依赖冲突和不兼容 Python/QF/Nautilus 被拒绝。
+- [ ] 非 wheel、sdist、editable、远程 URL、重复 distribution version、依赖冲突和不兼容 Python/QF/Nautilus 被拒绝。
 - [ ] descriptor import 崩溃或超时只使该 release `FAILED`，其他插件和 API 保持可用。
 - [ ] 同一 plugin_id 新版本 side-by-side 激活，旧版本进入 `DRAINING`，已有资源不被偷换版本。
-- [ ] runtime bundle 离线构建、`uv pip check`、entry point reload-in-new-process 和 builder construction check 通过。
+- [ ] runtime bundle 离线构建、core constraints、`uv pip check`、entry point load、descriptor/builder callable check 和 factory registration 通过。
+- [ ] 真实资源 config construction 在 bundle preflight 子进程中通过；generic bundle build 不伪造 credential 或 venue connection。
 - [ ] bundle immutable；不存在对 READY bundle 原地 install/uninstall。
-- [ ] 普通 deactivate 阻止新绑定，已有 Run/deployment 可 drain。
+- [ ] 普通 deactivate 阻止新绑定，已有 Run/deployment 可 drain，但 draining release 不允许人工 Restart。
 - [ ] 非强制 remove 在仍被使用时返回 `PLUGIN_IN_USE`。
 - [ ] 强制 remove 先停止受影响 runner、取消未启动 job，再删除 artifacts/bundles；不强平仓位。
-- [ ] control-plane/core 升级后旧 bundle 变为 `STALE`，不会用于新 generation。
+- [ ] control-plane/core 升级后旧 bundle 变为 `STALE`，不会用于新 Run/generation，且不会被静默替换。
 - [ ] release、artifact 和 bundle 身份不依赖 QF 应用级 hash/checksum/fingerprint。
 
 #### 产品与控制面
