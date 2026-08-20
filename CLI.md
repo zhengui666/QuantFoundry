@@ -1,511 +1,679 @@
-# QuantFoundry CLI 与远程 AI Agent Skill 技术设计
+# QuantFoundry CLI、MCP Gateway 与远程 AI Agent Skill 技术设计
 
 > 文档状态：目标方案，尚未实现。  
 > 适用分支：`codex/quantfoundry-nautilus-redesign`。  
-> 上位事实源：[`DESIGN.md`](DESIGN.md)。本文件展开 CLI、远程 Agent 传输和 Skill 的实现合同，不得引入与 `DESIGN.md` 冲突的产品状态、交易事实或风险语义；发生冲突时先修改 `DESIGN.md`。
+> 上位事实源：[`DESIGN.md`](DESIGN.md)。本文件展开本地 CLI、远程 MCP 接入和 Skill 的实现合同；不得修改 `DESIGN.md` 已确定的研究状态机、交易事实、风险限额、Recovery 或人工审批语义。
 
-## 1. 目标
+## 1. 结论
 
-QuantFoundry 需要同时服务两类调用者：
+QuantFoundry 使用两条正式操作通道：
 
-1. 本机单操作员，通过终端完成工作台操作；
-2. 运行在其他机器或云环境中的 AI Agent，通过稳定、可审计、可限制的机器接口完成受托操作。
+```text
+本地人类操作者
+  → qf CLI
+  → loopback QF API
 
-正式调用面固定为官方 CLI：
+远程 AI Agent
+  → MCP client
+  → HTTPS MCP Streamable HTTP endpoint
+  → qf-mcp-gateway
+  → internal QF API
+```
+
+**远程 Agent 不使用 SSH。** 仓库不提供 SSH forced command、远程 Shell 包装器、自定义 JSONL 隧道或端口转发方案。
+
+本地 CLI 与 MCP Gateway 都是薄适配层：
+
+- 不复制领域状态机；
+- 不直接操作 PostgreSQL、Docker、Nautilus 或持久卷；
+- 不绕过 Approval、Holdout、Recovery、风险或插件版本固定；
+- 最终行为仍由 QF API 和领域服务拥有。
+
+## 2. 目标
+
+### 2.1 本地 CLI
+
+官方本地命令固定为：
 
 ```text
 qf
 ```
 
-CLI 的目标是：
+用于：
 
-- 覆盖 `OPERATIONS.md` 中全部工作台节点；
-- 为人类提供可读输出，为 Agent 提供稳定 JSON 输出；
-- 将远程 Agent 与 loopback API、PostgreSQL、Docker、插件目录和交易进程隔离；
-- 对重试、长任务、并发状态变化和文件上传提供确定语义；
-- 将真实资金审批、Secret 写入和强制破坏操作保留给本地人工；
-- 允许 Agent 完成研究、数据准备、插件 staging、运行监控、审批材料准备和显式授权的风险收缩操作；
-- 保留 QF 的单机单操作员产品边界，不在 V1 建设多用户 SaaS 或内置模型运行时。
+- 系统状态和诊断；
+- 插件、Credential、Data Source 和 Execution Connection 管理；
+- Dataset、Strategy、Research、Experiment 和 Run；
+- 人工 Approval；
+- Deployment、Risk、Universe 和 Recovery；
+- Secret 写入、Force Remove、真实资金 Canary 等 human-only 操作。
 
-## 2. 非目标
+### 2.2 远程 MCP
 
-CLI 与 Skill 不建设：
+远程 Agent 使用标准 MCP，而不是模拟终端：
 
-- 公网 HTTP API、远程 Bearer Token 服务或多租户认证；
-- QF 内置 LLM、Agent runtime、模型 provider 或 Agent 调度器；
-- 允许 Agent 绕过人工 Approval、中央风险、Recovery 或 Holdout；
-- 允许 Agent 直接访问 PostgreSQL、Docker socket、插件目录、wallet 文件或 Nautilus 内部对象；
-- 任意 Shell、任意 Python 执行或任意文件路径读写；
-- 在 CLI 内复制 API 领域逻辑、Nautilus 交易逻辑或插件实现；
-- 通过命令行参数、环境变量、JSON 输出或日志传递真实 Secret；
-- 同一 TradingNode 进程内热替换插件；
-- 公共 Skill 市场或自动下载安装未知 Skill。
+```text
+https://<operator-domain>/mcp
+```
 
-`DESIGN.md` 中“无 AI/Agent/Tool”的非目标特指 **QF 不内置模型和 Agent 执行系统**；外部 AI Agent 通过本方案的受限 CLI 调用 QF 是明确支持的集成方式。
+目标：
 
-## 3. 总体架构
+- 兼容支持 MCP Streamable HTTP 的远程 Agent；
+- 通过 MCP `tools/list`、Resources 和 JSON Schema 自描述能力；
+- 对长任务支持 MCP Tasks 或 QF operation handle；
+- 通过 OAuth scope 控制 Agent 可见工具；
+- 对所有 mutation 提供幂等和 optimistic precondition；
+- 将 Secret、资金 Approval 和强破坏操作保留给本地人工；
+- 保持核心 API 为 loopback/internal，不把 `/api/v1` 暴露到公网。
+
+### 2.3 配套 Skill
+
+`skills/quantfoundry/SKILL.md` 是外部 Agent 的操作编排说明：
+
+- 只使用已连接的 QuantFoundry MCP Server；
+- 从 `tools/list` 和 `qf://manifest` 获取当前能力；
+- 读取当前状态后再 mutation；
+- 生成 idempotency key 和 expected preconditions；
+- 追踪异步任务；
+- 在 human-only 节点停止并生成 handoff；
+- 不处理 OAuth token、Secret 或本地钱包材料。
+
+Skill 不构成 QF 内置 Agent runtime，也不拥有任何业务权限。
+
+## 3. 非目标
+
+本方案不建设：
+
+- SSH transport、普通 Shell、forced command 或远程命令执行器；
+- 公网暴露的 QF Core API；
+- MCP 到任意 HTTP URL 的通用代理；
+- QF 内置 LLM、Agent scheduler、模型 provider 或 prompt runner；
+- 多用户工作区、业务 RBAC 或 SaaS 控制面；
+- Agent 自行输入或读取 Credential Secret；
+- Agent 自行 approve/reject 真实资金 Approval；
+- Agent Force Remove 插件或执行真实资金 Canary；
+- Agent 直接提交 Order、绕过 Strategy、RiskEngine 或 central reservation；
+- MCP Sampling 驱动新的自治交易循环；
+- 通过 Elicitation 表单收集密码、API Key、Private Key 或支付凭据；
+- 在 MCP 消息内传输大型 Parquet 的 Base64；
+- 在 CLI 或 MCP Gateway 内复制 Nautilus 金融事实或 QF 领域逻辑。
+
+`DESIGN.md` 中“无用户/workspace/auth”指 QF 不建设业务用户域和登录系统。MCP Gateway 的 OAuth 2.1 是**远程传输授权边界**，不是 QF 业务用户模型。
+
+## 4. 总体架构
 
 ```mermaid
 flowchart LR
-    H[Local human operator] --> HC[qf human CLI]
-    A[Remote AI Agent] --> S[Restricted SSH transport]
-    S --> G[qf-agent-gateway]
-    G --> AC[qf agent exec / upload]
+    H[Local human operator] --> CLI[qf CLI]
+    CLI -->|HTTP loopback| API[QF API]
 
-    HC --> L[Loopback HTTP client]
-    AC --> L
-    L --> API[QF API 127.0.0.1:8000]
+    A[Remote AI Agent / MCP Host] -->|MCP Streamable HTTP over HTTPS| GW[qf-mcp-gateway]
+    AS[External OAuth 2.1 Authorization Server] -->|short-lived audience-bound token| A
+    GW -->|internal HTTP, no token passthrough| API
 
     API --> DB[(PostgreSQL)]
     API --> FW[Finite worker]
     API --> LS[Live supervisor]
 
-    A -. uses .-> SK[QuantFoundry SKILL.md]
-    SK -. invokes .-> S
+    A -. follows .-> SK[QuantFoundry SKILL.md]
 ```
 
-边界固定为：
+边界：
 
-- API 继续只发布到宿主 `127.0.0.1:8000`；
-- 远程 Agent 不直接连接 API；
-- 远程 Agent 不获得普通 Shell；
-- SSH 只负责加密传输和主机身份校验；
-- `qf-agent-gateway` 是远程 Agent 的唯一主机入口；
-- Gateway 只允许结构化 `exec` 和 `upload` 两种协议；
-- Agent Profile 在调用 API 前限制命令范围；
-- API 仍执行最终领域校验、状态机、风险和 Approval 校验；
-- 本地人类 CLI 与 Agent CLI 使用同一个命令注册表和同一组 API 路由，避免行为分叉。
+- Core API：宿主仅发布 `127.0.0.1:8000`；
+- MCP Gateway：唯一远程入口，公开 HTTPS `/mcp`；
+- Gateway 不提供 `/api/v1` 反向代理；
+- Gateway 不访问 PostgreSQL、Docker socket、Plugin Volume、Catalog 或 Wallet 文件；
+- Gateway 只调用固定 QF API 操作；
+- 远程 OAuth access token 不转发到 QF API 或交易场所；
+- 本地 Human CLI 与 MCP tools 映射到相同领域动作和 Pydantic wire model。
 
-## 4. CLI 打包与运行边界
+## 5. 服务与网络拓扑
 
-### 4.1 Console script
+### 5.1 Compose 目标服务
 
-CLI 随 QF core wheel 安装：
-
-```toml
-[project.scripts]
-qf = "quantfoundry.cli.main:main"
-```
-
-目标代码树：
+在 `DESIGN.md` 的控制面服务基础上增加独立的：
 
 ```text
-backend/src/quantfoundry/cli/
-├── __init__.py
-├── main.py                 # argparse 入口
-├── client.py               # loopback HTTP、timeout、SSE
-├── registry.py             # 命令、参数 schema、safety class、scope
-├── output.py               # human / json envelope
-├── idempotency.py          # idempotency header 与 receipt
-├── agent_protocol.py       # JSONL exec protocol
-├── uploads.py              # binary stdin staging protocol
-└── preconditions.py        # expected state/version/generation
-
-deploy/
-└── qf-agent-gateway        # forced-command dispatcher
-
-skills/quantfoundry/
-├── SKILL.md
-├── references/
-│   ├── commands.md
-│   └── safety.md
-└── scripts/
-    └── qf_remote.py
+mcp-gateway
 ```
 
-### 4.2 依赖
-
-CLI 是薄客户端：
-
-- 使用 `argparse` 解析命令；
-- 使用 core runtime 已批准的 HTTP client 完成 loopback 请求、multipart streaming 和 SSE；
-- 可以复用 QF Pydantic wire models，但不生成第二套 client model；
-- 不导入第三方插件、Strategy 或 Nautilus；
-- 不访问数据库；
-- 不直接读写 Catalog、report、plugin release 或 runtime bundle 路径。
-
-若标准库实现 multipart、SSE 和 timeout 造成重复或脆弱代码，允许把 `httpx` 作为一个明确的 core dependency；不得为 CLI 再引入框架堆栈。
-
-### 4.3 Endpoint
-
-默认 endpoint：
+目标服务：
 
 ```text
-http://127.0.0.1:8000
+postgres
+migrate
+api
+finite-worker
+live-supervisor
+mcp-gateway
 ```
 
-CLI 只接受 loopback host：
+`mcp-gateway` 使用同一 core image，但运行独立入口：
 
 ```text
-127.0.0.1
-localhost
-::1
+python -m quantfoundry.mcp.main
 ```
 
-V1 不提供 `--allow-remote`。检测到非 loopback endpoint 时必须在发请求前失败：
+### 5.2 端口
 
 ```text
-REMOTE_API_ENDPOINT_FORBIDDEN
+QF API host binding:       127.0.0.1:8000
+MCP public endpoint:       https://<domain>/mcp
+MCP internal container:    0.0.0.0:8001
 ```
 
-远程调用通过 SSH 到 QF 主机后在本机执行 CLI，而不是改变 API 暴露面。
+生产环境必须使用 HTTPS。TLS 可以由：
 
-## 5. 两种 CLI 模式
+1. `mcp-gateway` 直接加载只读 certificate/key；或
+2. 部署环境已有的托管 TLS endpoint 终止。
 
-### 5.1 Human mode
-
-面向本机操作者：
-
-```bash
-qf status
-qf research show <research_id>
-qf deployment stop <deployment_id>
-```
-
-输出模式：
+仓库不恢复 Nginx，也不把通用 reverse proxy 作为 QF 应用组件。外部 TLS endpoint 只能转发：
 
 ```text
---output table   # 默认，仅 human mode
---output json
+/mcp
+/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
+/agent-artifacts/*
 ```
 
-Human mode 可以进入本地 TTY 确认流程，并在明确命令中读取 stdin Secret。
+不得转发 `/api/v1`。
 
-### 5.2 Agent mode
+### 5.3 Gateway 最小权限
 
-面向远程或本地 AI Agent：
+Gateway 容器：
 
-```bash
-qf agent manifest
-qf agent exec --profile <profile_id>
-qf agent upload --profile <profile_id>
-```
+- read-only root filesystem；
+- drop all Linux capabilities；
+- 无 Docker socket；
+- 无 PostgreSQL credential；
+- 无 Plugin/Catalog/Report/Wallet Volume；
+- 只允许访问内部 QF API 和 OAuth JWKS/metadata endpoint；
+- 上传内容直接流式转发到 QF API 的 staging handler，不在 Gateway 永久落盘。
 
-Agent mode 固定：
+## 6. MCP 协议基线
 
-- stdin 输入 JSONL 或 framed binary；
-- stdout 只输出 JSONL；
-- diagnostics 只写 stderr；
-- 不输出 ANSI；
-- 不进入交互式 prompt；
-- 不接受 Secret；
-- 按 Agent Profile 执行 scope 检查；
-- 每个 mutation 必须携带 idempotency key；
-- 不暴露 human-only 命令。
+### 6.1 Transport
 
-Human mode 和 Agent mode 最终调用同一个 command handler；Agent mode只增加协议、scope 和非交互限制，不另建业务逻辑。
-
-## 6. 命令层级
-
-### 6.1 Human CLI
+基线为 MCP `2025-11-25` 的 **Streamable HTTP**：
 
 ```text
-qf status
-qf manifest
-
-qf plugin list|show|install|activate|deactivate|impact|remove
-qf bundle list|show|prewarm
-qf credential list|show|create|update
-qf data-source list|show|create|update|preflight
-qf execution-connection list|show|create|update|preflight
-qf dataset list|show|import-parquet-l2
-qf strategy list|show|create|version-create
-qf research list|show|create|section-set|activate
-qf experiment create|start|show
-qf run list|show|watch|report
-qf approval list|show|approve|reject
-qf deployment list|show|create|stop|restart-request|watch
-qf universe show|revision-create
-qf risk show
-qf event watch
-qf artifact show|delete
+POST /mcp
+GET  /mcp          # 可选 SSE server stream / resume
+DELETE /mcp        # 结束 session，若启用 stateful session
 ```
 
-### 6.2 Canonical Agent command names
+要求：
 
-Agent protocol 不依赖 Shell 子命令拼写，使用稳定 dotted names：
+- 每个 HTTP 请求携带 `MCP-Protocol-Version`；
+- 支持 `application/json` 和 `text/event-stream`；
+- 断线不等于取消；
+- 取消必须使用 MCP cancellation；
+- 如果启用 session，使用 `MCP-Session-Id`；
+- access token 在每个 HTTP 请求上重新校验；session ID 不是认证凭据；
+- 如果客户端不支持服务器 stream，所有工作仍可通过轮询完成。
+
+### 6.2 Stateful 与 stateless
+
+V1 默认：
 
 ```text
-agent.manifest
-system.status
+stateless MCP request handling
++ QF durable jobs/runs/events
+```
 
-plugin.list
-plugin.show
-plugin.stage
-plugin.impact
-plugin.prewarm
+理由：
+
+- QF 的长任务本来已经持久化；
+- Gateway 重启不应影响 Run、Plugin Job 或 Deployment；
+- 减少 Gateway session store；
+- 客户端可以通过 task/QF resource ID 恢复。
+
+仅当客户端需要 MCP server-to-client request 或 resumable notification 时启用 stateful session。即使启用，也不得把业务状态只保存在 MCP session 内。
+
+### 6.3 Origin 与 Host
+
+Gateway 必须：
+
+- 校验 `Host`；
+- 对存在的 `Origin` 进行精确 allowlist 校验；
+- 非允许 Origin 返回 403；
+- CORS 不允许 `*`；
+- 浏览器客户端只暴露协议所需 response headers；
+- 限制 MCP JSON request body，默认 1 MiB；
+- 文件上传走独立 artifact endpoint。
+
+## 7. OAuth 2.1 授权
+
+### 7.1 角色
+
+```text
+MCP client       = OAuth client
+mcp-gateway      = OAuth protected resource / resource server
+External IdP     = OAuth 2.1 authorization server
+```
+
+QF 不自行实现通用 OAuth Authorization Server。操作者配置一个现有、受信任的 OAuth/OIDC Authorization Server。
+
+### 7.2 Discovery
+
+Gateway 必须提供 RFC 9728 Protected Resource Metadata：
+
+```text
+/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
+```
+
+未授权请求返回：
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer resource_metadata="https://<domain>/.well-known/oauth-protected-resource/mcp"
+```
+
+Metadata 至少包含：
+
+```json
+{
+  "resource": "https://<domain>/mcp",
+  "authorization_servers": ["https://<issuer>"],
+  "scopes_supported": ["qf:read", "qf:research:write"]
+}
+```
+
+### 7.3 Client 类型
+
+V1 支持预注册客户端，不要求 Dynamic Client Registration：
+
+1. **Human-delegated Agent**：Authorization Code + PKCE；
+2. **Unattended Agent**：Client Credentials，但只能获得机器允许的 scopes。
+
+Authorization Code flow 必须使用 PKCE S256。Access token 必须：
+
+- 短生命周期；
+- `aud`/resource 绑定到精确 MCP resource URI；
+- 包含 issuer、client identity 和 scopes；
+- 不通过 query string；
+- 不写入日志或 Tool Result。
+
+### 7.4 Token 验证
+
+Gateway 每次请求验证：
+
+```text
+signature
+issuer
+expiration / not-before
+audience / resource
+client_id or azp
+subject when present
+scopes
+```
+
+禁止 token passthrough：
+
+- 不把 MCP access token 传给 QF API；
+- 不把 MCP access token 传给 Polymarket；
+- 不接受签发给其他 resource 的 token；
+- 不接受 ID token 代替 access token。
+
+### 7.5 Scope
+
+建议 scopes：
+
+```text
+qf:read
+qf:plugin:stage
+qf:plugin:activate
+qf:data:write
+qf:connection:write
+qf:research:write
+qf:experiment:run
+qf:deployment:create
+qf:deployment:stop
+qf:universe:propose
+qf:approval:prepare
+qf:artifact:upload
+```
+
+Tool list 按 token scope 过滤。客户端调用无权限 Tool 时返回 403 `insufficient_scope`，并通过 `WWW-Authenticate` 指明所需 scope。
+
+### 7.6 永久 human-only
+
+以下能力不是 scope，不会出现在 MCP tools 中：
+
+```text
+Credential secret create/update/read
+Approval approve/reject
+Force plugin remove
+Live-money canary execution
+Master key change
+Destructive database operation
+Raw order submission
+Risk / Recovery / Holdout bypass
+```
+
+即使 Authorization Server 错误签发同名 scope，Gateway 也必须 hard-deny。
+
+## 8. MCP Primitives
+
+### 8.1 Tools
+
+MCP Tools 是 Agent 的正式操作面。命名使用稳定 dotted name：
+
+```text
+qf.system.status
+qf.plugin.list
+qf.research.show
+qf.experiment.start
+qf.deployment.stop
+```
+
+每个 Tool 必须提供：
+
+```text
+name
+title
+description
+inputSchema
+outputSchema
+annotations
+execution.taskSupport
+```
+
+Tool Result：
+
+- 必须提供 `structuredContent`；
+- 同时提供简短 TextContent 兼容客户端；
+- 不输出 Secret；
+- 失败使用 `isError: true` 和稳定 QF error code；
+- malformed MCP 请求使用 JSON-RPC protocol error。
+
+### 8.2 Tool annotations
+
+示例：
+
+```json
+{
+  "readOnlyHint": false,
+  "destructiveHint": false,
+  "idempotentHint": true,
+  "openWorldHint": false
+}
+```
+
+含义：
+
+- 查询工具：`readOnlyHint=true`；
+- 创建 Research、Run 等 additive mutation：`destructiveHint=false`；
+- Stop、Deactivate 等改变运行状态：`destructiveHint=true`；
+- 对外部 Venue 进行 preflight：`openWorldHint=true`；
+- annotations 只是客户端提示，服务器必须独立执行 scope 和状态校验。
+
+### 8.3 Resources
+
+MCP Resources 提供可读取的当前状态和报告，不承担 mutation：
+
+```text
+qf://manifest
+qf://operations
+qf://system/status
+qf://plugin-releases/{id}
+qf://runtime-bundles/{id}
+qf://datasets/{id}
+qf://strategies/{id}
+qf://research/{id}
+qf://experiments/{id}
+qf://runs/{id}
+qf://runs/{run_id}/reports/{report_id}
+qf://approvals/{id}
+qf://deployments/{id}
+qf://deployments/{id}/risk
+qf://deployments/{id}/universe
+```
+
+资源内容必须是当前 API 快照；不得让模型依据历史缓存执行 mutation。
+
+### 8.4 Resource subscription
+
+如果客户端支持 subscription：
+
+- Run、Plugin Job、Approval、Deployment、Risk 和 Universe Resource 可订阅；
+- Gateway 从 QF durable event stream 接收事件；
+- 对应资源变化时发送 `notifications/resources/updated`；
+- 断线后客户端仍必须重新读取资源；notification 不是事实源。
+
+### 8.5 Prompts
+
+V1 不依赖 MCP Prompts 执行业务。可选只读 prompts：
+
+```text
+qf.review.research
+qf.review.approval
+qf.diagnose.recovery
+```
+
+Prompt 只生成审阅模板，不执行 mutation，也不替代 Skill。
+
+### 8.6 Elicitation
+
+Form Elicitation 只允许收集非敏感澄清，例如：
+
+```text
+Research title
+选择已有 Dataset
+选择报告展示粒度
+```
+
+严禁通过 Form Elicitation 请求：
+
+```text
+password
+API key
+access token
+private key
+wallet credential
+payment credential
+```
+
+Approval 和 Secret 写入不通过 Elicitation 完成；Tool 返回 human handoff。
+
+## 9. Canonical Tool Catalog
+
+### 9.1 Read tools
+
+```text
+qf.system.status
+qf.plugin.list
+qf.plugin.show
+qf.plugin.impact
+qf.bundle.list
+qf.bundle.show
+qf.credential.list
+qf.credential.show
+qf.data_source.list
+qf.data_source.show
+qf.execution_connection.list
+qf.execution_connection.show
+qf.dataset.list
+qf.dataset.show
+qf.strategy.list
+qf.strategy.show
+qf.research.list
+qf.research.show
+qf.experiment.show
+qf.run.list
+qf.run.show
+qf.run.report
+qf.approval.list
+qf.approval.show
+qf.deployment.list
+qf.deployment.show
+qf.universe.show
+qf.risk.show
+qf.event.list
+qf.artifact.show
+```
+
+### 9.2 Scoped mutation tools
+
+```text
+qf.plugin.stage
+qf.plugin.prewarm
+qf.plugin.activate
+qf.plugin.deactivate
+
+qf.data_source.create
+qf.data_source.update
+qf.data_source.preflight
+
+qf.execution_connection.create
+qf.execution_connection.update
+qf.execution_connection.preflight
+
+qf.dataset.import_parquet_l2
+
+qf.strategy.create
+qf.strategy.version_create
+
+qf.research.create
+qf.research.section_set
+qf.research.activate
+
+qf.experiment.create
+qf.experiment.start
+
+qf.approval.prepare_decision
+
+qf.deployment.create
+qf.deployment.stop
+qf.deployment.restart_request
+
+qf.universe.revision_create
+
+qf.artifact.begin_upload
+qf.artifact.finalize_upload
+qf.artifact.delete
+```
+
+Tool descriptions必须明确：
+
+- `qf.deployment.create` 不审批、不直接进入 Trading；
+- `qf.deployment.restart_request` 只创建新 Approval；
+- `qf.deployment.stop` 撤单并停止新增交易，但不强平已有仓位；
+- `qf.universe.revision_create` 的扩张仍需人工 Approval；
+- `qf.plugin.deactivate` 进入 Drain，不等于立即杀死现有 Runner。
+
+## 10. Tool 输入合同
+
+### 10.1 Mutation 公共字段
+
+所有 mutation Tool 的 `inputSchema` 必须包含：
+
+```json
+{
+  "idempotency_key": "UUID",
+  "expected": {},
+  "arguments": {}
+}
+```
+
+可直接平铺业务字段，但公共语义固定。
+
+### 10.2 Idempotency
+
+`idempotency_key`：
+
+- mutation 必填；
+- read tool 禁止或忽略；
+- 网络重试同一操作复用同一 key；
+- 同 key + 同 tool + 同 normalized arguments 返回原 receipt；
+- 同 key 被用于不同 tool/target/arguments 返回 `IDEMPOTENCY_KEY_REUSED`；
+- MCP JSON-RPC request ID 不是业务幂等键。
+
+### 10.3 Optimistic preconditions
+
+更新类操作必须包含当前读取到的字段，例如：
+
+```text
+state
+content_revision
+version_no
+generation
+plugin_release_id
+runtime_bundle_id
+updated_at
+```
+
+冲突返回：
+
+```text
+PRECONDITION_FAILED
+```
+
+Agent 必须重新读取资源和重新规划，不得盲重放。
+
+### 10.4 Impact token
+
+高影响但可由 Agent 发起的操作，例如：
+
+```text
 plugin.activate
 plugin.deactivate
-
-credential.list
-credential.show
-
-data_source.list
-data_source.show
-data_source.create
-data_source.update
-data_source.preflight
-
-execution_connection.list
-execution_connection.show
-execution_connection.create
-execution_connection.update
-execution_connection.preflight
-
-dataset.list
-dataset.show
-dataset.import_parquet_l2
-
-strategy.list
-strategy.show
-strategy.create
-strategy.version_create
-
-research.list
-research.show
-research.create
-research.section_set
-research.activate
-
-experiment.create
-experiment.start
-experiment.show
-
-run.list
-run.show
-run.watch
-run.report
-
-approval.list
-approval.show
-approval.prepare_decision
-
-deployment.list
-deployment.show
-deployment.create
 deployment.stop
-deployment.restart_request
-deployment.watch
-
-universe.show
 universe.revision_create
-
-risk.show
-event.watch
-artifact.show
-artifact.delete
 ```
 
-以下命令永不出现在 Agent manifest 中：
+先调用相应 impact/preflight Tool，服务端返回短生命周期：
 
 ```text
-credential.create_with_secrets
-credential.update_secrets
-approval.approve
-approval.reject
-plugin.remove_force
-canary.live_execute
-system.master_key_change
-system.database_destructive_operation
+impact_token
 ```
 
-Agent 请求这些能力时返回 `HUMAN_ACTION_REQUIRED`，并给出本地操作者需要执行的 human CLI 命令模板，不执行降级替代。
-
-## 7. Agent manifest
-
-每个新 Agent 会话必须先调用：
+Mutation 必须携带该 token，且 token 绑定：
 
 ```text
-agent.manifest
+principal
+target
+current version/generation
+operation
+expires_at
 ```
 
-响应至少包含：
+Impact token 不是 Approval，也不能绕过状态机。
 
-```json
-{
-  "protocol_version": "1",
-  "cli_version": "0.1.0",
-  "api_version": "v1",
-  "profile": {
-    "profile_id": "research-agent",
-    "scopes": ["read", "research:write", "data:import"]
-  },
-  "commands": [
-    {
-      "name": "research.create",
-      "safety_class": "RESEARCH_MUTATION",
-      "required_scope": "research:write",
-      "mutation": true,
-      "arguments_schema": {},
-      "result_schema": {}
-    }
-  ],
-  "upload_kinds": ["STRATEGY_SOURCE", "PLUGIN_WHEEL", "PARQUET_L2"],
-  "limits": {
-    "max_request_bytes": 1048576,
-    "max_wait_seconds": 1800
-  }
-}
-```
+## 11. 长任务与 MCP Tasks
 
-Skill 不得根据静态记忆假定命令存在；CLI/Server 版本变化时以 manifest 为准。若 Skill 文档和 manifest 冲突，Agent停止 mutation 并报告协议不兼容。
+Plugin Install、Bundle Build、Parquet Import、Optimization、Holdout、Deployment Recovery 都是异步工作。
 
-## 8. JSONL exec protocol
+### 11.1 兼容模式
 
-### 8.1 Request
+如果客户端不支持 MCP Tasks：
 
-一行一个 JSON object：
+- Tool 立即返回 QF `job_id`、`run_id`、`approval_id` 或 `deployment_id`；
+- 返回对应 `qf://` resource link；
+- Agent 通过 read Tool/Resource 轮询。
 
-```json
-{
-  "protocol_version": "1",
-  "request_id": "957bed72-e307-4b95-9c60-1dc1632313fa",
-  "idempotency_key": "5d9d5622-647c-4399-8db1-94f0248a538e",
-  "command": "research.section_set",
-  "arguments": {
-    "research_id": "19b5574b-1200-40d2-9238-e4f513cdb2ad",
-    "section": "RISKS",
-    "markdown": "..."
-  },
-  "expected": {
-    "state": "ACTIVE",
-    "content_revision": 6
-  },
-  "wait": {
-    "mode": "terminal",
-    "timeout_seconds": 300
-  }
-}
-```
+### 11.2 Task 模式
 
-字段：
+如果双方协商支持 MCP `2025-11-25` Tasks：
 
-| 字段 | 必填 | 语义 |
-|---|---|---|
-| `protocol_version` | 是 | V1 固定 `"1"` |
-| `request_id` | 是 | 调用级 UUID，用于日志和响应关联 |
-| `idempotency_key` | mutation 是 | mutation 重试稳定 UUID；read 必须为 null 或省略 |
-| `command` | 是 | manifest 中的 canonical name |
-| `arguments` | 是 | 命令 JSON Schema 校验后的参数 |
-| `expected` | 更新类 mutation 是 | 读取后获得的 state/version/generation 前置条件 |
-| `wait` | 否 | none、terminal 或指定 state；timeout 不代表取消 |
+- 长任务 Tool 设置 `execution.taskSupport="optional"`；
+- 客户端请求 task augmentation 时，Gateway 创建 MCP task；
+- task 绑定 OAuth principal；
+- task 映射到 QF job/run/deployment；
+- `tasks/get` 和 `tasks/result` 从 QF 当前状态生成；
+- task cancellation 只在底层 QF 操作支持取消时执行；
+- 超时或连接断开不取消底层工作；
+- 任何 caller 不能读取其他 principal 创建的 task。
 
-Agent 一次可以发送多行，但 Gateway 按行串行响应。V1 不提供跨命令事务；需要原子性的业务动作必须由单个 API 端点实现，例如 Approval 与 desired state/event 的事务。
+MCP Tasks 当前属于可能演进的协议能力，因此 QF 的业务事实始终保留在自身 job/run/deployment 中，不能只存在 task store。
 
-### 8.2 Success response
+## 12. Artifact 上传
 
-```json
-{
-  "protocol_version": "1",
-  "request_id": "957bed72-e307-4b95-9c60-1dc1632313fa",
-  "ok": true,
-  "command": "research.section_set",
-  "safety_class": "RESEARCH_MUTATION",
-  "result": {
-    "resource_type": "research_section_revision",
-    "resource_id": "c18f1bd4-53b6-48bc-a92b-8ef2b5af88d3",
-    "state": "CREATED"
-  },
-  "follow_up": {
-    "command": "research.show",
-    "arguments": {
-      "research_id": "19b5574b-1200-40d2-9238-e4f513cdb2ad"
-    }
-  },
-  "warnings": [],
-  "human_action_required": null
-}
-```
+### 12.1 为什么不放进 MCP JSON
 
-### 8.3 Human handoff response
-
-```json
-{
-  "protocol_version": "1",
-  "request_id": "...",
-  "ok": false,
-  "command": "approval.approve",
-  "safety_class": "HUMAN_APPROVAL",
-  "error": {
-    "code": "HUMAN_ACTION_REQUIRED",
-    "message": "Deployment approval must be decided by the local operator.",
-    "details": {
-      "approval_id": "...",
-      "local_command": "qf approval show ... && qf approval approve ..."
-    },
-    "retryable": false
-  },
-  "exit_code": 6
-}
-```
-
-### 8.4 Error response
-
-```json
-{
-  "protocol_version": "1",
-  "request_id": "...",
-  "ok": false,
-  "command": "deployment.stop",
-  "error": {
-    "code": "PRECONDITION_FAILED",
-    "message": "Deployment generation changed.",
-    "details": {
-      "expected_generation": 7,
-      "actual_generation": 8
-    },
-    "retryable": false
-  },
-  "exit_code": 3
-}
-```
-
-### 8.5 Exit codes
-
-| Exit | 类别 |
-|---:|---|
-| 0 | 成功 |
-| 2 | CLI usage、JSON 或参数 schema 无效 |
-| 3 | 状态/version/generation 前置条件冲突 |
-| 4 | 资源不存在 |
-| 5 | 领域校验或资源冲突 |
-| 6 | 必须人工操作或审批 |
-| 7 | 暂时不可用，可按响应策略重试 |
-| 8 | 等待超时；后台动作不自动取消 |
-| 9 | Agent Profile 禁止 |
-| 10 | SSH/HTTP/协议传输失败 |
-
-Agent 应优先读取 JSON `error.retryable`，不能只按 Exit Code 无限重试。
-
-## 9. 文件上传协议
-
-Strategy、wheel 和 Parquet 不能嵌入 JSON。Agent mode 使用：
-
-```text
-qf agent upload
-```
-
-stdin framing：
-
-```text
-<一行 JSON header>\n
-<严格 size_bytes 个原始字节>
-```
-
-Header：
-
-```json
-{
-  "protocol_version": "1",
-  "request_id": "...",
-  "upload_id": "...",
-  "kind": "STRATEGY_SOURCE",
-  "filename": "strategy.py",
-  "size_bytes": 4821
-}
-```
-
-允许 kind：
+允许上传：
 
 ```text
 STRATEGY_SOURCE
@@ -513,553 +681,495 @@ PLUGIN_WHEEL
 PARQUET_L2
 ```
 
-规则：
+Parquet 上限可达 10 GiB，因此禁止：
 
-- upload 只接受 stdin streaming，不接受任意服务器路径；
-- `filename` 只作为展示名，不能包含目录分隔符；
-- 服务端读取恰好 `size_bytes`；多或少都失败；
-- 写临时文件后原子进入 Agent Artifact inbox；
-- 中断时清理临时文件；
-- V1 不做断点续传；
-- 不计算应用级 checksum/hash/fingerprint；
-- Secret 文件不是允许的 upload kind；
-- 返回 opaque `artifact_id`，不返回服务器路径；
-- 创建 Strategy version、plugin release 或 import Run 时传 `artifact_id`；
-- Artifact 默认有过期时间；使用后记录消费资源；
-- 大文件远程传输失败时创建新的 `upload_id`，不续写旧文件。
+- Base64 放入 Tool arguments；
+- 把文件内容放入 LLM context；
+- Gateway 全量缓冲；
+- 任意远程 URL 由服务器抓取。
 
-目标表：
+### 12.2 两阶段协议
+
+1. MCP Tool：
 
 ```text
-agent_artifacts
+qf.artifact.begin_upload
 ```
 
-字段：
+输入：
+
+```json
+{
+  "kind": "PARQUET_L2",
+  "filename": "market.parquet",
+  "size_bytes": 123456,
+  "idempotency_key": "..."
+}
+```
+
+输出：
+
+```json
+{
+  "artifact_id": "...",
+  "upload_url": "https://<domain>/agent-artifacts/<opaque-capability>",
+  "expires_at": "...",
+  "chunk_size_bytes": 8388608,
+  "accepted_offset": 0
+}
+```
+
+2. Agent-side companion CLI 通过 HTTPS 按顺序上传：
+
+```bash
+qf artifact upload \
+  --mcp-server https://<domain>/mcp \
+  --artifact-id <id> \
+  --file market.parquet
+```
+
+3. 完成后调用：
 
 ```text
-id UUID PK
-profile_id TEXT
-kind TEXT
-original_filename TEXT
-relative_path TEXT
-expected_size_bytes BIGINT
-received_size_bytes BIGINT
-state TEXT              # STAGING | READY | CONSUMED | FAILED | EXPIRED
-expires_at TIMESTAMPTZ
-created_at TIMESTAMPTZ
-ready_at TIMESTAMPTZ NULL
-consumed_at TIMESTAMPTZ NULL
-consumed_by_type TEXT NULL
-consumed_by_id UUID NULL
-last_error TEXT NULL
+qf.artifact.finalize_upload
 ```
 
-## 10. Idempotency 与并发前置条件
-
-### 10.1 Idempotency
-
-Agent mode 的全部 mutation 必须带 UUID `idempotency_key`。Skill 在第一次提交前生成，并在网络失败、7 类 retryable error 或查询状态时复用同一个 key。
-
-API 使用：
+### 12.3 Upload endpoint
 
 ```text
-Idempotency-Key: <uuid>
-X-QF-Command: <canonical command>
-X-QF-Agent-Profile: <profile_id>
+HEAD /agent-artifacts/<opaque-capability>
+PUT  /agent-artifacts/<opaque-capability>
 ```
 
-目标表：
+要求：
 
-```text
-agent_idempotency_records
-```
+- 同一 HTTPS origin；
+- OAuth token 必须仍有效并属于创建者；
+- opaque capability 单 artifact、单 principal、短时有效；
+- `Content-Range` 只允许从 `accepted_offset` 顺序追加；
+- `HEAD` 返回当前 offset；
+- 声明总字节数不可改变；
+- 超限立即拒绝；
+- finalize 前精确匹配 `size_bytes`；
+- 中断可从 offset 继续；
+- 不生成应用级 checksum/hash/fingerprint；
+- staging 超时清理；
+- Gateway 流式转发，不全量载入内存。
 
-字段：
+### 12.4 Companion CLI Token
 
-```text
-idempotency_key UUID PK
-profile_id TEXT
-command_name TEXT
-target_type TEXT NULL
-target_id UUID NULL
-request_summary JSONB       # 仅非敏感、用于检测 key 被错误复用的字段
-state TEXT                  # IN_PROGRESS | SUCCEEDED | FAILED
-http_status INTEGER NULL
-result_ref JSONB NULL        # 资源 ID、job/run/approval ID；不得含 secret
-error_code TEXT NULL
-error_message TEXT NULL
-created_at TIMESTAMPTZ
-completed_at TIMESTAMPTZ NULL
-```
+远程 Artifact CLI 是标准 MCP/OAuth 客户端：
 
-语义：
+- 优先复用 Agent Host 已建立的 OAuth session；
+- 独立使用时走 Authorization Code + PKCE 或预注册 Client Credentials；
+- token 存储使用操作系统安全凭据存储，不能写入 Skill、命令参数或日志；
+- Skill 不读取、打印或要求用户粘贴 access token。
 
-- 相同 key、profile、command 和 request summary 返回先前结果；
-- 相同 key 被用于不同 command、target 或 summary，返回 `IDEMPOTENCY_KEY_REUSED`；
-- 原动作仍在进行时返回 `OPERATION_IN_PROGRESS` 和查询入口；
-- 不保存 Secret、源码正文或上传文件内容；
-- Human mode 可以自动生成 key，但显示在 JSON 输出中以便故障重试。
+## 13. 本地 `qf` CLI
 
-### 10.2 Optimistic preconditions
-
-读取后再修改的 Agent 命令必须携带当前可观察前置条件，例如：
-
-```text
-state
-content_revision
-version_no
-generation
-runtime_bundle_id
-plugin_release_id
-updated_at
-```
-
-服务端最终校验；不匹配返回 `PRECONDITION_FAILED`，不自动套用到新状态。Skill 必须重新读取、重新评估影响并使用新 idempotency key，不能盲目重放原计划。
-
-## 11. Safety class 与 Agent Profile
-
-### 11.1 Safety classes
-
-| Safety class | 示例 | 默认 Agent 行为 |
-|---|---|---|
-| `READ_ONLY` | list/show/status/watch/report | 可自动执行 |
-| `RESEARCH_MUTATION` | Research、Strategy、Experiment、Import | 可按 profile 执行 |
-| `PLATFORM_MUTATION` | plugin stage/activate/deactivate、connection update | 只有显式 scope 才可执行 |
-| `RISK_REDUCING` | Deployment Stop、Universe 收窄请求 | 仅用户明确要求或预设紧急策略时执行 |
-| `APPROVAL_BOUND` | 实盘启动、Restart、Universe expansion、plugin switch approval | Agent 只能准备材料，不能决定 |
-| `SECRET_BOUND` | private key、API secret、master key | Agent 不得接收、存储或提交 |
-| `DESTRUCTIVE_FORCE` | force remove、破坏性数据库操作 | Agent 不得执行 |
-
-### 11.2 Profile
-
-远程 SSH key 映射一个 root-owned Profile：
+### 13.1 打包
 
 ```toml
-profile_id = "research-agent"
-scopes = [
-  "read",
-  "research:write",
-  "data:import",
-  "plugin:stage"
-]
-allowed_upload_kinds = ["STRATEGY_SOURCE", "PARQUET_L2", "PLUGIN_WHEEL"]
-max_wait_seconds = 1800
+[project.scripts]
+qf = "quantfoundry.cli.main:main"
 ```
 
-建议 Profile：
-
-| Profile | 能力 |
-|---|---|
-| `observer-agent` | 只读、watch、report |
-| `research-agent` | 只读 + Research/Strategy/Experiment/Import + plugin stage |
-| `operations-agent` | research-agent + plugin activate/deactivate + connection update + Deployment Stop/Restart request |
-
-以下能力为 Gateway 硬拒绝，不能通过 Profile 授予：
+目标结构：
 
 ```text
-Secret 写入或回读
-Approval approve/reject
-Force plugin remove
-真实资金 canary 执行
-Master key 或数据库破坏操作
-绕过 Recovery、Holdout 或中央风险
+backend/src/quantfoundry/cli/
+├── __init__.py
+├── main.py
+├── client.py
+├── registry.py
+├── output.py
+├── idempotency.py
+├── preconditions.py
+├── watch.py
+├── oauth.py
+├── mcp_client.py
+└── artifact_upload.py
 ```
 
-Profile 是远程自动化的 OS/CLI 访问策略，不是 QF 多用户/RBAC。V1 仍是单操作员产品。
+### 13.2 本地模式
 
-## 12. 本地人工硬节点
+默认 endpoint：
 
-### 12.1 Secret
+```text
+http://127.0.0.1:8000
+```
 
-本地人类使用 stdin 或受保护文件描述符：
+本地 Human CLI 只接受 loopback Core API，不提供 `--allow-remote-api`。
+
+示例：
 
 ```bash
-qf credential create --plugin-release <id> --secret-stdin
+qf status
+qf research show <id>
+qf run watch <id>
+qf approval approve <id>
+qf deployment stop <id>
 ```
 
-禁止：
+### 13.3 MCP Client 模式
 
-```text
---private-key <value>
-环境变量承载真实 Secret
-在 JSON 输出中回显 Secret
-Agent Artifact 上传 Secret
-```
+CLI 也可作为标准 MCP Client，用于：
 
-### 12.2 Approval
+- 人工检查远程 MCP Gateway；
+- Agent 环境没有原生 MCP Host 时的兼容调用；
+- 大文件上传。
 
-本地 TTY：
+示例：
 
 ```bash
-qf approval show <approval_id>
-qf approval approve <approval_id>
+qf mcp login --server https://qf.example.com/mcp
+qf mcp tools --server https://qf.example.com/mcp
+qf mcp call qf.system.status --server https://qf.example.com/mcp --json '{}'
+qf artifact upload --mcp-server https://qf.example.com/mcp --file strategy.py --kind STRATEGY_SOURCE
 ```
 
-CLI 必须显示不可变审批快照，并要求输入与 Approval 短 ID 绑定的确认文本。Agent 只能调用 `approval.prepare_decision` 获取摘要和待人工命令。
+CLI MCP 模式必须使用标准 MCP Streamable HTTP 和 OAuth；不得退化为 raw `/api/v1` client。
 
-### 12.3 Force remove
+### 13.4 Human-only CLI
 
-```bash
-qf plugin impact <release_id>
-qf plugin remove <release_id> --force
-```
-
-必须本地 TTY 展示受影响 Run、Deployment、Connection、Bundle 和残留仓位语义；确认后仍按标准 Stop/drain 执行，不强平。
-
-## 13. 远程 SSH Gateway
-
-### 13.1 OS user
-
-建议单独创建：
+仅本地 CLI 提供：
 
 ```text
-quantfoundry-agent
+qf credential create/update with secret stdin
+qf approval approve/reject
+qf plugin remove --force
+qf canary execute
+qf system master-key ...
 ```
 
-该用户：
+Secret：
 
-- 无普通登录 Shell；
-- 无 sudo；
-- 无 Docker socket；
-- 无 PostgreSQL socket/credential；
-- 无 plugin/catalog/report 目录直接读写；
-- 只能执行 forced command Gateway；
-- 不能端口转发、Agent forwarding、X11 或 PTY。
+- 只从受保护 TTY/stdin/OS key store 输入；
+- 不通过 argv；
+- 不出现在 shell history；
+- 不回显；
+- 不进入 JSON output。
 
-### 13.2 Forced command
+## 14. Skill 运行合同
 
-SSH key 绑定：
+Skill 每个会话：
 
-```text
-/usr/local/bin/qf-agent-gateway --profile research-agent
+1. 使用已配置的 QuantFoundry MCP connection；
+2. 检查 `tools/list` 和 Resources；
+3. 读取 `qf://manifest`；
+4. 调用 `qf.system.status`；
+5. 读取目标资源及依赖；
+6. 判断用户目标是否需要 human-only action；
+7. mutation 前执行 impact/preflight；
+8. 生成一个 UUID idempotency key；
+9. 携带 current expected preconditions；
+10. Tool 只调用一次；同一网络重试复用 key；
+11. 追踪 MCP task 或 QF resource；
+12. 最后重新读取并验证状态；
+13. 输出 IDs、状态、警告、持仓影响和 human handoff。
+
+Skill 不能：
+
+- 使用 SSH；
+- 使用 curl 访问 Core API；
+- 连接 PostgreSQL 或 Docker；
+- 请求 OAuth token 或 Secret；
+- 自行 approve/reject；
+- 直接选择另一个 Pareto Candidate；
+- 通过其他工具绕过 scope/human gate；
+- 把 Stop 描述为已平仓。
+
+## 15. Error 与响应
+
+### 15.1 Tool execution error
+
+结构化错误：
+
+```json
+{
+  "code": "PRECONDITION_FAILED",
+  "message": "Deployment generation changed.",
+  "details": {
+    "expected_generation": 4,
+    "actual_generation": 5
+  },
+  "retryable": false,
+  "human_action_required": null
+}
 ```
 
-Gateway 只接受 `SSH_ORIGINAL_COMMAND`：
+常见新增代码：
 
 ```text
-exec
-upload
-manifest
-```
-
-任何其他值返回 `AGENT_GATEWAY_COMMAND_FORBIDDEN`。Gateway 不把原始字符串交给 Shell；使用固定 argv 调用 CLI。
-
-### 13.3 Audit
-
-每次调用记录：
-
-```text
-profile_id
-request_id
-idempotency_key
-canonical command
-resource IDs
-safety class
-result/error code
-started_at/completed_at
-remote SSH key identity label
-```
-
-不得记录：
-
-```text
-Secret
-Strategy 源码正文
-Plugin/Parquet 文件内容
-完整 credential config
-```
-
-## 14. Skill 设计
-
-Skill 位置：
-
-```text
-skills/quantfoundry/SKILL.md
-```
-
-Skill 是远程 Agent 的可移植工作流，不包含 QF credential、SSH private key、host address 或用户数据。连接信息由 Agent 运行环境的 SSH config 和：
-
-```text
-QF_REMOTE_ALIAS
-```
-
-提供。
-
-Skill 必须执行：
-
-1. 调用 `agent.manifest`；
-2. 调用 `system.status`；
-3. 根据用户目标识别工作台节点和 Safety class；
-4. 读取当前资源，不猜 ID、state、version 或 generation；
-5. 对 mutation 生成 plan，必要时调用 impact/preflight；
-6. 检查 Profile 是否允许；
-7. 遇到 Secret、Approval 或 force action，生成 Human Handoff 并停止；
-8. 对允许的 mutation 生成 UUID idempotency key；
-9. 携带 optimistic preconditions 执行；
-10. 对 async job/run/deployment watch 到目标状态或 timeout；
-11. 重新读取资源验证结果；
-12. 返回资源 ID、最终 state、未完成项和人工动作。
-
-Skill 永远不得：
-
-- `curl` QF API；
-- 连接 PostgreSQL；
-- 调用 Docker；
-- 读取 QF 主机文件路径；
-- 接收或重复 Secret；
-- 批准或拒绝 Approval；
-- Force remove；
-- 手工选择 Pareto candidate；
-- 修改终态 Run；
-- 将 timeout 描述为取消成功；
-- 将 Stop 描述为仓位已平；
-- 在 `RECOVERY_BLOCKED` 时尝试绕过恢复。
-
-## 15. 典型 Agent 工作流
-
-### 15.1 创建研究并启动实验
-
-```text
-manifest/status
-→ dataset.list / strategy.list
-→ research.create
-→ research.section_set × N
-→ research.activate
-→ experiment.create
-→ experiment.start
-→ run.watch
-→ research.show / run.report
-```
-
-Agent 可以完成全过程，但不能在 Holdout 后自行批准实盘。
-
-### 15.2 上传 Strategy
-
-```text
-agent.upload(kind=STRATEGY_SOURCE)
-→ strategy.version_create(artifact_id)
-→ strategy.show
-```
-
-Agent 不通过任意路径或 inline source 绕过 Artifact staging。
-
-### 15.3 安装插件新版本
-
-```text
-agent.upload(kind=PLUGIN_WHEEL) × N
-→ plugin.stage(artifact_ids)
-→ plugin.show / job watch
-→ plugin.impact
-```
-
-`plugin.activate` 只有带 `plugin:activate` scope 的 Profile 才能执行；无该 scope 时输出本地 human command。Execution plugin 用于现有 Deployment 的切换仍必须产生 Approval。
-
-### 15.4 监控并 Stop
-
-```text
-deployment.show
-→ risk.show
-→ event.watch 或 deployment.watch
-→ 用户明确要求 Stop
-→ deployment.stop(expected generation)
-→ deployment.watch
-→ deployment.show
-```
-
-Stop 的成功标准是进入 `STOPPING` 或 `STOPPED` 并记录撤单流程；不得声称已有仓位被平仓。
-
-### 15.5 人工审批 handoff
-
-```text
-approval.show
-→ approval.prepare_decision
-→ 返回不可变 snapshot 摘要和本地 CLI 命令
-→ 等待人类决定
-→ 后续会话只读 approval.show / deployment.watch
-```
-
-Agent 不代替人类输入确认文本。
-
-## 16. API 与持久化增量
-
-为支持 CLI/Agent，目标 API 增加或统一以下合同：
-
-```text
-GET  /api/v1/cli/manifest
-POST /api/v1/agent-artifacts              # streaming upload
-GET  /api/v1/agent-artifacts/{id}
-DELETE /api/v1/agent-artifacts/{id}
-GET  /api/v1/jobs/{id}                    # plugin job 等有限作业状态
-```
-
-全部 mutation routes 支持：
-
-```text
-Idempotency-Key
-X-QF-Command
-X-QF-Agent-Profile
-expected state/version/generation fields
-```
-
-`X-QF-Agent-Profile` 只用于审计和结果关联，不把 loopback API 改造成公网认证系统；远程权限边界由 forced-command Gateway 保证。API 仍执行业务校验，不能信任 CLI 已经检查。
-
-新增表：
-
-```text
-agent_artifacts
-agent_idempotency_records
-```
-
-不新增：
-
-```text
-Agent conversation
-LLM prompt/history
-模型 credential
-Agent memory
-通用 command bus
-订单/成交/仓位镜像
-```
-
-## 17. 观测与错误语义
-
-CLI JSON 输出和 server event 使用同一 error code，不翻译成不可解析的自然语言。新增至少：
-
-```text
-CLI_PROTOCOL_UNSUPPORTED
-CLI_COMMAND_UNKNOWN
-REMOTE_API_ENDPOINT_FORBIDDEN
-AGENT_PROFILE_FORBIDDEN
-AGENT_GATEWAY_COMMAND_FORBIDDEN
-HUMAN_ACTION_REQUIRED
+MCP_PROTOCOL_UNSUPPORTED
+MCP_ORIGIN_FORBIDDEN
+MCP_TOKEN_INVALID
+MCP_AUDIENCE_INVALID
+MCP_SCOPE_INSUFFICIENT
+MCP_TOOL_FORBIDDEN
+MCP_TASK_NOT_FOUND
+MCP_TASK_ACCESS_DENIED
+IDEMPOTENCY_KEY_REQUIRED
 IDEMPOTENCY_KEY_REUSED
-OPERATION_IN_PROGRESS
+PRECONDITION_REQUIRED
 PRECONDITION_FAILED
+IMPACT_TOKEN_REQUIRED
+IMPACT_TOKEN_EXPIRED
+HUMAN_ACTION_REQUIRED
 AGENT_ARTIFACT_INVALID
+AGENT_ARTIFACT_INCOMPLETE
 AGENT_ARTIFACT_EXPIRED
 AGENT_ARTIFACT_ALREADY_CONSUMED
-AGENT_UPLOAD_INCOMPLETE
-AGENT_UPLOAD_TOO_LARGE
 ```
 
-Agent mode 的 stderr 只允许传输诊断，不能包含业务结果或 Secret。日志必须带 `request_id`、`profile_id` 和 canonical command。
+### 15.2 Human handoff
 
-## 18. 测试与验收
+Human-only Tool 请求返回：
 
-### 18.1 CLI
+```json
+{
+  "code": "HUMAN_ACTION_REQUIRED",
+  "message": "Deployment start approval must be decided locally.",
+  "details": {
+    "approval_id": "...",
+    "local_cli": "qf approval show <id>",
+    "effect": "Approval may permit a new Recovery generation and later live trading."
+  }
+}
+```
 
-- [ ] Human 与 Agent mode 使用同一 command registry；
-- [ ] JSON mode stdout 永远是合法单行 JSON object；
-- [ ] 非 loopback endpoint 在发请求前被拒绝；
-- [ ] 所有 mutation 在 Agent mode 缺少 idempotency key 时失败；
-- [ ] 同 key 重试返回同一结果；错误复用被拒绝；
-- [ ] expected state/version/generation 冲突不执行 mutation；
-- [ ] timeout 不取消后台 job/run；
-- [ ] exit code 与 JSON error 一致；
-- [ ] CLI 不导入插件、Strategy 或 Nautilus。
+不返回可由 Agent 执行的 approval token 或隐藏替代路径。
 
-### 18.2 Upload
+## 16. 审计与限流
 
-- [ ] binary streaming 不全量载入内存；
-- [ ] 少于或多于 `size_bytes` 均失败；
-- [ ] 中断清理 staging；
-- [ ] filename traversal 被拒绝；
-- [ ] Secret kind 被拒绝；
-- [ ] Artifact expiry、consume 和重复 consume 语义正确；
-- [ ] 不创建 checksum/hash/fingerprint。
-
-### 18.3 Gateway
-
-- [ ] Agent SSH key 无普通 Shell；
-- [ ] 无 port/agent/X11 forwarding 和 PTY；
-- [ ] 只接受 exec/upload/manifest；
-- [ ] Profile 禁止的命令在 API 调用前失败；
-- [ ] Human-only 命令无法通过任何 Profile 授予；
-- [ ] Agent 不能访问 API port、DB、Docker socket 或持久卷；
-- [ ] Gateway/CLI 崩溃不改变正在运行的 Deployment。
-
-### 18.4 Skill
-
-使用真实 CLI process tests，不只审阅文本：
-
-- [ ] Skill 每次会话先读取 manifest/status；
-- [ ] 能完成 Research → Experiment → Run watch；
-- [ ] 能上传 Strategy、wheel 和 Parquet artifact；
-- [ ] 遇到 Approval 只产生 handoff，不调用 approve/reject；
-- [ ] 遇到 Secret 请求拒绝接收值；
-- [ ] Deployment Stop 后明确“不强平”；
-- [ ] `RECOVERY_BLOCKED` 不被绕过；
-- [ ] protocol/version mismatch 时停止 mutation；
-- [ ] stale state 时重新读取而非盲重试。
-
-## 19. 实施顺序
-
-### C0：协议 Spike
-
-- 建立 `qf` console script；
-- 实现 `agent.manifest`、`system.status` 和一个 read command；
-- 实现 JSONL one-request/one-response；
-- 实现 loopback-only transport；
-- 实现 forced-command Gateway 和 observer Profile；
-- 用远程进程证明 Agent 无 Shell、无 API 直连。
-
-### C1：可靠 Mutation
-
-- command registry 与 Safety class；
-- idempotency records；
-- optimistic preconditions；
-- job/run/deployment wait/watch；
--统一 JSON envelope 和 exit codes。
-
-### C2：Artifact Upload
-
-- framed binary upload；
-- `agent_artifacts`；
-- Strategy/plugin/Parquet 消费；
-- stream、cleanup、expiry 和 size tests。
-
-### C3：业务命令覆盖
-
-按顺序接入：
+每个 MCP 调用记录：
 
 ```text
-System/Plugin
-→ Credential reference/Connections
-→ Dataset/Strategy/Research
-→ Experiment/Run
-→ Approval handoff
-→ Deployment/Risk/Universe/Events
+request_id
+MCP session id when present
+OAuth issuer
+subject when present
+client_id / azp
+scopes
+tool name
+safety class
+idempotency key
+resource IDs
+result/error code
+latency
+created task/job/run/deployment ID
 ```
 
-Secret、Approval decision 和 force remove 始终只保留 Human mode。
+禁止记录：
 
-### C4：Skill
+```text
+access token
+refresh token
+private key
+API secret
+ciphertext/nonce
+Strategy source body
+Parquet content
+```
 
-- 提交 `skills/quantfoundry/SKILL.md`；
-- 提交 command/safety references 和 remote helper；
-- 运行端到端 Skill smoke tests；
-- 记录支持的 Agent 平台和安装方式，但不把 Skill 与单一模型 provider 耦合。
+限流维度：
 
-### C5：外部实盘前验收
+```text
+client_id
+subject
+tool
+mutation/read class
+upload bytes
+concurrent tasks
+```
 
-- 独立 reviewer 检查 Gateway、Profile、Secret 和 Approval 边界；
-- 验证 Agent 能监控和 Stop，但不能启动未审批实盘；
-- 验证 Agent/CLI 故障不会绕过 central risk 或 recovery；
-- 再进入 Polymarket production canary。
+对 `qf.deployment.stop` 不应设置会阻止紧急风险收缩的低限额，但仍要防止并发重复调用，依靠幂等和状态前置条件收口。
 
-## 20. 已知限制
+## 17. 目标代码树
 
-- V1 远程 Agent 依赖操作者已有的 SSH 基础设施；QF 不负责公网暴露和主机账号生命周期；
-- Agent Profile 是单机 OS/CLI 策略，不是完整 RBAC；
-- Agent 不能独立完成 Secret 写入、资金 Approval、force remove 或真实 canary；
-- 文件上传 V1 不支持断点续传；
-- Skill 能提高流程一致性，但不能替代 API 状态机、风险校验和人类资金责任；
-- CLI/Skill 当前仅为目标设计，必须完成 process、Gateway 和外部 Agent smoke tests后才能声明可用。
+```text
+backend/src/quantfoundry/
+├── cli/
+│   ├── main.py
+│   ├── client.py
+│   ├── registry.py
+│   ├── output.py
+│   ├── oauth.py
+│   ├── mcp_client.py
+│   └── artifact_upload.py
+├── mcp/
+│   ├── main.py
+│   ├── server.py
+│   ├── auth.py
+│   ├── scopes.py
+│   ├── tools.py
+│   ├── resources.py
+│   ├── tasks.py
+│   ├── artifacts.py
+│   ├── errors.py
+│   └── audit.py
+└── commands/
+    ├── registry.py
+    ├── models.py
+    └── handlers.py
 
-## 21. 参考
+skills/quantfoundry/
+├── SKILL.md
+└── references/
+    ├── commands.md
+    └── safety.md
+```
 
-- OpenAI Skills：Skill 通常由名称、描述、`SKILL.md` 工作流和支持资源组成；
-- Python Packaging entry points：用于 QF runtime plugin，而不是 CLI Skill；
-- OpenSSH forced command：作为远程 Agent 的主机传输边界；
-- `DESIGN.md`：产品、领域、API、风险和 Deployment 的唯一完整事实源；
-- `OPERATIONS.md`：用户运行角色和工作台节点。
+`commands/registry.py` 是本地 CLI 和 MCP Tool 的共享映射层，但领域行为仍由 service/API handler 拥有。
+
+## 18. 依赖选择
+
+- 使用官方 MCP Python SDK，实施时固定经过验证的稳定版本；
+- 使用现有 ASGI/FastAPI/Starlette 运行时；
+- OAuth token 验证使用已批准 JOSE/JWT 库，禁止自行实现签名算法；
+- 使用现有 HTTP client 调内部 API和 OAuth metadata/JWKS；
+- 不引入 SSH 库；
+- 不引入第二个 Web Framework；
+- 不实现通用 API Gateway。
+
+版本必须由 `uv.lock` 精确锁定。MCP SDK 升级需要协议和 Tool schema 回归。
+
+## 19. 验证矩阵
+
+### 19.1 Protocol
+
+- [ ] MCP Initialize、tools/list、tools/call、resources/list/read 通过官方 Inspector/SDK。
+- [ ] `MCP-Protocol-Version` 缺失、错误和不支持版本行为正确。
+- [ ] JSON 与 SSE response 均可用；断线不被当作取消。
+- [ ] Origin/Host allowlist 被真实 HTTP 测试证明。
+- [ ] Gateway 重启不改变底层 Run/Deployment 状态。
+
+### 19.2 OAuth
+
+- [ ] RFC 9728 metadata 和 401 challenge 可发现 Authorization Server。
+- [ ] Authorization Code + PKCE 可连接。
+- [ ] Client Credentials 可连接受限机器 Agent。
+- [ ] 错误 issuer、过期 token、错误 audience 和错误 resource 被拒绝。
+- [ ] access token 不传给 Core API 或下游 Venue。
+- [ ] tools/list 只返回当前 scopes 可见工具。
+- [ ] insufficient scope 返回 403 和正确 challenge。
+
+### 19.3 Tool safety
+
+- [ ] Human-only Tool 永不出现在 tools/list。
+- [ ] 直接调用不存在/禁止 Tool 不产生副作用。
+- [ ] Mutation 缺少 idempotency/precondition 被拒绝。
+- [ ] 同 key 同请求返回同 receipt；同 key 不同请求被拒绝。
+- [ ] Impact token 与 principal/target/version 绑定。
+- [ ] Stop 明确不强平，且重复请求不创建多次 Stop。
+
+### 19.4 Tasks
+
+- [ ] 无 Tasks 客户端可通过 operation/resource ID 完成全部流程。
+- [ ] 支持 Tasks 的客户端可以创建、轮询和取回结果。
+- [ ] task 与 OAuth principal 绑定，跨 principal 不可读。
+- [ ] task cancellation 不伪造底层取消成功。
+
+### 19.5 Artifact
+
+- [ ] Strategy/Wheel/Parquet 可通过 HTTPS upload session 流式上传。
+- [ ] 10 GiB 文件不在 Gateway/API 全量入内存。
+- [ ] offset resume、过期、超限、错误 filename 和错误 kind 被处理。
+- [ ] token/principal 不匹配无法上传或 finalize。
+- [ ] 不创建应用级 checksum/hash/fingerprint。
+- [ ] Secret 文件类型不可创建 upload session。
+
+### 19.6 Skill E2E
+
+- [ ] Skill 只调用 MCP Tools/Resources。
+- [ ] Skill 不读取、输出或请求 OAuth token/Secret。
+- [ ] Skill 正确处理 scope challenge 和 human handoff。
+- [ ] Skill 可完成 Research → Experiment → Run monitoring → Approval preparation。
+- [ ] Skill 可诊断 `RECOVERY_BLOCKED`，但不能绕过。
+- [ ] 明确用户请求时可执行 scoped Stop，并准确报告未平仓风险。
+
+## 20. 实施路线
+
+### M0：MCP Read-only Spike
+
+实现：
+
+```text
+mcp-gateway
+OAuth token verifier
+RFC 9728 metadata
+tools/list
+qf.system.status
+qf://manifest
+```
+
+完成条件：远程 MCP Client 通过 HTTPS/OAuth 连接；Core API 仍只有 loopback/internal；不存在 SSH 或 raw API 暴露。
+
+### M1：Shared Command Registry
+
+- CLI 和 MCP 共用 command metadata；
+- read tools 覆盖系统、插件、Dataset、Research、Run、Deployment 和 Risk；
+- structuredContent/outputSchema；
+- audit 和 rate limit。
+
+### M2：Reliable Mutation
+
+- scopes；
+- idempotency；
+- expected preconditions；
+- impact token；
+- Human Handoff；
+- read-modify-verify 测试。
+
+### M3：Artifact Upload
+
+- begin/finalize tools；
+- HTTPS resumable upload endpoint；
+- companion CLI；
+- Strategy/Wheel/Parquet 消费；
+- 失败和过期清理。
+
+### M4：Tasks 与 Notifications
+
+- 可选 MCP Tasks；
+- QF job/run/deployment 映射；
+- resource subscription；
+- reconnect 和 gateway restart 测试。
+
+### M5：Skill Coverage
+
+- 更新 Skill、commands 和 safety references；
+- 完成 Plugin、Data、Research、Experiment、Approval Preparation、Deployment Monitor、Risk、Universe、Recovery 工作流；
+- 不包含 human-only actions。
+
+### M6：Live Boundary Review
+
+独立验证：
+
+- Secret；
+- Approval；
+- Plugin Force Remove；
+- Stop；
+- Central Risk；
+- Recovery；
+- Production canary；
+- OAuth audience和 scope。
+
+只有 M0–M5 通过后，才能宣称远程 Agent 可操作；只有 M6 与真实资金验收通过后，才能把 MCP 通道用于 live Deployment 相关 mutation。
+
+## 21. 官方参考
+
+- [MCP 2025-11-25 Specification](https://modelcontextprotocol.io/specification/2025-11-25)
+- [MCP Streamable HTTP Transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+- [MCP Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+- [MCP Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+- [MCP Tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
+- [MCP Elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation)
+- [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+- [RFC 9728: OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728)
+- [RFC 8707: Resource Indicators for OAuth 2.0](https://www.rfc-editor.org/rfc/rfc8707)
+- [RFC 9700: Best Current Practice for OAuth 2.0 Security](https://www.rfc-editor.org/rfc/rfc9700)
+
+---
+
+本文件描述目标 CLI/MCP/Skill 合同。当前仓库尚未实现 `qf` CLI、MCP Gateway、OAuth resource server、Artifact upload、Tasks 或远程 Agent E2E，因此不得宣称该通道已可用。
