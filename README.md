@@ -32,7 +32,9 @@ Runtime plugin install / activate
 
 插件以具体 release 和不可变 runtime bundle 固定到 Run/Deployment。系统支持运行时动态插拔，但不在已经加载插件的 Python/TradingNode 进程内执行 `reload()` 或原地替换 adapter；正在运行的执行插件切换通过 drain、Stop 或受控 restart/recovery 完成。
 
-QF 不提供浏览器前端、用户登录、workspace、AI/Agent、Paper scheduler 或自研交易内核；订单、成交、仓位、NAV、撮合和 Polymarket 协议由 NautilusTrader/交易场所负责。上传的 Plugin 和 Strategy 是可信本地操作员代码，不是安全沙箱。
+QF 提供官方 `qf` CLI，供本机操作者和远程 AI Agent 使用。远程 Agent 不直接连接 loopback API，而是通过受限 SSH forced-command Gateway 调用 `qf agent exec/upload` 的结构化协议。Agent 可以完成研究、数据、监控和显式授权的风险收缩操作；Secret 写入、真实资金审批、强制插件卸载和 live canary 保留给本地人工。
+
+QF 不提供浏览器前端、用户登录、workspace、内置 LLM/Agent runtime、Paper scheduler 或自研交易内核；订单、成交、仓位、NAV、撮合和 Polymarket 协议由 NautilusTrader/交易场所负责。上传的 Plugin 和 Strategy 是可信本地操作员代码，不是安全沙箱。
 
 ## 目标 Quick Start
 
@@ -43,16 +45,21 @@ cp .env.example .env
 # 注入外部 QF_MASTER_KEY；不要把 secret 写入仓库
 docker compose up --build
 curl http://127.0.0.1:8000/api/v1/system/health
-curl http://127.0.0.1:8000/api/v1/plugins
+qf status
+qf agent manifest
 ```
 
-插件安装通过 `/api/v1/plugin-releases` 上传 PRIMARY wheel 和依赖 wheels，随后异步完成离线安装与 descriptor validation；在资源绑定或调用 `/api/v1/plugin-runtime-bundles/prewarm` 时，按具体 release 组合异步构建 runtime bundle。当前仓库尚未达到可运行或可交易状态；上述命令和接口是目标部署入口，不是当前完成度声明。API 只绑定 loopback，不默认提供 Swagger UI、Redoc、testnet、公共插件市场或盈利承诺。
+插件安装通过 `/api/v1/plugin-releases` 或对应 `qf plugin install` 命令上传 PRIMARY wheel 和依赖 wheels，随后异步完成离线安装与 descriptor validation；在资源绑定或执行 bundle prewarm 时，按具体 release 组合异步构建 runtime bundle。
+
+当前仓库尚未达到可运行或可交易状态；上述命令、CLI 和接口是目标部署入口，不是当前完成度声明。API 只绑定 loopback，不默认提供 Swagger UI、Redoc、testnet、公共插件市场或盈利承诺。
 
 ## 文档
 
 - [完整产品与架构设计](DESIGN.md)：唯一产品、领域、插件生命周期、接口、运行约束和验收事实源。
 - [用户运行操作模型](OPERATIONS.md)：从操作者视角说明运行角色、工作台节点、人工审批点、自动流程和异常处置。
-- [Agent 开发治理](AGENTS.md)：文档围栏、动态插件纪律、变更顺序、Ponytail、验证和复核要求。
+- [CLI 与远程 Agent Skill 技术设计](CLI.md)：CLI 命令、JSONL 协议、SSH Gateway、幂等、文件上传、Agent Profile 和 Skill 合同。
+- [QuantFoundry Skill](skills/quantfoundry/SKILL.md)：供支持 `SKILL.md` 的 AI Agent 安装和调用的运行工作流。
+- [Agent 开发治理](AGENTS.md)：文档围栏、动态插件纪律、CLI/Skill 边界、变更顺序、Ponytail、验证和复核要求。
 
 ## 许可证
 
