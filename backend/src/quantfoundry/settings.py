@@ -57,6 +57,10 @@ class Settings:
     bundle_build_timeout_seconds: int
     plugin_job_timeout_seconds: int
     integration_preflight_timeout_seconds: int
+    strategy_validation_timeout_seconds: int
+    parquet_import_timeout_seconds: int
+    backtest_timeout_seconds: int
+    research_job_timeout_seconds: int
     job_poll_seconds: float
     job_lease_seconds: int
     supervisor_poll_seconds: float
@@ -108,6 +112,16 @@ class Settings:
             ),
             integration_preflight_timeout_seconds=_positive_int(
                 "QF_INTEGRATION_PREFLIGHT_TIMEOUT_SECONDS", 120
+            ),
+            strategy_validation_timeout_seconds=_positive_int(
+                "QF_STRATEGY_VALIDATION_TIMEOUT_SECONDS", 60
+            ),
+            parquet_import_timeout_seconds=_positive_int(
+                "QF_PARQUET_IMPORT_TIMEOUT_SECONDS", 3600
+            ),
+            backtest_timeout_seconds=_positive_int("QF_BACKTEST_TIMEOUT_SECONDS", 3600),
+            research_job_timeout_seconds=_positive_int(
+                "QF_RESEARCH_JOB_TIMEOUT_SECONDS", 43_200
             ),
             job_poll_seconds=_positive_float("QF_JOB_POLL_SECONDS", 1.0),
             job_lease_seconds=_positive_int("QF_JOB_LEASE_SECONDS", 60),
