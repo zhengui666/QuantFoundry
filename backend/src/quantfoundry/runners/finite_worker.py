@@ -1,8 +1,4 @@
-"""Durable finite-job worker.
-
-P0/P1 implements queue ownership and process health. Concrete plugin, import, and
-backtest handlers are added by later milestones and remain isolated child processes.
-"""
+"""Durable finite-job worker with isolated child processes for plugin code."""
 
 from __future__ import annotations
 
@@ -11,10 +7,10 @@ import logging
 import os
 import signal
 import socket
+import subprocess
+import sys
 import time
 from collections.abc import Callable, Sequence
-
-from sqlalchemy.orm import Session
 
 from quantfoundry.db.models import Job
 from quantfoundry.db.session import (
@@ -28,14 +24,46 @@ from quantfoundry.logging_utils import configure_logging
 from quantfoundry.settings import Settings
 
 LOGGER = logging.getLogger("quantfoundry.finite_worker")
-Handler = Callable[[Session, Job], None]
+Handler = Callable[[Settings, Job], None]
 
 
-def _noop_handler(_: Session, __: Job) -> None:
+def _noop_handler(_: Settings, __: Job) -> None:
     return
 
 
-HANDLERS: dict[str, Handler] = {"SYSTEM_NOOP": _noop_handler}
+def _plugin_child(action: str) -> Handler:
+    def handler(settings: Settings, job: Job) -> None:
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "quantfoundry.runners.plugin_jobs",
+                    action,
+                    str(job.id),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=settings.plugin_job_timeout_seconds,
+                env=os.environ.copy(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"plugin {action} child exceeded its time limit") from exc
+        except subprocess.CalledProcessError as exc:
+            diagnostic = (exc.stderr or "plugin child failed")[-4000:]
+            raise RuntimeError(diagnostic) from exc
+
+    return handler
+
+
+HANDLERS: dict[str, Handler] = {
+    "SYSTEM_NOOP": _noop_handler,
+    "PLUGIN_INSTALL": _plugin_child("install"),
+    "PLUGIN_BUNDLE_BUILD": _plugin_child("build"),
+    "PLUGIN_REMOVE": _plugin_child("remove"),
+}
 
 
 class StopFlag:
@@ -64,25 +92,31 @@ def run_once(settings: Settings, *, owner: str) -> bool:
             aggregate_id=job.id,
             payload={"kind": job.kind, "attempt": job.attempt},
         )
+        session.expunge(job)
 
     handler = HANDLERS.get(job.kind)
+    try:
+        if handler is None:
+            raise RuntimeError(f"Unsupported job kind: {job.kind}")
+        handler(settings, job)
+    except Exception as exc:  # noqa: BLE001 - durable job failure boundary
+        with factory.begin() as session:
+            current = session.get(Job, job.id)
+            if current is not None:
+                fail_job(session, current, str(exc)[-4000:])
+                append_event(
+                    session,
+                    kind="JOB_FAILED",
+                    aggregate_type="job",
+                    aggregate_id=current.id,
+                    payload={"error_code": type(exc).__name__},
+                )
+        LOGGER.exception("job failed", extra={"job_id": str(job.id)})
+        return True
+
     with factory.begin() as session:
         current = session.get(Job, job.id)
-        if current is None:
-            return True
-        if handler is None:
-            message = f"Unsupported job kind: {current.kind}"
-            fail_job(session, current, message)
-            append_event(
-                session,
-                kind="JOB_FAILED",
-                aggregate_type="job",
-                aggregate_id=current.id,
-                payload={"error_code": "JOB_KIND_UNSUPPORTED", "message": message},
-            )
-            return True
-        try:
-            handler(session, current)
+        if current is not None:
             complete_job(session, current)
             append_event(
                 session,
@@ -91,16 +125,6 @@ def run_once(settings: Settings, *, owner: str) -> bool:
                 aggregate_id=current.id,
                 payload={"kind": current.kind},
             )
-        except Exception as exc:  # noqa: BLE001 - a job failure must reach durable state
-            fail_job(session, current, str(exc))
-            append_event(
-                session,
-                kind="JOB_FAILED",
-                aggregate_type="job",
-                aggregate_id=current.id,
-                payload={"error_code": type(exc).__name__},
-            )
-            LOGGER.exception("job failed", extra={"job_id": str(current.id)})
     return True
 
 

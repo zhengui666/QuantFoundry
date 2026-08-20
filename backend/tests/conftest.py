@@ -29,7 +29,7 @@ def engine() -> Iterator[Engine]:
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     key = base64.b64encode(b"k" * 32).decode("ascii")
-    return Settings(
+    result = Settings(
         environment="test",
         database_url="sqlite+pysqlite:///:memory:",
         alembic_url="sqlite+pysqlite:///:memory:",
@@ -40,7 +40,13 @@ def settings(tmp_path: Path) -> Settings:
         import_root=tmp_path / "imports",
         agent_artifact_root=tmp_path / "agent-artifacts",
         max_parquet_upload_bytes=1024,
+        max_plugin_wheel_bytes=1024 * 1024,
+        plugin_validation_timeout_seconds=30,
+        bundle_build_timeout_seconds=60,
+        plugin_job_timeout_seconds=90,
         job_poll_seconds=0.01,
         job_lease_seconds=60,
         supervisor_poll_seconds=0.01,
     )
+    result.ensure_worker_directories()
+    return result

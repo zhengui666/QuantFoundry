@@ -52,6 +52,10 @@ class Settings:
     import_root: Path
     agent_artifact_root: Path
     max_parquet_upload_bytes: int
+    max_plugin_wheel_bytes: int
+    plugin_validation_timeout_seconds: int
+    bundle_build_timeout_seconds: int
+    plugin_job_timeout_seconds: int
     job_poll_seconds: float
     job_lease_seconds: int
     supervisor_poll_seconds: float
@@ -89,6 +93,18 @@ class Settings:
             max_parquet_upload_bytes=_positive_int(
                 "QF_MAX_PARQUET_UPLOAD_BYTES", 10 * 1024 * 1024 * 1024
             ),
+            max_plugin_wheel_bytes=_positive_int(
+                "QF_MAX_PLUGIN_WHEEL_BYTES", 256 * 1024 * 1024
+            ),
+            plugin_validation_timeout_seconds=_positive_int(
+                "QF_PLUGIN_VALIDATION_TIMEOUT_SECONDS", 180
+            ),
+            bundle_build_timeout_seconds=_positive_int(
+                "QF_BUNDLE_BUILD_TIMEOUT_SECONDS", 600
+            ),
+            plugin_job_timeout_seconds=_positive_int(
+                "QF_PLUGIN_JOB_TIMEOUT_SECONDS", 900
+            ),
             job_poll_seconds=_positive_float("QF_JOB_POLL_SECONDS", 1.0),
             job_lease_seconds=_positive_int("QF_JOB_LEASE_SECONDS", 60),
             supervisor_poll_seconds=_positive_float(
@@ -106,6 +122,11 @@ class Settings:
             return False
         return len(decoded) == 32
 
+    def master_key_bytes(self) -> bytes:
+        if not self.master_key_configured or self.master_key is None:
+            raise SettingsError("QF_MASTER_KEY must be valid base64 encoding exactly 32 bytes")
+        return base64.b64decode(self.master_key, validate=True)
+
     def validate_database_scheme(self) -> None:
         scheme = urlparse(self.database_url).scheme
         if scheme not in {"postgresql+psycopg", "sqlite+pysqlite", "sqlite"}:
@@ -116,6 +137,11 @@ class Settings:
     def ensure_worker_directories(self) -> None:
         for path in (
             self.plugin_root,
+            self.plugin_root / "staging",
+            self.plugin_root / "validation",
+            self.plugin_root / "releases",
+            self.plugin_root / "bundle-staging",
+            self.plugin_root / "bundles",
             self.catalog_root,
             self.report_root,
             self.import_root,
