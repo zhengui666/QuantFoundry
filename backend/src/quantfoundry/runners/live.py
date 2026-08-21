@@ -8,7 +8,6 @@ import os
 import selectors
 import subprocess
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO
@@ -50,16 +49,7 @@ def _acquire_owner(connection: Connection, deployment_id: UUID) -> None:
         )
 
 
-def _read_message(
-    selector: selectors.BaseSelector,
-    stream: TextIO,
-    *,
-    timeout: float,
-) -> dict[str, Any]:
-    events = selector.select(timeout)
-    if not events:
-        raise QfError("LIVE_START_FAILED", "Live node response timed out.", 503)
-    line = stream.readline()
+def _decode_message(line: str) -> dict[str, Any]:
     if not line:
         raise QfError("LIVE_START_FAILED", "Live node exited before responding.", 503)
     try:
@@ -69,6 +59,23 @@ def _read_message(
     if not isinstance(value, dict):
         raise QfError("LIVE_START_FAILED", "Live node response must be an object.", 503)
     return value
+
+
+def _read_message(
+    selector: selectors.BaseSelector,
+    stream: TextIO,
+    *,
+    timeout: float,
+) -> dict[str, Any]:
+    events = selector.select(timeout)
+    if not events:
+        raise QfError("LIVE_START_FAILED", "Live node response timed out.", 503)
+    return _decode_message(stream.readline())
+
+
+def _send_command(stream: TextIO, command: str, **payload: Any) -> None:
+    stream.write(json.dumps({"command": command, **payload}, separators=(",", ":")) + "\n")
+    stream.flush()
 
 
 def _mark_blocked(
@@ -113,6 +120,7 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
     owner_connection = engine.connect()
     process: subprocess.Popen[str] | None = None
     generation = 0
+    selector: selectors.BaseSelector | None = None
     try:
         _acquire_owner(owner_connection, deployment_id)
         with factory.begin() as session:
@@ -155,14 +163,18 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
         bundle_python = Path(str(payload["bundle_python"]))
         if not bundle_python.is_file():
             raise QfError("PLUGIN_RUNTIME_UNAVAILABLE", "Bundle Python is missing.", 503)
-        child_payload = {**payload, "generation": generation}
+        child_payload = {
+            **payload,
+            "generation": generation,
+            "heartbeat_seconds": settings.live_heartbeat_seconds,
+        }
         child_environment = os.environ.copy()
         child_environment.pop("QF_MASTER_KEY", None)
         process = subprocess.Popen(
             [str(bundle_python), "-m", "quantfoundry.runners.live_node"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
             env=child_environment,
@@ -186,10 +198,10 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
                 {"response": recovery},
             )
         instruments = [str(item) for item in recovery.get("instruments") or []]
-        if not instruments:
+        if not instruments or len(instruments) != len(set(instruments)):
             raise QfError(
                 "RECOVERY_BLOCKED",
-                "Recovery returned no active or recovery-roster instruments.",
+                "Recovery must return a unique, non-empty instrument roster.",
                 503,
             )
         limits = {instrument_id: 25_000_000 for instrument_id in instruments}
@@ -213,6 +225,7 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
                 generation=generation,
                 positions=list(recovery.get("positions") or []),
                 open_orders=list(recovery.get("open_orders") or []),
+                mark_ready=False,
             )
             generation_row.state = "RECONCILED"
             revision = (
@@ -253,25 +266,51 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
                 payload={"generation": generation, "instrument_count": len(instruments)},
             )
 
-        process.stdin.write(
-            json.dumps(
-                {"command": "ARM", "instrument_limits_micros": limits},
-                separators=(",", ":"),
-            )
-            + "\n"
+        _send_command(
+            process.stdin,
+            "ARM",
+            instrument_limits_micros=limits,
         )
-        process.stdin.flush()
-        armed = _read_message(
+        ready = _read_message(
             selector,
             process.stdout,
             timeout=float(settings.live_runner_start_timeout_seconds),
         )
-        if armed.get("kind") != "TRADING":
+        if ready.get("kind") != "STRATEGY_READY":
+            raise QfError(
+                "LIVE_START_FAILED",
+                "Live node did not report Strategy readiness.",
+                503,
+                {"response": ready},
+            )
+        with factory.begin() as session:
+            generation_row = session.execute(
+                select(DeploymentGeneration).where(
+                    DeploymentGeneration.deployment_id == deployment_id,
+                    DeploymentGeneration.generation == generation,
+                )
+            ).scalar_one()
+            generation_row.state = "STRATEGY_READY"
+            append_event(
+                session,
+                kind="DEPLOYMENT_STRATEGY_READY",
+                aggregate_type="deployment",
+                aggregate_id=deployment_id,
+                payload={"generation": generation},
+            )
+
+        _send_command(process.stdin, "START")
+        trading = _read_message(
+            selector,
+            process.stdout,
+            timeout=float(settings.live_runner_start_timeout_seconds),
+        )
+        if trading.get("kind") != "TRADING":
             raise QfError(
                 "LIVE_START_FAILED",
                 "Live node did not enter TRADING.",
                 503,
-                {"response": armed},
+                {"response": trading},
             )
         with factory.begin() as session:
             deployment = session.get(Deployment, deployment_id)
@@ -282,12 +321,13 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
                 )
             ).scalar_one()
             assert deployment is not None
+            now = datetime.now(UTC)
             deployment.observed_state = "RUNNING"
             generation_row.state = "TRADING"
-            generation_row.last_heartbeat_at = datetime.now(UTC)
+            generation_row.last_heartbeat_at = now
             account = session.get(RiskAccount, deployment.funder_id)
             assert account is not None
-            account.last_heartbeat_at = datetime.now(UTC)
+            account.last_heartbeat_at = now
             account.status = "READY"
             append_event(
                 session,
@@ -314,7 +354,7 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
                         503,
                     )
                 continue
-            message = _read_message(selector, process.stdout, timeout=0.01)
+            message = _decode_message(process.stdout.readline())
             if message.get("kind") == "HEARTBEAT":
                 now = datetime.now(UTC)
                 with factory.begin() as session:
@@ -348,8 +388,7 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
                     )
                 ).scalar_one()
                 generation_row.state = "STOPPING"
-        process.stdin.write(json.dumps({"command": "STOP"}) + "\n")
-        process.stdin.flush()
+        _send_command(process.stdin, "STOP")
         try:
             process.wait(timeout=settings.live_runner_stop_timeout_seconds)
         except subprocess.TimeoutExpired:
@@ -400,7 +439,10 @@ def run(payload: dict[str, Any], settings: Settings) -> int:
                 process.wait()
         raise
     finally:
+        if selector is not None:
+            selector.close()
         owner_connection.close()
+        engine.dispose()
 
 
 def build_parser() -> argparse.ArgumentParser:
