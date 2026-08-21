@@ -51,7 +51,16 @@ class DatasetImportResponse(BaseModel):
 
 
 def _view(item: CatalogDataset) -> DatasetView:
-    return DatasetView.model_validate(item, from_attributes=True)
+    return DatasetView(
+        id=item.id,
+        data_source_id=item.data_source_id,
+        instrument_id=item.instrument_id,
+        catalog_path=item.catalog_path,
+        metadata=item.dataset_metadata,
+        row_count=item.row_count,
+        state=item.state,
+        run_id=item.run_id,
+    )
 
 
 def _ready_bundle(session: Session, release_id: UUID) -> PluginRuntimeBundle:
@@ -188,6 +197,8 @@ async def import_parquet_l2(
             422,
         )
     bundle = _ready_bundle(session, source.plugin_release_id)
+    source_id_value = source.id
+    bundle_id = bundle.id
     session.rollback()
 
     run_id = uuid4()
@@ -211,21 +222,21 @@ async def import_parquet_l2(
             run = Run(
                 id=run_id,
                 experiment_id=None,
-                runtime_bundle_id=bundle.id,
+                runtime_bundle_id=bundle_id,
                 type="PARQUET_IMPORT",
                 state="QUEUED",
                 summary={
-                    "data_source_id": str(source.id),
+                    "data_source_id": str(source_id_value),
                     "instrument_id": instrument_id.strip(),
                     "source_label": source_label.strip(),
                 },
             )
             dataset = CatalogDataset(
                 id=dataset_id,
-                data_source_id=source.id,
+                data_source_id=source_id_value,
                 instrument_id=instrument_id.strip(),
                 catalog_path=str(Path("datasets") / str(dataset_id)),
-                metadata=dataset_metadata,
+                dataset_metadata=dataset_metadata,
                 state="IMPORTING",
                 run_id=run_id,
             )
