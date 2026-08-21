@@ -85,7 +85,10 @@ impl std::error::Error for ReservationError {}
 pub fn reserve(request: ReservationRequest) -> Result<PusdMicros, ReservationError> {
     validate_non_negative(request.requested_increase)?;
     validate_non_negative(request.gross_limit)?;
-    let projected = request.current.gross()?.checked_add(request.requested_increase)?;
+    let projected = request
+        .current
+        .gross()?
+        .checked_add(request.requested_increase)?;
     if projected > request.gross_limit {
         return Err(ReservationError::LimitExceeded {
             projected,
