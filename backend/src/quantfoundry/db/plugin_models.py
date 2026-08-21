@@ -209,6 +209,7 @@ class CatalogDataset(Base):
         CheckConstraint(
             "state IN ('IMPORTING','READY','FAILED')", name="ck_catalog_dataset_state"
         ),
+        Index("ix_catalog_dataset_source_state", "data_source_id", "state"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -217,6 +218,9 @@ class CatalogDataset(Base):
     )
     instrument_id: Mapped[str] = mapped_column(String(300), nullable=False)
     catalog_path: Mapped[str] = mapped_column(Text, nullable=False)
+    dataset_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON_VALUE, nullable=False, default=dict
+    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     row_count: Mapped[int | None] = mapped_column(BigInteger)
