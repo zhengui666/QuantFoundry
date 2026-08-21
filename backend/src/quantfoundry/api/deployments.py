@@ -7,7 +7,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -372,14 +372,12 @@ def create_deployment(
                 503,
             )
         data_release = session.get(PluginRelease, data_source.plugin_release_id)
-        execution_release = session.get(
-            PluginRelease, execution.plugin_release_id
-        )
+        execution_release = session.get(PluginRelease, execution.plugin_release_id)
         if data_release is None or execution_release is None:
             raise QfError("PLUGIN_RUNTIME_UNAVAILABLE", "Plugin release is missing.", 503)
-        if data_release.descriptor_snapshot.get("compatibility_key") != execution_release.descriptor_snapshot.get(
+        if data_release.descriptor_snapshot.get(
             "compatibility_key"
-        ):
+        ) != execution_release.descriptor_snapshot.get("compatibility_key"):
             raise QfError(
                 "DATA_EXEC_INCOMPATIBLE",
                 "Data and execution plugins have different compatibility keys.",
