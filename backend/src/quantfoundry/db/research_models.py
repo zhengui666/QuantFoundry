@@ -64,10 +64,14 @@ class ResearchCase(Base, TimestampMixin):
             "state IN ('DRAFT','ACTIVE','REVIEW','CLOSED')",
             name="ck_research_case_state",
         ),
+        Index("ix_research_case_state", "state", "updated_at"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
+    strategy_version_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("strategy_versions.id", ondelete="RESTRICT")
+    )
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
     content_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -106,6 +110,7 @@ class Experiment(Base):
             "train_end <= holdout_start OR holdout_end <= train_start",
             name="ck_experiment_non_overlapping_ranges",
         ),
+        Index("ix_experiment_research", "research_id", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -129,7 +134,7 @@ class Experiment(Base):
     holdout_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     seed: Mapped[int] = mapped_column(Integer, nullable=False)
     objective_directions: Mapped[list[str]] = mapped_column(JSON_VALUE, nullable=False)
-    optuna_study_name: Mapped[str | None] = mapped_column(String(300))
+    optuna_study_name: Mapped[str | None] = mapped_column(String(300), unique=True)
     selected_trial_no: Mapped[int | None] = mapped_column(Integer)
 
 
@@ -166,6 +171,7 @@ class Run(Base):
 
 class Report(Base):
     __tablename__ = "reports"
+    __table_args__ = (UniqueConstraint("run_id", "kind", name="uq_report_run_kind"),)
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     run_id: Mapped[UUID] = mapped_column(
@@ -191,6 +197,7 @@ class Approval(Base):
             "state IN ('PENDING','APPROVED','REJECTED')",
             name="ck_approval_state",
         ),
+        Index("ix_approval_resource_state", "resource_type", "resource_id", "state"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)

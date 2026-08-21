@@ -37,10 +37,10 @@ def _callable_with_one_argument(value: Any, name: str) -> None:
         raise RuntimeError(f"{name}() must require exactly one positional argument")
 
 
-def validate(path: Path, config: dict[str, object]) -> tuple[str, ...]:
+def validate(path: Path, config: dict[str, Any]) -> tuple[str, ...]:
     try:
+        from nautilus_trader.config import StrategyConfig
         from nautilus_trader.trading import Strategy as NautilusStrategy
-        from nautilus_trader.trading import StrategyConfig
     except ImportError as exc:
         raise RuntimeError("NautilusTrader v2 runtime is unavailable") from exc
 
@@ -48,11 +48,18 @@ def validate(path: Path, config: dict[str, object]) -> tuple[str, ...]:
     config_type = getattr(module, "Config", None)
     strategy_type = getattr(module, "Strategy", None)
     if not isinstance(config_type, type) or not issubclass(config_type, StrategyConfig):
-        raise RuntimeError("Config must subclass nautilus_trader.trading.StrategyConfig")
+        raise RuntimeError("Config must subclass nautilus_trader.config.StrategyConfig")
     if not isinstance(strategy_type, type) or not issubclass(strategy_type, NautilusStrategy):
         raise RuntimeError("Strategy must subclass nautilus_trader.trading.Strategy")
 
-    config_type(**config)
+    config_instance = config_type(**config)
+    strategy_instance = strategy_type(config_instance)
+    if not isinstance(strategy_instance, NautilusStrategy):
+        raise RuntimeError("Strategy(config) must construct a Nautilus Strategy")
+    dispose = getattr(strategy_instance, "dispose", None)
+    if dispose is not None and callable(dispose):
+        dispose()
+
     _callable_with_one_argument(getattr(module, "suggest", None), "suggest")
     _callable_with_one_argument(getattr(module, "objectives", None), "objectives")
 
@@ -75,8 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     config = json.loads(args.config_json)
-    if not isinstance(config, dict):
-        raise RuntimeError("strategy config must be a JSON object")
+    if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
+        raise RuntimeError("strategy config must be a JSON object with string keys")
     directions = validate(Path(args.source), config)
     print(json.dumps({"objective_directions": directions}, separators=(",", ":")))
     return 0

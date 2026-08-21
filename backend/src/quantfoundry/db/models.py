@@ -12,6 +12,7 @@ from quantfoundry.db.agent_models import (
 from quantfoundry.db.base import Base, TimestampMixin
 from quantfoundry.db.deployment_models import (
     Deployment,
+    DeploymentGeneration,
     DeploymentInstrument,
     DeploymentUniverseRevision,
 )
@@ -66,6 +67,7 @@ __all__ = [
     "Report",
     "Approval",
     "Deployment",
+    "DeploymentGeneration",
     "DeploymentUniverseRevision",
     "DeploymentInstrument",
     "Job",

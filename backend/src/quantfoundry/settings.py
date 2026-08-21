@@ -64,9 +64,16 @@ class Settings:
     job_poll_seconds: float
     job_lease_seconds: int
     supervisor_poll_seconds: float
+    live_runner_start_timeout_seconds: int = 120
+    live_runner_stop_timeout_seconds: int = 30
+    live_heartbeat_seconds: float = 5.0
+    live_recovery_retry_seconds: float = 5.0
+    mcp_internal_token: str | None = None
+    agent_artifact_ttl_seconds: int = 3600
+    max_strategy_source_bytes: int = 1024 * 1024
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         database_url = os.environ.get(
             "QF_DATABASE_URL",
             "postgresql+psycopg://quantfoundry:quantfoundry-local@127.0.0.1:5432/quantfoundry",
@@ -127,6 +134,23 @@ class Settings:
             job_lease_seconds=_positive_int("QF_JOB_LEASE_SECONDS", 60),
             supervisor_poll_seconds=_positive_float(
                 "QF_SUPERVISOR_POLL_SECONDS", 1.0
+            ),
+            live_runner_start_timeout_seconds=_positive_int(
+                "QF_LIVE_RUNNER_START_TIMEOUT_SECONDS", 120
+            ),
+            live_runner_stop_timeout_seconds=_positive_int(
+                "QF_LIVE_RUNNER_STOP_TIMEOUT_SECONDS", 30
+            ),
+            live_heartbeat_seconds=_positive_float("QF_LIVE_HEARTBEAT_SECONDS", 5.0),
+            live_recovery_retry_seconds=_positive_float(
+                "QF_LIVE_RECOVERY_RETRY_SECONDS", 5.0
+            ),
+            mcp_internal_token=os.environ.get("QF_MCP_INTERNAL_TOKEN") or None,
+            agent_artifact_ttl_seconds=_positive_int(
+                "QF_AGENT_ARTIFACT_TTL_SECONDS", 3600
+            ),
+            max_strategy_source_bytes=_positive_int(
+                "QF_MAX_STRATEGY_SOURCE_BYTES", 1024 * 1024
             ),
         )
 

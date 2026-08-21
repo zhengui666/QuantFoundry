@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import importlib.util
 import json
 import math
@@ -54,20 +53,6 @@ def _load_context(settings: Settings, experiment_id: UUID) -> BacktestContext:
         return BacktestContext(experiment=experiment, strategy=strategy, dataset=dataset)
 
 
-def _import_symbol(value: str) -> type[Any]:
-    if ":" not in value:
-        raise QfError(
-            "BACKTEST_INPUT_INVALID",
-            "Dataset data_cls must use module:attribute syntax.",
-            422,
-        )
-    module_name, attribute = value.split(":", 1)
-    symbol = getattr(importlib.import_module(module_name), attribute)
-    if not isinstance(symbol, type):
-        raise QfError("BACKTEST_INPUT_INVALID", "Dataset data_cls is not a class.", 422)
-    return symbol
-
-
 def _load_strategy_module(path: Path, module_name: str) -> ModuleType:
     specification = importlib.util.spec_from_file_location(module_name, path)
     if specification is None or specification.loader is None:
@@ -108,16 +93,16 @@ def execute_backtest(
     phase: Phase,
 ) -> dict[str, Any]:
     try:
-        from nautilus_trader.backtest import BacktestNode
-        from nautilus_trader.config import (
+        from nautilus_trader.backtest import (
             BacktestDataConfig,
             BacktestEngineConfig,
+            BacktestNode,
             BacktestRunConfig,
             BacktestVenueConfig,
-            ImportableStrategyConfig,
         )
         from nautilus_trader.model.enums import AccountType, BookType, OmsType
         from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.trading import ImportableStrategyConfig
     except ImportError as exc:
         raise QfError(
             "RESEARCH_RUNTIME_UNAVAILABLE",
@@ -144,6 +129,7 @@ def execute_backtest(
     source_path = staging / f"{module_name}.py"
     source_path.write_text(context.strategy.source_text, encoding="utf-8")
     sys.path.insert(0, str(staging))
+    node: Any | None = None
     try:
         strategy_module = _load_strategy_module(source_path, module_name)
         config_payload = {**context.strategy.default_config, **parameters}
@@ -153,13 +139,13 @@ def execute_backtest(
             config=config_payload,
         )
         instrument_id = InstrumentId.from_str(context.dataset.instrument_id)
-        data_cls = _import_symbol(
-            str(
-                context.dataset.metadata.get(
-                    "data_cls", "nautilus_trader.model.data:OrderBookDeltas"
-                )
+        data_type = str(context.dataset.dataset_metadata.get("data_type", "OrderBookDeltas"))
+        if not data_type.strip():
+            raise QfError(
+                "BACKTEST_INPUT_INVALID",
+                "Dataset data_type must not be empty.",
+                422,
             )
-        )
         venue = BacktestVenueConfig(
             name="POLYMARKET",
             oms_type=OmsType.NETTING,
@@ -168,24 +154,21 @@ def execute_backtest(
             book_type=BookType.L2_MBP,
         )
         data = BacktestDataConfig(
+            data_type=data_type,
             catalog_path=str(catalog_path),
-            data_cls=data_cls,
             instrument_id=instrument_id,
             start_time=_nanos(start),
             end_time=_nanos(end),
         )
         config = BacktestRunConfig(
-            engine=BacktestEngineConfig(strategies=[strategy_config]),
+            engine=BacktestEngineConfig(),
             data=[data],
             venues=[venue],
         )
         node = BacktestNode(configs=[config])
-        try:
-            results = node.run()
-        finally:
-            dispose = getattr(node, "dispose", None)
-            if dispose is not None and callable(dispose):
-                dispose()
+        node.build()
+        node.add_strategy_from_config(config.id, strategy_config)
+        results = node.run()
         if len(results) != 1:
             raise QfError(
                 "BACKTEST_FAILED",
@@ -212,16 +195,26 @@ def execute_backtest(
             "phase": phase,
             "parameters": _json_safe(parameters),
             "objectives": list(objective_values),
-            "summary": _json_safe(getattr(result, "summary", {})),
-            "stats_pnls": _json_safe(getattr(result, "stats_pnls", {})),
-            "stats_returns": _json_safe(getattr(result, "stats_returns", {})),
-            "stats_general": _json_safe(getattr(result, "stats_general", {})),
-            "returns_series": _json_safe(getattr(result, "returns_series", [])),
-            "iterations": _json_safe(getattr(result, "iterations", None)),
-            "started_ns": _json_safe(getattr(result, "started_ns", None)),
-            "finished_ns": _json_safe(getattr(result, "finished_ns", None)),
+            "summary": _json_safe(result.summary),
+            "stats_pnls": _json_safe(result.stats_pnls),
+            "stats_returns": _json_safe(result.stats_returns),
+            "stats_general": _json_safe(result.stats_general),
+            "returns_series": _json_safe(result.returns_series),
+            "iterations": result.iterations,
+            "total_events": result.total_events,
+            "total_orders": result.total_orders,
+            "total_positions": result.total_positions,
+            "run_started": result.run_started,
+            "run_finished": result.run_finished,
+            "backtest_start": result.backtest_start,
+            "backtest_end": result.backtest_end,
+            "elapsed_time_secs": result.elapsed_time_secs,
         }
     finally:
+        if node is not None:
+            dispose = getattr(node, "dispose", None)
+            if dispose is not None and callable(dispose):
+                dispose()
         try:
             sys.path.remove(str(staging))
         except ValueError:

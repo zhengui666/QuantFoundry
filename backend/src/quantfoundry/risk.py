@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -244,39 +245,65 @@ def replace_projection(
     funder_id: str,
     deployment_id: UUID,
     generation: int,
-    positions: list[dict[str, object]],
-    open_orders: list[dict[str, object]],
+    positions: list[dict[str, Any]],
+    open_orders: list[dict[str, Any]],
     observed_at: datetime | None = None,
+    mark_ready: bool = True,
 ) -> RiskAccount:
     current = observed_at or datetime.now(UTC)
     account = _account_for_update(session, funder_id)
+
+    position_ids = [str(item["instrument_id"]) for item in positions]
+    order_ids = [str(item["client_order_id"]) for item in open_orders]
+    if len(position_ids) != len(set(position_ids)) or len(order_ids) != len(set(order_ids)):
+        raise QfError(
+            "RISK_RECONCILIATION_INVALID",
+            "Venue reconciliation snapshot contains duplicate identities.",
+            422,
+        )
+
     session.query(RiskPosition).filter(RiskPosition.funder_id == funder_id).delete()
     session.query(RiskOpenOrder).filter(RiskOpenOrder.funder_id == funder_id).delete()
     for item in positions:
+        entry_cost = int(item["entry_cost_micros"])
+        if entry_cost < 0:
+            raise QfError(
+                "RISK_RECONCILIATION_INVALID",
+                "Position entry cost cannot be negative.",
+                422,
+            )
         session.add(
             RiskPosition(
                 funder_id=funder_id,
                 instrument_id=str(item["instrument_id"]),
-                entry_cost_micros=int(item["entry_cost_micros"]),
+                entry_cost_micros=entry_cost,
                 observed_at=current,
             )
         )
     for item in open_orders:
+        state = str(item.get("state", "OPEN"))
+        debit = int(item["increase_debit_micros"])
+        if state not in ACTIVE_ORDER_STATES or debit < 0:
+            raise QfError(
+                "RISK_RECONCILIATION_INVALID",
+                "Open-order projection has an invalid state or debit.",
+                422,
+            )
         session.add(
             RiskOpenOrder(
                 funder_id=funder_id,
                 client_order_id=str(item["client_order_id"]),
                 instrument_id=str(item["instrument_id"]),
-                increase_debit_micros=int(item["increase_debit_micros"]),
-                state=str(item.get("state", "OPEN")),
+                increase_debit_micros=debit,
+                state=state,
                 observed_at=current,
             )
         )
     account.owner_deployment_id = deployment_id
     account.owner_generation = generation
     account.last_reconciled_at = current
-    account.last_heartbeat_at = current
-    account.status = "READY"
+    account.last_heartbeat_at = current if mark_ready else None
+    account.status = "READY" if mark_ready else "RECONCILING"
     session.add(
         RiskEvent(
             funder_id=funder_id,
@@ -286,6 +313,7 @@ def replace_projection(
                 "generation": generation,
                 "position_count": len(positions),
                 "open_order_count": len(open_orders),
+                "ready_for_increased_exposure": mark_ready,
             },
         )
     )

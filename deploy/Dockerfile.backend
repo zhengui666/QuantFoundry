@@ -9,13 +9,14 @@ RUN groupadd --system quantfoundry \
     && useradd --system --gid quantfoundry --home-dir /home/quantfoundry \
        --create-home --shell /usr/sbin/nologin quantfoundry \
     && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends libpq5 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+       ca-certificates libpq5 \
     && rm -rf /var/lib/apt/lists/* \
     && python -m venv /opt/venv
 
 WORKDIR /workspace
 COPY backend/ /workspace/backend/
-RUN /opt/venv/bin/python -m pip install --no-cache-dir /workspace/backend
+RUN /opt/venv/bin/python -m pip install --no-cache-dir "/workspace/backend[research,trading,mcp]"
 
 RUN mkdir -p \
       /var/lib/quantfoundry/plugins \

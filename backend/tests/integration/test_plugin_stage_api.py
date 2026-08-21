@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
@@ -64,8 +65,8 @@ def test_stage_release_streams_wheels_and_enqueues_install(
 
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as session:
-        release = session.get(PluginRelease, body["release"]["id"])
-        job = session.get(Job, body["job"]["id"])
+        release = session.get(PluginRelease, UUID(body["release"]["id"]))
+        job = session.get(Job, UUID(body["job"]["id"]))
         assert release is not None
         artifacts = list(
             session.scalars(
