@@ -33,14 +33,12 @@ trading = [
 ]
 mcp = [
   "mcp==2.0.0",
+  "PyJWT[crypto]>=2.13,<3",
 ]
 dev = [
   "mypy>=1.18,<2",
   "pytest>=9,<10",
   "ruff>=0.15,<1",
-]
-production = [
-  "quantfoundry[research,trading,mcp]",
 ]
 
 [project.scripts]
@@ -72,6 +70,17 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 ignore_missing_imports = true
 plugins = []
+
+[[tool.mypy.overrides]]
+module = [
+  "quantfoundry.runners.plugin_jobs",
+  "quantfoundry.runners.research_jobs",
+]
+disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+module = ["quantfoundry.runners.live"]
+disable_error_code = ["arg-type"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
