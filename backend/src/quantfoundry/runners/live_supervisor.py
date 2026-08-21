@@ -5,11 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import signal
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -336,8 +336,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     stop = StopFlag()
-    import signal
-
     signal.signal(signal.SIGTERM, stop.request)
     signal.signal(signal.SIGINT, stop.request)
     LOGGER.info("live supervisor started")
