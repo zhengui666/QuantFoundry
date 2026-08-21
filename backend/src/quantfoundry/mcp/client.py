@@ -126,6 +126,12 @@ class CoreClient:
     async def post(self, path: str, body: dict[str, Any] | None = None) -> Any:
         return await self.request("POST", path, json_body=body or {})
 
+    async def put(self, path: str, body: dict[str, Any]) -> Any:
+        return await self.request("PUT", path, json_body=body)
+
+    async def patch(self, path: str, body: dict[str, Any]) -> Any:
+        return await self.request("PATCH", path, json_body=body)
+
     async def delete(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
         return await self.request("DELETE", path, params=params)
 
