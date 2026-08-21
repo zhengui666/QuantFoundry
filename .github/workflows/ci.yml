@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - codex/quantfoundry-nautilus-redesign
+      - codex/quantfoundry-production-closure
 
 permissions:
   contents: read
@@ -37,14 +38,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - name: Install
-        run: python -m pip install -e 'backend[dev]'
+      - name: Install all product runtimes
+        run: python -m pip install -e 'backend[dev,research,trading,mcp]'
       - name: Compile
         run: python -m compileall -q backend/src
       - name: Lint
-        run: ruff check backend/src backend/tests
+        run: ruff check --config backend/pyproject.toml backend/src backend/tests
       - name: Type check
-        run: mypy backend/src/quantfoundry
+        run: mypy --config-file backend/pyproject.toml backend/src/quantfoundry
+      - name: Runtime import smoke
+        run: |
+          python - <<'PY'
+          import mcp
+          import nautilus_trader
+          import optuna
+          import pyarrow
+          import quantfoundry
+          print(quantfoundry.__version__)
+          PY
       - name: Database preflight and migration
         run: |
           python -m quantfoundry.db.preflight
@@ -54,6 +65,34 @@ jobs:
         run: pytest -q backend/tests
       - name: Compose configuration
         run: docker compose --env-file .env.example config --quiet
+      - name: Production image build
+        run: docker build --file deploy/Dockerfile.backend --tag quantfoundry-ci .
+      - name: Five-service smoke
+        env:
+          QF_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: |
+          docker compose --env-file .env.example up --detach --build
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/system/health > /tmp/qf-health.json; then
+              python - <<'PY'
+          import json
+          data = json.load(open('/tmp/qf-health.json', encoding='utf-8'))
+          if not data.get('live') or not data.get('ready'):
+              raise SystemExit(1)
+          PY
+              break
+            fi
+            if [ "$attempt" = 60 ]; then
+              docker compose --env-file .env.example ps
+              docker compose --env-file .env.example logs --no-color
+              exit 1
+            fi
+            sleep 2
+          done
+          docker compose --env-file .env.example ps
+      - name: Stop Compose
+        if: always()
+        run: docker compose --env-file .env.example down --volumes --remove-orphans
 
   rust:
     runs-on: ubuntu-latest
