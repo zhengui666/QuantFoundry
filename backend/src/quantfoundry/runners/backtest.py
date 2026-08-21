@@ -155,7 +155,7 @@ def execute_backtest(
         instrument_id = InstrumentId.from_str(context.dataset.instrument_id)
         data_cls = _import_symbol(
             str(
-                context.dataset.metadata.get(
+                context.dataset.dataset_metadata.get(
                     "data_cls", "nautilus_trader.model.data:OrderBookDeltas"
                 )
             )
