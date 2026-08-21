@@ -1,10 +1,11 @@
 """Run one live plugin runtime inside an immutable bundle.
 
 The process accepts one JSON configuration on stdin, performs Recovery without a
-Strategy heartbeat, emits a reconciled projection, waits for a structured ARM
-command containing the exact instrument limits, then starts the plugin runtime.
-The plugin remains responsible for constructing the official Nautilus adapter and
-TradingNode; QF does not duplicate venue protocol logic.
+Strategy heartbeat, emits a reconciled projection, accepts a structured ARM command
+containing the exact instrument limits, reports STRATEGY_READY, and starts trading
+only after a separate START command. The plugin remains responsible for constructing
+the official Nautilus adapter and TradingNode; QF does not duplicate venue protocol
+logic.
 """
 
 from __future__ import annotations
@@ -69,6 +70,23 @@ def _stop_runtime(runtime: Any) -> None:
         stop()
 
 
+def _wait_for(
+    command_queue: queue.Queue[dict[str, Any]],
+    runtime: Any,
+    expected: str,
+) -> dict[str, Any] | None:
+    while True:
+        message = command_queue.get()
+        command = str(message.get("command") or "")
+        if command == expected:
+            return message
+        if command == "STOP":
+            _stop_runtime(runtime)
+            _emit("STOPPED")
+            return None
+        _emit("ERROR", message=str(message.get("message") or f"unexpected command: {command}"))
+
+
 def main() -> int:
     first_line = sys.stdin.readline()
     if not first_line:
@@ -118,27 +136,25 @@ def main() -> int:
     command_queue: queue.Queue[dict[str, Any]] = queue.Queue()
     reader = threading.Thread(target=_commands, args=(command_queue,), daemon=True)
     reader.start()
-    while True:
-        message = command_queue.get()
-        command = str(message.get("command") or "")
-        if command == "ARM":
-            raw_limits = message.get("instrument_limits_micros") or {}
-            if not isinstance(raw_limits, dict) or not raw_limits:
-                raise RuntimeError("ARM requires a non-empty instrument limit map")
-            limits = {str(key): int(value) for key, value in raw_limits.items()}
-            if any(value <= 0 for value in limits.values()):
-                raise RuntimeError("instrument limits must be positive integers")
-            arm = getattr(runtime, "arm", None)
-            if arm is None or not callable(arm):
-                raise RuntimeError("live runtime must implement arm(instrument_limits_micros)")
-            arm(limits)
-            break
-        if command == "STOP":
-            _stop_runtime(runtime)
-            _emit("STOPPED")
-            return 0
-        _emit("ERROR", message=str(message.get("message") or f"unexpected command: {command}"))
 
+    arm_message = _wait_for(command_queue, runtime, "ARM")
+    if arm_message is None:
+        return 0
+    raw_limits = arm_message.get("instrument_limits_micros") or {}
+    if not isinstance(raw_limits, dict) or not raw_limits:
+        raise RuntimeError("ARM requires a non-empty instrument limit map")
+    limits = {str(key): int(value) for key, value in raw_limits.items()}
+    if any(value <= 0 for value in limits.values()):
+        raise RuntimeError("instrument limits must be positive integers")
+    arm = getattr(runtime, "arm", None)
+    if arm is None or not callable(arm):
+        raise RuntimeError("live runtime must implement arm(instrument_limits_micros)")
+    arm(limits)
+    _emit("STRATEGY_READY")
+
+    start_message = _wait_for(command_queue, runtime, "START")
+    if start_message is None:
+        return 0
     start = getattr(runtime, "start", None)
     if start is None or not callable(start):
         raise RuntimeError("live runtime must implement start()")
