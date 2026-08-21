@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -20,20 +20,24 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from quantfoundry.db.base import Base, IDENTITY_INT, JSON_VALUE, MONEY
+from quantfoundry.db.base import Base, IDENTITY_INT, JSON_VALUE
 
 
 class RiskAccount(Base):
     __tablename__ = "risk_accounts"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('BLOCKED','RECONCILING','READY')", name="ck_risk_account_status"
+            "status IN ('BLOCKED','RECOVERING','RECONCILING','READY','STOPPED')",
+            name="ck_risk_account_status",
         ),
+        CheckConstraint("gross_limit_micros >= 0", name="ck_risk_account_limit"),
     )
 
     funder_id: Mapped[str] = mapped_column(String(300), primary_key=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="BLOCKED")
-    gross_limit_pusd: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    gross_limit_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=100_000_000
+    )
     owner_deployment_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("deployments.id", ondelete="SET NULL")
     )
@@ -44,12 +48,15 @@ class RiskAccount(Base):
 
 class RiskPosition(Base):
     __tablename__ = "risk_positions"
+    __table_args__ = (
+        CheckConstraint("entry_cost_micros >= 0", name="ck_risk_position_cost"),
+    )
 
     funder_id: Mapped[str] = mapped_column(
         String(300), ForeignKey("risk_accounts.funder_id", ondelete="CASCADE"), primary_key=True
     )
     instrument_id: Mapped[str] = mapped_column(String(300), primary_key=True)
-    entry_cost_pusd: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    entry_cost_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -59,6 +66,9 @@ class RiskOpenOrder(Base):
         CheckConstraint(
             "state IN ('OPEN','PENDING_CANCEL','UNKNOWN')", name="ck_risk_open_order_state"
         ),
+        CheckConstraint(
+            "increase_debit_micros >= 0", name="ck_risk_open_order_debit"
+        ),
     )
 
     funder_id: Mapped[str] = mapped_column(
@@ -66,7 +76,7 @@ class RiskOpenOrder(Base):
     )
     client_order_id: Mapped[str] = mapped_column(String(300), primary_key=True)
     instrument_id: Mapped[str] = mapped_column(String(300), nullable=False)
-    increase_debit_pusd: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    increase_debit_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
     state: Mapped[str] = mapped_column(String(30), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -81,9 +91,10 @@ class RiskReservation(Base):
             name="uq_risk_reservation_order",
         ),
         CheckConstraint(
-            "state IN ('PENDING','ACCEPTED','REJECTED','RELEASED','UNKNOWN')",
+            "state IN ('PENDING','SUBMITTED','REJECTED','RELEASED','UNKNOWN')",
             name="ck_risk_reservation_state",
         ),
+        CheckConstraint("reserved_micros >= 0", name="ck_risk_reservation_amount"),
         Index("ix_risk_reservation_state", "funder_id", "state"),
     )
 
@@ -94,7 +105,7 @@ class RiskReservation(Base):
     runner_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     client_order_id: Mapped[str] = mapped_column(String(300), nullable=False)
     instrument_id: Mapped[str] = mapped_column(String(300), nullable=False)
-    reserved_pusd: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    reserved_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
