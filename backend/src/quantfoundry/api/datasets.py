@@ -210,13 +210,18 @@ async def import_parquet_l2(
             upload_path,
             request.app.state.settings.max_parquet_upload_bytes,
         )
+        data_type = str(metadata.get("data_type", "OrderBookDeltas")).strip()
+        if not data_type:
+            raise QfError(
+                "PARQUET_L2_SCHEMA_INVALID",
+                "Dataset data_type must not be empty.",
+                422,
+            )
         dataset_metadata = {
             **metadata,
             "source_label": source_label.strip(),
             "upload_size_bytes": size_bytes,
-            "data_cls": metadata.get(
-                "data_cls", "nautilus_trader.model.data:OrderBookDeltas"
-            ),
+            "data_type": data_type,
         }
         with session.begin():
             run = Run(
