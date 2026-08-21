@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 
 from quantfoundry import __version__
 from quantfoundry.api.agent import router as agent_router
+from quantfoundry.api.agent_actions import router as agent_actions_router
 from quantfoundry.api.credentials import router as credentials_router
 from quantfoundry.api.datasets import router as datasets_router
 from quantfoundry.api.deployments import router as deployments_router
@@ -49,6 +50,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
     app.include_router(risk_router)
     app.include_router(events_router)
     app.include_router(agent_router)
+    app.include_router(agent_actions_router)
 
     @app.get("/api/v1/openapi.json", include_in_schema=False)
     def openapi_schema() -> dict[str, object]:
