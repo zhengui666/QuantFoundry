@@ -1,9 +1,10 @@
 """Run one live plugin runtime inside an immutable bundle.
 
 The process accepts one JSON configuration on stdin, performs Recovery without a
-Strategy heartbeat, emits a reconciled projection, waits for ARM, then starts the
-plugin runtime. The plugin remains responsible for constructing the official
-Nautilus adapter and TradingNode; QF does not duplicate venue protocol logic.
+Strategy heartbeat, emits a reconciled projection, waits for a structured ARM
+command containing the exact instrument limits, then starts the plugin runtime.
+The plugin remains responsible for constructing the official Nautilus adapter and
+TradingNode; QF does not duplicate venue protocol logic.
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ import json
 import queue
 import sys
 import threading
-import time
 from importlib import metadata
 from typing import Any
 
@@ -20,9 +20,7 @@ from quantfoundry.plugins.contract import DescriptorSnapshot
 
 
 def _materialize(value: Any) -> Any:
-    if isinstance(value, type):
-        return value()
-    if callable(value) and not hasattr(value, "descriptor"):
+    if isinstance(value, type) or callable(value) and not hasattr(value, "descriptor"):
         return value()
     return value
 
@@ -46,9 +44,29 @@ def _emit(kind: str, **payload: Any) -> None:
     print(json.dumps({"kind": kind, **payload}, separators=(",", ":"), default=str), flush=True)
 
 
-def _commands(target: queue.SimpleQueue[str]) -> None:
+def _parse_command(line: str) -> dict[str, Any]:
+    stripped = line.strip()
+    if not stripped:
+        return {"command": "INVALID", "message": "empty command"}
+    try:
+        value = json.loads(stripped)
+    except json.JSONDecodeError:
+        return {"command": stripped.upper()}
+    if not isinstance(value, dict):
+        return {"command": "INVALID", "message": "command must be a JSON object"}
+    command = str(value.get("command") or "").upper()
+    return {**value, "command": command}
+
+
+def _commands(target: queue.Queue[dict[str, Any]]) -> None:
     for line in sys.stdin:
-        target.put(line.strip().upper())
+        target.put(_parse_command(line))
+
+
+def _stop_runtime(runtime: Any) -> None:
+    stop = getattr(runtime, "stop", None)
+    if stop is not None and callable(stop):
+        stop()
 
 
 def main() -> int:
@@ -56,6 +74,9 @@ def main() -> int:
     if not first_line:
         raise RuntimeError("live node did not receive its configuration")
     request = json.loads(first_line)
+    if not isinstance(request, dict):
+        raise RuntimeError("live node configuration must be a JSON object")
+
     data_plugin, data_descriptor = _load_plugin(str(request["data_plugin_id"]))
     execution_plugin, execution_descriptor = _load_plugin(
         str(request["execution_plugin_id"])
@@ -76,7 +97,6 @@ def main() -> int:
         strategy_config=dict(request.get("strategy_config") or {}),
         universe_predicate=dict(request.get("universe_predicate") or {}),
         universe_cap=int(request["universe_cap"]),
-        instrument_limits_micros=dict(request.get("instrument_limits_micros") or {}),
         funder_id=str(request["funder_id"]),
         deployment_id=str(request["deployment_id"]),
         generation=int(request["generation"]),
@@ -95,20 +115,29 @@ def main() -> int:
         details=dict(recovery.get("details") or {}),
     )
 
-    command_queue: queue.SimpleQueue[str] = queue.SimpleQueue()
+    command_queue: queue.Queue[dict[str, Any]] = queue.Queue()
     reader = threading.Thread(target=_commands, args=(command_queue,), daemon=True)
     reader.start()
     while True:
-        command = command_queue.get()
+        message = command_queue.get()
+        command = str(message.get("command") or "")
         if command == "ARM":
+            raw_limits = message.get("instrument_limits_micros") or {}
+            if not isinstance(raw_limits, dict) or not raw_limits:
+                raise RuntimeError("ARM requires a non-empty instrument limit map")
+            limits = {str(key): int(value) for key, value in raw_limits.items()}
+            if any(value <= 0 for value in limits.values()):
+                raise RuntimeError("instrument limits must be positive integers")
+            arm = getattr(runtime, "arm", None)
+            if arm is None or not callable(arm):
+                raise RuntimeError("live runtime must implement arm(instrument_limits_micros)")
+            arm(limits)
             break
         if command == "STOP":
-            stop = getattr(runtime, "stop", None)
-            if stop is not None and callable(stop):
-                stop()
+            _stop_runtime(runtime)
             _emit("STOPPED")
             return 0
-        _emit("ERROR", message=f"unexpected command before ARM: {command}")
+        _emit("ERROR", message=str(message.get("message") or f"unexpected command: {command}"))
 
     start = getattr(runtime, "start", None)
     if start is None or not callable(start):
@@ -116,23 +145,24 @@ def main() -> int:
     start()
     _emit("TRADING")
 
+    heartbeat_seconds = float(request.get("heartbeat_seconds") or 5.0)
+    if heartbeat_seconds <= 0:
+        raise RuntimeError("heartbeat_seconds must be positive")
     while True:
         try:
-            command = command_queue.get(timeout=5.0)
+            message = command_queue.get(timeout=heartbeat_seconds)
         except queue.Empty:
             alive = getattr(runtime, "is_alive", None)
             if alive is not None and callable(alive) and not bool(alive()):
-                raise RuntimeError("live runtime stopped unexpectedly")
+                raise RuntimeError("live runtime stopped unexpectedly") from None
             _emit("HEARTBEAT")
             continue
+        command = str(message.get("command") or "")
         if command == "STOP":
-            stop = getattr(runtime, "stop", None)
-            if stop is not None and callable(stop):
-                stop()
+            _stop_runtime(runtime)
             _emit("STOPPED")
             return 0
-        _emit("ERROR", message=f"unexpected command while trading: {command}")
-        time.sleep(0.01)
+        _emit("ERROR", message=str(message.get("message") or f"unexpected command: {command}"))
 
 
 if __name__ == "__main__":
