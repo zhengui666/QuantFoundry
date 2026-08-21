@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -244,8 +245,8 @@ def replace_projection(
     funder_id: str,
     deployment_id: UUID,
     generation: int,
-    positions: list[dict[str, object]],
-    open_orders: list[dict[str, object]],
+    positions: list[dict[str, Any]],
+    open_orders: list[dict[str, Any]],
     observed_at: datetime | None = None,
     mark_ready: bool = True,
 ) -> RiskAccount:
