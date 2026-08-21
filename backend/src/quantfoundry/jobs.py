@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from quantfoundry.db.models import Job
@@ -34,19 +36,22 @@ def enqueue_job(
 
 def release_expired_leases(session: Session, *, now: datetime | None = None) -> int:
     current = now or datetime.now(UTC)
-    result = session.execute(
-        update(Job)
-        .where(
-            Job.state == "LEASED",
-            Job.lease_expires_at.is_not(None),
-            Job.lease_expires_at < current,
-        )
-        .values(
-            state="READY",
-            lease_owner=None,
-            lease_expires_at=None,
-            updated_at=current,
-        )
+    result = cast(
+        CursorResult[Any],
+        session.execute(
+            update(Job)
+            .where(
+                Job.state == "LEASED",
+                Job.lease_expires_at.is_not(None),
+                Job.lease_expires_at < current,
+            )
+            .values(
+                state="READY",
+                lease_owner=None,
+                lease_expires_at=None,
+                updated_at=current,
+            )
+        ),
     )
     return int(result.rowcount or 0)
 
