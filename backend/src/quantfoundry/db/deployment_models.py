@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from quantfoundry.db.base import Base, JSON_VALUE, MONEY, TimestampMixin
+from quantfoundry.db.base import Base, JSON_VALUE, TimestampMixin
 
 
 class Deployment(Base, TimestampMixin):
@@ -37,6 +37,7 @@ class Deployment(Base, TimestampMixin):
             name="ck_deployment_observed_state",
         ),
         Index("ix_deployment_state", "desired_state", "observed_state"),
+        Index("ix_deployment_funder", "funder_id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -59,6 +60,7 @@ class Deployment(Base, TimestampMixin):
         ForeignKey("plugin_runtime_bundles.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    funder_id: Mapped[str] = mapped_column(String(300), nullable=False)
     desired_state: Mapped[str] = mapped_column(
         String(20), nullable=False, default="CREATED"
     )
@@ -78,12 +80,37 @@ class Deployment(Base, TimestampMixin):
     last_error: Mapped[str | None] = mapped_column(Text)
 
 
+class DeploymentGeneration(Base):
+    __tablename__ = "deployment_generations"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('RECOVERY','RECONCILED','ARMED','STRATEGY_READY','TRADING',"
+            "'STOPPING','STOPPED','RECOVERY_BLOCKED','FAILED')",
+            name="ck_deployment_generation_state",
+        ),
+        Index("ix_deployment_generation_state", "state", "last_heartbeat_at"),
+    )
+
+    deployment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("deployments.id", ondelete="CASCADE"), primary_key=True
+    )
+    generation: Mapped[int] = mapped_column(Integer, primary_key=True)
+    state: Mapped[str] = mapped_column(String(30), nullable=False, default="RECOVERY")
+    runner_pid: Mapped[int | None] = mapped_column(Integer)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class DeploymentUniverseRevision(Base):
     __tablename__ = "deployment_universe_revisions"
     __table_args__ = (
         UniqueConstraint("deployment_id", "revision_no", name="uq_universe_revision_no"),
         CheckConstraint(
-            "state IN ('PENDING','ACTIVE','SUPERSEDED','REJECTED')",
+            "state IN ('PENDING','APPROVED','ACTIVE','SUPERSEDED','REJECTED')",
             name="ck_universe_revision_state",
         ),
     )
@@ -111,6 +138,7 @@ class DeploymentInstrument(Base):
             "lifecycle_state IN ('PENDING','ACTIVE','EXIT_ONLY','RECOVERY_ONLY','RESOLVED')",
             name="ck_deployment_instrument_state",
         ),
+        CheckConstraint("risk_limit_micros >= 0", name="ck_deployment_instrument_risk_limit"),
     )
 
     deployment_id: Mapped[UUID] = mapped_column(
@@ -123,12 +151,13 @@ class DeploymentInstrument(Base):
     )
     instrument_id: Mapped[str] = mapped_column(String(300), primary_key=True)
     lifecycle_state: Mapped[str] = mapped_column(String(30), nullable=False)
-    risk_limit_pusd: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    risk_limit_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
     last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 __all__ = [
     "Deployment",
+    "DeploymentGeneration",
     "DeploymentUniverseRevision",
     "DeploymentInstrument",
 ]
