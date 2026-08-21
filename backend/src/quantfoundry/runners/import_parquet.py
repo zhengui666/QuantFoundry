@@ -12,10 +12,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from quantfoundry.api.credentials import decrypt_credential_secrets
 from quantfoundry.db.models import (
@@ -57,7 +58,7 @@ class ImportContext:
     release: PluginRelease
     credential: CredentialSet | None
     instrument_id: str
-    metadata: dict[str, object]
+    metadata: dict[str, Any]
     catalog_path: str
 
 
@@ -246,7 +247,7 @@ def _bundle_python(settings: Settings, bundle: PluginRuntimeBundle) -> Path:
 
 def _load_context(
     settings: Settings, job_id: UUID
-) -> tuple[ImportContext, sessionmaker]:
+) -> tuple[ImportContext, sessionmaker[Session]]:
     engine = create_database_engine(settings)
     factory = create_session_factory(engine)
     with factory.begin() as session:
@@ -276,9 +277,6 @@ def _load_context(
         run.state = "RUNNING"
         run.started_at = run.started_at or datetime.now(UTC)
         dataset.started_at = dataset.started_at or datetime.now(UTC)
-        for item in (source, bundle, release, credential):
-            if item is not None:
-                session.expunge(item)
         context = ImportContext(
             run_id=run.id,
             dataset_id=dataset.id,
@@ -287,9 +285,12 @@ def _load_context(
             release=release,
             credential=credential,
             instrument_id=dataset.instrument_id,
-            metadata=dict(dataset.metadata),
+            metadata=dict(dataset.dataset_metadata),
             catalog_path=dataset.catalog_path,
         )
+        for item in (source, bundle, release, credential):
+            if item is not None:
+                session.expunge(item)
     return context, factory
 
 
@@ -338,6 +339,12 @@ def run_import(settings: Settings, job_id: UUID) -> None:
             env=os.environ.copy(),
         )
         plugin_result = json.loads(result.stdout)
+        if not isinstance(plugin_result, dict):
+            raise QfError(
+                "PLUGIN_RUNTIME_INVALID",
+                "Importer plugin result must be a JSON object.",
+                500,
+            )
         final_catalog.parent.mkdir(parents=True, exist_ok=True)
         if final_catalog.exists():
             raise QfError("RESOURCE_CONFLICT", "Catalog dataset destination already exists.", 409)
@@ -350,8 +357,8 @@ def run_import(settings: Settings, job_id: UUID) -> None:
             dataset.state = "READY"
             dataset.row_count = row_count
             dataset.ended_at = datetime.now(UTC)
-            dataset.metadata = {
-                **dataset.metadata,
+            dataset.dataset_metadata = {
+                **dataset.dataset_metadata,
                 "import_summary": plugin_result.get("summary", {}),
             }
             run.state = "SUCCEEDED"
